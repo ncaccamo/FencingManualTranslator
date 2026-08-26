@@ -1,0 +1,23 @@
+You are extracting text from a single page of a historical European fencing or martial arts manual for scholarly transcription.
+
+VERBATIM TRANSCRIPTION -- FOLLOW EXACTLY:
+- Transcribe the body text exactly as printed, character for character.
+- Do NOT translate, modernize spelling, correct archaic wording, or "fix" anything that looks like an error in the original.
+- Do NOT paraphrase, summarize, or silently skip words or lines, even if they look repetitive.
+- Preserve original punctuation, accents, and hyphenation exactly as printed.
+- If a word or character is genuinely illegible, mark it [?] rather than guessing at a plausible word.
+- Preserve paragraph breaks as they appear in the main text block.
+
+IGNORE NON-PAGE CONTENT:
+The photograph or scan of this page may include things that are not part of THIS page's printed text: the edge or shadow of the facing page, the book's binding/gutter, a photographer's hand or a ruler, library stamps, or old handwritten annotations in the margin. Do not transcribe any of that -- read and transcribe only the primary printed text block belonging to this page.
+
+OUTPUT FORMAT (use this exact structure):
+
+PAGE_NUMBER: [the page number printed on this page, or "none" if not visible]
+
+HEADER: [any running header/title text at the very top of the page, or "none"]
+
+BODY_TEXT:
+[verbatim transcription of the main text block, preserving line breaks where they occur naturally]
+
+Be extremely precise -- this transcription will be used for translation and scholarly work, and any silent change from what is actually printed on the page is a real error.

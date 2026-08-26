@@ -1,0 +1,43 @@
+services:
+  translator:
+    build: .
+    container_name: booktranslator-translator-1
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION=12.0.1
+      - HIP_VISIBLE_DEVICES=0
+      - ROCR_VISIBLE_DEVICES=0
+      - LLAMA_BACKEND=rocm
+      - MODEL_NAME=qwen2.5:7b-instruct-q6_K
+      - MODEL_PATH=/models/qwen2.5-7b-instruct-q6_k.gguf
+      - VLM_MODEL_PATH=/models/qwen2-vl-7b-instruct-q6_k.gguf
+      - VLM_MMPROJ_PATH=/models/mmproj-qwen2-vl-7b-instruct-f16.gguf
+      - TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
+    volumes:
+      - ~/llm_models:/models
+      - ./books:/data/books:ro
+      - ./processed:/data/processed
+      - ./my_scripts:/host_scripts:ro
+      - ./my_scripts:/app:ro
+    ports:
+      - "11434:11434"
+      - "11435:11435"
+    networks:
+      - ai-net
+    deploy:
+      resources:
+        limits:
+          memory: 28G
+        reservations:
+          memory: 20G
+    shm_size: '4gb'
+    restart: unless-stopped
+
+networks:
+  ai-net:
+    external: true

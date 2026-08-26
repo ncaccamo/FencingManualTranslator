@@ -1,0 +1,77 @@
+#!/bin/bash
+WORKDIR=~/BookTranslator
+cd "$WORKDIR" || exit 1
+
+echo ""
+echo "╔═══════════════════════════════════════════════════════╗"
+echo "║  HISTORICAL FENCING TRANSLATOR – VLM PIPELINE         ║"
+echo "╚═══════════════════════════════════════════════════════╝"
+echo ""
+
+# Ensure processed folder exists
+if [ ! -d "$WORKDIR/processed" ]; then
+    mkdir -p "$WORKDIR/processed"
+fi
+
+# Fix ownership
+OWNER=$(stat -c '%U' "$WORKDIR/processed" 2>/dev/null || echo "")
+if [ "$OWNER" = "root" ]; then
+    echo "[SETUP] Fixing processed folder ownership..."
+    sudo chown -R $(id -u):$(id -g) "$WORKDIR/processed"
+fi
+
+echo "[1/4] Starting container..."
+echo "────────────────────────────────────────────────────────"
+docker compose -f "$WORKDIR/docker-compose.yml" down --remove-orphans
+docker compose -f "$WORKDIR/docker-compose.yml" up -d
+echo ""
+
+echo "[2/4] VLM OCR + Structure Extraction..."
+echo "────────────────────────────────────────────────────────"
+echo "  → This step loads Qwen2-VL (vision model)"
+echo "  → Extracts text and structure from PDF pages"
+echo "  → Time: ~5-10 seconds per page"
+echo ""
+docker exec booktranslator-translator-1 python3 /app/1_ocr_and_extract_vlm.py
+OCR_EXIT=$?
+if [ $OCR_EXIT -ne 0 ]; then
+    echo ""
+    echo "[ERROR] VLM OCR failed (exit code: $OCR_EXIT)"
+    echo ""
+    read -p "Press Enter to exit..."
+    exit 1
+fi
+echo ""
+
+echo "[3/4] AI Translation..."
+echo "────────────────────────────────────────────────────────"
+echo "  → This step loads Qwen2.5-7B (translation model)"
+echo "  → Translates extracted text to English"
+echo "  → Preserves technical fencing terms"
+echo "  → Time: ~10-20 seconds per page"
+echo ""
+docker exec booktranslator-translator-1 python3 /app/2_translate.py
+echo ""
+
+echo "[4/4] PDF Generation..."
+echo "────────────────────────────────────────────────────────"
+docker exec booktranslator-translator-1 python3 /app/3_english_only_pdf.py
+docker exec booktranslator-translator-1 python3 /app/4_side_by_side_pdf.py
+echo ""
+
+echo "╔═══════════════════════════════════════════════════════╗"
+echo "║                  PIPELINE COMPLETE                    ║"
+echo "╚═══════════════════════════════════════════════════════╝"
+echo ""
+echo "Your PDFs are in: ~/BookTranslator/processed/"
+echo ""
+
+if ls "$WORKDIR/processed"/*_translated 2>/dev/null | grep -q .; then
+    echo "Processed books:"
+    ls -1 "$WORKDIR/processed" | grep "_translated" | sed 's/_translated$//' | sed 's/^/  • /'
+else
+    echo "No books processed yet"
+fi
+echo ""
+
+read -p "Press Enter to close..."

@@ -1,0 +1,14 @@
+# Pipeline input/output -- large, derived, not code
+books/
+processed/
+
+# Python
+__pycache__/
+*.pyc
+
+# Model files (these live in ~/llm_models anyway, outside this folder,
+# but excluding just in case one ever ends up here)
+*.gguf
+
+# Environment
+.env

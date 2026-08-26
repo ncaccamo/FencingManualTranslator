@@ -1,0 +1,5 @@
+Workaround for Win/Linux clock (adjust system clock to local time):
+timedatectl set-local-rtc 1 
+
+Default (adjust system clock to UTC):
+timedatectl set-local-rtc 0 
