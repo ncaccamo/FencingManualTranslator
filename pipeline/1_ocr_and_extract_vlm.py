@@ -49,6 +49,8 @@ from PIL import Image, ImageOps
 import io
 import sys
 
+import backend_config as bc
+
 VLM_MODEL_PATH = os.environ.get("VLM_MODEL_PATH", "/models/allenai_olmOCR-2-7B-1025-Q6_K.gguf")
 VLM_MMPROJ_PATH = os.environ.get("VLM_MMPROJ_PATH", "")
 
@@ -119,17 +121,14 @@ with open(VLM_PROMPT_FILE, "r", encoding="utf-8") as f:
 def _llama_server_env() -> dict:
     """A `docker exec` of this script inherits only the image-level
     LD_LIBRARY_PATH; llama-server links its backend impl .so
-    (libllama-server-impl.so) at runtime from /usr/local/lib/llama-<backend>/,
+    (libllama-server-impl.so) at runtime from /usr/local/lib/llama-<suffix>/,
     a dir the entrypoint adds for the servers IT launches but that we don't
     get here -- so a server we spawn dies immediately with
-    "cannot open shared object file". Restore it, matching the entrypoint's
-    backend-resolution (fall back to rocm if the requested build is absent).
-    """
-    backend = os.environ.get("LLAMA_BACKEND", "rocm")
-    if not os.access(f"/usr/local/bin/llama-server-{backend}", os.X_OK):
-        backend = "rocm"
+    "cannot open shared object file". Restore it for the configured backend
+    (validated; rocm714 errors clearly if it isn't built)."""
+    suffix = bc.local_backend_suffix()
     env = dict(os.environ)
-    env["LD_LIBRARY_PATH"] = f"/usr/local/lib/llama-{backend}:" + env.get("LD_LIBRARY_PATH", "")
+    env["LD_LIBRARY_PATH"] = f"/usr/local/lib/llama-{suffix}:" + env.get("LD_LIBRARY_PATH", "")
     return env
 
 
@@ -232,7 +231,26 @@ def preprocess_for_ocr(img: Image.Image) -> Image.Image:
     return gray.convert("RGB")
 
 
+# Returned by start_vlm_server() when BACKEND_MODE=remote -- there is no
+# local process to manage, just an endpoint to talk to.
+REMOTE_SERVER = object()
+
+
 def start_vlm_server(restart=False):
+    if bc.is_remote():
+        base = bc.ocr_base_url()
+        print(f"\n[remote] using VLM/OCR endpoint {base}")
+        print("[remote] make sure the VISION model is loaded on that host.")
+        try:
+            r = requests.get(f"{base}/health", headers=bc.auth_headers(), timeout=5)
+            if r.status_code == 200:
+                print("[remote] /health OK\n")
+                return REMOTE_SERVER
+            print(f"[remote] /health returned HTTP {r.status_code}")
+        except Exception as e:
+            print(f"[remote] cannot reach {base}: {e}")
+        return None
+
     if restart:
         print("\n🔄 RESTARTING VLM SERVER (clearing stuck state)")
     else:
@@ -290,7 +308,7 @@ def start_vlm_server(restart=False):
         sys.stdout.flush()
 
         try:
-            resp = requests.get("http://localhost:11435/health", timeout=2)
+            resp = requests.get(f"{bc.ocr_base_url()}/health", timeout=2)
             if resp.status_code == 200:
                 print(f"\n\n✓ Vision server ready! (took {elapsed}s)")
                 if not restart:
@@ -351,8 +369,8 @@ def extract_page_with_vlm(image_b64: str, size_kb: float, page_num: int, total_p
 
     try:
         response = requests.post(
-            "http://localhost:11435/v1/chat/completions",
-            headers={"Content-Type": "application/json"},
+            f"{bc.ocr_base_url()}/v1/chat/completions",
+            headers={"Content-Type": "application/json", **bc.auth_headers()},
             json={
                 "model": "olmocr2",
                 "messages": [{
@@ -453,7 +471,7 @@ try:
             img_b64, size_kb = prepare_image_for_vlm(img)
             result = extract_page_with_vlm(img_b64, size_kb, i, total_pages)
 
-            if not result["success"] and vlm_proc:
+            if not result["success"] and vlm_proc and vlm_proc is not REMOTE_SERVER:
                 print(f"  → Restarting server and retrying page {i+1}...")
                 vlm_proc.terminate()
                 try:
@@ -523,7 +541,9 @@ try:
             print(f"✓ Extraction complete (all {total_pages} pages successful): {stem}\n")
 
 finally:
-    if vlm_proc:
+    if vlm_proc is REMOTE_SERVER:
+        print("[remote] leaving the remote VLM/OCR server as-is\n")
+    elif vlm_proc:
         print("="*60)
         print("UNLOADING VISION MODEL")
         print("="*60 + "\n")

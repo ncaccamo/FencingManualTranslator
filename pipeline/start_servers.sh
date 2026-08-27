@@ -1,21 +1,38 @@
 #!/bin/bash
-# Bring up the two llama-server processes (11434 translation, 11435 VLM/OCR).
-#
-# The container entrypoint deliberately does NOT start these -- the pipeline
-# scripts (1_ocr_and_extract_vlm.py, 2_translate.py) own the server lifecycle
-# so they can load one model, use it, unload it to reclaim VRAM, then load the
-# next. Use THIS script only for interactive / Open WebUI use, where nothing
-# else starts the servers. It runs both at once (~12 GB VRAM).
+# Bring up the two llama-server processes (11434 translation, 11435 VLM/OCR)
+# for interactive / Open WebUI use. The pipeline scripts start their own
+# servers, so this is only for using the models outside the pipeline.
 #
 #   docker exec booktranslator-translator-1 /host_scripts/start_servers.sh
 #
+# Honors backend.env:
+#   BACKEND_MODE=remote  -> does nothing (models live on the remote host)
+#   BACKEND_MODE=local   -> LLAMA_BACKEND in {vulkan, rocm7, rocm714}
+#
 set -u
 
-BACKEND="${LLAMA_BACKEND:-rocm}"
-[ -x "/usr/local/bin/llama-server-$BACKEND" ] || BACKEND="rocm"
+MODE="${BACKEND_MODE:-local}"
+if [ "$MODE" = "remote" ]; then
+    echo "BACKEND_MODE=remote -- no local servers to start."
+    echo "Ensure a llama-server is running on ${REMOTE_HOST:-?}:${REMOTE_PORT:-?}"
+    exit 0
+fi
+
+# schema name -> on-disk suffix (must match backend_config.LOCAL_BACKENDS)
+case "${LLAMA_BACKEND:-vulkan}" in
+    vulkan)         SUFFIX=vulkan ;;
+    rocm7|rocm)     SUFFIX=rocm ;;
+    rocm714)        SUFFIX=rocm714 ;;
+    *) echo "[WARN] unknown LLAMA_BACKEND='${LLAMA_BACKEND:-}', using vulkan"; SUFFIX=vulkan ;;
+esac
+if [ ! -x "/usr/local/bin/llama-server-$SUFFIX" ]; then
+    echo "[FAIL] /usr/local/bin/llama-server-$SUFFIX is not in this image."
+    echo "       Build backend '$LLAMA_BACKEND' in BackendBuildstage, re-sync, rebuild."
+    exit 1
+fi
 # llama-server links libllama-server-impl.so at runtime from this dir; a
 # `docker exec` shell does not inherit the entrypoint's version of the path.
-export LD_LIBRARY_PATH="/usr/local/lib/llama-$BACKEND:${LD_LIBRARY_PATH:-}"
+export LD_LIBRARY_PATH="/usr/local/lib/llama-$SUFFIX:${LD_LIBRARY_PATH:-}"
 
 TRANSLATION_MODEL="${MODEL_PATH:-/models/Qwen2.5-7B-Instruct-Q6_K.gguf}"
 VLM_MODEL="${VLM_MODEL_PATH:-/models/allenai_olmOCR-2-7B-1025-Q6_K.gguf}"
@@ -32,7 +49,7 @@ wait_health () {  # $1=port  $2=label
     return 1
 }
 
-echo "Backend: $BACKEND"
+echo "Backend: $LLAMA_BACKEND (llama-$SUFFIX)"
 pkill -f "llama-server.*11434" 2>/dev/null || true
 pkill -f "llama-server.*11435" 2>/dev/null || true
 sleep 3

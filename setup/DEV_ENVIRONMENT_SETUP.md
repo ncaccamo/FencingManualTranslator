@@ -92,17 +92,19 @@ that scenario, not the extension.
 
 ### Resuming work in a new session
 
-Claude Code has no memory of past sessions on its own. `HANDOFF.md` in
-the repo root exists specifically to solve this — keep it updated with
-current status, and point a fresh session at it:
+Claude Code has no memory of past sessions on its own. `docs/STATUS.md`
+(plus `git log` for the narrative) exists to solve this — keep STATUS
+updated with current state, and point a fresh session at it:
 
-> Read HANDOFF.md, then look at the actual current state of the pipeline
-> scripts to confirm it matches. Let's start with [whatever's next].
+> Read docs/STATUS.md and CLAUDE.md, then look at the actual current
+> state of the pipeline scripts to confirm it matches. Let's start with
+> [whatever's next].
 
 Telling it to verify against the real files (not just trust the
-document) matters — we've already had cases where `HANDOFF.md`/
+document) matters — we've already had cases where the status doc /
 `MANIFEST.md` said something was `[ ]` not-done when it actually already
-worked.
+worked. (The old `HANDOFF.md` was a 680-line session-by-session log; it
+was retired 2026-08-27 in favour of the slim STATUS + git history.)
 
 ---
 
@@ -284,4 +286,4 @@ machine, a different terminal app):
 | Committed but still not on GitHub | Committed but not pushed (separate steps) | Check status bar arrow/number, or `git log origin/main..main` |
 | File edit "worked" but behavior didn't change | Paste corruption produced a valid-but-wrong file | `wc -l` / `diff` against a known-good reference, don't trust "no error" |
 | Confused which VS Code terminal is doing what | Terminal mode vs. shell mode look identical at a glance | Use the Claude Code sidebar extension instead of terminal mode |
-| Claude Code session doesn't know project context | New sessions have no memory | Point it at `HANDOFF.md`, ask it to verify against real files |
+| Claude Code session doesn't know project context | New sessions have no memory | Point it at `docs/STATUS.md`, ask it to verify against real files |

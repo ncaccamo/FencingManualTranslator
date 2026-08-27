@@ -12,3 +12,5 @@ __pycache__/
 
 # Environment
 .env
+# Backend selection (may hold REMOTE_API_KEY); .example is tracked
+backend.env

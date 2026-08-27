@@ -13,11 +13,15 @@ services:
     group_add:
       - "${VIDEO_GID}"
       - "${RENDER_GID}"
+    # Backend selection (BACKEND_MODE / LLAMA_BACKEND / REMOTE_*). Editing
+    # backend.env + `docker compose up -d` recreates the container with the
+    # new values -- no image rebuild. See backend.env.example.
+    env_file:
+      - backend.env
     environment:
       - HSA_OVERRIDE_GFX_VERSION=12.0.1
       - HIP_VISIBLE_DEVICES=0
       - ROCR_VISIBLE_DEVICES=0
-      - LLAMA_BACKEND=${LLAMA_BACKEND:-rocm}
       - MODEL_NAME=qwen2.5:7b-instruct-q6_K
       - MODEL_PATH=/models/Qwen2.5-7B-Instruct-Q6_K.gguf
       - VLM_MODEL_PATH=/models/allenai_olmOCR-2-7B-1025-Q6_K.gguf
@@ -41,7 +45,11 @@ services:
         reservations:
           memory: 20G
     shm_size: '4gb'
-    restart: unless-stopped
+    # On-demand batch pipeline, not a service: up only when you run a book.
+    # "no" also means a crash stays visible instead of being papered over by
+    # an auto-restart (see docs/STATUS.md -- this previously hid a real
+    # PID-1 container-bounce bug).
+    restart: "no"
 
 networks:
   ai-net:

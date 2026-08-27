@@ -200,50 +200,64 @@ TRANSLATION_MODEL=$(find_existing_model "$TRANSLATION_MODEL" "*qwen2.5*7b*instru
 VLM_MODEL=$(find_existing_model "$VLM_MODEL" "*olmocr*q6*.gguf")
 VLM_MMPROJ=$(find_existing_model "$VLM_MMPROJ" "*mmproj*olmocr*.gguf")
 
-: "${LLAMA_BACKEND:=rocm}"
-case "$LLAMA_BACKEND" in
-    rocm|rocm714|vulkan) ;;
-    *) echo "[WARN] Unknown LLAMA_BACKEND='$LLAMA_BACKEND', defaulting to rocm"; LLAMA_BACKEND="rocm" ;;
-esac
-if [ ! -x "/usr/local/bin/llama-server-$LLAMA_BACKEND" ]; then
-    echo "[WARN] llama-server-$LLAMA_BACKEND not present (rocm714 disabled), falling back to rocm"
-    LLAMA_BACKEND="rocm"
-fi
+: "${BACKEND_MODE:=local}"
 
-echo "========================================================"
-echo "  Historical Fencing Book Translator"
-echo "  Translation: Qwen 2.5 7B | Vision: $(basename "$VLM_MODEL" .gguf)"
-echo "  Inference backend: $LLAMA_BACKEND (llama.cpp)"
-echo "========================================================"
-
-# Re-point the llama-* symlinks at the requested backend. The Dockerfile
-# bakes the vulkan set already; these succeed only when run as root, so a
-# non-root container keeps the baked default -- failure is not fatal.
-ln -sf "/usr/local/bin/llama-server-$LLAMA_BACKEND" /usr/local/bin/llama-server 2>/dev/null || true
-ln -sf "/usr/local/bin/llama-cli-$LLAMA_BACKEND" /usr/local/bin/llama-cli 2>/dev/null || true
-ln -sf "/usr/local/bin/llama-bench-$LLAMA_BACKEND" /usr/local/bin/llama-bench 2>/dev/null || true
-ln -sf "/usr/local/bin/llama-qwen2vl-cli-$LLAMA_BACKEND" /usr/local/bin/llama-qwen2vl-cli 2>/dev/null || true
-export LD_LIBRARY_PATH="/usr/local/lib/llama-$LLAMA_BACKEND:$LD_LIBRARY_PATH"
-
-if [ ! -f "$TRANSLATION_MODEL" ]; then
-  echo "[1/3] Downloading translation model (~5.8GB)..."
-  wget --progress=bar:force:noscroll -O "$TRANSLATION_MODEL" https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q6_K.gguf
+if [ "$BACKEND_MODE" = "remote" ]; then
+  echo "========================================================"
+  echo "  Historical Fencing Book Translator"
+  echo "  BACKEND_MODE=remote -> ${REMOTE_HOST:-?}:${REMOTE_PORT:-?}"
+  echo "  No local model servers; no local model downloads."
+  echo "  (Load the right model on the remote host per pipeline step.)"
+  echo "========================================================"
 else
-  echo "[1/3] Translation model: OK ($TRANSLATION_MODEL)"
-fi
+  # schema name -> on-disk suffix; must match backend_config.LOCAL_BACKENDS
+  : "${LLAMA_BACKEND:=vulkan}"
+  case "$LLAMA_BACKEND" in
+      vulkan)      SUFFIX=vulkan ;;
+      rocm7|rocm)  SUFFIX=rocm ;;
+      rocm714)     SUFFIX=rocm714 ;;
+      *) echo "[WARN] Unknown LLAMA_BACKEND='$LLAMA_BACKEND', using vulkan"; LLAMA_BACKEND=vulkan; SUFFIX=vulkan ;;
+  esac
+  if [ ! -x "/usr/local/bin/llama-server-$SUFFIX" ]; then
+      echo "[WARN] llama-server-$SUFFIX not in this image (build it in BackendBuildstage); falling back to vulkan"
+      LLAMA_BACKEND=vulkan; SUFFIX=vulkan
+  fi
 
-if [ ! -f "$VLM_MODEL" ]; then
-  echo "[2/3] Downloading vision model (~5.8GB)..."
-  wget --progress=bar:force:noscroll -O "$VLM_MODEL" https://huggingface.co/bartowski/allenai_olmOCR-2-7B-1025-GGUF/resolve/main/allenai_olmOCR-2-7B-1025-Q6_K.gguf
-else
-  echo "[2/3] Vision model: OK ($VLM_MODEL)"
-fi
+  echo "========================================================"
+  echo "  Historical Fencing Book Translator"
+  echo "  Translation: Qwen 2.5 7B | Vision: $(basename "$VLM_MODEL" .gguf)"
+  echo "  Inference backend: $LLAMA_BACKEND (llama-$SUFFIX)"
+  echo "========================================================"
 
-if [ ! -f "$VLM_MMPROJ" ]; then
-  echo "[3/3] Downloading vision projector (~1.3GB)..."
-  wget --progress=bar:force:noscroll -O "$VLM_MMPROJ" https://huggingface.co/bartowski/allenai_olmOCR-2-7B-1025-GGUF/resolve/main/mmproj-allenai_olmOCR-2-7B-1025-f16.gguf
-else
-  echo "[3/3] Vision projector: OK ($VLM_MMPROJ)"
+  # Re-point the llama-* symlinks at the requested backend. The Dockerfile
+  # bakes the vulkan set already; these succeed only when run as root, so a
+  # non-root container keeps the baked default -- failure is not fatal.
+  ln -sf "/usr/local/bin/llama-server-$SUFFIX" /usr/local/bin/llama-server 2>/dev/null || true
+  ln -sf "/usr/local/bin/llama-cli-$SUFFIX" /usr/local/bin/llama-cli 2>/dev/null || true
+  ln -sf "/usr/local/bin/llama-bench-$SUFFIX" /usr/local/bin/llama-bench 2>/dev/null || true
+  ln -sf "/usr/local/bin/llama-qwen2vl-cli-$SUFFIX" /usr/local/bin/llama-qwen2vl-cli 2>/dev/null || true
+  export LD_LIBRARY_PATH="/usr/local/lib/llama-$SUFFIX:$LD_LIBRARY_PATH"
+
+  if [ ! -f "$TRANSLATION_MODEL" ]; then
+    echo "[1/3] Downloading translation model (~5.8GB)..."
+    wget --progress=bar:force:noscroll -O "$TRANSLATION_MODEL" https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q6_K.gguf
+  else
+    echo "[1/3] Translation model: OK ($TRANSLATION_MODEL)"
+  fi
+
+  if [ ! -f "$VLM_MODEL" ]; then
+    echo "[2/3] Downloading vision model (~5.8GB)..."
+    wget --progress=bar:force:noscroll -O "$VLM_MODEL" https://huggingface.co/bartowski/allenai_olmOCR-2-7B-1025-GGUF/resolve/main/allenai_olmOCR-2-7B-1025-Q6_K.gguf
+  else
+    echo "[2/3] Vision model: OK ($VLM_MODEL)"
+  fi
+
+  if [ ! -f "$VLM_MMPROJ" ]; then
+    echo "[3/3] Downloading vision projector (~1.3GB)..."
+    wget --progress=bar:force:noscroll -O "$VLM_MMPROJ" https://huggingface.co/bartowski/allenai_olmOCR-2-7B-1025-GGUF/resolve/main/mmproj-allenai_olmOCR-2-7B-1025-f16.gguf
+  else
+    echo "[3/3] Vision projector: OK ($VLM_MMPROJ)"
+  fi
 fi
 
 # NOTE: this entrypoint deliberately does NOT start the llama-server

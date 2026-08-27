@@ -10,9 +10,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+import backend_config as bc
+
 PROMPT_FILE = "/app/translation_prompt.txt"
 TRANSLATION_MODEL = os.environ.get("TRANSLATION_MODEL_PATH", "/models/Qwen2.5-7B-Instruct-Q6_K.gguf")
-LLAMA_API_URL = "http://localhost:11434/v1/chat/completions"
+LLAMA_API_URL = f"{bc.translate_base_url()}/v1/chat/completions"
+
+# Returned by start_translation_server() when BACKEND_MODE=remote.
+REMOTE_SERVER = object()
 
 if not os.path.exists(PROMPT_FILE):
     print(f"\n✗ ERROR: Missing {PROMPT_FILE}\n")
@@ -68,27 +73,38 @@ def contains_too_much_non_english(text: str) -> bool:
 def _llama_server_env() -> dict:
     """A `docker exec` of this script inherits only the image-level
     LD_LIBRARY_PATH; llama-server links its backend impl .so
-    (libllama-server-impl.so) at runtime from /usr/local/lib/llama-<backend>/,
+    (libllama-server-impl.so) at runtime from /usr/local/lib/llama-<suffix>/,
     a dir the entrypoint adds for the servers IT launches but that we don't
     get here -- so a server we spawn dies immediately with
-    "cannot open shared object file". Restore it, matching the entrypoint's
-    backend-resolution (fall back to rocm if the requested build is absent).
-    """
-    backend = os.environ.get("LLAMA_BACKEND", "rocm")
-    if not os.access(f"/usr/local/bin/llama-server-{backend}", os.X_OK):
-        backend = "rocm"
+    "cannot open shared object file". Restore it for the configured backend
+    (validated; rocm714 errors clearly if it isn't built)."""
+    suffix = bc.local_backend_suffix()
     env = dict(os.environ)
-    env["LD_LIBRARY_PATH"] = f"/usr/local/lib/llama-{backend}:" + env.get("LD_LIBRARY_PATH", "")
+    env["LD_LIBRARY_PATH"] = f"/usr/local/lib/llama-{suffix}:" + env.get("LD_LIBRARY_PATH", "")
     return env
 
 
 def start_translation_server():
+    if bc.is_remote():
+        base = bc.translate_base_url()
+        print(f"\n[remote] using translation endpoint {base}")
+        print("[remote] make sure the TEXT model is loaded on that host.")
+        try:
+            r = requests.get(f"{base}/health", headers=bc.auth_headers(), timeout=5)
+            if r.status_code == 200:
+                print("[remote] /health OK\n")
+                return REMOTE_SERVER
+            print(f"[remote] /health returned HTTP {r.status_code}")
+        except Exception as e:
+            print(f"[remote] cannot reach {base}: {e}")
+        return None
+
     print("\n" + "="*60)
     print("LOADING TRANSLATION MODEL (Qwen2.5-7B)")
     print("="*60 + "\n")
     print("Model: Qwen2.5-7B-Instruct-Q6_K.gguf (~6.0GB)")
     print("Port:  11434 | GPU: Full offload\n")
-    
+
     if not os.path.exists(TRANSLATION_MODEL):
         print(f"✗ Model not found: {TRANSLATION_MODEL}\n")
         return None
@@ -132,7 +148,7 @@ def start_translation_server():
             return None
         
         try:
-            resp = requests.get("http://localhost:11434/health", timeout=2)
+            resp = requests.get(f"{bc.translate_base_url()}/health", timeout=2)
             if resp.status_code == 200:
                 print(f"\n\n✓ Translation server ready! (took {elapsed}s)")
                 print("="*60 + "\n")
@@ -154,7 +170,7 @@ def translate_with_llama(prompt: str) -> str:
         try:
             response = requests.post(
                 LLAMA_API_URL,
-                headers={"Content-Type": "application/json"},
+                headers={"Content-Type": "application/json", **bc.auth_headers()},
                 json={
                     "model": "qwen2.5-7b-instruct",
                     "messages": [
@@ -282,17 +298,20 @@ try:
         print(f"\n✓ Translation complete: {Path(folder).name}\n")
 
 finally:
-    print("="*60)
-    print("UNLOADING TRANSLATION MODEL")
-    print("="*60 + "\n")
-    print("Shutting down translation server...")
-    translation_proc.terminate()
-    try:
-        translation_proc.wait(timeout=10)
-        print("✓ Translation server stopped (VRAM freed)\n")
-    except:
-        translation_proc.kill()
-        print("✓ Translation server killed (VRAM freed)\n")
+    if translation_proc is REMOTE_SERVER:
+        print("[remote] leaving the remote translation server as-is\n")
+    else:
+        print("="*60)
+        print("UNLOADING TRANSLATION MODEL")
+        print("="*60 + "\n")
+        print("Shutting down translation server...")
+        translation_proc.terminate()
+        try:
+            translation_proc.wait(timeout=10)
+            print("✓ Translation server stopped (VRAM freed)\n")
+        except:
+            translation_proc.kill()
+            print("✓ Translation server killed (VRAM freed)\n")
 
 print("="*60)
 print("✓ TRANSLATION COMPLETE")

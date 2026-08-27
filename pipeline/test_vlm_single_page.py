@@ -25,6 +25,9 @@ import base64
 import io
 import requests
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import backend_config as bc
+
 if len(sys.argv) < 2:
     print("Usage: python3 test_vlm_single_page.py <pdf_file> [page_number]")
     print("Example: python3 test_vlm_single_page.py /data/books/mybook.pdf 0")
@@ -75,11 +78,11 @@ img.save(buffered, format="JPEG", quality=92, optimize=True)
 img_b64 = base64.b64encode(buffered.getvalue()).decode()
 print(f"Image prepared: {img.width}x{img.height}, {len(buffered.getvalue())/1024:.0f}KB")
 
-print("Sending to VLM (http://localhost:11435)...")
+print(f"Sending to VLM ({bc.ocr_base_url()})...")
 
 response = requests.post(
-    "http://localhost:11435/v1/chat/completions",
-    headers={"Content-Type": "application/json"},
+    f"{bc.ocr_base_url()}/v1/chat/completions",
+    headers={"Content-Type": "application/json", **bc.auth_headers()},
     json={
         "model": "olmocr2",
         "messages": [
