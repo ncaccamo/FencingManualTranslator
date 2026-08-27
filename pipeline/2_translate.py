@@ -137,6 +137,61 @@ def contains_too_much_non_english(text: str) -> bool:
     non_english_count = sum(1 for w in words if w in NON_ENGLISH_INDICATORS)
     return (non_english_count / len(words)) > 0.35
 
+
+# Prose preambles the model emits despite the prompt's "output ONLY the
+# translation" rule. Matched only at the very start of the output, one per
+# line, case-insensitively. The Markdown sanitizers already handle '#'/'**'.
+_PREAMBLE_RE = re.compile(
+    r"^\s*(?:"
+    r"here(?:'s| is)\b.*|"
+    r"below is\b.*|"
+    r"(?:the\s+)?(?:following|translation)\b[^\n]*:|"
+    r"sure[,.!]?|"
+    r"(?:certainly|okay|ok)[,.!]?|"
+    r"i(?:'ll| will| can)\b[^\n]*translat[^\n]*|"
+    r"note:.*|"
+    r"following the (?:critical )?rules[^\n]*:|"
+    r"this (?:one )?may take a step back[^\n]*"
+    r")\s*$",
+    re.IGNORECASE)
+
+# Whole-output shapes that mean "the model had nothing to translate" or
+# refused -- never a usable page, not even as a low-confidence fallback.
+_REFUSAL_RE = re.compile(
+    r"^\s*(?:"
+    r"please provide the text\b|"
+    r"(?:the\s+)?(?:text|content)\s+(?:you\s+)?provided\s+(?:does\s+not|doesn't|is\s+not)\b|"
+    r"there (?:is|was) no (?:text|content)\b|"
+    r"it (?:seems|appears) (?:that )?(?:there is|no) \b|"
+    r"this text does not appear to (?:be|contain)\b|"
+    r"no (?:text|content) (?:was )?provided\b"
+    r")",
+    re.IGNORECASE)
+
+
+def strip_model_preamble(text: str) -> str:
+    """Drop leading 'Here is the translation:' / 'Sure:' / 'Note: ...' lines
+    the model prepends despite the prompt. Stops at the first real line."""
+    lines = text.split("\n")
+    while lines and (not lines[0].strip() or _PREAMBLE_RE.match(lines[0])):
+        lines.pop(0)
+    return "\n".join(lines).strip()
+
+
+def looks_like_refusal(text: str) -> bool:
+    """True when the whole output is a 'give me something to translate' /
+    'this isn't fencing text' message rather than a translation."""
+    return bool(_REFUSAL_RE.match(text.strip()))
+
+
+def is_near_blank(text: str) -> bool:
+    """A page whose OCR body is just a stray mark / page number / one word --
+    not worth a model call (the model answers 'Please provide the text...').
+    Kept conservative so real terse content (a plate caption like
+    'Planche IV') still goes through."""
+    letters = re.findall(r"[^\W\d_]", text, flags=re.UNICODE)
+    return len(text.split()) < 2 or len(letters) < 8
+
 def _llama_server_env() -> dict:
     """A `docker exec` of this script inherits only the image-level
     LD_LIBRARY_PATH; llama-server links its backend impl .so
@@ -308,6 +363,15 @@ try:
                 translated_pages.append("[Empty page]")
                 continue
 
+            # A near-blank page (stray mark, bare page number, single word)
+            # isn't worth a model call -- the model just replies "Please
+            # provide the text you would like to translate", which then
+            # leaks into translation.txt as the page's content.
+            if is_near_blank(clean_text):
+                print(f"  Page {i}/{len(pages)} — near-blank ({clean_text.split()[:4]}), skipped")
+                translated_pages.append("[Empty page]")
+                continue
+
             src_words = len(clean_text.split())
 
             # A page whose OCR ran away (dot-leader / ornament repetition
@@ -347,6 +411,21 @@ try:
                 candidate = re.sub(r'\*\*([^*\n]+)\*\*', r'\1', candidate)   # **bold**
                 candidate = re.sub(r'(?m)^\s{0,3}#{1,6}\s+', '', candidate)  # # heading
 
+                # "This isn't fencing text" / "Please provide the text..." --
+                # the model had nothing real to translate. Not a fallback
+                # candidate; try again, then fall through to [Empty page].
+                if looks_like_refusal(candidate):
+                    print(" → refusal / echo")
+                    time.sleep(4)
+                    continue
+
+                # "Here is the translation:" / "Sure:" / "Note: ..." preambles.
+                candidate = strip_model_preamble(candidate)
+                if not candidate:
+                    print(" → preamble only")
+                    time.sleep(4)
+                    continue
+
                 if has_wrong_script(candidate):
                     # Never keep this one, even as a fallback -- CJK/Cyrillic
                     # in the output is the model breaking down.
@@ -383,6 +462,12 @@ try:
                 if best_candidate:
                     print(" ⚠ kept (low confidence)")
                     translated_pages.append(f"[low-confidence translation — review]\n{best_candidate}")
+                elif src_words < 15:
+                    # Every attempt was a refusal/preamble and there was
+                    # barely any source text -- it's an effectively blank
+                    # page, not a translation failure worth surfacing.
+                    print(" ✗ refusals only on a near-blank page — [Empty page]")
+                    translated_pages.append("[Empty page]")
                 else:
                     print(" ✗ no usable output — kept original text")
                     translated_pages.append(f"[translation unavailable — original text follows]\n{clean_text}")

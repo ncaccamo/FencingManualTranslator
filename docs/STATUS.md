@@ -7,11 +7,13 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 
 ## Current state (2026-08-27)
 
-- **Runs end-to-end.** Three full books through 1→2→3→4:
+- **Runs end-to-end.** Five full books through 1→2→3→4:
   `Joseph-Renaud_Lescrime` (109 pp), `Spinnewyn` (178 pp),
   `gomard_…1845` (386 pp — Google Books scan, 1845 text, printed
-  marginalia). All **0 dead pages** (673 pp, 3 low-confidence, all kept).
-  Local GPU only (`BACKEND_MODE=local`, Vulkan), no cloud calls.
+  marginalia), `LaMarche_TraitDeLEpee` (337 pp — clean scan, literary
+  prose), `…Jacob_Jules_bd6t53440660` (331 pp — Gallica 68 ppi flat
+  JPEG). All **0 dead pages** (1341 pp). Local GPU only
+  (`BACKEND_MODE=local`, Vulkan), no cloud calls.
 - **OCR:** olmOCR-2-7B-1025 via llama-server on :11435 is the default and
   only path. Tesseract path (`1_ocr_and_extract.py`) is kept for reference
   / a no-VLM fallback, not used.
@@ -32,10 +34,17 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 1. **Translation quality** — a prompt pass landed (compound terms
    `coup droit`/`dérobement`/`doublement`, all-caps `PARADES DE X` heading
    few-shots, Markdown ban + `2_translate.py` sanitizer, accented-caps in
-   headings). Still soft: braced command groups flatten ~half the time,
-   occasional article/word-order slips, ToC / dotted-leader pages
-   half-translate `coupé`/`battement`. The Larousse sower-motto garble is
-   OCR-side (ignore the logo), not translation.
+   headings). The LaMarche/Jacob-Jules run surfaced + fixed **model
+   meta-responses leaking in as page content** — near-blank pages got
+   "Please provide the text you would like to translate", and "Here is the
+   translation:" / "This text does not appear to be fencing…" preambles
+   slipped past rule 6. `2_translate.py` now: skips near-blank source
+   (`is_near_blank`), rejects whole-output refusals (`looks_like_refusal`),
+   strips leading preambles (`strip_model_preamble`). Still soft: braced
+   command groups flatten ~half the time, occasional article/word-order
+   slips, ToC / dotted-leader pages half-translate `coupé`/`battement`,
+   and literary prose (LaMarche) leaves a few `[low-confidence]` pages
+   substantially in French. The Larousse sower-motto garble is OCR-side.
 1b. **Multi-model serving compose** (a general-chat + a coding model,
    reusing the `llama-server-{rocm,vulkan}` binaries rather than adding
    Ollama). Was tracked in the retired MANIFEST; not started.
@@ -48,16 +57,16 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    a bottom strip in the right column. Model `<fn>` path also supported
    but rarely used. TODO: expand the glossary as more books surface terms;
    the notes have no inline reference mark (glossary path).
-3. ~~Second / third full book.~~ DONE — Spinnewyn (178 pp) surfaced + fixed
-   the `\n---\n` separator collision and the VLM server-death detection gap
-   (see git log); 118/178 corroborated folios, 127/178 para-aligned.
-   Gomard 1845 (386 pp) validated a harder class: Google Books scan, 1845
-   type, printed marginal side-notes (olmOCR drops the marginalia, keeps
-   the main text clean), ~20 line-drawing plates. Repetition-loop fix held
-   (10 runaway ToC pages → 0). Weak spots on this class: figure detector
-   caught 4 of ~20 plates (tuned for framed photo plates, not line
-   drawings), para-alignment only 47% (Google's OCR text layer is patchier
-   than Gallica's).
+3. ~~More full books.~~ DONE — five now (see Current state). Each surfaced
+   something: Spinnewyn → `\n---\n` separator collision + VLM server-death
+   detection gap; Gomard 1845 → Google Books scan / printed marginalia
+   (dropped) / line-drawing plates (figure detector caught 4 of ~20) /
+   para-alignment 47%; repetition-loop fix held (10 runaway ToC pages → 0).
+   LaMarche (clean scan, literary prose) → para-alignment 81% (best), but
+   several `[low-confidence]` pages left mostly in French; model
+   meta-response leak found + fixed. Jacob Jules (Gallica 68 ppi) → only
+   27% corroborated folios (olmOCR can't read the low-res page numbers;
+   bracketed sheet ordinals by design), para-alignment 34%.
 4. **Remote mode against a real Windows llama-server** — only stub-tested
    so far (correct URL, bearer header, no local process). Windows-side
    steps are in `docs/remote-gpu.md`.
