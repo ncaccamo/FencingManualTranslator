@@ -27,15 +27,24 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 
 ## Open items (roughly prioritized)
 
-1. **Translation quality** — braced command groups still flatten ~half the
-   time; "PARRY OF TIERCE HIGH" word order; the Larousse sower-motto
-   garble (really an OCR-side "ignore the logo" problem). Needs another
-   `translation_prompt.txt` pass, possibly more few-shot.
-2. **Footnotes for hard-to-translate terms** — not implemented. Needs a
-   `translation_prompt.txt` flag for difficult terms + footnote layout in
-   both PDF generators.
-3. **Second full book** (Spinnewyn or LaMarche full) to shake out the
-   figure/alignment code on different layouts.
+1. **Translation quality** — a prompt pass landed (compound terms
+   `coup droit`/`dérobement`/`doublement`, all-caps `PARADES DE X` heading
+   few-shots, Markdown ban + `2_translate.py` sanitizer, accented-caps in
+   headings). Still soft: braced command groups flatten ~half the time,
+   occasional article/word-order slips. The Larousse sower-motto garble is
+   OCR-side (ignore the logo), not translation.
+2. **Footnotes** — DONE (mechanism). `pipeline/footnote_glossary.txt` (16
+   curated terms) → `2_translate.py::pull_footnotes` appends a
+   `___FOOTNOTES___` block, keyed off the SOURCE text (the 7B model won't
+   keep terms in French to anchor an inline marker), each term glossed
+   ONCE per book on first occurrence. `_render.py` splits the block off;
+   `3_` renders it end-of-section (small grey type + rule), `4_` reserves
+   a bottom strip in the right column. Model `<fn>` path also supported
+   but rarely used. TODO: expand the glossary as more books surface terms;
+   the notes have no inline reference mark (glossary path).
+3. ~~Second full book.~~ DONE — Spinnewyn (178 pp). Surfaced + fixed the
+   `\n---\n` separator collision and the VLM server-death detection gap
+   (see git log). 118/178 corroborated folios, 127/178 para-aligned.
 4. **Remote mode against a real Windows llama-server** — only stub-tested
    so far (correct URL, bearer header, no local process). Windows-side
    steps are in `docs/design-backend-selection.md` §5.

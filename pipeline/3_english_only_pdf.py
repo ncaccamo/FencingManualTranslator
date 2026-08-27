@@ -146,16 +146,24 @@ class Flow:
         self.y += FS * 0.7
 
     def body(self, text):
-        lines = _render.layout(text, COL.width, FS)
+        body_txt, notes = _render.split_footnotes(text)
+        self._flow(_render.layout(body_txt, COL.width, FS), FS)
+        if notes:
+            # end-of-section glossary block, smaller type
+            self.y += FS * 0.4
+            self._flow(_render.footnote_lines(notes, COL.width, FS - 2), FS - 2,
+                       color=(0.25, 0.25, 0.25))
+
+    def _flow(self, lines, size, color=(0, 0, 0)):
         while True:
             lines = _render.strip_leading_gaps(lines)
             if not lines:
                 return
-            if self.page is None or COL.y1 - self.y < FS * 1.4:
+            if self.page is None or COL.y1 - self.y < size * 1.4:
                 self._newpage()
             before = len(lines)
             lines, self.y = _render.draw(
-                self.page, (COL.x0, self.y, COL.x1, COL.y1), lines, FS)
+                self.page, (COL.x0, self.y, COL.x1, COL.y1), lines, size, color=color)
             if lines and len(lines) == before:
                 self._newpage()  # guard against a zero-progress loop
 

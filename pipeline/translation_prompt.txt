@@ -16,20 +16,27 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - fleuret → foil
    - sabre → saber
    - parade → parry   (a "parade" is never a "riposte" — do not confuse them)
+   - coup droit → straight thrust   (NOT "straight right/clothes"; "droit" here = straight)
+   - dérobement → evasion (of the blade)   (NOT "degrading")
+   - doublement → doubling   |   déroulé/coulé → glide
+   - une-deux → one-two   |   coup(s) (as a bare word) → thrust(s) / blow(s)
+   - DE / DES / SUR / PAR / AVEC inside a heading → of / against / with — always translate them
    - salle (d'armes) → fencing hall/room
    - assaut → bout   |   tireur → fencer   |   maître (d'armes) → fencing master
    - mouvement, mise en garde, botte, temps, mesure, ligne → movement, on-guard position, thrust/hit, tempo, distance, line
    Do NOT wrap translated words in <i>…</i>. Only genuinely-kept foreign terms from rule 2 get tags.
 
-4. Headings, section titles, chapter titles, running heads, and figure captions are NORMAL TEXT — translate them fully and do NOT wrap them in <i>…</i>. A line in all capitals is almost always a heading, not a technical term.
+4. Headings, section titles, chapter titles, running heads, and figure captions are NORMAL TEXT — translate them fully and do NOT wrap them in <i>…</i>. A line in all capitals is almost always a heading, not a technical term. When a heading contains a rule-2 term you are keeping (e.g. "PARADES DU CROISÉ"), keep that word intact WITH its accents — do not drop letters ("PARRIES OF THE CROISÉ", never "CROIS").
 
 5. Preserve every number, measurement, and unit exactly as written (e.g. "0m,85", "470 grams", "1°", "no. 5"). Never drop a numeric callout.
 
-6. Output ONLY the English translation — no preamble, no "Here is the translation:", no restating the original, no commentary. Output plain text, NOT Markdown: no `#` headings, no `---` rules, no `![image](...)`, no `**bold**`. The single exception is the `<i>...</i>` tags specified in rules 2-3.
+6. Output ONLY the English translation. Your first character must be the first character of the translation itself. Never begin with "Following", "Here", "Note", "Translation:", "Sure", or any sentence describing what you are about to do. No restating the original, no commentary. Output plain text, NOT Markdown: no `#` headings, no `---` rules, no `![image](...)`, no `**bold**`. The single exception is the `<i>...</i>` tags specified in rules 2-3.
 
 7. PRESERVE LAYOUT. If the text is a drill or list of commands (one short imperative per line, sometimes indented, sometimes grouped by a "{" brace to several alternatives), keep that exact structure: one command per line, same leading indentation, keep the "{" and its aligned alternative lines. Do NOT merge braced alternatives or command lines into a sentence or comma list — translate the words on each line in place. Keep a "* * *" separator line as-is. Keep blank lines between blocks.
 
 8. Ignore and do not transcribe ornament / colophon / publisher's-device motto text if any slipped through (e.g. a sower motto around a logo).
+
+9. If a word or short phrase genuinely has NO clean English equivalent and your rendering loses real precision, give your best English rendering and immediately follow it with <fn>ORIGINAL — one short clause</fn>. Use this rarely. (A curated glossary also adds end-of-page notes automatically, so you do not need to gloss common terms of art like liement, froissement, prise de fer.)
 
 EXAMPLES
 
@@ -64,5 +71,45 @@ Output:
         inside
         low.
 Break.
+
+These manuals use many short ALL-CAPS section headings of the form
+"<ACTION> DE/DES/SUR/PAR <THING>". Translate EVERY word, including the
+connectives (DE/DES = "of", SUR = "against"/"on", PAR = "with"/"by",
+AVEC = "with"). Never leave "DE", "DES", "UNE-DEUX", etc. in French.
+
+Input:
+PARADES DE UNE-DEUX
+Output:
+PARRIES OF THE ONE-TWO
+
+Input:
+PARADES DE DOUBLEMENTS
+Output:
+PARRIES OF DOUBLINGS
+
+Input:
+PARADES DE DÉGAGEMENTS
+Output:
+PARRIES OF DÉGAGEMENTS
+
+Input:
+ATTAQUES PAR UN COUP DROIT, AVEC DEMI-FENTE
+Output:
+ATTACKS WITH A STRAIGHT THRUST, WITH A HALF-FENTE
+
+Input:
+AVEC PETIT SAUT EN AVANT
+Output:
+WITH A SMALL LEAP FORWARD
+
+Input:
+AVEC FENTE COMPLÈTE
+Output:
+WITH A FULL FENTE
+
+Input:
+COUPS SUR DES FEINTES
+Output:
+THRUSTS AGAINST FEINTS
 
 Text to translate:

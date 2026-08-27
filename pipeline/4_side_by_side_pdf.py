@@ -67,7 +67,7 @@ def paragraph_fracs(src_page):
     return fracs or None
 
 
-def render_aligned(page, y_top, tr, size, fracs, src_page):
+def render_aligned(page, y_top, tr, size, fracs, src_page, bottom=RIGHT.y1):
     """Draw the translation with each paragraph top-anchored to its source
     paragraph's height. Returns True on success, False if it won't fit (so
     the caller can fall back to plain flow)."""
@@ -83,14 +83,14 @@ def render_aligned(page, y_top, tr, size, fracs, src_page):
             cur = max(cur, span0 + fracs[k] * span_h)
         cur += sum(size * LEADING if not ln.gap else size * LEADING * 0.55
                    for ln in lines) + PARA_GAP
-        if cur > RIGHT.y1:
+        if cur > bottom:
             return False
 
     cur = y_top
     for k, lines in enumerate(laid):
         if k < len(fracs):
-            cur = max(cur, min(span0 + fracs[k] * span_h, RIGHT.y1 - size))
-        _, cur = _render.draw(page, (RIGHT.x0, cur, RIGHT.x1, RIGHT.y1), lines, size)
+            cur = max(cur, min(span0 + fracs[k] * span_h, bottom - size))
+        _, cur = _render.draw(page, (RIGHT.x0, cur, RIGHT.x1, bottom), lines, size)
         cur += PARA_GAP
     return True
 
@@ -182,32 +182,46 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
                              fontsize=9, fontname=_render.ITALIC)
             continue
 
+        # Split off the glossary/footnote block; it goes in a reserved strip
+        # at the bottom of the right column.
+        body_txt, notes = _render.split_footnotes(tr)
+        fn_lines = _render.footnote_lines(notes, RIGHT.width, 7) if notes else []
+        fn_h = _render.measure(fn_lines, 7) + 4 if fn_lines else 0.0
+        body_bottom = RIGHT.y1 - fn_h
+
+        def _footer(pg):
+            if fn_lines:
+                _render.draw(pg, (RIGHT.x0, body_bottom, RIGHT.x1, RIGHT.y1),
+                             fn_lines, 7, color=(0.25, 0.25, 0.25))
+
         # Try paragraph-aligned layout first (needs the scan's text layer,
         # and the whole page must still fit with the alignment whitespace).
         fracs = paragraph_fracs(src[i])
         if fracs and len(fracs) >= 2:
             for s in SIZES:
-                if render_aligned(page, y, tr, s, fracs, src[i]):
+                if render_aligned(page, y, body_txt, s, fracs, src[i], body_bottom):
                     aligned += 1
                     break
             else:
                 fracs = None  # didn't fit at any size -> plain flow below
         if fracs and len(fracs) >= 2:
+            _footer(page)
             continue  # aligned render already drew the page
 
         # pick the largest size that fits; fall back to the smallest + spill
         chosen, lines = SIZES[-1], None
         for s in SIZES:
-            cand = _render.layout(tr, RIGHT.width, s)
-            left, _ = _render.draw(page, (RIGHT.x0, y, RIGHT.x1, RIGHT.y1),
+            cand = _render.layout(body_txt, RIGHT.width, s)
+            left, _ = _render.draw(page, (RIGHT.x0, y, RIGHT.x1, body_bottom),
                                    cand, s, dry=True)
             if not left:
                 chosen, lines = s, cand
                 break
         if lines is None:
-            lines = _render.layout(tr, RIGHT.width, SIZES[-1])
+            lines = _render.layout(body_txt, RIGHT.width, SIZES[-1])
 
-        leftover, _ = _render.draw(page, (RIGHT.x0, y, RIGHT.x1, RIGHT.y1), lines, chosen)
+        leftover, _ = _render.draw(page, (RIGHT.x0, y, RIGHT.x1, body_bottom), lines, chosen)
+        _footer(page)
         while leftover:
             cont_pages += 1
             leftover = _render.strip_leading_gaps(leftover)

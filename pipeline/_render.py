@@ -117,6 +117,16 @@ def draw(page, rect, lines, size, *, leading=1.28, gap_frac=0.55,
         if ln.gap:
             y += lh * gap_frac
             continue
+        if ln.indent < 0:            # rule sentinel (footnote separator)
+            if y + lh * 0.8 > y1:
+                leftover = lines[idx:]
+                break
+            y += lh * 0.35
+            if not dry:
+                page.draw_line((x0, y), (x0 + min(120, x1 - x0), y),
+                               width=0.4, color=color)
+            y += lh * 0.35
+            continue
         if y + lh > y1:
             leftover = lines[idx:]
             break
@@ -142,3 +152,35 @@ def strip_leading_gaps(lines):
     while i < len(lines) and lines[i].gap:
         i += 1
     return lines[i:]
+
+
+FN_HEADER = "___FOOTNOTES___"
+
+
+def split_footnotes(text):
+    """(body, [note_str, ...]) -- peel off the trailing ___FOOTNOTES___
+    block that 2_translate.py appends. Empty list if there is none."""
+    body, sep, rest = text.partition(FN_HEADER)
+    if not sep:
+        return text.rstrip(), []
+    return body.rstrip(), [l for l in rest.strip().splitlines() if l.strip()]
+
+
+def footnote_lines(notes, width, size):
+    """Lay a list of note strings for drawing: a thin rule then each note
+    wrapped with a hanging indent. Returns list[Line] (the first is a rule
+    sentinel: indent<0)."""
+    out = [Line(indent=-1.0)]  # rule marker for draw()
+    for n in notes:
+        wrapped = _wrap(_spans(n), width, size)
+        for j, vl in enumerate(wrapped):
+            out.append(Line(0.0 if j == 0 else size * 0.9, vl))
+    return out
+
+
+def measure(lines, size, *, leading=1.28, gap_frac=0.55):
+    """Total height `lines` will occupy."""
+    h = 0.0
+    for ln in lines:
+        h += size * leading * (gap_frac if ln.gap else 1.0)
+    return h

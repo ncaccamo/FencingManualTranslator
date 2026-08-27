@@ -48,6 +48,73 @@ def clean_vlm_extraction(text: str) -> str:
     
     return cleaned.strip()
 
+FN_MARK = "†"          # dagger, used as the footnote reference mark
+FN_HEADER = "___FOOTNOTES___"
+FN_MAX_PER_PAGE = 4
+
+
+def _strip_accents(s: str) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", s)
+                   if unicodedata.category(c) != "Mn")
+
+
+def _load_glossary(path="/app/footnote_glossary.txt") -> dict:
+    g = {}
+    try:
+        for line in open(path, encoding="utf-8"):
+            line = line.strip()
+            if not line or line.startswith("#") or "|" not in line:
+                continue
+            term, gloss = line.split("|", 1)
+            g[_strip_accents(term.strip().lower())] = (term.strip(), gloss.strip())
+    except FileNotFoundError:
+        pass
+    return g
+
+
+GLOSSARY = _load_glossary()
+
+
+def pull_footnotes(text: str, source_text: str = "", seen: set = None):
+    """Attach notes to a translated page and append a delimited block (the
+    header can't collide with the "\\n---\\n" page separator).
+
+    Two sources:
+      1. explicit `phrase<fn>note</fn>` the model emitted (numbered, with an
+         inline † marker) -- rare with a 7B model.
+      2. footnote_glossary.txt terms present in THIS page's SOURCE text and
+         not yet glossed earlier in the book -- each glossed once, on first
+         occurrence, as a bare "term — gloss" line (the 7B model won't keep
+         terms in French, so there is nothing in the translation to anchor
+         an inline marker to). Pass a per-book `seen` set to dedupe.
+    Returns (text, n_notes)."""
+    if seen is None:
+        seen = set()
+    numbered = []
+
+    def take(note):
+        numbered.append(re.sub(r"\s+", " ", note).strip())
+        return f"{FN_MARK}{len(numbered)}"
+
+    body = re.sub(r"<fn>(.*?)</fn>", lambda m: take(m.group(1)),
+                  text, flags=re.DOTALL | re.IGNORECASE).strip()
+
+    src = _strip_accents(source_text.lower())
+    gloss_lines = []
+    for key, (term, gloss) in GLOSSARY.items():
+        pos = src.find(key)
+        if pos != -1 and key not in seen and len(gloss_lines) < FN_MAX_PER_PAGE:
+            seen.add(key)
+            gloss_lines.append((pos, f"{term} — {gloss}"))
+    gloss_lines = [g for _, g in sorted(gloss_lines)]
+
+    lines = [f"{FN_MARK}{i} {n}" for i, n in enumerate(numbered, 1)] + gloss_lines
+    if not lines:
+        return body, 0
+    return f"{body}\n\n{FN_HEADER}\n" + "\n".join(lines), len(lines)
+
+
 def has_wrong_script(text: str) -> bool:
     """Sources are all Latin-script (French/Italian/German/Spanish/Latin).
     CJK / Cyrillic / Hebrew / Arabic characters in the output mean the model
@@ -225,6 +292,7 @@ try:
         print(f"Pages: {len(pages)}\n")
         
         translated_pages = []
+        glossed = set()   # footnote each glossary term once per book
 
         for i, page_text in enumerate(pages, 1):
             if not page_text.strip() or "VLM Error" in page_text:
@@ -253,12 +321,15 @@ try:
                     print(" → failed")
                     continue
 
-                # The model sometimes emits Markdown. A lone "---" thematic
-                # break collides with the "\n---\n" page separator used
-                # everywhere downstream -- neutralize it (and strip image
-                # syntax) so one page can never split into two.
+                # The model sometimes emits Markdown despite the prompt. A
+                # lone "---" thematic break collides with the "\n---\n" page
+                # separator used everywhere downstream (178 pages -> 179,
+                # every later page misaligned). Strip all of it; <i>...</i>
+                # is the only markup the pipeline expects.
                 candidate = re.sub(r'(?m)^\s*-{3,}\s*$', '* * *', candidate)
                 candidate = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', candidate)
+                candidate = re.sub(r'\*\*([^*\n]+)\*\*', r'\1', candidate)   # **bold**
+                candidate = re.sub(r'(?m)^\s{0,3}#{1,6}\s+', '', candidate)  # # heading
 
                 if has_wrong_script(candidate):
                     # Never keep this one, even as a fallback -- CJK/Cyrillic
@@ -283,9 +354,10 @@ try:
                     time.sleep(8)
                     continue
 
+                candidate, n_fn = pull_footnotes(candidate, clean_text, glossed)
                 translated_pages.append(candidate)
                 success = True
-                print(" ✓")
+                print(f" ✓{'  (%d fn)' % n_fn if n_fn else ''}")
                 break
 
             if not success:
