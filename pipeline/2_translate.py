@@ -253,6 +253,13 @@ try:
                     print(" → failed")
                     continue
 
+                # The model sometimes emits Markdown. A lone "---" thematic
+                # break collides with the "\n---\n" page separator used
+                # everywhere downstream -- neutralize it (and strip image
+                # syntax) so one page can never split into two.
+                candidate = re.sub(r'(?m)^\s*-{3,}\s*$', '* * *', candidate)
+                candidate = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', candidate)
+
                 if has_wrong_script(candidate):
                     # Never keep this one, even as a fallback -- CJK/Cyrillic
                     # in the output is the model breaking down.

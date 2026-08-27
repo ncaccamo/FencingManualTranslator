@@ -25,7 +25,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
 
 5. Preserve every number, measurement, and unit exactly as written (e.g. "0m,85", "470 grams", "1°", "no. 5"). Never drop a numeric callout.
 
-6. Output ONLY the English translation — no preamble, no "Here is the translation:", no restating the original, no commentary.
+6. Output ONLY the English translation — no preamble, no "Here is the translation:", no restating the original, no commentary. Output plain text, NOT Markdown: no `#` headings, no `---` rules, no `![image](...)`, no `**bold**`. The single exception is the `<i>...</i>` tags specified in rules 2-3.
 
 7. PRESERVE LAYOUT. If the text is a drill or list of commands (one short imperative per line, sometimes indented, sometimes grouped by a "{" brace to several alternatives), keep that exact structure: one command per line, same leading indentation, keep the "{" and its aligned alternative lines. Do NOT merge braced alternatives or command lines into a sentence or comma list — translate the words on each line in place. Keep a "* * *" separator line as-is. Keep blank lines between blocks.
 

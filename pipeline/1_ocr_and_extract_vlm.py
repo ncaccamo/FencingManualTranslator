@@ -307,6 +307,15 @@ def start_vlm_server(restart=False):
         sys.stdout.write(f"\r  Loading{'.' * dots}{' ' * (3-dots)} {elapsed}s")
         sys.stdout.flush()
 
+        if proc.poll() is not None:
+            print(f"\n\n✗ Server process exited (code {proc.returncode}) after {elapsed}s")
+            print("--- tail of /tmp/vlm_server.log ---")
+            try:
+                print("".join(open("/tmp/vlm_server.log").readlines()[-15:]))
+            except Exception:
+                pass
+            return None
+
         try:
             resp = requests.get(f"{bc.ocr_base_url()}/health", timeout=2)
             if resp.status_code == 200:

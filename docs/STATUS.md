@@ -59,6 +59,16 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 
 ## Non-obvious decisions / don't-retry-this
 
+- **The `\n---\n` page separator is content-fragile.** Every stage joins /
+  splits pages on it. The translation model emits Markdown, and a lone
+  `---` thematic-break line inside one page silently split 178 pages into
+  179 (Spinnewyn run), misaligning every page after it with its source.
+  `2_translate.py` now rewrites `^---+$` → `* * *` and strips `![](...)`
+  before joining, and `translation_prompt.txt` forbids Markdown. `1_`'s
+  `extracted.txt` has the same theoretical exposure (OCR is told to use
+  `* * *`, lower risk). A real fix would be a separator that can't occur
+  in content (form feed, or a long sentinel) — deferred.
+
 - **olmOCR-2, not Tesseract.** 8-page three-way eval (Gallica text layer /
   forced Tesseract / olmOCR-2). Forced Tesseract is unusable on any page
   with an in-text figure (dozens–hundreds of garbage tokens the cleanup
