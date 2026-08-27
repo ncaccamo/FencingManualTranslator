@@ -7,9 +7,10 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 
 ## Current state (2026-08-27)
 
-- **Runs end-to-end.** `Joseph-Renaud_Lescrime` (109 pp) has gone
-  1→2→3→4 producing both PDFs, twice. Local GPU only (`BACKEND_MODE=local`,
-  Vulkan), no cloud calls.
+- **Runs end-to-end.** Two full books through 1→2→3→4:
+  `Joseph-Renaud_Lescrime` (109 pp) and `Spinnewyn` (178 pp).
+  `gomard_…1845` (386 pp) run in progress. Local GPU only
+  (`BACKEND_MODE=local`, Vulkan), no cloud calls.
 - **OCR:** olmOCR-2-7B-1025 via llama-server on :11435 is the default and
   only path. Tesseract path (`1_ocr_and_extract.py`) is kept for reference
   / a no-VLM fallback, not used.
@@ -21,7 +22,7 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
   layout via `pipeline/_render.py`.
 - **Backend selection:** `backend.env` switches local (`vulkan` | `rocm7` |
   `rocm714`) vs. remote (LAN llama-server + bearer token). See
-  `docs/design-backend-selection.md`.
+  `docs/remote-gpu.md`.
 - **Container:** comes up idle (no auto-started servers); the pipeline
   owns server lifecycle. Runs as the host UID.
 
@@ -31,8 +32,12 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    `coup droit`/`dérobement`/`doublement`, all-caps `PARADES DE X` heading
    few-shots, Markdown ban + `2_translate.py` sanitizer, accented-caps in
    headings). Still soft: braced command groups flatten ~half the time,
-   occasional article/word-order slips. The Larousse sower-motto garble is
+   occasional article/word-order slips, ToC / dotted-leader pages
+   half-translate `coupé`/`battement`. The Larousse sower-motto garble is
    OCR-side (ignore the logo), not translation.
+1b. **Multi-model serving compose** (a general-chat + a coding model,
+   reusing the `llama-server-{rocm,vulkan}` binaries rather than adding
+   Ollama). Was tracked in the retired MANIFEST; not started.
 2. **Footnotes** — DONE (mechanism). `pipeline/footnote_glossary.txt` (16
    curated terms) → `2_translate.py::pull_footnotes` appends a
    `___FOOTNOTES___` block, keyed off the SOURCE text (the 7B model won't
@@ -47,7 +52,7 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    (see git log). 118/178 corroborated folios, 127/178 para-aligned.
 4. **Remote mode against a real Windows llama-server** — only stub-tested
    so far (correct URL, bearer header, no local process). Windows-side
-   steps are in `docs/design-backend-selection.md` §5.
+   steps are in `docs/remote-gpu.md`.
 5. **User Manual** Sections I (refresh — see Known staleness) and III
    (write — day-to-day usage). Section II is current.
 6. **English-only PDF** wastes vertical space over a run of consecutive
@@ -101,24 +106,36 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
   `reconcile_page_numbers()` only trusts a folio corroborated by ≥2
   consecutive pages; everything else is a bracketed sheet ordinal `[n]`.
   Never emits ≤ 0.
+- **olmOCR-2 falls into repetition loops** on some table-of-contents
+  (dot-leaders) and ornament (`* * *`) pages — thousands of tokens of one
+  pattern, which then overflows the translation model's context. Mitigated
+  three ways: `repeat_penalty: 1.12` on the VLM request, `collapse_runs()`
+  clips pathological runs before parsing (also in `reprocess_extracted.py`),
+  and `2_translate.py` caps oversized input at ~2500 words.
 - **Switching between local backends is `docker compose up -d`, never a
   rebuild** — both binaries are baked into the image. Only `rocm714`
   (not built) or a Dockerfile change needs a rebuild.
 - **`backend.env` must have clean `KEY=value` lines** — no trailing inline
   comments (compose's `env_file` parser is inconsistent about them).
-- **`docker-compose.yml` still has `restart: unless-stopped`**, which
-  contradicts the `restart: "no"` invariant in `CLAUDE.md` and the design
-  doc. It's now harmless (the entrypoint no longer starts servers, so
-  nothing to bounce) but should be reconciled — either flip compose to
-  `"no"` or update the invariant.
+- **`restart: "no"` everywhere** — a crash must stay visible, not be
+  papered over by an auto-restart. `unless-stopped` previously hid a
+  PID-1 container-bounce bug. (Set 2026-08-27; matches the CLAUDE.md
+  invariant.)
 
-## Known doc staleness
+## Doc set
 
-- `setup/MANUAL_SECTION_I_OVERVIEW.md` predates this session: still says
-  "Qwen2-VL-7B" (now olmOCR-2), "validated on a 7-page sample" (now a full
-  book), "italics not implemented / English-only doesn't embed images"
-  (both now done). Refresh when writing Section III.
-- `setup/archive/translation_pipeline_manual.md` — old ROCm 6.x-era
-  manual; reusable for structure/wording, environment details all stale.
-- `setup/DEV_ENVIRONMENT_SETUP.md` — the maintainer's personal dev-box
-  recreation notes, not part of the shipped manual.
+- `README.md` — index / quick start.
+- `docs/STATUS.md` (this) — current state, open items, decisions.
+- `CLAUDE.md` — AI-agent orientation + hard invariants.
+- `setup/MANUAL_SECTION_I/II` — operator manual. **Section III (day-to-day
+  usage) not written; Section I's model names were refreshed but a fuller
+  pass is due when III is done.**
+- `docs/remote-gpu.md` — remote-GPU mode + `rocm714` (both experimental).
+- `docker/ROCM714_NOTES.md` — why ROCm 7.14 is parked.
+- `setup/DEV_ENVIRONMENT_SETUP.md` — maintainer dev-box setup (VS Code,
+  git, Claude Code); not for end users.
+- `setup/archive/translation_pipeline_manual.md` — old ROCm 6.x manual,
+  reference only, environment details stale.
+- Retired 2026-08-27: `HANDOFF.md` (→ git log), `MANIFEST.md` (job done;
+  `setup/setup_inference_backend.sh` + Manual II superseded it),
+  `docs/design-backend-selection.md` (→ `docs/remote-gpu.md`).

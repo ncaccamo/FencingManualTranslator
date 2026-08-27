@@ -101,10 +101,10 @@ updated with current state, and point a fresh session at it:
 > [whatever's next].
 
 Telling it to verify against the real files (not just trust the
-document) matters — we've already had cases where the status doc /
-`MANIFEST.md` said something was `[ ]` not-done when it actually already
-worked. (The old `HANDOFF.md` was a 680-line session-by-session log; it
-was retired 2026-08-27 in favour of the slim STATUS + git history.)
+document) matters — we've had cases where a tracking doc said something
+was not-done when it actually already worked. (`HANDOFF.md` and
+`MANIFEST.md` were both retired 2026-08-27 in favour of the slim
+`docs/STATUS.md` + git history.)
 
 ---
 

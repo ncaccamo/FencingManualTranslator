@@ -48,11 +48,9 @@ AMD RX 9070 XT (RDNA4, gfx1201, 16GB VRAM), Ryzen 7 5700X3D (8c/16t),
 - `docs/STATUS.md` — current state, prioritized open items, and the
   non-obvious decisions worth not re-litigating. **Start here.**
 - `README.md` — front door: pipeline overview, quick start, doc index.
-- `docs/design-backend-selection.md` — `backend.env` local/remote design
-  + implementation status.
 - `setup/MANUAL_SECTION_I_OVERVIEW.md`,
   `setup/MANUAL_SECTION_II_HOST_PREREQUISITES.md` — user manual
-  (Section I needs a refresh; III not yet written).
-- `setup/MANIFEST.md` — setup-script tracking + pipeline file inventory.
+  (Section III not yet written).
+- `docs/remote-gpu.md` — `backend.env`, remote-GPU mode, `rocm714`.
 - `docker/ROCM714_NOTES.md` — why the ROCm 7.14 backend is parked.
-- Session history: `git log` (HANDOFF.md was retired 2026-08-27).
+- Session history: `git log` (HANDOFF.md / MANIFEST.md retired 2026-08-27).

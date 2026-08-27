@@ -56,7 +56,16 @@ One-time on a fresh checkout: `sudo chown -R "$(id -u):$(id -g)" processed/`.
   another machine over the LAN (bearer-token auth). Load the vision model
   there before step 1, the text model before step 2.
 
-Details: `docs/design-backend-selection.md`.
+Details: `docs/remote-gpu.md`.
+
+## Per-book overrides
+
+Optional files next to a source PDF in `books/`, matching its stem:
+
+| File | Effect |
+|---|---|
+| `<stem>.crop` | `left,top,right,bottom` fractions trimmed from each page before OCR |
+| `<stem>.lang` | Tesseract language codes — only used by the non-default Tesseract OCR path |
 
 ## Docs
 
@@ -64,9 +73,8 @@ Details: `docs/design-backend-selection.md`.
 |---|---|
 | `README.md` | this — the front door |
 | `docs/STATUS.md` | current state, open items, decisions worth not re-litigating |
-| `docs/design-backend-selection.md` | backend-mode design + status |
-| `setup/MANUAL_SECTION_I_OVERVIEW.md` | user manual — what it does, hardware, stack (needs a refresh) |
+| `setup/MANUAL_SECTION_I_OVERVIEW.md` | user manual — what it does, hardware, stack |
 | `setup/MANUAL_SECTION_II_HOST_PREREQUISITES.md` | user manual — bare-metal host setup |
-| `setup/MANIFEST.md` | setup-script tracking + pipeline file inventory |
+| `docs/remote-gpu.md` | running inference on a remote GPU (experimental) |
 | `CLAUDE.md` | orientation + hard invariants for AI coding agents |
 | `docker/ROCM714_NOTES.md` | why the ROCm 7.14 backend is parked |
