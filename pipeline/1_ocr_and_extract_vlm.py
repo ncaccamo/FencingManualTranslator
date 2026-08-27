@@ -132,6 +132,22 @@ def _llama_server_env() -> dict:
     return env
 
 
+def collapse_runs(text: str) -> str:
+    """Defuse olmOCR-2 repetition loops: a run of the same short token
+    (dot-leaders '. . . .', ornament '* * *', dashes) repeated many times
+    gets clipped to a few. Leaves ordinary prose untouched. Applied to the
+    raw model response before parsing (and by reprocess_extracted.py)."""
+    if not text:
+        return text
+    # "x x x x ..." where x is 1-2 non-word chars, 8+ reps -> keep 4
+    text = re.sub(r'((?:[^\s\w]{1,2}\s+){4})(?:[^\s\w]{1,2}\s+){4,}', r'\1', text)
+    # a single char repeated 12+ times (e.g. "..............") -> keep 6
+    text = re.sub(r'(.)\1{11,}', lambda m: m.group(1) * 6, text)
+    # a whole line repeated 4+ times in a row -> keep 2
+    text = re.sub(r'(?m)^(.+)\n(?:\1\n){3,}', r'\1\n\1\n', text)
+    return text
+
+
 def parse_vlm_response(raw: str) -> dict:
     """Split olmOCR-2's structured response into fields. The prompt asks for:
         PAGE_NUMBER: <n or none>
@@ -390,14 +406,18 @@ def extract_page_with_vlm(image_b64: str, size_kb: float, page_num: int, total_p
                     ]
                 }],
                 "temperature": 0.1,
-                "max_tokens": 4096
+                "max_tokens": 4096,
+                # Mild -- breaks the dot-leader / "* * *" repetition loops
+                # olmOCR-2 falls into on some table-of-contents and ornament
+                # pages without hurting legitimately repeated words.
+                "repeat_penalty": 1.12
             },
             timeout=timeout
         )
 
         if response.status_code == 200:
             result = response.json()
-            content = result["choices"][0]["message"]["content"]
+            content = collapse_runs(result["choices"][0]["message"]["content"])
             print(f"  Page {page_num+1}/{total_pages} ✓ ({size_kb:.0f}KB)")
             return {"success": True, "content": content}
 

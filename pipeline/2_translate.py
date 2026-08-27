@@ -309,6 +309,22 @@ try:
                 continue
 
             src_words = len(clean_text.split())
+
+            # A page whose OCR ran away (dot-leader / ornament repetition
+            # loop) overflows the translation model's context and burns 3
+            # dead API calls. Cap it: translate the first ~2500 words, keep
+            # the rest verbatim, flag it.
+            if src_words > 2500:
+                head = " ".join(clean_text.split()[:2500])
+                cand = translate_with_llama(
+                    f"{PROMPT_TEMPLATE}\n\nText to translate:\n{head}")
+                cand = cand or "[translation unavailable]"
+                print(f"  Page {i}/{len(pages)} — oversized OCR ({src_words} w), "
+                      f"translated head only")
+                translated_pages.append(
+                    f"[oversized OCR page — likely a repetition artifact; "
+                    f"first part translated, remainder omitted]\n\n{cand}"[:6000])
+                continue
             success = False
             best_candidate = None   # best rejected attempt, for the fallback
             for attempt in range(3):

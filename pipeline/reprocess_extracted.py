@@ -23,6 +23,7 @@ _ns = {"__name__": "_vlm_prefix"}
 exec(compile(_src.split("def preprocess_for_ocr")[0], _spec.origin, "exec"), _ns)
 parse_vlm_response = _ns["parse_vlm_response"]
 reconcile_page_numbers = _ns["reconcile_page_numbers"]
+collapse_runs = _ns["collapse_runs"]
 
 targets = sys.argv[1:] or [
     d for d in glob.glob("/data/processed/*_translated")
@@ -35,7 +36,8 @@ for folder in targets:
         print(f"skip (no raw_ocr.txt): {folder}")
         continue
 
-    raw_pages = open(raw_path, encoding="utf-8").read().split("\n---\n")
+    raw_pages = [collapse_runs(p) for p in
+                 open(raw_path, encoding="utf-8").read().split("\n---\n")]
     parsed = [parse_vlm_response(p) for p in raw_pages]
     nums = reconcile_page_numbers([p["page_raw"] for p in parsed])
 
