@@ -31,7 +31,13 @@
       of privileged:true, explicit LLAMA_BACKEND env
     - Fixes entrypoint.sh: respects MODEL_PATH/VLM_MODEL_PATH env vars instead
       of hardcoding filenames, adds fuzzy-match fallback to avoid duplicate
-      downloads, starts both translation (11434) and VLM (11435) servers
+      downloads
+    - SUPERSEDED (session 2): entrypoint no longer starts any llama-server
+      (was bouncing the container via `wait -n`); it only checks/downloads
+      models then `exec tail -f /dev/null`. The pipeline scripts own server
+      lifecycle; `pipeline/start_servers.sh` covers interactive use.
+      docker-compose.yml also gained `user: ${HOST_UID}:${HOST_GID}` so
+      ./processed output isn't root-owned.
 
 ## Open WebUI (standalone, run anywhere)
 
@@ -58,9 +64,43 @@
 [ ] Open WebUI <-> BookTranslator connection (register 11434/11435 as
     OpenAI-compatible connections once backend confirmed stable)
 
-[ ] Italic support for technical terms in PDF output (currently disabled)
+[x] Italic support for technical terms in PDF output — DONE session 2
+    (pipeline/_render.py renders <i>…</i> as real italics in both PDFs)
 
-[ ] Full-length book test (currently validated on 7-page sample only)
+[x] Full-length book test — DONE session 2 (Joseph-Renaud_Lescrime,
+    109 pp, end-to-end 1→2→3→4). Second book still pending.
+
+## Pipeline components (in ./pipeline/, mounted into the container at /app)
+
+  1_ocr_and_extract.py       Tesseract OCR path (NOT the default; kept for
+                             reference / no-VLM fallback)
+  1_ocr_and_extract_vlm.py   DEFAULT OCR — olmOCR-2 via llama-server :11435.
+                             Writes raw_ocr.txt, extracted.txt (canonical
+                             PAGE_NUMBER/HEADER/BODY_TEXT), page_numbers.txt
+  2_translate.py             Qwen2.5-7B via llama-server :11434. Writes
+                             translation.txt. Never drops a page.
+  3_english_only_pdf.py      Flowing single-column English PDF + inline
+                             figures (row-density band detection)
+  4_side_by_side_pdf.py      Scan-left / translation-right; paragraph
+                             alignment when the scan has a text layer
+  _render.py                 Shared rich-text layout (fitz.TextWriter):
+                             line breaks, indentation, <i> italics,
+                             overflow-safe flow. Used by 3_ and 4_.
+  reprocess_extracted.py     Rebuild extracted.txt + page_numbers.txt from a
+                             saved raw_ocr.txt (re-apply parse/reconcile
+                             fixes without re-running OCR)
+  start_servers.sh           Manually start both llama-servers (interactive /
+                             Open WebUI use; the pipeline doesn't need it)
+  translation_prompt.txt     Term policy (foil/saber/parry; épée kept) +
+                             few-shot examples
+  vlm_ocr_prompt.txt         Verbatim-transcription rules incl. command-list
+                             / drill layout preservation
+  test_vlm_single_page.py    One-page VLM OCR check against :11435
+  check_mmproj.py            mmproj auto-match sanity check
+
+Per-book sidecar files (optional, next to the source PDF in ./books/):
+  <stem>.lang   Tesseract language codes (Tesseract path only)
+  <stem>.crop   left,top,right,bottom fractions to trim before OCR
 
 ## Once everything above is [x]:
 

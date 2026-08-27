@@ -19,11 +19,25 @@ Changes from the Qwen2-VL version:
     required for this path.
   - Retained: server load/unload, retry-with-restart-on-failure. This is
     still a 7B VLM and can still fail/hang on a bad page.
+
+Output contract (added after the hard-page eval, see chat log):
+  - raw_ocr.txt: the untouched model responses, written before any parsing
+    -- the ground-truth fallback, matching the Tesseract path.
+  - extracted.txt: a CANONICAL PAGE_NUMBER/HEADER/BODY_TEXT scaffold rebuilt
+    from the parsed fields (downstream -- 2_translate.py, the PDF
+    generators -- still parses this exact scaffold; it's just now
+    well-formed and the page number is trustworthy).
+  - page_numbers.txt: one reconciled page number per line, '[n]' where
+    inferred. olmOCR-2 reads a real printed folio fine but will invent one
+    from an engraving plate number or a library stamp, or convert 'VIII' to
+    '8'; reconcile_page_numbers() keeps a reported number only when it
+    agrees with the book's dominant page-index -> folio offset.
 """
 
 import glob
 import os
 import re
+from collections import Counter
 import fitz
 import base64
 import requests
@@ -102,6 +116,112 @@ with open(VLM_PROMPT_FILE, "r", encoding="utf-8") as f:
     VLM_PROMPT_TEMPLATE = f.read().strip()
 
 
+def _llama_server_env() -> dict:
+    """A `docker exec` of this script inherits only the image-level
+    LD_LIBRARY_PATH; llama-server links its backend impl .so
+    (libllama-server-impl.so) at runtime from /usr/local/lib/llama-<backend>/,
+    a dir the entrypoint adds for the servers IT launches but that we don't
+    get here -- so a server we spawn dies immediately with
+    "cannot open shared object file". Restore it, matching the entrypoint's
+    backend-resolution (fall back to rocm if the requested build is absent).
+    """
+    backend = os.environ.get("LLAMA_BACKEND", "rocm")
+    if not os.access(f"/usr/local/bin/llama-server-{backend}", os.X_OK):
+        backend = "rocm"
+    env = dict(os.environ)
+    env["LD_LIBRARY_PATH"] = f"/usr/local/lib/llama-{backend}:" + env.get("LD_LIBRARY_PATH", "")
+    return env
+
+
+def parse_vlm_response(raw: str) -> dict:
+    """Split olmOCR-2's structured response into fields. The prompt asks for:
+        PAGE_NUMBER: <n or none>
+        HEADER: <text or none>
+        BODY_TEXT:
+        <body...>
+    A missing or renamed field is tolerated; if there's no BODY_TEXT marker
+    at all the whole response (minus any stray label lines) is kept as body
+    so a malformed/truncated response never silently loses text.
+    Returns {"page_raw": str, "header": str, "body": str} ("" == not present).
+    """
+    pn = re.search(r'^[ \t]*PAGE_NUMBER[ \t]*:[ \t]*(.+?)[ \t]*$', raw, re.I | re.M)
+    hd = re.search(r'^[ \t]*HEADER[ \t]*:[ \t]*(.+?)[ \t]*$', raw, re.I | re.M)
+    bd = re.search(r'^[ \t]*BODY_TEXT[ \t]*:[ \t]*\n?(.*)\Z', raw, re.I | re.S | re.M)
+
+    def _clean(v: str) -> str:
+        v = (v or "").strip().strip("[]").strip()
+        if v.lower() in ("", "none", "n/a", "-", "not visible", "no page number"):
+            return ""
+        return v
+
+    page_raw = _clean(pn.group(1) if pn else "")
+    header = _clean(hd.group(1) if hd else "")
+    if bd:
+        body = bd.group(1).strip()
+    else:
+        body = re.sub(r'^[ \t]*(PAGE_NUMBER|HEADER)[ \t]*:.*$', '', raw,
+                      flags=re.I | re.M).strip()
+    return {"page_raw": page_raw, "header": header, "body": body}
+
+
+def _roman_to_int(s: str):
+    s = s.strip().upper()
+    if not s or not re.fullmatch(r'[IVXLCDM]+', s):
+        return None
+    vals = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
+    total = prev = 0
+    for ch in reversed(s):
+        v = vals[ch]
+        total += -v if v < prev else v
+        prev = max(prev, v)
+    return total or None
+
+
+def _page_to_int(s: str):
+    """Best-effort numeric value of a reported page-number string, accepting
+    plain digits ('83'), digits embedded in noise, or a roman numeral
+    ('VIII')."""
+    if not s:
+        return None
+    m = re.search(r'\d+', s)
+    if m:
+        return int(m.group())
+    return _roman_to_int(s)
+
+
+def reconcile_page_numbers(page_raws: list) -> list:
+    """olmOCR-2 reliably reads a real printed folio, but it will also invent
+    a plausible-looking number from a stray mark -- an engraver's plate
+    number inside an illustration, a library accession stamp -- or silently
+    convert 'VIII' to '8'. Trust a reported number only when it agrees with
+    the dominant (page-index -> printed-folio) offset for the book; anything
+    else becomes an inferred '[n]' (the same 'unknown' convention the
+    Tesseract path uses in page_numbers.txt).
+    """
+    ints = [_page_to_int(p) for p in page_raws]
+    offsets = [v - i for i, v in enumerate(ints) if v is not None]
+    mode_offset, support = (Counter(offsets).most_common(1)[0] if offsets else (None, 0))
+    # Need at least two pages agreeing on the same index->folio offset before
+    # trusting any reported number; a lone value could just be another
+    # hallucination. Otherwise fall back to plain sheet numbering.
+    if support < 2:
+        return [f"[{i + 1}]" for i in range(len(page_raws))]
+    first_anchor = next((i for i, v in enumerate(ints)
+                         if v is not None and v - i == mode_offset), None)
+    out = []
+    for i, (raw, v) in enumerate(zip(page_raws, ints)):
+        if v is not None and v - i == mode_offset:
+            out.append(raw)                            # printed folio, corroborated
+        elif i > first_anchor and i + mode_offset >= 1:
+            out.append(f"[{i + mode_offset}]")         # extrapolated from the anchor run
+        else:
+            # Before the first corroborated folio (front matter) or wherever
+            # extrapolation would go <= 0: no determinable folio, fall back
+            # to the sheet ordinal. Never emit a zero/negative page number.
+            out.append(f"[{i + 1}]")
+    return out
+
+
 def preprocess_for_ocr(img: Image.Image) -> Image.Image:
     """Light contrast normalization before OCR. Historical scans are
     frequently faded/yellowed/low-contrast; autocontrast on the luminance
@@ -115,12 +235,16 @@ def preprocess_for_ocr(img: Image.Image) -> Image.Image:
 def start_vlm_server(restart=False):
     if restart:
         print("\n🔄 RESTARTING VLM SERVER (clearing stuck state)")
-        subprocess.run(["pkill", "-f", "llama-server.*11435"], stderr=subprocess.DEVNULL)
-        time.sleep(5)
     else:
         print("\n" + "="*60)
         print("LOADING VISION MODEL (olmOCR-2-7B-1025)")
         print("="*60 + "\n")
+    # Claim port 11435: kill any llama-server already on it (a stale one from
+    # a previous run, or start_servers.sh) so our Popen below is the server
+    # this script actually manages, at the ctx-size it wants. Safe now that
+    # the entrypoint no longer runs a server under `wait -n`.
+    subprocess.run(["pkill", "-f", "llama-server.*11435"], stderr=subprocess.DEVNULL)
+    time.sleep(5)
 
     print(f"Model:  {VLM_MODEL_PATH}")
     print(f"Mmproj: {VLM_MMPROJ_PATH}")
@@ -152,7 +276,9 @@ def start_vlm_server(restart=False):
 
     print("Starting server...\n")
 
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    log_file = open("/tmp/vlm_server.log", "w")
+    proc = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT,
+                            env=_llama_server_env())
 
     dots = 0
     max_wait = 60 if restart else 120
@@ -175,6 +301,7 @@ def start_vlm_server(restart=False):
             pass
 
     print("\n\n✗ Server timeout")
+    print("Check logs: docker exec booktranslator-translator-1 cat /tmp/vlm_server.log\n")
     proc.terminate()
     return None
 
@@ -356,8 +483,39 @@ try:
         doc.close()
         print()
 
-        with open(f"{work_dir}/extracted.txt", "w", encoding="utf-8") as f:
+        # Preserve the TRUE raw model responses permanently, before any
+        # parsing -- same contract as the Tesseract path's raw_ocr.txt: the
+        # ground truth to fall back on if the parsing/reconciliation below
+        # turns out to have dropped or altered something.
+        with open(f"{work_dir}/raw_ocr.txt", "w", encoding="utf-8") as f:
             f.write("\n---\n".join(extracted_pages))
+
+        # Split olmOCR-2's PAGE_NUMBER/HEADER/BODY_TEXT scaffold into fields
+        # and sequence-check the page number. Previously the raw scaffold
+        # went straight downstream, so a hallucinated "PAGE_NUMBER: 57"
+        # (read off an engraving plate) became a line handed to the
+        # translator and printed on the side-by-side PDF.
+        parsed = [parse_vlm_response(p) for p in extracted_pages]
+        reconciled_nums = reconcile_page_numbers([p["page_raw"] for p in parsed])
+
+        canonical_pages = []
+        for raw, fields, pnum in zip(extracted_pages, parsed, reconciled_nums):
+            if raw.lstrip().startswith("[VLM Error"):
+                canonical_pages.append(raw)          # keep the error marker intact
+                continue
+            canonical_pages.append(
+                f"PAGE_NUMBER: {pnum}\n"
+                f"HEADER: {fields['header'] or 'none'}\n"
+                f"BODY_TEXT:\n{fields['body']}"
+            )
+
+        with open(f"{work_dir}/extracted.txt", "w", encoding="utf-8") as f:
+            f.write("\n---\n".join(canonical_pages))
+
+        # Parity with the Tesseract path: one reconciled page number per
+        # line, '[n]' where it had to be inferred rather than read.
+        with open(f"{work_dir}/page_numbers.txt", "w", encoding="utf-8") as f:
+            f.write("\n".join(reconciled_nums))
 
         if error_count > 0:
             print(f"⚠ Extraction complete with {error_count}/{total_pages} errors: {stem}\n")

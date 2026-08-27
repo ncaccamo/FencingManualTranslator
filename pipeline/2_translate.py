@@ -43,12 +43,44 @@ def clean_vlm_extraction(text: str) -> str:
     
     return cleaned.strip()
 
+def has_wrong_script(text: str) -> bool:
+    """Sources are all Latin-script (French/Italian/German/Spanish/Latin).
+    CJK / Cyrillic / Hebrew / Arabic characters in the output mean the model
+    glitched -- e.g. it wrote a note to itself in Chinese mid-sentence.
+    (Greek is deliberately allowed: classical treatises do quote it.)
+    """
+    return bool(re.search(
+        r"[Ѐ-ӿ֐-׿؀-ۿ　-ヿ㐀-鿿가-힯]",
+        text))
+
+
 def contains_too_much_non_english(text: str) -> bool:
+    # Technical terms the prompt instructs the model to KEEP in the source
+    # language are wrapped in <i>...</i> -- those are correct output, not a
+    # translation failure, so drop them before measuring.
+    text = re.sub(r"<i>.*?</i>", " ", text, flags=re.DOTALL | re.IGNORECASE)
     words = re.findall(r"\b\w+\b", text.lower())
     if not words:
         return True
     non_english_count = sum(1 for w in words if w in NON_ENGLISH_INDICATORS)
-    return (non_english_count / len(words)) > 0.2
+    return (non_english_count / len(words)) > 0.35
+
+def _llama_server_env() -> dict:
+    """A `docker exec` of this script inherits only the image-level
+    LD_LIBRARY_PATH; llama-server links its backend impl .so
+    (libllama-server-impl.so) at runtime from /usr/local/lib/llama-<backend>/,
+    a dir the entrypoint adds for the servers IT launches but that we don't
+    get here -- so a server we spawn dies immediately with
+    "cannot open shared object file". Restore it, matching the entrypoint's
+    backend-resolution (fall back to rocm if the requested build is absent).
+    """
+    backend = os.environ.get("LLAMA_BACKEND", "rocm")
+    if not os.access(f"/usr/local/bin/llama-server-{backend}", os.X_OK):
+        backend = "rocm"
+    env = dict(os.environ)
+    env["LD_LIBRARY_PATH"] = f"/usr/local/lib/llama-{backend}:" + env.get("LD_LIBRARY_PATH", "")
+    return env
+
 
 def start_translation_server():
     print("\n" + "="*60)
@@ -68,7 +100,7 @@ def start_translation_server():
     subprocess.run(["pkill", "-f", "llama-server.*11434"], stderr=subprocess.DEVNULL)
     time.sleep(5)
     print("✓ Port cleared\n")
-    
+
     cmd = [
         "llama-server",
         "--model", TRANSLATION_MODEL,
@@ -78,11 +110,12 @@ def start_translation_server():
         "--n-gpu-layers", "999",
         "--threads", str(os.cpu_count())
     ]
-    
+
     print("Starting server (loads ~7GB VRAM, may take 30-120s)...\n")
-    
+
     log_file = open("/tmp/translation_server.log", "w")
-    proc = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT)
+    proc = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT,
+                            env=_llama_server_env())
     
     dots = 0
     for attempt in range(90):
@@ -179,33 +212,50 @@ try:
 
         for i, page_text in enumerate(pages, 1):
             if not page_text.strip() or "VLM Error" in page_text:
+                print(f"  Page {i}/{len(pages)} — empty / OCR error, passed through")
                 translated_pages.append(page_text)
                 continue
 
             # Clean VLM structured output before translation
             clean_text = clean_vlm_extraction(page_text)
-            
+
             if not clean_text.strip():
-                translated_pages.append("[Empty page after cleaning]")
+                print(f"  Page {i}/{len(pages)} — no body text, skipped")
+                translated_pages.append("[Empty page]")
                 continue
 
+            src_words = len(clean_text.split())
             success = False
+            best_candidate = None   # best rejected attempt, for the fallback
             for attempt in range(3):
                 print(f"  Page {i}/{len(pages)} (try {attempt + 1})", end="", flush=True)
 
                 full_prompt = f"{PROMPT_TEMPLATE}\n\nText to translate:\n{clean_text}"
                 candidate = translate_with_llama(full_prompt)
-                
+
                 if not candidate:
                     print(" → failed")
                     continue
+
+                if has_wrong_script(candidate):
+                    # Never keep this one, even as a fallback -- CJK/Cyrillic
+                    # in the output is the model breaking down.
+                    print(" → garbled (non-Latin script)")
+                    time.sleep(8)
+                    continue
+
+                best_candidate = best_candidate or candidate
 
                 if contains_too_much_non_english(candidate):
                     print(" → not English")
                     time.sleep(8)
                     continue
 
-                if len(candidate.split()) < 0.6 * len(clean_text.split()):
+                # Length sanity check -- but only for pages with enough source
+                # text for the ratio to mean anything. Plate captions, drill
+                # lists and dimension callouts are legitimately terse and were
+                # being rejected as "too short".
+                if src_words >= 25 and len(candidate.split()) < 0.5 * src_words:
                     print(" → too short")
                     time.sleep(8)
                     continue
@@ -216,8 +266,15 @@ try:
                 break
 
             if not success:
-                print(" ✗")
-                translated_pages.append(f"[Translation failed on page {i}]")
+                # Never drop a page. Keep the best non-garbled attempt
+                # (flagged for review), or fall back to the original text so
+                # the page still appears in the output for a human to fix.
+                if best_candidate:
+                    print(" ⚠ kept (low confidence)")
+                    translated_pages.append(f"[low-confidence translation — review]\n{best_candidate}")
+                else:
+                    print(" ✗ no usable output — kept original text")
+                    translated_pages.append(f"[translation unavailable — original text follows]\n{clean_text}")
 
         with open(dst, "w", encoding="utf-8") as f:
             f.write("\n---\n".join(translated_pages))

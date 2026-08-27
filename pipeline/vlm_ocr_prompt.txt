@@ -5,15 +5,30 @@ VERBATIM TRANSCRIPTION -- FOLLOW EXACTLY:
 - Do NOT translate, modernize spelling, correct archaic wording, or "fix" anything that looks like an error in the original.
 - Do NOT paraphrase, summarize, or silently skip words or lines, even if they look repetitive.
 - Preserve original punctuation, accents, and hyphenation exactly as printed.
+- Do NOT add accents to capital letters that are printed without them, even when the word carries that accent in modern French. Period French typography -- and display/title capitals especially -- routinely set E, A, EPEE, ECOLE, SABRE, EPREUVE as bare capitals; transcribe the bare capital exactly as set. (Do not remove an accent that IS printed.)
 - If a word or character is genuinely illegible, mark it [?] rather than guessing at a plausible word.
 - Preserve paragraph breaks as they appear in the main text block.
 
 IGNORE NON-PAGE CONTENT:
-The photograph or scan of this page may include things that are not part of THIS page's printed text: the edge or shadow of the facing page, the book's binding/gutter, a photographer's hand or a ruler, library stamps, or old handwritten annotations in the margin. Do not transcribe any of that -- read and transcribe only the primary printed text block belonging to this page.
+The photograph or scan of this page may include things that are not part of THIS page's printed text: the edge or shadow of the facing page, the book's binding/gutter, a photographer's hand or a ruler, library stamps, old handwritten annotations in the margin, or a publisher's/printer's device (an engraved logo or colophon) with motto lettering worked into it. Do not transcribe any of that -- read and transcribe only the primary printed text block belonging to this page.
+
+COMMAND LISTS AND DRILLS:
+Lesson chapters often print sequences of short one-line commands, frequently
+indented, and sometimes a single command grouped by a large curly brace to
+several alternative target lines. Preserve this structure in BODY_TEXT:
+- Keep one command per line. Never join them into a sentence or a comma list.
+- Preserve indentation with leading spaces, matching what is printed.
+- Render a brace grouping with the command, a space, "{", then each braced
+  item on its own line indented to align under the first item, e.g.
+      Doublez { dessus
+               dedans
+               dessous.
+- Render a decorative separator between drill blocks (an ornament, dinkus or
+  row of asterisks) as a line containing only: * * *
 
 OUTPUT FORMAT (use this exact structure):
 
-PAGE_NUMBER: [the page number printed on this page, or "none" if not visible]
+PAGE_NUMBER: [the page number printed in this page's own margin or running head, or "none" if none is visible. Do NOT report a number that appears inside an illustration or engraving plate, a library stamp, or a catalogue/accession annotation. Keep it exactly as printed -- if it is set as a roman numeral (e.g. VIII), give the roman numeral, not an arabic conversion.]
 
 HEADER: [any running header/title text at the very top of the page, or "none"]
 

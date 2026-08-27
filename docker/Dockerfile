@@ -115,6 +115,16 @@ RUN git clone --depth 1 https://github.com/ggerganov/llama.cpp /opt/llama.cpp &&
 RUN rm -rf /var/lib/apt/lists/* /root/.cache /tmp/* \
     && find /opt/rocm -type d -iname "*doc*" -exec rm -rf {} + 2>/dev/null || true
 
+# Bake the default (vulkan) llama-* symlinks at build time so the container
+# is usable immediately and does NOT depend on entrypoint.sh being able to
+# write into /usr/local/bin -- it can't, now that the container runs as a
+# non-root host user (compose `user:`, so ./processed files aren't owned by
+# root). entrypoint.sh still re-points these for a non-default LLAMA_BACKEND
+# but tolerates failure; switching backend at runtime needs root or a rebuild.
+RUN for b in llama-server llama-cli llama-bench llama-qwen2vl-cli; do \
+        ln -sf "/usr/local/bin/$b-vulkan" "/usr/local/bin/$b" || true; \
+    done
+
 RUN python3 -m pip install --break-system-packages --no-cache-dir \
     ocrmypdf pdf2image pillow tqdm pymupdf requests \
     && rm -rf /root/.cache/pip
@@ -135,8 +145,8 @@ cp /host_scripts/*.py /app/ 2>/dev/null || true
 chmod +x /app/*.py 2>/dev/null || true
 
 TRANSLATION_MODEL="${MODEL_PATH:-/models/Qwen2.5-7B-Instruct-Q6_K.gguf}"
-VLM_MODEL="${VLM_MODEL_PATH:-/models/Qwen2-VL-7B-Instruct-Q6_K.gguf}"
-VLM_MMPROJ="${VLM_MMPROJ_PATH:-/models/mmproj-Qwen2-VL-7B-Instruct-f16.gguf}"
+VLM_MODEL="${VLM_MODEL_PATH:-/models/allenai_olmOCR-2-7B-1025-Q6_K.gguf}"
+VLM_MMPROJ="${VLM_MMPROJ_PATH:-/models/mmproj-allenai_olmOCR-2-7B-1025-f16.gguf}"
 
 find_existing_model () {
     local configured_path="$1" pattern="$2" found
@@ -151,8 +161,8 @@ find_existing_model () {
 }
 
 TRANSLATION_MODEL=$(find_existing_model "$TRANSLATION_MODEL" "*qwen2.5*7b*instruct*q6*.gguf")
-VLM_MODEL=$(find_existing_model "$VLM_MODEL" "*qwen2-vl*7b*instruct*q6*.gguf")
-VLM_MMPROJ=$(find_existing_model "$VLM_MMPROJ" "*mmproj*qwen2-vl*7b*.gguf")
+VLM_MODEL=$(find_existing_model "$VLM_MODEL" "*olmocr*q6*.gguf")
+VLM_MMPROJ=$(find_existing_model "$VLM_MMPROJ" "*mmproj*olmocr*.gguf")
 
 : "${LLAMA_BACKEND:=rocm}"
 case "$LLAMA_BACKEND" in
@@ -166,51 +176,54 @@ fi
 
 echo "========================================================"
 echo "  Historical Fencing Book Translator"
-echo "  Translation: Qwen 2.5 7B | Vision: Qwen2-VL 7B"
+echo "  Translation: Qwen 2.5 7B | Vision: $(basename "$VLM_MODEL" .gguf)"
 echo "  Inference backend: $LLAMA_BACKEND (llama.cpp)"
 echo "========================================================"
 
-ln -sf "/usr/local/bin/llama-server-$LLAMA_BACKEND" /usr/local/bin/llama-server
-ln -sf "/usr/local/bin/llama-cli-$LLAMA_BACKEND" /usr/local/bin/llama-cli
-ln -sf "/usr/local/bin/llama-bench-$LLAMA_BACKEND" /usr/local/bin/llama-bench
+# Re-point the llama-* symlinks at the requested backend. The Dockerfile
+# bakes the vulkan set already; these succeed only when run as root, so a
+# non-root container keeps the baked default -- failure is not fatal.
+ln -sf "/usr/local/bin/llama-server-$LLAMA_BACKEND" /usr/local/bin/llama-server 2>/dev/null || true
+ln -sf "/usr/local/bin/llama-cli-$LLAMA_BACKEND" /usr/local/bin/llama-cli 2>/dev/null || true
+ln -sf "/usr/local/bin/llama-bench-$LLAMA_BACKEND" /usr/local/bin/llama-bench 2>/dev/null || true
 ln -sf "/usr/local/bin/llama-qwen2vl-cli-$LLAMA_BACKEND" /usr/local/bin/llama-qwen2vl-cli 2>/dev/null || true
 export LD_LIBRARY_PATH="/usr/local/lib/llama-$LLAMA_BACKEND:$LD_LIBRARY_PATH"
 
 if [ ! -f "$TRANSLATION_MODEL" ]; then
-  echo "[1/4] Downloading translation model (~5.8GB)..."
+  echo "[1/3] Downloading translation model (~5.8GB)..."
   wget --progress=bar:force:noscroll -O "$TRANSLATION_MODEL" https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q6_K.gguf
 else
-  echo "[1/4] Translation model: OK ($TRANSLATION_MODEL)"
+  echo "[1/3] Translation model: OK ($TRANSLATION_MODEL)"
 fi
 
 if [ ! -f "$VLM_MODEL" ]; then
-  echo "[2/4] Downloading vision model (~4.9GB)..."
-  wget --progress=bar:force:noscroll -O "$VLM_MODEL" https://huggingface.co/bartowski/Qwen2-VL-7B-Instruct-GGUF/resolve/main/Qwen2-VL-7B-Instruct-Q6_K.gguf
+  echo "[2/3] Downloading vision model (~5.8GB)..."
+  wget --progress=bar:force:noscroll -O "$VLM_MODEL" https://huggingface.co/bartowski/allenai_olmOCR-2-7B-1025-GGUF/resolve/main/allenai_olmOCR-2-7B-1025-Q6_K.gguf
 else
-  echo "[2/4] Vision model: OK ($VLM_MODEL)"
+  echo "[2/3] Vision model: OK ($VLM_MODEL)"
 fi
 
 if [ ! -f "$VLM_MMPROJ" ]; then
-  echo "[3/4] Downloading vision projector (~1.35GB)..."
-  wget --progress=bar:force:noscroll -O "$VLM_MMPROJ" https://huggingface.co/bartowski/Qwen2-VL-7B-Instruct-GGUF/resolve/main/mmproj-Qwen2-VL-7B-Instruct-f16.gguf
+  echo "[3/3] Downloading vision projector (~1.3GB)..."
+  wget --progress=bar:force:noscroll -O "$VLM_MMPROJ" https://huggingface.co/bartowski/allenai_olmOCR-2-7B-1025-GGUF/resolve/main/mmproj-allenai_olmOCR-2-7B-1025-f16.gguf
 else
-  echo "[3/4] Vision projector: OK ($VLM_MMPROJ)"
+  echo "[3/3] Vision projector: OK ($VLM_MMPROJ)"
 fi
 
-echo "[4/4] Starting translation server ($LLAMA_BACKEND) on 11434..."
-llama-server --model "$TRANSLATION_MODEL" --host 0.0.0.0 --port 11434 --ctx-size 4096 --n-gpu-layers 999 --threads $(nproc) &
-sleep 30
-echo "[OK] Translation server ready"
-
-if [ -f "$VLM_MODEL" ] && [ -f "$VLM_MMPROJ" ]; then
-  echo "[4b/4] Starting VLM/OCR server on 11435..."
-  llama-server --model "$VLM_MODEL" --mmproj "$VLM_MMPROJ" --host 0.0.0.0 --port 11435 --ctx-size 4096 --n-gpu-layers 999 --threads $(nproc) --image-min-tokens 1024 &
-  sleep 30
-  echo "[OK] VLM server ready"
-else
-  echo "[WARN] VLM model/mmproj not found - skipping port 11435"
-fi
-wait -n
+# NOTE: this entrypoint deliberately does NOT start the llama-server
+# processes. The pipeline scripts (1_ocr_and_extract_vlm.py, 2_translate.py)
+# own the server lifecycle so they can load one model, use it, unload it to
+# free VRAM, then load the next -- and tune ctx-size per step. An entrypoint
+# that also ran servers under `wait -n` meant any pkill from a script
+# dropped PID 1 and bounced the whole container.
+#
+# For interactive / Open WebUI use (no pipeline), bring the servers up with:
+#   docker exec booktranslator-translator-1 /host_scripts/start_servers.sh
+echo "========================================================"
+echo "  Container ready. Model servers are NOT auto-started --"
+echo "  the pipeline manages them (or run start_servers.sh)."
+echo "========================================================"
+exec tail -f /dev/null
 ENTRYPOINT_EOF
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

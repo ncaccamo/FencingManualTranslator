@@ -28,7 +28,7 @@ echo ""
 
 echo "[2/4] VLM OCR + Structure Extraction..."
 echo "────────────────────────────────────────────────────────"
-echo "  → This step loads Qwen2-VL (vision model)"
+echo "  → This step loads olmOCR-2-7B-1025 (vision model)"
 echo "  → Extracts text and structure from PDF pages"
 echo "  → Time: ~5-10 seconds per page"
 echo ""

@@ -1,4 +1,21 @@
 #!/usr/bin/env python3
+"""Side-by-side PDF: original scan (left) beside its English translation (right).
+
+Rewritten (see chat log): the old right column ran
+`translation_text.replace('\n', ' ')` then a single `insert_textbox`, so it
+lost all drill / command-table structure and silently truncated any page
+whose translation didn't fit. Now the right column flows through _render
+(line breaks, indentation, <i> italics), shrinks 9->8->7 pt to fit, and
+spills to "(cont.)" pages if even 7 pt overflows -- text is never dropped.
+
+Paragraph alignment: when the scan carries an embedded text layer (Gallica
+etc.), each translated paragraph is top-anchored at roughly the same
+fraction down the column as the corresponding source paragraph sits on the
+scan, so reading across lands near the right place. Only applied when the
+whole page's translation still fits with that whitespace; otherwise it
+falls back to plain flow. Books with no embedded layer always get plain
+flow.
+"""
 import fitz
 import os
 from pathlib import Path
@@ -6,119 +23,206 @@ import glob
 import re
 from datetime import datetime
 
-print("\n" + "="*60)
+import _render
+
+print("\n" + "=" * 60)
 print("STEP 4: SIDE-BY-SIDE PDF GENERATION")
-print("="*60 + "\n")
+print("=" * 60 + "\n")
+
+PAGE_W, PAGE_H = 792, 612
+LEFT = fitz.Rect(12, 12, 388, PAGE_H - 12)
+DIVIDER_X = 396
+RIGHT = fitz.Rect(406, 40, PAGE_W - 16, PAGE_H - 20)
+SIZES = (9, 8, 7)
+
+SKIP_MARKERS = ("[Empty page]", "[Empty page after cleaning]")
+
+
+LEADING = 1.28
+PARA_GAP = 4.0
+
+
+def displayed_scan_span(src_page):
+    """Vertical extent (y0, y1) that show_pdf_page(LEFT, ...) actually paints
+    the scan into, given it fits-and-centres preserving aspect."""
+    r = src_page.rect
+    disp_h = min(LEFT.height, LEFT.width * r.height / r.width)
+    off = (LEFT.height - disp_h) / 2
+    return LEFT.y0 + off, LEFT.y0 + off + disp_h
+
+
+def paragraph_fracs(src_page):
+    """y0-of-each-source-paragraph as a fraction of page height, from the
+    scan's own embedded text layer. None if there's no usable layer."""
+    blocks = [b for b in src_page.get_text("blocks") if b[6] == 0 and b[4].strip()]
+    if len(blocks) < 2:
+        return None
+    H = src_page.rect.height
+    blocks.sort(key=lambda b: b[1])
+    fracs, prev_y1 = [], -1e9
+    for x0, y0, x1, y1, *_ in blocks:
+        if y0 - prev_y1 > H * 0.012:
+            fracs.append(min(0.98, max(0.0, y0 / H)))
+        prev_y1 = max(prev_y1, y1)
+    return fracs or None
+
+
+def render_aligned(page, y_top, tr, size, fracs, src_page):
+    """Draw the translation with each paragraph top-anchored to its source
+    paragraph's height. Returns True on success, False if it won't fit (so
+    the caller can fall back to plain flow)."""
+    paras = [p for p in re.split(r"\n\s*\n", tr.strip()) if p.strip()]
+    span0, span1 = displayed_scan_span(src_page)
+    span_h = span1 - span0
+    laid = [_render.layout(p, RIGHT.width, size) for p in paras]
+
+    # dry pass: will it fit with the alignment whitespace?
+    cur = y_top
+    for k, lines in enumerate(laid):
+        if k < len(fracs):
+            cur = max(cur, span0 + fracs[k] * span_h)
+        cur += sum(size * LEADING if not ln.gap else size * LEADING * 0.55
+                   for ln in lines) + PARA_GAP
+        if cur > RIGHT.y1:
+            return False
+
+    cur = y_top
+    for k, lines in enumerate(laid):
+        if k < len(fracs):
+            cur = max(cur, min(span0 + fracs[k] * span_h, RIGHT.y1 - size))
+        _, cur = _render.draw(page, (RIGHT.x0, cur, RIGHT.x1, RIGHT.y1), lines, size)
+        cur += PARA_GAP
+    return True
+
 
 def parse_vlm_output(text: str) -> dict:
-    """Parse VLM structured output into components"""
-    result = {"page_num": "", "header": "", "body": ""}
-    
-    page_match = re.search(r'PAGE_NUMBER:\s*(.+?)(?:\n|$)', text, re.IGNORECASE)
-    if page_match:
-        result["page_num"] = page_match.group(1).strip()
-    
-    header_match = re.search(r'HEADER:\s*(.+?)(?:\n|BODY_TEXT:)', text, re.IGNORECASE | re.DOTALL)
-    if header_match:
-        header_text = header_match.group(1).strip()
-        if header_text.lower() != "none":
-            result["header"] = header_text
-    
-    body_match = re.search(r'BODY_TEXT:\s*(.+)', text, re.IGNORECASE | re.DOTALL)
-    if body_match:
-        result["body"] = body_match.group(1).strip()
-    
+    result = {"page_num": "", "header": ""}
+    m = re.search(r'PAGE_NUMBER:\s*(.+?)(?:\n|$)', text, re.IGNORECASE)
+    if m:
+        result["page_num"] = m.group(1).strip()
+    m = re.search(r'HEADER:\s*(.+?)(?:\n|BODY_TEXT:)', text, re.IGNORECASE | re.DOTALL)
+    if m and m.group(1).strip().lower() != "none":
+        result["header"] = m.group(1).strip()
     return result
+
+
+def new_spread(doc, src, src_idx, struct, *, cont=False):
+    """One landscape page: original scan left, labels + divider right.
+    Returns (page, right_rect_top_y)."""
+    p = doc.new_page(width=PAGE_W, height=PAGE_H)
+    try:
+        p.show_pdf_page(LEFT, src, src_idx)
+    except Exception as e:
+        p.insert_text((LEFT.x0 + 10, LEFT.y0 + 20), f"[original page unavailable: {e}]",
+                      fontsize=9, fontname=_render.ROMAN)
+    p.draw_line((DIVIDER_X, 10), (DIVIDER_X, PAGE_H - 10), width=1)
+
+    y = RIGHT.y0
+    tag = f"Page {struct.get('page_num') or '?'}"
+    if cont:
+        tag += "  (cont.)"
+    p.insert_text((RIGHT.x0, y), tag, fontsize=9, fontname=_render.BOLD)
+    y += 14
+    if struct.get("header"):
+        p.insert_text((RIGHT.x0, y), struct["header"].replace("\n", " "),
+                      fontsize=8, fontname=_render.ITALIC)
+        y += 12
+    p.draw_line((RIGHT.x0, y), (RIGHT.x1, y), width=0.5)
+    y += 8
+    return p, y
+
 
 created_count = 0
 
 for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.isdir(f)]:
     book = Path(folder).name.replace("_translated", "")
-    
+
     if not os.path.exists(f"{folder}/translation.txt"):
         print(f"⊘ Skip (no translation): {book}")
         continue
 
-    ocr_pdf = None
-    for file in os.listdir(folder):
-        if file.endswith("_OCR.pdf") or ("OCR" in file and file.endswith(".pdf")):
-            ocr_pdf = os.path.join(folder, file)
-            break
-    
+    ocr_pdf = next((os.path.join(folder, f) for f in os.listdir(folder)
+                    if f.endswith(".pdf") and "OCR" in f), None)
     if not ocr_pdf or not os.path.exists(ocr_pdf):
         print(f"⊘ Skip (no OCR PDF): {book}")
         continue
 
-    print(f"Creating: {book}")
-
-    out = f"{folder}/{book} — Side by Side (Landscape).pdf"
-    src = fitz.open(ocr_pdf)
-    
     with open(f"{folder}/translation.txt", "r", encoding="utf-8") as f:
-        translations = [p.strip() for p in f.read().split("\n---\n") if p.strip()]
-    
+        translations = [p.strip() for p in f.read().split("\n---\n")]
     with open(f"{folder}/extracted.txt", "r", encoding="utf-8") as f:
-        extractions = [p.strip() for p in f.read().split("\n---\n") if p.strip()]
+        extractions = [p.strip() for p in f.read().split("\n---\n")]
 
-    new = fitz.open()
-    
-    # Cover page
-    cover = new.new_page(width=792, height=612)
-    cover.insert_text((72, 100), "Side-by-Side Translation", fontsize=16, fontname="times-roman")
-    cover.insert_text((72, 130), f"Date: {datetime.now().strftime('%B %d, %Y')}", fontsize=12, fontname="times-roman")
-    cover.insert_text((72, 150), "Left: Original | Right: English Translation", fontsize=12, fontname="times-roman")
-    cover.insert_text((72, 180), f"Book: {book}", fontsize=11, fontname="times-roman")
-    
-    for i in range(min(len(src), len(translations))):
-        p = new.new_page(width=792, height=612)
-        
-        # Left side: Original page
-        left_rect = fitz.Rect(10, 10, 386, 602)
-        p.show_pdf_page(left_rect, src, i)
-        
-        # Right side: Translation
-        structure = parse_vlm_output(extractions[i]) if i < len(extractions) else {}
-        translation_text = translations[i]
-        
-        right_x0 = 406
-        right_x1 = 782
-        cursor_y = 30
-        
-        # Page number
-        if structure.get("page_num"):
-            p.insert_text((right_x0, cursor_y), f"Page: {structure['page_num']}", 
-                         fontsize=9, fontname="times-bold")
-            cursor_y += 15
-        
-        # Header
-        if structure.get("header"):
-            header_text = structure['header'].replace('\n', ' ')
-            p.insert_text((right_x0, cursor_y), f"Header: {header_text}", 
-                         fontsize=8, fontname="times-italic")
-            cursor_y += 12
-        
-        # Separator
-        p.draw_line((right_x0, cursor_y), (right_x1, cursor_y), width=0.5)
-        cursor_y += 10
-        
-        # Translation text area
-        text_area = fitz.Rect(right_x0, cursor_y, right_x1, 582)
-        
-        # Clean text
-        clean_text = translation_text.replace('\n', ' ')
-        clean_text = re.sub(r'\s+', ' ', clean_text)
-        plain_text = clean_text.replace('<i>', '').replace('</i>', '')
-        
-        p.insert_textbox(text_area, plain_text, fontsize=9, fontname="times-roman",
-                        align=fitz.TEXT_ALIGN_LEFT)
-        
-        # Vertical divider
-        p.draw_line((396, 10), (396, 602), width=1)
+    src = fitz.open(ocr_pdf)
+    n = min(len(src), len(translations))
+    print(f"Creating: {book}  ({n} pages)")
 
-    new.save(out, garbage=4, deflate=True)
-    new.close()
+    doc = fitz.open()
+    cover = doc.new_page(width=PAGE_W, height=PAGE_H)
+    cx, cy = 60, 150
+    for txt, fs, fn in [
+        ("Side-by-Side Translation", 20, _render.BOLD),
+        (book, 12, _render.ITALIC),
+        ("Left: original scan    Right: English translation", 11, _render.ROMAN),
+        (f"Generated {datetime.now():%B %d, %Y}", 10, _render.ROMAN),
+        ("Translation model: Qwen2.5-7B-Instruct    OCR model: olmOCR-2-7B-1025", 9, _render.ROMAN),
+        ("AI-generated translation for research use. Not authoritative.", 9, _render.ITALIC),
+    ]:
+        cover.insert_text((cx, cy), txt, fontsize=fs, fontname=fn)
+        cy += fs + 12
+
+    cont_pages = aligned = 0
+    for i in range(n):
+        struct = parse_vlm_output(extractions[i]) if i < len(extractions) else {}
+        tr = translations[i]
+
+        page, y = new_spread(doc, src, i, struct)
+
+        if not tr or tr in SKIP_MARKERS:
+            page.insert_text((RIGHT.x0, y + 4), "[blank / no text in original]",
+                             fontsize=9, fontname=_render.ITALIC)
+            continue
+
+        # Try paragraph-aligned layout first (needs the scan's text layer,
+        # and the whole page must still fit with the alignment whitespace).
+        fracs = paragraph_fracs(src[i])
+        if fracs and len(fracs) >= 2:
+            for s in SIZES:
+                if render_aligned(page, y, tr, s, fracs, src[i]):
+                    aligned += 1
+                    break
+            else:
+                fracs = None  # didn't fit at any size -> plain flow below
+        if fracs and len(fracs) >= 2:
+            continue  # aligned render already drew the page
+
+        # pick the largest size that fits; fall back to the smallest + spill
+        chosen, lines = SIZES[-1], None
+        for s in SIZES:
+            cand = _render.layout(tr, RIGHT.width, s)
+            left, _ = _render.draw(page, (RIGHT.x0, y, RIGHT.x1, RIGHT.y1),
+                                   cand, s, dry=True)
+            if not left:
+                chosen, lines = s, cand
+                break
+        if lines is None:
+            lines = _render.layout(tr, RIGHT.width, SIZES[-1])
+
+        leftover, _ = _render.draw(page, (RIGHT.x0, y, RIGHT.x1, RIGHT.y1), lines, chosen)
+        while leftover:
+            cont_pages += 1
+            leftover = _render.strip_leading_gaps(leftover)
+            page, y = new_spread(doc, src, i, struct, cont=True)
+            leftover, _ = _render.draw(
+                page, (RIGHT.x0, y, RIGHT.x1, RIGHT.y1), leftover, SIZES[-1])
+
     src.close()
-    print(f"✓ Created: {Path(out).name}\n")
+    sheets = doc.page_count
+    out = f"{folder}/{book} — Side by Side (Landscape).pdf"
+    doc.save(out, garbage=4, deflate=True)
+    doc.close()
+    extra = f", +{cont_pages} continuation" if cont_pages else ""
+    print(f"✓ Created: {Path(out).name}  ({n} spreads{extra} → {sheets} sheets; "
+          f"{aligned} para-aligned)\n")
     created_count += 1
 
 if created_count == 0:
@@ -126,6 +230,6 @@ if created_count == 0:
 else:
     print(f"✓ Created {created_count} side-by-side PDF(s)\n")
 
-print("="*60)
+print("=" * 60)
 print("SIDE-BY-SIDE PDF GENERATION COMPLETE")
-print("="*60 + "\n")
+print("=" * 60 + "\n")
