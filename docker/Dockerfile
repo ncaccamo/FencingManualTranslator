@@ -1,8 +1,23 @@
+# BookTranslator model-serving + OCR/translation-pipeline container.
+#
+# The block delimited by the BUILDSTAGE START / BUILDSTAGE END marker
+# lines below is a synced copy of BackendBuildstage/Dockerfile.buildstage
+# (the reference ROCm 7.2.4 + Vulkan + llama.cpp build stage). Do NOT
+# hand-edit it here: change it in BackendBuildstage, smoke-test with that
+# repo's test-build.sh, then re-run  sync_to_product.sh <this-file>.
+# Everything past the END marker is BookTranslator-specific.
+#
+# BUILDSTAGE START v2026.08.26  (ubuntu 24.04 | ROCm 7.2.4 apt | Vulkan
+# LunarG 1.4.357.1 | llama.cpp dual build rocm+vulkan | rocm714 parked)
+# ============================================================
+# [COMMON] Base image + global env.
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
 
+# [ROCM7] ROCm 7.2.4 stable toolchain (apt). Required by the rocm
+# llama.cpp build below; also supplies the cmake the vulkan build uses.
 # ---- ROCm 7.2.4 (STABLE, apt) ----
 # Only rocm/apt repo needed - amdgpu/ is kernel driver packaging, irrelevant
 # in a container and doesn't follow ROCm version numbering anyway.
@@ -24,8 +39,11 @@ ENV PATH=$ROCM_PATH/bin:$PATH
 ENV LD_LIBRARY_PATH=$ROCM_PATH/lib:$LD_LIBRARY_PATH
 ENV HIP_PATH=$ROCM_PATH
 
+# [VULKAN] Vulkan loader/driver + LunarG SDK. Required by the vulkan
+# llama.cpp build below.
 # ---- Vulkan: LunarG SDK via TARBALL (apt packages deprecated by LunarG
 # since May 2025) + libvulkan-dev (loader, not part of SDK) + mesa RADV driver ----
+# [VULKAN] xz-utils + Vulkan loader + mesa RADV driver.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     xz-utils libvulkan-dev mesa-vulkan-drivers vulkan-tools \
     && rm -rf /var/lib/apt/lists/*
@@ -48,6 +66,12 @@ RUN $VULKAN_SDK/bin/glslc --version && \
     { echo "!!! Vulkan SDK verification FAILED - listing tree:"; \
       find $VULKAN_SDK -maxdepth 4 -iname "*spirv*"; exit 1; }
 
+# [COMMON] Python + C/C++ build tooling (git, build-essential, libcurl)
+# shared by both llama.cpp builds and the rocm714 venv.
+# NOTE: this same layer also installs BookTranslator's OCR/PDF stack
+# (tesseract-ocr*, ghostscript, poppler-utils, unpaper). LocalAIChat
+# does not use those; a future COMMON-vs-product split would carve them
+# out of the shared buildstage.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv tesseract-ocr \
     tesseract-ocr-fra tesseract-ocr-eng tesseract-ocr-ita \
@@ -56,6 +80,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git build-essential libcurl4-openssl-dev unpaper bc file \
     && rm -rf /var/lib/apt/lists/*
 
+# [COMMON/BookTranslator-only] Latin tessdata -- OCR use only.
 RUN mkdir -p /usr/share/tesseract-ocr/5/tessdata && \
     wget -q https://github.com/tesseract-ocr/tessdata/raw/main/lat.traineddata \
          -O /usr/share/tesseract-ocr/5/tessdata/lat.traineddata
@@ -64,8 +89,12 @@ RUN tesseract --list-langs && \
     ln -sf /usr/bin/tesseract /usr/local/bin/tesseract && \
     ln -sf /usr/bin/gs /usr/local/bin/gs
 
+# [ROCM714] Preview venv install ONLY. The llama.cpp build against it is
+# skipped (the wheel ships no hip-lang-config.cmake, so CMake HIP can't
+# configure). Full rationale + revisit/un-park checklist: ROCM714_NOTES.md
+# in the BackendBuildstage repo (the canonical home for this variant).
 # ---- ROCm 7.14 (PREVIEW, pip/wheel) - install kept for future use, the
-# llama.cpp BUILD against it is disabled. See docker/ROCM714_NOTES.md:
+# llama.cpp BUILD against it is disabled. See ROCM714_NOTES.md:
 # this wheel combination doesn't ship hip-lang-config.cmake, so it can't
 # currently compile new HIP source, only run pre-built ROCm workloads.
 RUN python3 -m venv /opt/rocm714-venv && \
@@ -75,6 +104,9 @@ RUN python3 -m venv /opt/rocm714-venv && \
         "rocm[libraries,devel,device-gfx1201]==7.14.0" \
       || echo "!!! ROCm 7.14 preview pip install failed - non-fatal, disabled anyway" )
 
+# [LLAMA.CPP] Dual build in a single layer: build-rocm (-> *-rocm) then
+# build-vulkan (-> *-vulkan). Splitting this RUN per-backend is the main
+# work of a future real per-backend marker split.
 # ---- llama.cpp: build TWICE (stable ROCm, Vulkan). rocm714 skipped. ----
 # Shared libraries (libllama-server-impl.so etc) are copied to backend-
 # specific dirs BEFORE the build tree is deleted - newer llama.cpp links
@@ -112,9 +144,11 @@ RUN git clone --depth 1 https://github.com/ggerganov/llama.cpp /opt/llama.cpp &&
     \
     cd / && rm -rf /opt/llama.cpp
 
+# [COMMON] Post-build cleanup.
 RUN rm -rf /var/lib/apt/lists/* /root/.cache /tmp/* \
     && find /opt/rocm -type d -iname "*doc*" -exec rm -rf {} + 2>/dev/null || true
 
+# [COMMON] Bake the default llama-* -> *-vulkan symlinks (rationale below).
 # Bake the default (vulkan) llama-* symlinks at build time so the container
 # is usable immediately and does NOT depend on entrypoint.sh being able to
 # write into /usr/local/bin -- it can't, now that the container runs as a
@@ -124,6 +158,8 @@ RUN rm -rf /var/lib/apt/lists/* /root/.cache /tmp/* \
 RUN for b in llama-server llama-cli llama-bench llama-qwen2vl-cli; do \
         ln -sf "/usr/local/bin/$b-vulkan" "/usr/local/bin/$b" || true; \
     done
+
+# BUILDSTAGE END
 
 RUN python3 -m pip install --break-system-packages --no-cache-dir \
     ocrmypdf pdf2image pillow tqdm pymupdf requests \

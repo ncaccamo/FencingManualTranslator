@@ -1,5 +1,9 @@
 # ROCm 7.14 preview backend - parked, not abandoned
 
+> Canonical copy now lives in the BackendBuildstage repo
+> (`BackendBuildstage/ROCM714_NOTES.md`), alongside the build stage this
+> concerns. Update that one; this file is kept for local history.
+
 ## Status: disabled
 
 `rocm` (7.2.4 stable) and `vulkan` both build and run successfully.
