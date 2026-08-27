@@ -1,96 +1,189 @@
 # User Manual — Section I: System Overview
 
-## I.1 — What this system does (Function)
+This section explains *what BookTranslator is and how it works* at a
+conceptual level. Section II covers preparing a host machine to run it;
+Section III covers day-to-day operation.
 
-BookTranslator translates historical fencing and martial arts manuals
-(HEMA texts) from their original language into English, while preserving
-the scholarly conventions expected of this kind of translation:
+---
 
-- Technical fencing/martial-arts terms are left untranslated and
-  italicized, rather than forced into an English equivalent that loses
-  precision (e.g. terms of art that don't map cleanly to modern English).
-- Where a passage is genuinely difficult to translate, a footnote
-  preserves the original term/phrase so a reader can cross-reference it.
-- Original page layout, images, and figures are preserved where the
-  output format allows it.
-- Output is produced as two separate PDFs: an English-only reading copy,
-  and a side-by-side original/translation copy for direct comparison.
-- Every output includes a cover page disclosing that the translation is
-  AI-generated, the date, and which models performed the work.
+## I.1 — What this system does
 
-Everything runs locally on your own hardware — no cloud API calls, no
-per-page or per-book cost, and no source material ever leaves your machine.
+BookTranslator converts a scanned historical fencing or martial-arts
+manual (a PDF) into two English PDFs: a plain reading copy, and a
+side-by-side copy with the original scan next to the translation.
+
+It is built for the conventions this kind of scholarly translation
+expects:
+
+- **Technical terms are kept in the original language and italicized**
+  rather than forced into a lossy English equivalent. *Prise de fer*,
+  *froissement*, *liement*, *coulé* and the named lines stay as they are;
+  *fleuret* becomes "foil", *parade* becomes "parry", and headings are
+  translated in full.
+- **A short glossary footnote** is emitted the first time each hard term
+  appears in a book, so a reader meeting *dégagement* on page 40 has its
+  sense once without the translator having to gloss it inline every time.
+- **Original page structure is preserved** as far as each output format
+  allows — page numbers, running headers, drill and command layout,
+  brace-grouped alternatives, and figures pulled from the scan.
+- **Every output opens with a disclosure cover page**: that the
+  translation is AI-generated, the date it was produced, and which models
+  did the OCR and the translation.
+
+Everything runs on local hardware. There are no cloud API calls, no
+per-page or per-book cost, and no page image or text ever leaves the
+machine. (An optional mode can send inference to a second GPU box *on your
+own LAN* — still nothing leaves your network. See `docs/remote-gpu.md`.)
 
 ## I.2 — Hardware requirements
 
-| Component | Minimum (confirmed working on) |
+| Component | Notes |
 |---|---|
-| GPU | AMD GPU with ROCm or Vulkan support, 16GB+ VRAM recommended (confirmed on AMD RX 9070 XT / RDNA4, gfx1201) |
-| CPU | 8 cores / 16 threads recommended (confirmed on AMD Ryzen 7 5700X3D) |
-| RAM | 32GB |
-| Disk | ~50GB minimum: ~13GB for the two GGUF models, ~20-30GB for the Docker image, remainder for processed books and headroom. 240GB+ recommended if you plan to add general-purpose chat/coding models later. |
-| OS | Ubuntu 24.04 LTS with a kernel ≥6.12 (see Section II) |
+| GPU | AMD, 16 GB VRAM. Developed and run on an RX 9070 XT (RDNA4, gfx1201). Needs either a working ROCm 7.x stack or a Vulkan driver — the container ships both llama.cpp builds and `backend.env` picks one. |
+| CPU | 8 cores / 16 threads recommended (developed on a Ryzen 7 5700X3D). |
+| RAM | 32 GB. The compose file caps the container at 28 GB. |
+| Disk | ~50 GB: ~13 GB for the two GGUF models (in `~/llm_models`), ~20–30 GB for the Docker image, the rest for processed books. 240 GB+ if you later add general-purpose chat/coding models alongside. |
+| OS | Ubuntu 24.04 LTS, kernel ≥ 6.12. See Section II. |
 
-Two models are loaded for the core pipeline (sequentially, not
-simultaneously, to fit in VRAM):
-- **Vision/OCR model**: olmOCR-2-7B-1025 (Q6_K quantization, ~5.8GB; a Qwen2.5-VL fine-tune specialized for document OCR) — reads each scanned page image and extracts structured text
-- **Translation model**: Qwen2.5-7B-Instruct (Q6_K quantization, ~5.8GB) — translates the extracted text
+The two models load **one at a time**, not together, to fit in 16 GB:
 
-## I.3 — Technologies used
+- **Vision / OCR** — `olmOCR-2-7B-1025` (Q6_K, ~5.8 GB; a Qwen2.5-VL
+  fine-tune specialised for document OCR). Reads each page image and
+  returns structured text.
+- **Translation** — `Qwen2.5-7B-Instruct` (Q6_K, ~5.8 GB). Translates the
+  extracted text.
 
-| Layer | Technology | Purpose |
+The OCR step (step 1) loads the vision model on port 11435 and unloads it
+when done; the translation step (step 2) then loads the text model on port
+11434. This is why the two steps are separate scripts and why nothing runs
+between books.
+
+## I.3 — Technology stack
+
+| Layer | What | Why |
 |---|---|---|
-| Inference engine | [llama.cpp](https://github.com/ggerganov/llama.cpp) | Runs both GGUF-quantized models |
-| GPU backend | ROCm 7.2.4 (stable) or Vulkan (LunarG SDK) | Two interchangeable ways to run llama.cpp on the AMD GPU — Vulkan currently the faster of the two on this hardware, ROCm kept as a fallback |
-| Containerization | Docker + Docker Compose | Isolates the whole toolchain (ROCm/Vulkan libraries, Python environment, models) from the host OS, and makes the setup reproducible |
-| OCR/text extraction | olmOCR-2-7B-1025 via llama-server (Tesseract path kept for reference, not the default) | The vision-language model reads each page image directly, rather than relying on traditional OCR alone, since a VLM can also parse structure (headers, page numbers, body text) contextually |
-| Translation | Qwen2.5-7B-Instruct via llama-server | Text-only translation model, prompted with instructions on term preservation and italicization |
-| PDF generation | PyMuPDF (`fitz`), Ghostscript, `ocrmypdf`, `pdf2image` | Assembles the final English-only and side-by-side PDFs, handles source PDF manipulation |
-| Prompts | Plain text files (`translation_prompt.txt`, `vlm_ocr_prompt.txt`) | Kept as easily-editable files rather than baked into code, per the original requirement — edit these to change translation behavior without touching Python |
+| Inference engine | [llama.cpp](https://github.com/ggerganov/llama.cpp) `llama-server` | Runs both GGUF models behind an OpenAI-compatible HTTP API. |
+| GPU backend | ROCm 7.2.4 **and** Vulkan (LunarG SDK), both compiled into the image | Two interchangeable ways to run llama.cpp on the AMD GPU. Vulkan is currently the faster of the two on this hardware and is the default; ROCm is kept as a fallback. Switching is a config edit, not a rebuild. |
+| Containerisation | Docker + Docker Compose | Isolates the ROCm/Vulkan libraries, Python environment and tooling from the host. The container runs as your host UID so files in `processed/` are yours, not root's. |
+| OCR / extraction | `olmOCR-2-7B-1025` via `llama-server` | A vision-language model reads the page image directly. Unlike plain OCR it also parses *structure* — it separates the page number, the running header and the body, and it transcribes drill layout and marginalia sensibly. A legacy Tesseract path (`1_ocr_and_extract.py`) is kept in the repo for reference but is not used. |
+| Translation | `Qwen2.5-7B-Instruct` via `llama-server` | Text-only translation, steered entirely by `translation_prompt.txt`. |
+| PDF generation | PyMuPDF (`fitz`), with a custom text layouter (`pipeline/_render.py`) | Assembles the two output PDFs, pulls figure crops from the scan, and lays out rich text (line breaks, indentation, `<i>` italics, footnote blocks) with overflow-safe flow. |
+| Prompts | Plain-text files (`translation_prompt.txt`, `vlm_ocr_prompt.txt`, `footnote_glossary.txt`) | Kept editable outside the code, per the original design requirement — change translation behaviour without touching Python. |
 
-## I.4 — General processing steps (the pipeline)
+## I.4 — The pipeline
 
-Each book goes through four stages, run as separate scripts in
-`pipeline/`, in order:
+Each book goes through four scripts in `pipeline/`, in order. All outputs
+land in `processed/<book>_translated/`.
 
-1. **`1_ocr_and_extract_vlm.py`** — Renders each page of the source PDF as
-   an image, sends it to the vision model server (port 11435), and saves
-   the structured extraction (page number, header, body text) to
-   `extracted.txt` in the book's processed folder. This is the step that
-   was validated end-to-end on a full 109-page book.
+### Step 1 — `1_ocr_and_extract_vlm.py`  (vision model, port 11435)
 
-2. **`2_translate.py`** — Reads `extracted.txt`, sends each page's text to
-   the translation server (port 11434) with the translation prompt
-   (technical terms preserved/italicized), saves results to
-   `translation.txt`.
+Renders every page of the source PDF at 300 DPI, downscales to a fixed
+1288 px on the long edge, and sends each image to the vision model. Writes
+three files:
 
-3. **`3_english_only_pdf.py`** — Builds a portrait, US Letter-size PDF
-   containing only the English translation, with a cover page (date,
-   models used, disclaimer) and up to two source pages packed per output
-   page.
+- **`raw_ocr.txt`** — the model's untouched responses, one per page,
+  separated by `\n---\n`. Written *before* any parsing or cleanup, always.
+  This is the recovery point: `reprocess_extracted.py` can rebuild the
+  next two files from it without paying for OCR again.
+- **`extracted.txt`** — a canonical `PAGE_NUMBER: / HEADER: / BODY_TEXT:`
+  scaffold per page, after cleanup (runaway repetition loops on
+  dot-leader / ornament pages are clipped here).
+- **`page_numbers.txt`** — one reconciled page number per line.
+  `olmOCR-2` invents page numbers from stray marks (plate numbers, stamps)
+  and normalises roman numerals, so a folio is trusted only when ≥ 2
+  consecutive pages agree on the same page-index→folio offset; otherwise
+  the line is a bracketed sheet ordinal like `[12]`. It never emits a
+  number ≤ 0.
 
-4. **`4_side_by_side_pdf.py`** — Builds a landscape, US Letter-size PDF
-   with the original page image on the left and the English translation
-   on the right, one source page per output page, for direct comparison.
+It also copies the source PDF into the folder as `<book>_OCR.pdf` for the
+side-by-side step to draw from.
 
-All intermediate outputs (raw VLM extraction, raw translation text) are
-kept alongside the final PDFs in `processed/<book>_translated/`, per the
-original requirement to preserve every step for iteration — you don't
-need to re-run OCR to experiment with a different translation prompt, for
-example.
+### Step 2 — `2_translate.py`  (translation model, port 11434)
 
-## I.5 — Known limitations (as of this writing)
+Reads `extracted.txt`, strips the structural labels, and translates each
+page's body with `translation_prompt.txt`. Writes **`translation.txt`**
+(pages separated by `\n---\n`, so it stays aligned with `extracted.txt`
+page-for-page).
 
-- Footnotes for difficult-to-translate terms are not yet implemented.
-- Translation of drill / command tables is inconsistent — braced
-  alternative-line groups sometimes flatten into a sentence.
-- The English-only PDF's figure detection is deliberately conservative:
-  faint half-tone illustrations and small decorative vignettes can be
-  missed.
-- Only run against clean library scans so far, not a phone-photographed
-  book.
+- Technical terms are preserved and wrapped in `<i>…</i>`; headings and
+  captions are translated in full.
+- Each hard term from `footnote_glossary.txt` that appears in a page's
+  *source* text is glossed once per book, appended under a
+  `___FOOTNOTES___` marker on that page.
+- Output is validated: wrong-script output (CJK / Cyrillic / etc.),
+  more than ~35 % non-English words, or output under half the source
+  length triggers up to 3 retries.
+- **A page is never dropped.** If every attempt fails it is written as
+  `[low-confidence translation — review]` followed by the best attempt,
+  or `[translation unavailable — original text follows]` with the source
+  text, so the page count never changes.
+- Pathologically oversized pages (> 2500 words, almost always an OCR
+  repetition artefact) get their first 2500 words translated with a note,
+  rather than stalling the run.
 
-For the current, authoritative list of open items see `docs/STATUS.md` in
-the repo. These are pipeline-code gaps, not infrastructure gaps — the
-underlying system (Sections II/III) is functional; output-formatting work
-is ongoing.
+### Step 3 — `3_english_only_pdf.py`
+
+Builds the **English-only reading copy** — portrait, US Letter. Text flows
+continuously across as many pages as it needs (it is not one source page
+per sheet). Figures detected in the scan are placed inline with an
+`[illustration from the original]` caption. Footnote blocks are rendered
+at the end of their section in small grey type under a rule. Opens with
+the disclosure cover page.
+
+### Step 4 — `4_side_by_side_pdf.py`
+
+Builds the **side-by-side copy** — landscape, US Letter, one source page
+per sheet. Original scan on the left, translation on the right, with a
+divider. Where the scan carries an embedded text layer, translated
+paragraphs are top-anchored to the vertical position of the matching
+source paragraph so the two columns track each other. Footnotes for the
+page sit in a reserved strip at the bottom of the right column. Same cover
+page.
+
+Every intermediate is kept, so any later stage can be re-run on its own —
+tweak `translation_prompt.txt` and re-run step 2 without redoing OCR;
+tweak a PDF script and re-run just it. Section III covers this.
+
+## I.5 — Backend selection
+
+`backend.env` (copied from `backend.env.example`) decides where inference
+runs:
+
+- `BACKEND_MODE=local` with `LLAMA_BACKEND=vulkan | rocm7 | rocm714` —
+  `llama-server` runs inside the container. `vulkan` (default) and `rocm7`
+  are compiled into the image; switching between them is
+  `docker compose up -d`, no rebuild. `rocm714` is wired but not yet
+  compiled.
+- `BACKEND_MODE=remote` — no local server; both steps call a
+  `llama-server` on another machine on your LAN, with a bearer token. You
+  load the vision model there before step 1 and the text model before
+  step 2. Details in `docs/remote-gpu.md`. This path is implemented but so
+  far only tested against a localhost stub.
+
+## I.6 — Known limitations
+
+Authoritative, current list: `docs/STATUS.md`. As of this writing:
+
+- **Drill / command tables translate inconsistently** — brace-grouped
+  alternative lines flatten into a sentence roughly half the time.
+- **Table-of-contents pages half-translate** — a few kept terms
+  (`coupé`, `battement`) slip through untranslated on dotted-leader
+  pages.
+- **Figure detection is conservative and tuned for framed photo plates.**
+  Full-page line-drawing plates and faint half-tones are often missed
+  (on one 386-page book, 4 of ~20 plates were caught). It will not
+  produce a false figure from dense text.
+- **Paragraph alignment in the side-by-side PDF depends on the scan's
+  text layer.** A clean library scan aligns ~70 % of pages; a patchier
+  one (e.g. Google Books OCR) drops to ~45 %. Unaligned pages fall back
+  to plain top-to-bottom flow.
+- **Printed marginalia are dropped** by the OCR step. Fine when the
+  margin notes are cross-references; a problem if a source carries real
+  content there.
+- **Only clean flatbed/library scans have been run** — not a
+  phone-photographed book.
+- The glossary footnotes have **no inline reference mark** — they are a
+  per-book "first appearance" gloss, not numbered call-outs.
+
+These are output-quality gaps in pipeline code. The infrastructure
+(Sections II / III) is stable.

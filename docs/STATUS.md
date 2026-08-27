@@ -61,8 +61,13 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 4. **Remote mode against a real Windows llama-server** — only stub-tested
    so far (correct URL, bearer header, no local process). Windows-side
    steps are in `docs/remote-gpu.md`.
-5. **User Manual** Sections I (refresh — see Known staleness) and III
-   (write — day-to-day usage). Section II is current.
+5. ~~**User Manual** Sections I and III.~~ DONE — Section I rewritten
+   (current models, flowing PDF, footnotes-done, backend selection,
+   limitations reconciled with this file); Section III written
+   (`setup/MANUAL_SECTION_III_USAGE.md` — quick start, per-step re-run
+   rules, iteration loops, `reprocess_extracted.py`, helper-script table,
+   troubleshooting). Keep in sync as behaviour changes. Section II is
+   current.
 6. **English-only PDF** wastes vertical space over a run of consecutive
    figure pages (one figure per sheet) — could pack 2/sheet.
 7. `rocm714` backend — wired everywhere but not compiled; build it in
@@ -144,9 +149,8 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 - `README.md` — index / quick start.
 - `docs/STATUS.md` (this) — current state, open items, decisions.
 - `CLAUDE.md` — AI-agent orientation + hard invariants.
-- `setup/MANUAL_SECTION_I/II` — operator manual. **Section III (day-to-day
-  usage) not written; Section I's model names were refreshed but a fuller
-  pass is due when III is done.**
+- `setup/MANUAL_SECTION_I/II/III` — operator manual: overview / host
+  setup / day-to-day operation. All three current as of 2026-08-27.
 - `docs/remote-gpu.md` — remote-GPU mode + `rocm714` (both experimental).
 - `docker/ROCM714_NOTES.md` — why ROCm 7.14 is parked.
 - `setup/DEV_ENVIRONMENT_SETUP.md` — maintainer dev-box setup (VS Code,

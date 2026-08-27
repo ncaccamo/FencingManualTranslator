@@ -75,6 +75,7 @@ Optional files next to a source PDF in `books/`, matching its stem:
 | `docs/STATUS.md` | current state, open items, decisions worth not re-litigating |
 | `setup/MANUAL_SECTION_I_OVERVIEW.md` | user manual — what it does, hardware, stack |
 | `setup/MANUAL_SECTION_II_HOST_PREREQUISITES.md` | user manual — bare-metal host setup |
+| `setup/MANUAL_SECTION_III_USAGE.md` | user manual — day-to-day operation, iteration loops, troubleshooting |
 | `docs/remote-gpu.md` | running inference on a remote GPU (experimental) |
 | `CLAUDE.md` | orientation + hard invariants for AI coding agents |
 | `docker/ROCM714_NOTES.md` | why the ROCm 7.14 backend is parked |

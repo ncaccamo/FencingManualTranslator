@@ -121,8 +121,9 @@ sudo apt install -y curl wget git build-essential
 ## II.7 — What's next
 
 Once II.1 through II.6 are done, proceed to `setup/setup_inference_backend.sh`
-(Section III covers running it) — that script handles everything from the
-ROCm driver install onward.
+— that script handles everything from the ROCm driver install onward,
+through `docker compose build`. Section III then covers running the
+pipeline day to day.
 
 ---
 
