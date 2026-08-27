@@ -7,10 +7,11 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 
 ## Current state (2026-08-27)
 
-- **Runs end-to-end.** Two full books through 1→2→3→4:
-  `Joseph-Renaud_Lescrime` (109 pp) and `Spinnewyn` (178 pp).
-  `gomard_…1845` (386 pp) run in progress. Local GPU only
-  (`BACKEND_MODE=local`, Vulkan), no cloud calls.
+- **Runs end-to-end.** Three full books through 1→2→3→4:
+  `Joseph-Renaud_Lescrime` (109 pp), `Spinnewyn` (178 pp),
+  `gomard_…1845` (386 pp — Google Books scan, 1845 text, printed
+  marginalia). All **0 dead pages** (673 pp, 3 low-confidence, all kept).
+  Local GPU only (`BACKEND_MODE=local`, Vulkan), no cloud calls.
 - **OCR:** olmOCR-2-7B-1025 via llama-server on :11435 is the default and
   only path. Tesseract path (`1_ocr_and_extract.py`) is kept for reference
   / a no-VLM fallback, not used.
@@ -47,9 +48,16 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    a bottom strip in the right column. Model `<fn>` path also supported
    but rarely used. TODO: expand the glossary as more books surface terms;
    the notes have no inline reference mark (glossary path).
-3. ~~Second full book.~~ DONE — Spinnewyn (178 pp). Surfaced + fixed the
-   `\n---\n` separator collision and the VLM server-death detection gap
-   (see git log). 118/178 corroborated folios, 127/178 para-aligned.
+3. ~~Second / third full book.~~ DONE — Spinnewyn (178 pp) surfaced + fixed
+   the `\n---\n` separator collision and the VLM server-death detection gap
+   (see git log); 118/178 corroborated folios, 127/178 para-aligned.
+   Gomard 1845 (386 pp) validated a harder class: Google Books scan, 1845
+   type, printed marginal side-notes (olmOCR drops the marginalia, keeps
+   the main text clean), ~20 line-drawing plates. Repetition-loop fix held
+   (10 runaway ToC pages → 0). Weak spots on this class: figure detector
+   caught 4 of ~20 plates (tuned for framed photo plates, not line
+   drawings), para-alignment only 47% (Google's OCR text layer is patchier
+   than Gallica's).
 4. **Remote mode against a real Windows llama-server** — only stub-tested
    so far (correct URL, bearer header, no local process). Windows-side
    steps are in `docs/remote-gpu.md`.
@@ -68,8 +76,17 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 
 - A physically photographed (not flatbed) book — all sources so far are
   clean library scans.
-- Figure detection where illustrations are margin line-drawings rather
-  than framed plates.
+- Figure detection on line-drawing illustrations (margin *or* full-page
+  framed): `find_figure_band()` is tuned for framed photo plates by row
+  ink-density and misses faint half-tones and line art. Gomard: 4 of ~20
+  plates caught.
+- Paragraph alignment against a sparse/patchy embedded text layer —
+  Gomard's Google OCR gave 47% aligned vs. Spinnewyn's 71% on a cleaner
+  Gallica layer. Below some threshold it should probably fall back to
+  plain top-to-bottom flow rather than anchor on unreliable block boxes.
+- Books with printed marginalia — olmOCR-2 silently drops the side-notes.
+  Acceptable for now (main text stays clean); flagged in case a source
+  carries substantive content in the margins.
 
 ## Non-obvious decisions / don't-retry-this
 
