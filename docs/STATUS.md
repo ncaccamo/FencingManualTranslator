@@ -143,6 +143,14 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
   papered over by an auto-restart. `unless-stopped` previously hid a
   PID-1 container-bounce bug. (Set 2026-08-27; matches the CLAUDE.md
   invariant.)
+- **The host installs no ROCm / Vulkan / Mesa** — only the in-kernel
+  `amdgpu` driver (kernel ≥ 6.12) + Docker. All GPU userspace is compiled
+  into the image; `docker exec` inference never reads host `/opt/rocm`.
+  Same model across BookTranslator / LocalAIChat / BackendBuildstage.
+  `scripts/monitor_gpu.sh` reads `rocm-smi` from inside the container so a
+  ROCm-free host still has GPU monitoring (or use host `nvtop`).
+  (Decided 2026-08-27; `setup_inference_backend.sh`, which did a host
+  ROCm install, was retired for `scripts/setup.sh`.)
 
 ## Doc set
 
@@ -157,6 +165,8 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
   git, Claude Code); not for end users.
 - `setup/archive/translation_pipeline_manual.md` — old ROCm 6.x manual,
   reference only, environment details stale.
-- Retired 2026-08-27: `HANDOFF.md` (→ git log), `MANIFEST.md` (job done;
-  `setup/setup_inference_backend.sh` + Manual II superseded it),
-  `docs/design-backend-selection.md` (→ `docs/remote-gpu.md`).
+- Retired 2026-08-27: `HANDOFF.md` (→ git log), `MANIFEST.md` (job done),
+  `docs/design-backend-selection.md` (→ `docs/remote-gpu.md`),
+  `setup/setup_inference_backend.sh` (installed host ROCm + inline-generated
+  a stale Dockerfile; → `scripts/setup.sh`, verify-and-build only, host
+  needs no ROCm/Vulkan).

@@ -43,6 +43,10 @@ AMD RX 9070 XT (RDNA4, gfx1201, 16GB VRAM), Ryzen 7 5700X3D (8c/16t),
   for the backend lib dir — any new `Popen` call starting a llama-server
   needs the same `_llama_server_env()` handling already used in the
   existing scripts.
+- The host needs **no ROCm / Vulkan / Mesa** — just the in-kernel
+  `amdgpu` driver (kernel ≥6.12) + Docker. All GPU userspace is in the
+  image; nothing reads host `/opt/rocm`. Setup is `scripts/setup.sh`
+  (verify + build, no sudo). Don't reintroduce a host ROCm install step.
 
 ## Where to look
 - `docs/STATUS.md` — current state, prioritized open items, and the

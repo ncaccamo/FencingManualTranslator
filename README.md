@@ -26,14 +26,15 @@ Every intermediate is kept, so you can re-run a later stage (e.g. tweak
 
 ## Quick start
 
-Prereqs: Ubuntu 24.04, kernel ≥ 6.12, Docker, an `ai-net` docker network,
-AMD GPU set up — see **`setup/MANUAL_SECTION_II_HOST_PREREQUISITES.md`**
-for the full bare-metal setup.
+Host needs only: Ubuntu 24.04, kernel ≥ 6.12 (for the in-kernel `amdgpu`
+driver), the `render`/`video` groups, and Docker. **No host ROCm, Vulkan
+SDK, or Mesa** — those are in the image. Full bare-metal steps:
+**`setup/MANUAL_SECTION_II_HOST_PREREQUISITES.md`**.
 
 ```bash
-cp backend.env.example backend.env        # defaults: local / vulkan
-docker compose build                       # first time only (~20-30 min)
-docker compose up -d                        # container comes up idle
+bash scripts/setup.sh     # verify host, write .env/backend.env, ai-net,
+                          # build (~20-30 min), bring the container up idle
+# first 'up' downloads ~13 GB of models -> docker compose logs -f translator
 
 # put source PDFs in ./books/, then:
 docker exec booktranslator-translator-1 python3 /app/1_ocr_and_extract_vlm.py
@@ -43,7 +44,8 @@ docker exec booktranslator-translator-1 python3 /app/4_side_by_side_pdf.py
 # (or: scripts/run_full_pipeline.sh)
 ```
 
-One-time on a fresh checkout: `sudo chown -R "$(id -u):$(id -g)" processed/`.
+Day-to-day operation, re-run rules, troubleshooting:
+**`setup/MANUAL_SECTION_III_USAGE.md`**.
 
 ## Backends
 
