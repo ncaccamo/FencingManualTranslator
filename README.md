@@ -26,9 +26,10 @@ Every intermediate is kept, so you can re-run a later stage (e.g. tweak
 
 ## Quick start
 
-Host needs only: Ubuntu 24.04, kernel ≥ 6.12 (for the in-kernel `amdgpu`
-driver), the `render`/`video` groups, and Docker. **No host ROCm, Vulkan
-SDK, or Mesa** — those are in the image. Full bare-metal steps:
+Host needs only: Ubuntu 24.04 **or newer**, kernel ≥ 6.12 (for the
+in-kernel `amdgpu` driver), the `render`/`video` groups, and Docker.
+**No host ROCm, Vulkan SDK, or Mesa** — those are in the image, which
+stays `FROM ubuntu:24.04` regardless of the host. Full bare-metal steps:
 **`setup/MANUAL_SECTION_II_HOST_PREREQUISITES.md`**.
 
 ```bash

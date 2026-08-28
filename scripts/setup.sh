@@ -24,10 +24,16 @@ note() { printf '       %s\n' "$*"; }
 
 echo "== 1/5  Host prerequisites =="
 
-if grep -q 'VERSION_ID="24.04"' /etc/os-release 2>/dev/null; then
-  ok "Ubuntu 24.04"
+# The 24.04 pin is the container's; the host just needs Docker + kernel.
+# Accept Ubuntu 24.04+ (tested on 24.04); warn, don't fail, on anything else.
+osid=$(. /etc/os-release 2>/dev/null; echo "${ID:-?}")
+osver=$(. /etc/os-release 2>/dev/null; echo "${VERSION_ID:-0}")
+if [ "$osid" = "ubuntu" ] && [ "${osver%%.*}" -ge 24 ] 2>/dev/null; then
+  ok "Ubuntu $osver (>= 24.04)"
+elif [ "$osid" = "ubuntu" ]; then
+  bad "Ubuntu $osver -- need 24.04 or newer (kernel 6.12+); see $PREREQ section II.1"
 else
-  bad "not Ubuntu 24.04 -- see $PREREQ section II.1"
+  note "warn: host is '$osid $osver', not Ubuntu -- only Ubuntu 24.04+ is tested; continuing"
 fi
 
 kv=$(uname -r); kmaj=${kv%%.*}; krest=${kv#*.}; kmin=${krest%%.*}

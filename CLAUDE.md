@@ -22,7 +22,9 @@ already compiles its own ROCm 7.2.4 + Vulkan dual llama.cpp build stage.
 
 ## Hardware this is tuned for
 AMD RX 9070 XT (RDNA4, gfx1201, 16GB VRAM), Ryzen 7 5700X3D (8c/16t),
-32GB RAM, Ubuntu 24.04 + kernel ≥6.12.
+32GB RAM. Host: Ubuntu 24.04+ (tested on 24.04), kernel ≥6.12 for the
+in-kernel amdgpu driver. The `FROM ubuntu:24.04` pin is the image's, not
+the host's — a newer host runs the 24.04 container unchanged.
 
 ## Key invariants — do not violate these without a deliberate decision
 - `restart: "no"` everywhere. On-demand system, not a long-running

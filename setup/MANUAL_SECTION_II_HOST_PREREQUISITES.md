@@ -15,27 +15,39 @@ kernel `amdgpu` driver and Docker. Removing a previously-installed host
 
 ## II.1 — Operating System
 
-**Ubuntu 24.04 LTS.** Hard requirement — the Dockerfile's base image
-(`FROM ubuntu:24.04`) and the ROCm apt repo it uses *inside the build*
-(`repo.radeon.com/rocm/apt/7.2.4`, targets `noble`) are both pinned to
-this release. A different Ubuntu version will not resolve the same
-packages. Standard Desktop or Server ISO; no special install-time
-options.
+**Ubuntu 24.04 LTS or newer.** Developed and tested on 24.04; the pinned
+part is the *container*, not the host.
+
+- **The image** is `FROM ubuntu:24.04` and installs ROCm 7.2.4 from
+  `repo.radeon.com/rocm/apt/7.2.4` (targets `noble`) *inside the build* —
+  that pin is fixed and does not change with the host OS. A 26.04 host
+  runs the 24.04-based container unchanged.
+- **The host** only has to run Docker and give the kernel `amdgpu` driver
+  (II.2). So 24.04, 26.04, or another recent Debian-family release all
+  work; only 24.04 has actual mileage here.
+- Bumping the *image* to a newer base is a separate, deliberate exercise
+  (test in `BackendBuildstage`, then `sync_to_product.sh`), gated on AMD
+  publishing the ROCm apt repo for the newer codename.
+
+Standard Desktop or Server ISO; no special install-time options. On a
+non-24.04 host, adjust the Docker apt repo line in II.6 to your release's
+codename.
 
 ## II.2 — Kernel version (RDNA4-specific, easy to miss)
 
-AMD's RX 9000 series (RDNA4) needs a newer kernel than Ubuntu 24.04 ships
-by default. The base install uses Linux 6.8; RDNA4 needs **6.12 or newer**
-for the in-kernel `amdgpu` driver to recognize the card and expose
-`/dev/kfd` + `/dev/dri`. AMD's own driver page pairs these GPUs with the
-HWE (Hardware Enablement) kernel stack, not the base GA kernel.
+AMD's RX 9000 series (RDNA4) needs **Linux 6.12 or newer** for the
+in-kernel `amdgpu` driver to recognize the card and expose `/dev/kfd` +
+`/dev/dri`. 26.04 and later already ship past this; **base Ubuntu 24.04
+ships 6.8** and needs the HWE stack. AMD's own driver page pairs these
+GPUs with HWE, not the base GA kernel.
 
 Check:
 ```bash
 uname -r
 ```
 
-If it's below 6.12, install the HWE kernel stack:
+If it's below 6.12 (i.e. you're on base 24.04), install the HWE kernel
+stack:
 ```bash
 sudo apt update
 sudo apt install --install-recommends linux-generic-hwe-24.04
@@ -120,6 +132,11 @@ sudo apt update
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
+The repo line uses `$VERSION_CODENAME`, so it adapts to the host release
+automatically. On a release Docker hasn't published for yet (can lag a
+brand-new Ubuntu by a few weeks), substitute the previous LTS codename
+(`noble`) in that one line until Docker catches up.
+
 Add yourself to the `docker` group so `docker` works without `sudo` (the
 project's scripts assume this):
 ```bash
@@ -155,7 +172,7 @@ through the pipeline.
 ---
 
 ### Quick verification checklist before `scripts/setup.sh`
-- [ ] `lsb_release -a` shows Ubuntu 24.04
+- [ ] `lsb_release -a` shows Ubuntu 24.04 or newer
 - [ ] `uname -r` shows 6.12 or newer
 - [ ] `lspci | grep -i amd` shows your GPU
 - [ ] `ls /dev/kfd /dev/dri/renderD128` — both exist
