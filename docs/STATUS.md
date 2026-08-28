@@ -48,9 +48,11 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    slips, ToC / dotted-leader pages half-translate `coupé`/`battement`,
    and literary prose (LaMarche) leaves a few `[low-confidence]` pages
    substantially in French. The Larousse sower-motto garble is OCR-side.
-1b. **Multi-model serving compose** (a general-chat + a coding model,
-   reusing the `llama-server-{rocm,vulkan}` binaries rather than adding
-   Ollama). Was tracked in the retired MANIFEST; not started.
+1b. ~~Multi-model serving compose~~ — CLOSED, superseded by `LocalAIChat`.
+   That's a separate product now (llama-swap on :11500 serving a chat +
+   a coding model, one resident, Open WebUI dropdown drives the swap).
+   This item predates the project split; BookTranslator serves only its
+   two pipeline models (olmOCR-2, Qwen2.5-7B), sequentially, by design.
 2. **Footnotes** — DONE (mechanism). `pipeline/footnote_glossary.txt` (16
    curated terms) → `2_translate.py::pull_footnotes` appends a
    `___FOOTNOTES___` block, keyed off the SOURCE text (the 7B model won't
@@ -84,9 +86,15 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    figure pages (one figure per sheet) — could pack 2/sheet.
 7. `rocm714` backend — wired everywhere but not compiled; build it in
    `BackendBuildstage` and sync in.
-8. Finish the backend-selection port to `LocalAIChat` (it already has
-   `backend.env` + both services on `restart: "no"`; confirm its
-   model-calling code reads URLs from a resolver, not hardcoded).
+8. ~~Backend-selection port to `LocalAIChat`.~~ DONE + verified
+   (2026-08-27). Grepped the repo: the one endpoint that matters,
+   Open WebUI's `OWUI_OPENAI_BASE_URL`, is set by `scripts/start.sh` from
+   `backend.env` (local default `http://model-server:11500/v1`, remote →
+   `http://$REMOTE_HOST:$REMOTE_PORT/v1`); `LISTEN_PORT` / `REMOTE_PORT`
+   are parameterised; the `127.0.0.1` binds are llama-swap's internal
+   child servers (correct); the `:11500` setup probe is `local`-mode
+   guarded. LocalAIChat's own STATUS "Verified" table also covers
+   local/vulkan, local/rocm7, and remote against a real LAN stand-in.
 
 ## Not yet tested
 
