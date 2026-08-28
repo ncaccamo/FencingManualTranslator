@@ -174,11 +174,12 @@ def parse_vlm_response(raw: str) -> dict:
     page_raw = _clean(pn.group(1) if pn else "")
     header = _clean(hd.group(1) if hd else "")
     if bd:
-        # BODY_TEXT runs to end-of-response OR to the FIGURES: marker,
-        # whichever comes first.
-        body = re.split(r'(?im)^[ \t]*FIGURES[ \t]*:[ \t]*$', bd.group(1), 1)[0].strip()
+        # BODY_TEXT runs to end-of-response OR to the FIGURES: marker
+        # (alone on its line, or "FIGURES: none" / "FIGURES: plate | ..."
+        # inline), whichever comes first.
+        body = re.split(r'(?im)^[ \t]*FIGURES[ \t]*:', bd.group(1), 1)[0].strip()
     else:
-        body = re.sub(r'(?im)^[ \t]*FIGURES[ \t]*:.*\Z', '', raw, flags=re.S)
+        body = re.sub(r'(?ims)^[ \t]*FIGURES[ \t]*:.*\Z', '', raw)
         body = re.sub(r'^[ \t]*(PAGE_NUMBER|HEADER)[ \t]*:.*$', '', body,
                       flags=re.I | re.M).strip()
     return {"page_raw": page_raw, "header": header, "body": body,
