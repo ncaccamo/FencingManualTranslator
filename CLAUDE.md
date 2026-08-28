@@ -56,6 +56,9 @@ AMD RX 9070 XT (RDNA4, gfx1201, 16GB VRAM), Ryzen 7 5700X3D (8c/16t),
   `setup/MANUAL_SECTION_II_HOST_PREREQUISITES.md`,
   `setup/MANUAL_SECTION_III_USAGE.md` — user manual (overview / host
   setup / day-to-day operation).
+- `docs/model-quirks.md` — catalogue of every OCR / translation model
+  failure mode on this corpus + its prompt/code fix. Read before touching
+  `vlm_ocr_prompt.txt` or `translation_prompt.txt`.
 - `docs/remote-gpu.md` — `backend.env`, remote-GPU mode, `rocm714`.
 - `docker/ROCM714_NOTES.md` — why the ROCm 7.14 backend is parked.
 - Session history: `git log` (HANDOFF.md / MANIFEST.md retired 2026-08-27).

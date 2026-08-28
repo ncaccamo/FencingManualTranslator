@@ -168,6 +168,10 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 - `CLAUDE.md` — AI-agent orientation + hard invariants.
 - `setup/MANUAL_SECTION_I/II/III` — operator manual: overview / host
   setup / day-to-day operation. All three current as of 2026-08-27.
+- `docs/model-quirks.md` — field guide to every OCR / translation model
+  failure mode + the prompt/code mitigation. The "why" behind
+  `vlm_ocr_prompt.txt` / `translation_prompt.txt` and the `2_translate.py`
+  guards.
 - `docs/remote-gpu.md` — remote-GPU mode + `rocm714` (both experimental).
 - `docker/ROCM714_NOTES.md` — why ROCm 7.14 is parked.
 - `setup/DEV_ENVIRONMENT_SETUP.md` — maintainer dev-box setup (VS Code,
