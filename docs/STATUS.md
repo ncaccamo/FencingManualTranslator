@@ -40,7 +40,10 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    translation:" / "This text does not appear to be fencing…" preambles
    slipped past rule 6. `2_translate.py` now: skips near-blank source
    (`is_near_blank`), rejects whole-output refusals (`looks_like_refusal`),
-   strips leading preambles (`strip_model_preamble`). Still soft: braced
+   strips leading preambles (`strip_model_preamble` — regexes kept narrow
+   so real page-initial prose like "In this case, … Example:" survives).
+   Verified 0 leaks across all 5 books after re-run. Full catalogue of
+   this and every other model quirk: `docs/model-quirks.md`. Still soft: braced
    command groups flatten ~half the time, occasional article/word-order
    slips, ToC / dotted-leader pages half-translate `coupé`/`battement`,
    and literary prose (LaMarche) leaves a few `[low-confidence]` pages
