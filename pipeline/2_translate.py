@@ -147,7 +147,18 @@ def contains_too_much_non_english(text: str) -> bool:
     if not words:
         return True
     non_english_count = sum(1 for w in words if w in NON_ENGLISH_INDICATORS)
-    return (non_english_count / len(words)) > 0.35
+    if non_english_count / len(words) > 0.35:
+        return True
+    # The stop-word list is small; a page left untranslated in dense
+    # technical French can still slip under 0.35 (its content words aren't
+    # in it). Backstop on constructs that are French but not English:
+    #   - elision: consonant + apostrophe + vowel/h, no space ("d'une",
+    #     "l'épée", "qu'il") -- English contractions ("it's", "don't") put
+    #     a consonant after the apostrophe, so they don't match
+    #   - endings that require French-specific letters
+    fr = len(re.findall(r"\b[cdjlmnqst]['’][aeiouyhàâäéèêëïîôùûü]", text, re.I)) \
+        + len(re.findall(r"\w(?:ité|eaux|aient|âtre|euse|eux|oué)\b", text, re.I))
+    return fr / len(words) > 0.05
 
 
 # An optional leading politeness token the model likes to prepend to both
