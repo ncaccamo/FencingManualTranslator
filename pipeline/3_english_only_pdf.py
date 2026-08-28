@@ -296,6 +296,8 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
         st = parse_vlm_output(extractions[i]) if i < len(extractions) else {}
         is_empty = (not tr) or tr in SKIP_MARKERS
         src_page = src_doc[i] if (src_doc is not None and i < len(src_doc)) else None
+        # A page whose whole body is ~one line is a plate caption, not prose.
+        caption_only_page = (not is_empty) and len(tr.split()) <= 20
 
         # Collect (band, caption) figure placements for this page.
         placements = []
@@ -304,6 +306,18 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
                 if src_page is None:
                     break
                 placements.append(band_for_figure(fig, src_page))
+            # VLM under-reports on runs of near-identical plates: back it up
+            # with the profiler on any caption-only / blank page.
+            if not placements and src_page is not None and \
+                    (caption_only_page or is_empty):
+                prof = find_figure_band(src_page)
+                if prof is not None:
+                    y0f, y1f, *_ = prof
+                    placements.append(
+                        (None if (y1f - y0f) > 0.85 else prof,
+                         tr if caption_only_page else "[illustration from the original]"))
+                elif is_empty and interior_ink_fraction(src_page) > 0.04:
+                    placements.append((None, "[illustration from the original]"))
         elif src_page is not None:
             band = find_figure_band(src_page)
             if band is not None:
@@ -323,7 +337,16 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
         for band, caption in placements:
             flow.figure(src_page, band, caption=caption)
             figures += 1
-        if not is_empty:
+
+        # Skip the body when it's just the plate caption again (the OCR body
+        # of a plate page is its caption line; figure() already drew it).
+        def _norm(s):
+            return re.sub(r"[^a-z0-9 ]", "", s.lower()).strip()
+        body_is_caption = placements and caption_only_page and any(
+            _norm(tr) and (_norm(tr) in _norm(c) or _norm(c) in _norm(tr))
+            for _, c in placements)
+
+        if not is_empty and not body_is_caption:
             flow.body(tr)
             rendered += 1
 

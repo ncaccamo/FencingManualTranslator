@@ -78,17 +78,21 @@ GLOSSARY = _load_glossary()
 
 
 def pull_footnotes(text: str, source_text: str = "", seen: set = None):
-    """Attach notes to a translated page and append a delimited block (the
-    header can't collide with the "\\n---\\n" page separator).
+    """Attach numbered notes to a translated page and append a delimited
+    block (the header can't collide with the page separator).
 
-    Two sources:
-      1. explicit `phrase<fn>note</fn>` the model emitted (numbered, with an
-         inline † marker) -- rare with a 7B model.
-      2. footnote_glossary.txt terms present in THIS page's SOURCE text and
-         not yet glossed earlier in the book -- each glossed once, on first
-         occurrence, as a bare "term — gloss" line (the 7B model won't keep
-         terms in French, so there is nothing in the translation to anchor
-         an inline marker to). Pass a per-book `seen` set to dedupe.
+    Two sources, both anchored to a real spot in the TRANSLATION with a
+    `†N` marker:
+      1. explicit `phrase<fn>note</fn>` the model emitted -- rare with a
+         7B model.
+      2. a `footnote_glossary.txt` term the translation kept as
+         `<i>term</i>` and that hasn't been glossed earlier in the book --
+         the first such occurrence gets a `†N` right after `</i>` and a
+         "term — gloss" line. Matching is on the italicised text only
+         (accents ignored, trailing plural -s allowed), NOT the French
+         source -- a substring scan of the source glossed the verb
+         *appeler* as the term *appel*. Pass a per-book `seen` to dedupe.
+    `source_text` is unused now; kept for call-site compatibility.
     Returns (text, n_notes)."""
     if seen is None:
         seen = set()
@@ -101,18 +105,25 @@ def pull_footnotes(text: str, source_text: str = "", seen: set = None):
     body = re.sub(r"<fn>(.*?)</fn>", lambda m: take(m.group(1)),
                   text, flags=re.DOTALL | re.IGNORECASE).strip()
 
-    src = _strip_accents(source_text.lower())
-    gloss_lines = []
-    for key, (term, gloss) in GLOSSARY.items():
-        pos = src.find(key)
-        if pos != -1 and key not in seen and len(gloss_lines) < FN_MAX_PER_PAGE:
-            seen.add(key)
-            gloss_lines.append((pos, f"{term} — {gloss}"))
-    gloss_lines = [g for _, g in sorted(gloss_lines)]
+    def gloss_italic(m):
+        if len(numbered) >= FN_MAX_PER_PAGE:
+            return m.group(0)
+        inner = _strip_accents(m.group(1).strip().lower())
+        for key, (term, gloss) in GLOSSARY.items():
+            if key in seen:
+                continue
+            if inner == key or inner == key + "s" or \
+               re.search(r"\b" + re.escape(key) + r"s?\b", inner):
+                seen.add(key)
+                return m.group(0) + take(f"{term} — {gloss}")
+        return m.group(0)
 
-    lines = [f"{FN_MARK}{i} {n}" for i, n in enumerate(numbered, 1)] + gloss_lines
-    if not lines:
+    body = re.sub(r"<i>(.*?)</i>", gloss_italic, body,
+                  flags=re.DOTALL | re.IGNORECASE)
+
+    if not numbered:
         return body, 0
+    lines = [f"{FN_MARK}{i} {n}" for i, n in enumerate(numbered, 1)]
     return f"{body}\n\n{FN_HEADER}\n" + "\n".join(lines), len(lines)
 
 
