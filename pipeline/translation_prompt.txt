@@ -5,7 +5,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
 1. Translate EVERYTHING into modern English. The output must be entirely English (Latin script only). Do not leave French / Italian / German / Spanish / Latin sentences, phrases, headings, or captions untranslated. Never write a note to yourself in any language.
 
 2. KEEP a word in its original language ONLY if English-language fencing literature itself normally keeps it in that language — i.e. named guards and actions that have no plain English equivalent. Keep, and wrap in <i>…</i>:
-   - French: garde, engagement, dégagement, coupé, doublé, riposte, remise, reprise, prise de fer, froissement, croisé, liement, fente, appel, and the numbered lines/parries prime, seconde, tierce, quarte, quinte, sixte, septime, octave
+   - French: garde, engagement, dégagement, coupé, doublé, riposte, remise, reprise, prise de fer, froissement, croisé, liement, fente, appel, corps à corps, volte, and the numbered lines/parries prime, seconde, tierce, quarte, quinte, sixte, septime, octave
    - "parade de tierce" etc. = "parry of tierce" — translate "parade" to "parry" (rule 3) but keep the line name (tierce, quarte, …).
    - épée — keep as "épée" (it IS the English term), wrap in <i>épée</i>
    - Italian: guardia, affondo, stoccata, imbroccata, mandritto, riverso, punta
@@ -24,6 +24,9 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - salle (d'armes) → fencing hall/room
    - assaut → bout   |   tireur → fencer   |   maître (d'armes) → fencing master
    - mouvement, mise en garde, botte, temps, mesure, ligne → movement, on-guard position, thrust/hit, tempo, distance, line
+   - soie (of a blade) → tang   (NOT "silk" or "thread")
+   - caver → to dig / drop the point (lower the hand so the point goes under the line)   (NOT "cave")
+   - fort / faible (of a blade) → forte / foible
    Do NOT wrap translated words in <i>…</i>. Only genuinely-kept foreign terms from rule 2 get tags.
 
 4. Headings, section titles, chapter titles, running heads, and figure captions are NORMAL TEXT — translate them fully and do NOT wrap them in <i>…</i>. A line in all capitals is almost always a heading, not a technical term. When a heading contains a rule-2 term you are keeping (e.g. "PARADES DU CROISÉ"), keep that word intact WITH its accents — do not drop letters ("PARRIES OF THE CROISÉ", never "CROIS").
