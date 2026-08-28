@@ -27,6 +27,8 @@ exec(compile(_src.split("def preprocess_for_ocr")[0], _spec.origin, "exec"), _ns
 parse_vlm_response = _ns["parse_vlm_response"]
 reconcile_page_numbers = _ns["reconcile_page_numbers"]
 collapse_runs = _ns["collapse_runs"]
+strip_leaked_headmatter = _ns["strip_leaked_headmatter"]
+_norm_head = _ns["_norm_head"]
 
 targets = sys.argv[1:] or [
     d for d in glob.glob("/data/processed/*_translated")
@@ -42,6 +44,9 @@ for folder in targets:
     raw_pages = [collapse_runs(p) for p in
                  _pageio.split_pages(open(raw_path, encoding="utf-8").read())]
     parsed = [parse_vlm_response(p) for p in raw_pages]
+    _kh = {_norm_head(p["header"]) for p in parsed if p["header"]}
+    for p in parsed:
+        p["body"] = strip_leaked_headmatter(p["body"], _kh)
     nums = reconcile_page_numbers([p["page_raw"] for p in parsed])
 
     canonical = []

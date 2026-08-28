@@ -185,6 +185,32 @@ def parse_vlm_response(raw: str) -> dict:
             "figures": parse_figures_block(raw)}
 
 
+def _norm_head(s: str) -> str:
+    import unicodedata
+    s = "".join(c for c in unicodedata.normalize("NFD", s)
+                if unicodedata.category(c) != "Mn")
+    return re.sub(r"\s+", " ", s.lower()).strip(" .-")
+
+
+def strip_leaked_headmatter(body: str, known_headers: set) -> str:
+    """The VLM sometimes drops the running header and/or the printed folio
+    into BODY_TEXT instead of the HEADER / PAGE_NUMBER fields, so the page's
+    translation opens with a stray "25" and "THE GUARD". Peel those off the
+    top: a bare number line, or a line matching a header seen elsewhere in
+    this book."""
+    lines = body.split("\n")
+    while lines:
+        s = lines[0].strip()
+        if not s:
+            lines.pop(0)
+            continue
+        if re.fullmatch(r"[\dIVXLCDM]{1,5}\.?", s) or _norm_head(s) in known_headers:
+            lines.pop(0)
+            continue
+        break
+    return "\n".join(lines).strip()
+
+
 def parse_figures_block(raw: str) -> list:
     """Parse the FIGURES: section of a VLM response into a list of
         {"kind": "plate"|"inset", "caption": str}
@@ -586,6 +612,9 @@ try:
         # (read off an engraving plate) became a line handed to the
         # translator and printed on the side-by-side PDF.
         parsed = [parse_vlm_response(p) for p in extracted_pages]
+        _known_heads = {_norm_head(p["header"]) for p in parsed if p["header"]}
+        for p in parsed:
+            p["body"] = strip_leaked_headmatter(p["body"], _known_heads)
         reconciled_nums = reconcile_page_numbers([p["page_raw"] for p in parsed])
 
         canonical_pages = []
