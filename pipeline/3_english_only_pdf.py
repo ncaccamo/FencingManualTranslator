@@ -311,10 +311,10 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
                 if src_page is None:
                     break
                 placements.append(band_for_figure(fig, src_page))
-            # VLM under-reports on runs of near-identical plates: back it up
-            # with the profiler on any caption-only / blank page.
-            if not placements and src_page is not None and \
-                    (caption_only_page or is_empty):
+            # The VLM under-reports -- runs of near-identical plates, and
+            # engravings dropped into text pages. On any page it did NOT
+            # flag, fall back to the density profiler.
+            if not placements and src_page is not None:
                 prof = find_figure_band(src_page)
                 if prof is not None:
                     y0f, y1f, *_ = prof

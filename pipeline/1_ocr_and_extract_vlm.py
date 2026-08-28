@@ -245,32 +245,38 @@ def reconcile_page_numbers(page_raws: list) -> list:
     """olmOCR-2 reliably reads a real printed folio, but it will also invent
     a plausible-looking number from a stray mark -- an engraver's plate
     number inside an illustration, a library accession stamp -- or silently
-    convert 'VIII' to '8'. Trust a reported number only when it agrees with
-    the dominant (page-index -> printed-folio) offset for the book; anything
-    else becomes an inferred '[n]' (the same 'unknown' convention the
-    Tesseract path uses in page_numbers.txt).
+    convert 'VIII' to '8'.
+
+    A reported folio is TRUSTED when a neighbouring sheet's folio continues
+    the printed sequence (i-1 -> v-1, or i+1 -> v+1): a real run like
+    "20, 21, 22" corroborates itself even if a later section of the book
+    runs on a different index->folio offset (inserted plates shift it).
+    Everything else is interpolated from the nearest trusted anchor and
+    bracketed '[n]'; with no anchor at all, the plain sheet ordinal.
+    Never emits <= 0.
     """
     ints = [_page_to_int(p) for p in page_raws]
-    offsets = [v - i for i, v in enumerate(ints) if v is not None]
-    mode_offset, support = (Counter(offsets).most_common(1)[0] if offsets else (None, 0))
-    # Need at least two pages agreeing on the same index->folio offset before
-    # trusting any reported number; a lone value could just be another
-    # hallucination. Otherwise fall back to plain sheet numbering.
-    if support < 2:
-        return [f"[{i + 1}]" for i in range(len(page_raws))]
-    first_anchor = next((i for i, v in enumerate(ints)
-                         if v is not None and v - i == mode_offset), None)
+    n = len(ints)
+
+    trusted = [False] * n
+    for i, v in enumerate(ints):
+        if v is None or v <= 0:
+            continue
+        if (i > 0 and ints[i - 1] == v - 1) or (i + 1 < n and ints[i + 1] == v + 1):
+            trusted[i] = True
+
+    anchors = [i for i in range(n) if trusted[i]]
+    if not anchors:
+        return [f"[{i + 1}]" for i in range(n)]
+
     out = []
-    for i, (raw, v) in enumerate(zip(page_raws, ints)):
-        if v is not None and v - i == mode_offset:
-            out.append(raw)                            # printed folio, corroborated
-        elif i > first_anchor and i + mode_offset >= 1:
-            out.append(f"[{i + mode_offset}]")         # extrapolated from the anchor run
-        else:
-            # Before the first corroborated folio (front matter) or wherever
-            # extrapolation would go <= 0: no determinable folio, fall back
-            # to the sheet ordinal. Never emit a zero/negative page number.
-            out.append(f"[{i + 1}]")
+    for i in range(n):
+        if trusted[i]:
+            out.append(page_raws[i])                       # printed folio, corroborated
+            continue
+        j = min(anchors, key=lambda a: abs(a - i))          # nearest trusted sheet
+        guess = ints[j] + (i - j)                           # 1 sheet == 1 folio
+        out.append(f"[{guess}]" if guess >= 1 else f"[{i + 1}]")
     return out
 
 
