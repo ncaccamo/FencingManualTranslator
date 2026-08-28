@@ -99,10 +99,15 @@ def band_for_figure(fig, src_page):
         or "[illustration from the original]"
     if src_page is None:
         return None, cap
+    r = src_page.rect
+    if r.width > r.height * 1.15:
+        # Landscape leaf (a fold-out plate). The row-density profiler
+        # assumes a portrait page, so don't crop -- embed whole, upright.
+        return None, cap
     prof = find_figure_band(src_page)
     if fig.get("kind") == "plate":
-        # Whole-page plate: use the profiler's band to crop off the running
-        # header, page number and scan margins; whole page if it found none.
+        # Whole-page plate: the profiler's band crops off the running
+        # header, page number and scan margins; whole page if none found.
         return prof, cap
     if prof is None:
         return None, cap            # VLM saw an inset the profiler missed
@@ -201,10 +206,16 @@ class Flow:
             return (x1f - x0f) * r.width, (y1f - y0f) * r.height
         return r.width, r.height
 
+    @staticmethod
+    def _rotated(src_page):
+        # A landscape source leaf is a fold-out plate: shown turned upright.
+        r = src_page.rect
+        return r.width > r.height * 1.15
+
     @classmethod
     def _fig_size(cls, src_page, band):
         cw, ch = cls._clip_dims(src_page, band)
-        if cw > ch * 1.15:          # landscape region -> shown rotated 90°
+        if cls._rotated(src_page):
             cw, ch = ch, cw
         w = COL.width
         h = w * (ch / cw)
@@ -215,10 +226,9 @@ class Flow:
     def figure(self, src_page, band=None, caption="[illustration from the original]"):
         """Embed src_page (optionally cropped to `band`, a
         (y0f,y1f,x0f,x1f) fraction rect) scaled into the column. A
-        landscape clip (a fold-out plate) is rotated upright."""
+        landscape source leaf (a fold-out plate) is rotated upright."""
         r = src_page.rect
-        cw, ch = self._clip_dims(src_page, band)
-        rotate = 90 if cw > ch * 1.15 else 0
+        rotate = 90 if self._rotated(src_page) else 0
         if band:
             y0f, y1f, x0f, x1f = band
             clip = fitz.Rect(r.x0 + x0f * r.width, r.y0 + y0f * r.height,
