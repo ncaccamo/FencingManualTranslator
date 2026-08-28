@@ -29,6 +29,7 @@ import re
 from datetime import datetime
 
 import _render
+import _pageio
 
 print("\n" + "=" * 60)
 print("STEP 3: ENGLISH-ONLY PDF GENERATION")
@@ -264,9 +265,9 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
         continue
 
     with open(f"{folder}/translation.txt", "r", encoding="utf-8") as f:
-        translations = [p.strip() for p in f.read().split("\n---\n")]
+        translations = [p.strip() for p in _pageio.split_pages(f.read())]
     with open(f"{folder}/extracted.txt", "r", encoding="utf-8") as f:
-        extractions = [p.strip() for p in f.read().split("\n---\n")]
+        extractions = [p.strip() for p in _pageio.split_pages(f.read())]
 
     # VLM-flagged figures (kind / vertical extent / translated caption),
     # keyed by 0-based page index. When present it is the source of truth

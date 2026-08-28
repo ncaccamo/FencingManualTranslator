@@ -51,6 +51,7 @@ import io
 import sys
 
 import backend_config as bc
+import _pageio
 
 VLM_MODEL_PATH = os.environ.get("VLM_MODEL_PATH", "/models/allenai_olmOCR-2-7B-1025-Q6_K.gguf")
 VLM_MMPROJ_PATH = os.environ.get("VLM_MMPROJ_PATH", "")
@@ -571,7 +572,7 @@ try:
         # ground truth to fall back on if the parsing/reconciliation below
         # turns out to have dropped or altered something.
         with open(f"{work_dir}/raw_ocr.txt", "w", encoding="utf-8") as f:
-            f.write("\n---\n".join(extracted_pages))
+            f.write(_pageio.join_pages(extracted_pages))
 
         # Split olmOCR-2's PAGE_NUMBER/HEADER/BODY_TEXT scaffold into fields
         # and sequence-check the page number. Previously the raw scaffold
@@ -593,7 +594,7 @@ try:
             )
 
         with open(f"{work_dir}/extracted.txt", "w", encoding="utf-8") as f:
-            f.write("\n---\n".join(canonical_pages))
+            f.write(_pageio.join_pages(canonical_pages))
 
         # Per-page figure metadata for the English-only PDF (kind / vertical
         # extent / caption, as reported by the VLM). Captions are translated

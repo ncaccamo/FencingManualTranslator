@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 import backend_config as bc
+import _pageio
 
 PROMPT_FILE = "/app/translation_prompt.txt"
 TRANSLATION_MODEL = os.environ.get("TRANSLATION_MODEL_PATH", "/models/Qwen2.5-7B-Instruct-Q6_K.gguf")
@@ -399,7 +400,7 @@ try:
             continue
 
         with open(src, "r", encoding="utf-8") as f:
-            pages = [p.strip() for p in f.read().split("\n---\n") if p.strip()]
+            pages = [p.strip() for p in _pageio.split_pages(f.read()) if p.strip()]
 
         print(f"Translating: {Path(folder).name}")
         print(f"Pages: {len(pages)}\n")
@@ -460,7 +461,7 @@ try:
                     continue
 
                 # The model sometimes emits Markdown despite the prompt. A
-                # lone "---" thematic break collides with the "\n---\n" page
+                # lone "---" thematic break used to collide with the page
                 # separator used everywhere downstream (178 pages -> 179,
                 # every later page misaligned). Strip all of it; <i>...</i>
                 # is the only markup the pipeline expects.
@@ -531,7 +532,7 @@ try:
                     translated_pages.append(f"[translation unavailable — original text follows]\n{clean_text}")
 
         with open(dst, "w", encoding="utf-8") as f:
-            f.write("\n---\n".join(translated_pages))
+            f.write(_pageio.join_pages(translated_pages))
 
         translate_figure_captions(folder)
 

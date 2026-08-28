@@ -15,6 +15,8 @@ import json
 import os
 import sys
 
+import _pageio
+
 # reuse the real logic, without running that module's main block
 import importlib.util
 _spec = importlib.util.spec_from_file_location(
@@ -38,7 +40,7 @@ for folder in targets:
         continue
 
     raw_pages = [collapse_runs(p) for p in
-                 open(raw_path, encoding="utf-8").read().split("\n---\n")]
+                 _pageio.split_pages(open(raw_path, encoding="utf-8").read())]
     parsed = [parse_vlm_response(p) for p in raw_pages]
     nums = reconcile_page_numbers([p["page_raw"] for p in parsed])
 
@@ -54,7 +56,7 @@ for folder in targets:
                    for i, p in enumerate(parsed) if p.get("figures")}
 
     with open(os.path.join(folder, "extracted.txt"), "w", encoding="utf-8") as fh:
-        fh.write("\n---\n".join(canonical))
+        fh.write(_pageio.join_pages(canonical))
     with open(os.path.join(folder, "page_numbers.txt"), "w", encoding="utf-8") as fh:
         fh.write("\n".join(nums))
     with open(os.path.join(folder, "figures.json"), "w", encoding="utf-8") as fh:

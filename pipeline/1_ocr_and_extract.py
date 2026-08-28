@@ -24,6 +24,7 @@
 #     French words (anything like "vous ébranler" -> "vousébranler") on
 #     correctly-spaced real OCR text, not just a rare edge case.
 import glob
+import _pageio
 import os
 import subprocess
 import fitz
@@ -350,7 +351,7 @@ for src_path in input_pdfs:
     # Preserve TRUE raw OCR permanently. This is the ground truth to fall
     # back on if cleanup heuristics turn out to have mangled something.
     with open(f"{work_dir}/raw_ocr.txt", "w", encoding="utf-8") as f:
-        f.write("\n---\n".join(raw_pages))
+        f.write(_pageio.join_pages(raw_pages))
 
     print(f"Cleaning text → {stem}")
     stage1_pages = [cleanup_extracted_text(p) for p in raw_pages]
@@ -377,7 +378,7 @@ for src_path in input_pdfs:
     print()
 
     with open(f"{work_dir}/extracted.txt", "w", encoding="utf-8") as f:
-        f.write("\n---\n".join(cleaned_pages))
+        f.write(_pageio.join_pages(cleaned_pages))
 
     with open(f"{work_dir}/page_numbers.txt", "w", encoding="utf-8") as f:
         f.write("\n".join(page_numbers))
