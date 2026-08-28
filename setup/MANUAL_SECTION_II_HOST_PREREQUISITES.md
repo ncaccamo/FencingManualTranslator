@@ -154,9 +154,20 @@ Usually present on Ubuntu Desktop; confirm on a minimal/Server install:
 sudo apt install -y curl wget git
 ```
 
-## II.8 — What's next
+## II.8 — Optional: host GPU monitor
 
-Once II.1–II.7 are done:
+Not required — the pipeline never needs it, and `scripts/monitor_gpu.sh`
+reads `rocm-smi` from inside the container during a run. It's only useful
+for a quick GPU / VRAM check on the host *while the container is down*:
+```bash
+sudo apt install -y nvtop      # reads the amdgpu sysfs interface; no ROCm
+```
+Use `nvtop`, not `radeontop` — the packaged `radeontop` predates RDNA4
+and misreports the RX 9070 XT.
+
+## II.9 — What's next
+
+Once II.1–II.7 are done (II.8 is optional):
 ```bash
 cd ~/BookTranslator
 bash scripts/setup.sh
