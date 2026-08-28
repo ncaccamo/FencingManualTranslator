@@ -145,17 +145,20 @@ _LEAD_POLITE = r"(?:(?:sure|certainly|of course|okay|ok|yes|alright|understood)[
 # Prose preambles the model emits despite the prompt's "output ONLY the
 # translation" rule. Matched only at the very start of the output, one per
 # line, case-insensitively. The Markdown sanitizers already handle '#'/'**'.
+#
+# Every alternative must reference the ACT of translating or be a known
+# fixed filler phrase -- loose patterns like "any line ending in a colon"
+# strip real page-initial sentences ("In this case, the appreciation of
+# the thrust ... Example:" is genuine fencing prose).
 _PREAMBLE_RE = re.compile(
     r"^\s*" + _LEAD_POLITE + r"(?:"
-    r"here(?:'s| is)\b.*|"
-    r"below is\b.*|"
-    r"[^\n]*\btranslation\s*:|"                 # any line ENDING in 'translation:'
-    r"[^\n]*\bhere(?:'s| is) the translation\b[^\n]*|"
-    r"(?:the\s+)?following\b[^\n]*:|"
-    r"in this case,?\b[^\n]*:|"                 # "In this case, the text describes ... :"
-    r"sure[,.!]?|certainly[,.!]?|okay[,.!]?|ok[,.!]?|"
-    r"i(?:'ll| will| can)\b[^\n]*translat[^\n]*|"
-    r"note:.*|"
+    r"here(?:'s| is)\b[^\n]*\b(?:translat\w+|rendering|english version)\b[^\n]*|"
+    r"[^\n]*\bhere(?:'s| is) the translation\b[^\n]*|"      # "... Here is the translation:"
+    r"below is\b[^\n]*\btranslat\w+[^\n]*|"
+    r"the (?:following is|translation (?:is|follows))\b[^\n]*|"
+    r"i(?:'ll| will| can)\b[^\n]*\btranslat\w+[^\n]*|"
+    r"(?:sure|certainly|of course|okay|ok)[,.!]?|"          # bare filler token
+    r"note:\s*[^\n]*|"
     r"following the (?:critical )?rules[^\n]*:|"
     r"this (?:one )?may take a step back[^\n]*"
     r")\s*$",
