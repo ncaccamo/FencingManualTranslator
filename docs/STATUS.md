@@ -87,7 +87,6 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 8. Finish the backend-selection port to `LocalAIChat` (it already has
    `backend.env` + both services on `restart: "no"`; confirm its
    model-calling code reads URLs from a resolver, not hardcoded).
-9. Open WebUI standalone script exists but was never connected.
 
 ## Not yet tested
 
@@ -179,10 +178,12 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 - `docker/ROCM714_NOTES.md` — why ROCm 7.14 is parked.
 - `setup/DEV_ENVIRONMENT_SETUP.md` — maintainer dev-box setup (VS Code,
   git, Claude Code); not for end users.
-- `setup/archive/translation_pipeline_manual.md` — old ROCm 6.x manual,
-  reference only, environment details stale.
 - Retired 2026-08-27: `HANDOFF.md` (→ git log), `MANIFEST.md` (job done),
   `docs/design-backend-selection.md` (→ `docs/remote-gpu.md`),
   `setup/setup_inference_backend.sh` (installed host ROCm + inline-generated
   a stale Dockerfile; → `scripts/setup.sh`, verify-and-build only, host
-  needs no ROCm/Vulkan).
+  needs no ROCm/Vulkan). `setup/archive/` (10 `.bak` Dockerfiles + 12
+  superseded numbered scripts + the ROCm 6.x
+  `translation_pipeline_manual.md` — all in git history; Manual I/II/III
+  supersede the old manual), and `setup/03_setup_open_webui.sh`
+  (Open WebUI belongs to `LocalAIChat`, never connected here).
