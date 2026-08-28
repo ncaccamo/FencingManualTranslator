@@ -99,11 +99,6 @@ def band_for_figure(fig, src_page):
         or "[illustration from the original]"
     if src_page is None:
         return None, cap
-    r = src_page.rect
-    if r.width > r.height * 1.15:
-        # Landscape leaf (a fold-out plate). The row-density profiler
-        # assumes a portrait page, so don't crop -- embed whole, upright.
-        return None, cap
     prof = find_figure_band(src_page)
     if fig.get("kind") == "plate":
         # Whole-page plate: the profiler's band crops off the running
@@ -206,17 +201,9 @@ class Flow:
             return (x1f - x0f) * r.width, (y1f - y0f) * r.height
         return r.width, r.height
 
-    @staticmethod
-    def _rotated(src_page):
-        # A landscape source leaf is a fold-out plate: shown turned upright.
-        r = src_page.rect
-        return r.width > r.height * 1.15
-
     @classmethod
     def _fig_size(cls, src_page, band):
         cw, ch = cls._clip_dims(src_page, band)
-        if cls._rotated(src_page):
-            cw, ch = ch, cw
         w = COL.width
         h = w * (ch / cw)
         if h > FIGURE_MAX_H:
@@ -225,10 +212,12 @@ class Flow:
 
     def figure(self, src_page, band=None, caption="[illustration from the original]"):
         """Embed src_page (optionally cropped to `band`, a
-        (y0f,y1f,x0f,x1f) fraction rect) scaled into the column. A
-        landscape source leaf (a fold-out plate) is rotated upright."""
+        (y0f,y1f,x0f,x1f) fraction rect) scaled into the column. Figures
+        are embedded in their source orientation -- auto-rotation was
+        unreliable (a landscape photo leaf reads fine wide; a sideways
+        fold-out engraving on a portrait leaf can't be told apart from
+        page geometry)."""
         r = src_page.rect
-        rotate = 90 if self._rotated(src_page) else 0
         if band:
             y0f, y1f, x0f, x1f = band
             clip = fitz.Rect(r.x0 + x0f * r.width, r.y0 + y0f * r.height,
@@ -242,8 +231,7 @@ class Flow:
         pix = src_page.get_pixmap(matrix=fitz.Matrix(150 / 72, 150 / 72), clip=clip)
         x0 = COL.x0 + (COL.width - w) / 2
         self.page.insert_image(fitz.Rect(x0, self.y, x0 + w, self.y + h),
-                               stream=pix.tobytes("jpeg", jpg_quality=72),
-                               rotate=rotate)
+                               stream=pix.tobytes("jpeg", jpg_quality=72))
         self.y += h + 4
         for vl in _render.layout(caption, COL.width, FS - 1):
             _, self.y = _render.draw(self.page,
