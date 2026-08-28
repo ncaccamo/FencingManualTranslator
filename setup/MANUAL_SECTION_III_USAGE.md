@@ -14,14 +14,17 @@ root is `~/BookTranslator`. Helper scripts live in
 ```bash
 cd ~/BookTranslator
 
-# one-time, if you haven't:
-cp backend.env.example backend.env      # defaults: local / vulkan
-docker compose build                    # ~20-30 min, first time only
+# one-time (verifies the host, writes .env/backend.env, builds, brings up):
+bash scripts/setup.sh                    # ~20-30 min first build
 
 # every run:
 cp "/path/to/My Fencing Book (1875).pdf" books/
 scripts/run_full_pipeline.sh
 ```
+
+`scripts/setup.sh` is the first-run path (see Section II for the host
+steps it checks). After that, `startup_docker.sh` / `run_full_pipeline.sh`
+/ `shutdown_docker.sh` are all you need.
 
 When it finishes, the two PDFs are in
 `processed/My Fencing Book (1875)_translated/`.
@@ -230,6 +233,19 @@ wrong-script / too-much-non-English / too-short checks. Usually the OCR
 for that page is garbled — look at the same page in `extracted.txt`. If
 OCR is clean and it's a translation miss, adjust `translation_prompt.txt`,
 `rm translation.txt`, re-run step 2.
+
+### A page reads `[Empty page]`
+
+Expected for a blank leaf, a section-break page, or a page whose OCR body
+was just a stray mark or a bare page number — step 2 detects near-blank
+input and doesn't call the model (which would otherwise reply *"Please
+provide the text you would like to translate"* and leak that into the
+output). If you see `[Empty page]` where there was real text, the OCR for
+that page failed — check `extracted.txt`, and re-OCR with a `.crop` if a
+scanner border is the cause.
+
+The full catalogue of model failure modes and why each guard exists:
+[`docs/model-quirks.md`](../docs/model-quirks.md).
 
 ### One page in the output is split in two / pages misalign after some point
 

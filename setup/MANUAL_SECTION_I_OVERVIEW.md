@@ -111,8 +111,11 @@ page-for-page).
   *source* text is glossed once per book, appended under a
   `___FOOTNOTES___` marker on that page.
 - Output is validated: wrong-script output (CJK / Cyrillic / etc.),
-  more than ~35 % non-English words, or output under half the source
-  length triggers up to 3 retries.
+  more than ~35 % non-English words, output under half the source length,
+  or a bare model preamble / refusal ("Here is the translation:", "Please
+  provide the text…") triggers up to 3 retries.
+- A near-blank source page (a stray mark, a bare page number) is written
+  as `[Empty page]` without a model call.
 - **A page is never dropped.** If every attempt fails it is written as
   `[low-confidence translation — review]` followed by the best attempt,
   or `[translation unavailable — original text follows]` with the source
@@ -162,13 +165,19 @@ runs:
 
 ## I.6 — Known limitations
 
-Authoritative, current list: `docs/STATUS.md`. As of this writing:
+Authoritative, current list: `docs/STATUS.md`. Every model failure mode
+and the prompt/code guard for it: `docs/model-quirks.md`. As of this
+writing:
 
 - **Drill / command tables translate inconsistently** — brace-grouped
   alternative lines flatten into a sentence roughly half the time.
 - **Table-of-contents pages half-translate** — a few kept terms
   (`coupé`, `battement`) slip through untranslated on dotted-leader
   pages.
+- **Florid literary prose defeats the 7B model** — technical drill text
+  translates well; long rhetorical passages (e.g. LaMarche's
+  `Le Fleuret et l'Épée`) can come back partly in French under a
+  `[low-confidence]` flag.
 - **Figure detection is conservative and tuned for framed photo plates.**
   Full-page line-drawing plates and faint half-tones are often missed
   (on one 386-page book, 4 of ~20 plates were caught). It will not
