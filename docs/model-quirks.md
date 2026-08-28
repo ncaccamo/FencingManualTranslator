@@ -120,13 +120,47 @@ cleanly. **Accepted as-is** — the main text stays uncontaminated, and the
 side-notes in this book are cross-references, not substance. Flagged here
 in case a future source carries real content in the margin.
 
-### 1.7 Figure detection misses line-drawing plates
+### 1.7 Figure detection — VLM flag + density-profiler geometry
 
-Not a model quirk — a limitation of `find_figure_band()` in
-[`3_english_only_pdf.py`](../pipeline/3_english_only_pdf.py), which
-profiles row ink-density and is tuned for framed half-tone photo plates.
-Full-page line-drawing plates and faint half-tones are missed (Gomard: 4
-of ~20 caught). It will not invent a figure from dense text.
+The pixel-only `find_figure_band()` (row ink-density, tuned for framed
+half-tone photo plates) missed full-page line-drawing plates and faint
+half-tones — Gomard: 4 of ~20. So the VLM now does *detection* and the
+profiler only does *geometry*:
+
+- `vlm_ocr_prompt.txt` has a `FIGURES:` section → the model reports each
+  page as `plate` (whole-page picture) or `inset` (picture + running
+  text) plus the caption verbatim. → `figures.json` (step 1).
+- `2_translate.py` translates each caption through the **full**
+  `translation_prompt.txt` template (they're headings — see 2.9).
+- `3_english_only_pdf.py` embeds a `plate` whole (cropped to the
+  profiler's ink band when portrait, to strip the running header / folio
+  / scan margin), an `inset` from the profiler band, caption beneath.
+
+**Quirks found building this:**
+
+- **olmOCR-2 parrots a concrete few-shot example.** The first prompt gave
+  a worked example line (`inline | 0.18 | 0.55 | Fig. 4. — Le salut`); the
+  model copied `Fig. 4. — Le salut` and `0.18 | 0.55` onto *every* flagged
+  page instead of reading the real caption. Fix: no concrete example —
+  abstract format description plus "describe what is actually on THIS
+  page — do not copy the wording above."
+- **No spatial grounding.** Asked for the figure's top/bottom as page
+  fractions, it returned the example's numbers or guesses. Dropped the
+  coordinate ask entirely; the density profiler supplies geometry, gated
+  by the VLM's presence flag (so it can trust a hit instead of being
+  conservative).
+- **Rotation can't be inferred from page geometry.** Joseph-Renaud's
+  photo plates are *landscape leaves* whose content is already upright;
+  Gomard's are *portrait leaves* holding a sideways fold-out engraving.
+  Same `width/height` signal, opposite correct action — auto-rotate broke
+  JR. Figures are now embedded in source orientation; a sideways fold-out
+  stays sideways.
+- **Under-reporting.** Gomard flagged only 8 (vs. a claimed ~20). Unclear
+  yet whether the VLM misses mid-book plates or the "~20" was a
+  density-profiler overcount — needs a physical-book check.
+
+`find_figure_band()` remains the sole detector for books OCR'd before
+`figures.json` existed (still misses line art).
 
 ### 1.8 Server death looked like a slow page
 
@@ -163,7 +197,7 @@ enough.
 
 **Seen:** Spinnewyn run — 178 source pages became 179 in `translation.txt`.
 
-**Failure:** the pipeline joins/splits pages on the literal string
+**Failure:** the pipeline used to join/split pages on the literal string
 `\n---\n`. The model, despite being told plain text, emitted a Markdown
 thematic break — a lone `---` line — inside one page. That page split into
 two, and **every page after it misaligned with its source scan** in the
@@ -173,9 +207,9 @@ side-by-side PDF.
 
 | Where | What |
 |---|---|
-| `2_translate.py` (after each candidate) | `^-{3,}$` → `* * *`; strip `![alt](url)`, `**bold**`, `^#{1,6} ` |
+| `pipeline/_pageio.py` | the separator is now `PAGE_SEP = "\n\x1e\n"` — U+001E, a non-printing control char that **cannot** occur in OCR text or model output. `split_pages()` still reads legacy `\n---\n` files so old `processed/` folders don't need a re-run. This is the real fix. |
+| `2_translate.py` (after each candidate) | still rewrites `^-{3,}$` → `* * *` and strips `![alt](url)`, `**bold**`, `^#{1,6} ` — defence-in-depth, and keeps the reading clean regardless |
 | `translation_prompt.txt` rule 6 | "Output plain text, NOT Markdown: no `#` headings, no `---` rules, no `![image](...)`, no `**bold**`. The single exception is `<i>...</i>`." |
-| known residual risk | `1_…py`'s `extracted.txt` uses the same separator; OCR is told to use `* * *`, lower risk. A truly collision-proof separator (form feed / long sentinel) is a deferred change — noted in [STATUS](STATUS.md). |
 
 ### 2.2 Model meta-responses leak in as page content
 
@@ -305,13 +339,29 @@ current shape:
   model left the connectives in French or mistranslated `coup droit` as
   "straight right".
 
+### 2.9 Figure captions need the *full* prompt, not a one-liner
+
+**Seen:** the first `translate_figure_captions()` fed each caption to a
+bare "translate this caption line" prompt. Results ignored the term
+policy: `PARADE DE SIXTE` → "Sixteen Step Parade" (read "sixte" as
+"sixteen"), `PRISE DE FER SUR LE BRAS TENDU` → "GRIP ON THE STRETCHED
+ARM", `LE CROISÉ AU FLANC` → "THE CROSSBLOW TO THE FLANK".
+
+**Fix:** plate/figure captions *are* headings (`PARADE DE …`, `Fig. N. —
+…`), so run them through the same `PROMPT_TEMPLATE` as body text — the
+rule-2/3/4 term policy and the `PARADES DE X` few-shots then apply.
+Result: "PARRY OF SIXTE", "PRISE DE FER ON THE EXTENDED ARM", "THE
+CROISÉ AT THE FLANK". `2_translate.py --captions` re-runs just this pass
+across all books (no body re-translate) for iterating.
+
 ---
 
 ## Part 3 — shared / architectural
 
-- **`\n---\n` page separator is content-fragile** — see 2.1. Every stage
-  joins and splits on it. This is the single most fragile assumption in
-  the pipeline.
+- **Page separator** — `pipeline/_pageio.py::PAGE_SEP` (U+001E). Every
+  stage joins / splits the multi-page files on it. Was `\n---\n`, which a
+  stray Markdown rule could split (see 2.1); the control char can't occur
+  in content. `split_pages()` still reads legacy `\n---\n` files.
 - **olmOCR-2, not Tesseract** — decided after an 8-page three-way eval
   (Gallica text layer / forced Tesseract / olmOCR-2). Forced Tesseract is
   unusable on any page with an in-text figure and misreads stains
