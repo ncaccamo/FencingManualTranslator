@@ -19,10 +19,20 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
   / a no-VLM fallback, not used.
 - **Translation:** Qwen2.5-7B on :11434. Never drops a page; flags
   low-confidence output inline.
-- **PDFs:** English-only (flowing column, inline figures) and side-by-side
-  (scan left / translation right, paragraph-aligned where the scan has a
-  text layer). Both preserve `<i>` italics, indentation, drill/brace
-  layout via `pipeline/_render.py`.
+- **PDFs:** English-only (flowing column, figures in reading order) and
+  side-by-side (scan left / translation right, paragraph-aligned where the
+  scan has a text layer). Both preserve `<i>` italics, indentation,
+  drill/brace layout via `pipeline/_render.py`.
+- **Figures (English-only):** the VLM flags each page as `plate` / `inset`
+  and reads its caption (`figures.json` from step 1, caption translated by
+  step 2 with the full prompt). Step 3 embeds a plate whole (cropped to
+  the profiler's ink band when it's portrait), an inset from the profiler
+  band, with the English caption beneath. Catches line-drawing plates the
+  old density-only path missed. Prototyped on Joseph-Renaud (31 plates)
+  and Gomard 1845 (8) — the other 3 books still use the profiler-only
+  path until re-OCR'd. Open: sideways fold-out engravings stay sideways
+  (can't tell from page geometry); pure-plate pages waste ~½ a sheet
+  (see #6); adjacent captions can run together.
 - **Backend selection:** `backend.env` switches local (`vulkan` | `rocm7` |
   `rocm714`) vs. remote (LAN llama-server + bearer token). See
   `docs/remote-gpu.md`.
@@ -100,10 +110,13 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 
 - A physically photographed (not flatbed) book — all sources so far are
   clean library scans.
-- Figure detection on line-drawing illustrations (margin *or* full-page
-  framed): `find_figure_band()` is tuned for framed photo plates by row
-  ink-density and misses faint half-tones and line art. Gomard: 4 of ~20
-  plates caught.
+- Figure detection: the VLM path (`figures.json`) now handles full-page
+  plates including line art; `find_figure_band()` still does the *geometry*
+  for an inset crop and is the fallback for un-re-OCR'd books (misses
+  faint half-tones / line art). Still unproven: how many mid-book plates
+  the VLM under-reports (Gomard flagged only 8 — physical-book check
+  pending), inset figures embedded in busy text pages, orientation of
+  sideways fold-out engravings.
 - Paragraph alignment against a sparse/patchy embedded text layer —
   Gomard's Google OCR gave 47% aligned vs. Spinnewyn's 71% on a cleaner
   Gallica layer. Below some threshold it should probably fall back to
