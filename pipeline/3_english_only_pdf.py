@@ -97,9 +97,13 @@ def band_for_figure(fig, src_page):
     never lost."""
     cap = (fig.get("caption_en") or fig.get("caption") or "").strip() \
         or "[illustration from the original]"
-    if fig.get("kind") == "plate" or src_page is None:
+    if src_page is None:
         return None, cap
     prof = find_figure_band(src_page)
+    if fig.get("kind") == "plate":
+        # Whole-page plate: use the profiler's band to crop off the running
+        # header, page number and scan margins; whole page if it found none.
+        return prof, cap
     if prof is None:
         return None, cap            # VLM saw an inset the profiler missed
     y0f, y1f, *_ = prof
@@ -190,13 +194,18 @@ class Flow:
                 self._newpage()  # guard against a zero-progress loop
 
     @staticmethod
-    def _fig_size(src_page, band):
+    def _clip_dims(src_page, band):
         r = src_page.rect
         if band:
             y0f, y1f, x0f, x1f = band
-            cw, ch = (x1f - x0f) * r.width, (y1f - y0f) * r.height
-        else:
-            cw, ch = r.width, r.height
+            return (x1f - x0f) * r.width, (y1f - y0f) * r.height
+        return r.width, r.height
+
+    @classmethod
+    def _fig_size(cls, src_page, band):
+        cw, ch = cls._clip_dims(src_page, band)
+        if cw > ch * 1.15:          # landscape region -> shown rotated 90°
+            cw, ch = ch, cw
         w = COL.width
         h = w * (ch / cw)
         if h > FIGURE_MAX_H:
@@ -204,9 +213,12 @@ class Flow:
         return w, h
 
     def figure(self, src_page, band=None, caption="[illustration from the original]"):
-        """Embed source_page (optionally cropped to `band`, a
-        (y0f,y1f,x0f,x1f) fraction rect) scaled into the column."""
+        """Embed src_page (optionally cropped to `band`, a
+        (y0f,y1f,x0f,x1f) fraction rect) scaled into the column. A
+        landscape clip (a fold-out plate) is rotated upright."""
         r = src_page.rect
+        cw, ch = self._clip_dims(src_page, band)
+        rotate = 90 if cw > ch * 1.15 else 0
         if band:
             y0f, y1f, x0f, x1f = band
             clip = fitz.Rect(r.x0 + x0f * r.width, r.y0 + y0f * r.height,
@@ -220,7 +232,8 @@ class Flow:
         pix = src_page.get_pixmap(matrix=fitz.Matrix(150 / 72, 150 / 72), clip=clip)
         x0 = COL.x0 + (COL.width - w) / 2
         self.page.insert_image(fitz.Rect(x0, self.y, x0 + w, self.y + h),
-                               stream=pix.tobytes("jpeg", jpg_quality=72))
+                               stream=pix.tobytes("jpeg", jpg_quality=72),
+                               rotate=rotate)
         self.y += h + 4
         for vl in _render.layout(caption, COL.width, FS - 1):
             _, self.y = _render.draw(self.page,

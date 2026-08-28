@@ -327,6 +327,41 @@ def translate_with_llama(prompt: str) -> str:
     
     return None
 
+
+def translate_figure_captions(folder: str, force: bool = False) -> int:
+    """Translate the source captions in figures.json (written by step 1) in
+    place, adding a 'caption_en' to each. Uses the full translation prompt
+    -- plate captions are headings ("PARADE DE SIXTE" etc.) and need the
+    same term policy as body text. Skips captions already done unless
+    `force`. Returns the number translated."""
+    import json as _json
+    fig_path = f"{folder}/figures.json"
+    if not os.path.exists(fig_path):
+        return 0
+    with open(fig_path, encoding="utf-8") as fh:
+        fig_map = _json.load(fh)
+    n = 0
+    for figs in fig_map.values():
+        for fig in figs:
+            cap = (fig.get("caption") or "").strip()
+            if not cap:
+                fig.pop("caption_en", None)
+                continue
+            if fig.get("caption_en") and not force:
+                continue
+            en = translate_with_llama(
+                f"{PROMPT_TEMPLATE}\n\nText to translate:\n{cap}")
+            en = strip_model_preamble((en or "").strip()).strip()
+            en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
+            fig["caption_en"] = en.splitlines()[0].strip() if en else cap
+            n += 1
+    with open(fig_path, "w", encoding="utf-8") as fh:
+        _json.dump(fig_map, fh, ensure_ascii=False, indent=1)
+    if n:
+        print(f"  translated {n} figure caption(s)")
+    return n
+
+
 print("\n" + "="*60)
 print("STEP 2: AI TRANSLATION")
 print("="*60)
@@ -336,6 +371,20 @@ translation_proc = start_translation_server()
 if translation_proc is None:
     print("✗ Cannot start translation server\n")
     exit(1)
+
+# `2_translate.py --captions` re-translates only figure captions (all books),
+# without touching the page bodies -- for iterating on caption quality.
+if len(sys.argv) > 1 and sys.argv[1] == "--captions":
+    try:
+        for folder in glob.glob("/data/processed/*_translated"):
+            if os.path.exists(f"{folder}/figures.json"):
+                print(f"captions: {Path(folder).name}")
+                translate_figure_captions(folder, force=True)
+    finally:
+        if translation_proc is not REMOTE_SERVER and translation_proc:
+            translation_proc.terminate()
+    print("\n✓ Caption pass complete\n")
+    sys.exit(0)
 
 try:
     for folder in glob.glob("/data/processed/*_translated"):
@@ -484,30 +533,7 @@ try:
         with open(dst, "w", encoding="utf-8") as f:
             f.write("\n---\n".join(translated_pages))
 
-        # Figure captions (from 1_'s figures.json) -> English, in place.
-        fig_path = f"{folder}/figures.json"
-        if os.path.exists(fig_path):
-            import json as _json
-            with open(fig_path, encoding="utf-8") as fh:
-                fig_map = _json.load(fh)
-            n_cap = 0
-            for figs in fig_map.values():
-                for fig in figs:
-                    cap = (fig.get("caption") or "").strip()
-                    if not cap or fig.get("caption_en"):
-                        continue
-                    en = translate_with_llama(
-                        "Translate this single caption line from a historical "
-                        "fencing manual into English. Keep figure/plate numbers "
-                        "as-is. Output ONLY the translated caption, nothing else:\n"
-                        + cap)
-                    en = strip_model_preamble((en or "").strip())
-                    fig["caption_en"] = en or cap
-                    n_cap += 1
-            with open(fig_path, "w", encoding="utf-8") as fh:
-                _json.dump(fig_map, fh, ensure_ascii=False, indent=1)
-            if n_cap:
-                print(f"  translated {n_cap} figure caption(s)")
+        translate_figure_captions(folder)
 
         print(f"\n✓ Translation complete: {Path(folder).name}\n")
 
