@@ -138,16 +138,22 @@ def contains_too_much_non_english(text: str) -> bool:
     return (non_english_count / len(words)) > 0.35
 
 
+# An optional leading politeness token the model likes to prepend to both
+# preambles and refusals ("Certainly. Here is...", "Sure, please provide...").
+_LEAD_POLITE = r"(?:(?:sure|certainly|of course|okay|ok|yes|alright|understood)[,.!]?\s+)?"
+
 # Prose preambles the model emits despite the prompt's "output ONLY the
 # translation" rule. Matched only at the very start of the output, one per
 # line, case-insensitively. The Markdown sanitizers already handle '#'/'**'.
 _PREAMBLE_RE = re.compile(
-    r"^\s*(?:"
+    r"^\s*" + _LEAD_POLITE + r"(?:"
     r"here(?:'s| is)\b.*|"
     r"below is\b.*|"
-    r"(?:the\s+)?(?:following|translation)\b[^\n]*:|"
-    r"sure[,.!]?|"
-    r"(?:certainly|okay|ok)[,.!]?|"
+    r"[^\n]*\btranslation\s*:|"                 # any line ENDING in 'translation:'
+    r"[^\n]*\bhere(?:'s| is) the translation\b[^\n]*|"
+    r"(?:the\s+)?following\b[^\n]*:|"
+    r"in this case,?\b[^\n]*:|"                 # "In this case, the text describes ... :"
+    r"sure[,.!]?|certainly[,.!]?|okay[,.!]?|ok[,.!]?|"
     r"i(?:'ll| will| can)\b[^\n]*translat[^\n]*|"
     r"note:.*|"
     r"following the (?:critical )?rules[^\n]*:|"
@@ -158,8 +164,8 @@ _PREAMBLE_RE = re.compile(
 # Whole-output shapes that mean "the model had nothing to translate" or
 # refused -- never a usable page, not even as a low-confidence fallback.
 _REFUSAL_RE = re.compile(
-    r"^\s*(?:"
-    r"please provide the text\b|"
+    r"^\s*" + _LEAD_POLITE + r"(?:"
+    r"please provide (?:the|some) (?:text|content)\b|"
     r"(?:the\s+)?(?:text|content)\s+(?:you\s+)?provided\s+(?:does\s+not|doesn't|is\s+not)\b|"
     r"there (?:is|was) no (?:text|content)\b|"
     r"it (?:seems|appears) (?:that )?(?:there is|no) \b|"
