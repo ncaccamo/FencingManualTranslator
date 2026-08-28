@@ -21,6 +21,7 @@ plain flow.
 """
 import fitz
 import os
+import json
 from pathlib import Path
 import glob
 import re
@@ -178,6 +179,10 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
         translations = [p.strip() for p in _pageio.split_pages(f.read())]
     with open(f"{folder}/extracted.txt", "r", encoding="utf-8") as f:
         extractions = [p.strip() for p in _pageio.split_pages(f.read())]
+    fig_map = {}
+    if os.path.exists(f"{folder}/figures.json"):
+        with open(f"{folder}/figures.json", encoding="utf-8") as f:
+            fig_map = json.load(f)
 
     src = fitz.open(ocr_pdf)
     n = min(len(src), len(translations))
@@ -205,8 +210,24 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
         page, y = new_spread(doc, src, i, struct)
 
         if not tr or tr in SKIP_MARKERS:
-            page.insert_text((RIGHT.x0, y + 4), "[blank / no text in original]",
-                             fontsize=9, fontname=_render.ITALIC)
+            # A plate page (no body text, but figures.json has its caption):
+            # show the translated caption instead of "[blank]" -- the scan
+            # on the left already carries the picture.
+            caps = [f.get("caption_en") or f.get("caption")
+                    for f in fig_map.get(str(i), [])
+                    if f.get("caption_en") or f.get("caption")]
+            if caps:
+                page.insert_text((RIGHT.x0, y + 4), "[plate — see facing page]",
+                                 fontsize=9, fontname=_render.ITALIC)
+                yy = y + 22
+                for c in caps:
+                    for vl in _render.layout(c, RIGHT.width, 9):
+                        _, yy = _render.draw(page, (RIGHT.x0, yy, RIGHT.x1, RIGHT.y1),
+                                             [vl], 9)
+                    yy += 6
+            else:
+                page.insert_text((RIGHT.x0, y + 4), "[blank / no text in original]",
+                                 fontsize=9, fontname=_render.ITALIC)
             continue
 
         # Split off the glossary/footnote block; it goes in a reserved strip
