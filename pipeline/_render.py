@@ -167,10 +167,15 @@ def split_footnotes(text):
 
 
 def footnote_lines(notes, width, size):
-    """Lay a list of note strings for drawing: a thin rule then each note
-    wrapped with a hanging indent. Returns list[Line] (the first is a rule
-    sentinel: indent<0)."""
+    """Lay a list of note strings for drawing: a thin rule, an italic
+    label that marks these as the translator's notes (distinct from the
+    author's own numbered footnotes in the body), then each note wrapped
+    with a hanging indent. Returns list[Line] (first is a rule sentinel:
+    indent<0)."""
     out = [Line(indent=-1.0)]  # rule marker for draw()
+    for j, vl in enumerate(_wrap(_spans("<i>Translator's notes (AI):</i>"),
+                                 width, size)):
+        out.append(Line(0.0 if j == 0 else size * 0.9, vl))
     for n in notes:
         wrapped = _wrap(_spans(n), width, size)
         for j, vl in enumerate(wrapped):

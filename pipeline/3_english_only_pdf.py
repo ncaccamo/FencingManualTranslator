@@ -279,6 +279,11 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
             fig_map = json.load(f)
     use_vlm_figs = bool(fig_map) or os.path.exists(f"{folder}/figures.json")
 
+    header_map = {}
+    if os.path.exists(f"{folder}/headers.json"):
+        with open(f"{folder}/headers.json", encoding="utf-8") as f:
+            header_map = json.load(f)
+
     src_doc = None
     ocr_pdf = next((os.path.join(folder, f) for f in os.listdir(folder)
                     if f.endswith(".pdf") and "OCR" in f), None)
@@ -332,7 +337,8 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
             continue  # genuinely blank sheet
 
         first_h = flow._fig_size(src_page, placements[0][0])[1] if placements else 0.0
-        flow.section_label(st.get("page_num", ""), st.get("header", ""),
+        hdr = st.get("header", "")
+        flow.section_label(st.get("page_num", ""), header_map.get(hdr, hdr),
                            reserve=(first_h + FS * 1.6) if placements else 0.0)
         for band, caption in placements:
             flow.figure(src_page, band, caption=caption)

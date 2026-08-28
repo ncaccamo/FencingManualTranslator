@@ -374,6 +374,44 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
     return n
 
 
+def translate_headers(folder: str, force: bool = False) -> int:
+    """Translate each distinct running header from extracted.txt into a
+    headers.json { raw -> english } map, used by the PDF steps. Headers
+    are section/chapter titles ("LES PARADES", "SOCIÉTÉS") -- an English
+    reader needs to know what section they're in. Translated once per
+    distinct string, through the full prompt (rule 4: headings)."""
+    import json as _json
+    ex_path = f"{folder}/extracted.txt"
+    if not os.path.exists(ex_path):
+        return 0
+    hp = f"{folder}/headers.json"
+    hmap = {}
+    if os.path.exists(hp) and not force:
+        with open(hp, encoding="utf-8") as fh:
+            hmap = _json.load(fh)
+    raw = set()
+    for pg in _pageio.split_pages(open(ex_path, encoding="utf-8").read()):
+        m = re.search(r'(?im)^[ \t]*HEADER[ \t]*:[ \t]*(.+?)[ \t]*$', pg)
+        if m:
+            h = m.group(1).strip()
+            if h and h.lower() not in ("none", "n/a", "-"):
+                raw.add(h)
+    n = 0
+    for h in sorted(raw):
+        if h in hmap and not force:
+            continue
+        en = translate_with_llama(f"{PROMPT_TEMPLATE}\n\nText to translate:\n{h}")
+        en = strip_model_preamble((en or "").strip()).strip()
+        en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
+        hmap[h] = en.splitlines()[0].strip() if en else h
+        n += 1
+    with open(hp, "w", encoding="utf-8") as fh:
+        _json.dump(hmap, fh, ensure_ascii=False, indent=1)
+    if n:
+        print(f"  translated {n} running header(s)")
+    return n
+
+
 print("\n" + "="*60)
 print("STEP 2: AI TRANSLATION")
 print("="*60)
@@ -384,14 +422,14 @@ if translation_proc is None:
     print("✗ Cannot start translation server\n")
     exit(1)
 
-# `2_translate.py --captions` re-translates only figure captions (all books),
-# without touching the page bodies -- for iterating on caption quality.
+# `2_translate.py --captions` re-runs only the figure captions AND running
+# headers (all books), without touching the page bodies -- for iterating.
 if len(sys.argv) > 1 and sys.argv[1] == "--captions":
     try:
         for folder in glob.glob("/data/processed/*_translated"):
-            if os.path.exists(f"{folder}/figures.json"):
-                print(f"captions: {Path(folder).name}")
-                translate_figure_captions(folder, force=True)
+            print(f"captions/headers: {Path(folder).name}")
+            translate_figure_captions(folder, force=True)
+            translate_headers(folder, force=True)
     finally:
         if translation_proc is not REMOTE_SERVER and translation_proc:
             translation_proc.terminate()
@@ -546,6 +584,7 @@ try:
             f.write(_pageio.join_pages(translated_pages))
 
         translate_figure_captions(folder)
+        translate_headers(folder)
 
         print(f"\n✓ Translation complete: {Path(folder).name}\n")
 
