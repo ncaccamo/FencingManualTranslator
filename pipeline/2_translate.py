@@ -484,6 +484,31 @@ try:
         with open(dst, "w", encoding="utf-8") as f:
             f.write("\n---\n".join(translated_pages))
 
+        # Figure captions (from 1_'s figures.json) -> English, in place.
+        fig_path = f"{folder}/figures.json"
+        if os.path.exists(fig_path):
+            import json as _json
+            with open(fig_path, encoding="utf-8") as fh:
+                fig_map = _json.load(fh)
+            n_cap = 0
+            for figs in fig_map.values():
+                for fig in figs:
+                    cap = (fig.get("caption") or "").strip()
+                    if not cap or fig.get("caption_en"):
+                        continue
+                    en = translate_with_llama(
+                        "Translate this single caption line from a historical "
+                        "fencing manual into English. Keep figure/plate numbers "
+                        "as-is. Output ONLY the translated caption, nothing else:\n"
+                        + cap)
+                    en = strip_model_preamble((en or "").strip())
+                    fig["caption_en"] = en or cap
+                    n_cap += 1
+            with open(fig_path, "w", encoding="utf-8") as fh:
+                _json.dump(fig_map, fh, ensure_ascii=False, indent=1)
+            if n_cap:
+                print(f"  translated {n_cap} figure caption(s)")
+
         print(f"\n✓ Translation complete: {Path(folder).name}\n")
 
 finally:

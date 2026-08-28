@@ -35,4 +35,16 @@ HEADER: [any running header/title text at the very top of the page, or "none"]
 BODY_TEXT:
 [verbatim transcription of the main text block, preserving line breaks where they occur naturally]
 
+FIGURES:
+[Report every illustration that is part of the WORK ITSELF -- an engraving, a woodcut, a line drawing, a diagram, a photographic plate. Do NOT report a decorative rule, a section ornament, a drop-cap, a printer's device / colophon, a library stamp, or the shadow of the facing page.
+If the page has none, write exactly one line:
+none
+Otherwise write one line per illustration, in this EXACT pipe-delimited form:
+<full-page OR inline> | <top> | <bottom> | <caption>
+  - "full-page": the illustration is essentially the whole page (a plate on its own leaf). Use 0.00 and 1.00 for <top>/<bottom>.
+  - "inline": the illustration sits on a page that also has running text. <top> and <bottom> are the fractions of the PAGE HEIGHT where the illustration begins and ends (0.00 = very top edge, 1.00 = very bottom edge), your best estimate.
+  - <caption>: the illustration's caption or title line, transcribed verbatim (e.g. "Fig. 12. -- La parade de quarte"). If there is no caption, write: none
+Example:
+inline | 0.18 | 0.55 | Fig. 4. -- Le salut]
+
 Be extremely precise -- this transcription will be used for translation and scholarly work, and any silent change from what is actually printed on the page is a real error.

@@ -37,6 +37,7 @@ Output contract (added after the hard-page eval, see chat log):
 import glob
 import os
 import re
+import json
 from collections import Counter
 import fitz
 import base64
@@ -172,11 +173,53 @@ def parse_vlm_response(raw: str) -> dict:
     page_raw = _clean(pn.group(1) if pn else "")
     header = _clean(hd.group(1) if hd else "")
     if bd:
-        body = bd.group(1).strip()
+        # BODY_TEXT runs to end-of-response OR to the FIGURES: marker,
+        # whichever comes first.
+        body = re.split(r'(?im)^[ \t]*FIGURES[ \t]*:[ \t]*$', bd.group(1), 1)[0].strip()
     else:
-        body = re.sub(r'^[ \t]*(PAGE_NUMBER|HEADER)[ \t]*:.*$', '', raw,
+        body = re.sub(r'(?im)^[ \t]*FIGURES[ \t]*:.*\Z', '', raw, flags=re.S)
+        body = re.sub(r'^[ \t]*(PAGE_NUMBER|HEADER)[ \t]*:.*$', '', body,
                       flags=re.I | re.M).strip()
-    return {"page_raw": page_raw, "header": header, "body": body}
+    return {"page_raw": page_raw, "header": header, "body": body,
+            "figures": parse_figures_block(raw)}
+
+
+def parse_figures_block(raw: str) -> list:
+    """Parse the FIGURES: section of a VLM response into a list of
+        {"kind": "full-page"|"inline", "y0": float, "y1": float, "caption": str}
+    Tolerant of a missing block, "none", stray bullets, and bad numbers."""
+    m = re.search(r'(?im)^[ \t]*FIGURES[ \t]*:[ \t]*\n?(.*)\Z', raw, re.S)
+    if not m:
+        return []
+    figs = []
+    for line in m.group(1).splitlines():
+        line = line.strip().lstrip("-*• ").strip()
+        if not line or line.lower() in ("none", "[none]", "figures: none"):
+            continue
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) < 4:
+            continue
+        kind = parts[0].lower()
+        if "full" in kind:
+            kind = "full-page"
+        elif "inline" in kind:
+            kind = "inline"
+        else:
+            continue
+        def _frac(s, default):
+            try:
+                return min(1.0, max(0.0, float(re.search(r'[\d.]+', s).group())))
+            except (AttributeError, ValueError):
+                return default
+        y0 = _frac(parts[1], 0.0)
+        y1 = _frac(parts[2], 1.0)
+        if y1 <= y0:
+            y0, y1 = 0.0, 1.0
+        cap = "|".join(parts[3:]).strip()
+        if cap.lower() in ("none", "[none]", ""):
+            cap = ""
+        figs.append({"kind": kind, "y0": y0, "y1": y1, "caption": cap})
+    return figs
 
 
 def _roman_to_int(s: str):
@@ -558,6 +601,16 @@ try:
 
         with open(f"{work_dir}/extracted.txt", "w", encoding="utf-8") as f:
             f.write("\n---\n".join(canonical_pages))
+
+        # Per-page figure metadata for the English-only PDF (kind / vertical
+        # extent / caption, as reported by the VLM). Captions are translated
+        # into this file by 2_translate.py. Keyed by 0-based page index.
+        figures_map = {str(i): fields["figures"]
+                       for i, fields in enumerate(parsed) if fields.get("figures")}
+        with open(f"{work_dir}/figures.json", "w", encoding="utf-8") as f:
+            json.dump(figures_map, f, ensure_ascii=False, indent=1)
+        n_fig = sum(len(v) for v in figures_map.values())
+        print(f"  {n_fig} figure(s) flagged across {len(figures_map)} page(s)")
 
         # Parity with the Tesseract path: one reconciled page number per
         # line, '[n]' where it had to be inferred rather than read.

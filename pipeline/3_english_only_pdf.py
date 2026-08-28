@@ -11,14 +11,18 @@ drill / command-table structure. Now:
   * line breaks, indentation and <i> italics preserved via _render
   * overflow is impossible -- text that doesn't fit continues on the next
     sheet
-  * illustrations are kept with the reading: a dense horizontal band on a
-    source page (row-density profiling) is cropped and embedded inline
-    above that page's translated text, and a page that is nothing but a
-    plate is embedded whole. Faint half-tone illustrations may be missed
-    (the detector is deliberately conservative).
+  * illustrations are kept with the reading. Primary source is the VLM:
+    1_ocr_and_extract_vlm.py writes figures.json (per page: full-page vs
+    inline, vertical extent, caption), 2_translate.py fills in the English
+    caption, and this step crops the region (or embeds the whole page for
+    a full-page plate) into the flow with the translated caption beneath.
+    For a book OCR'd before figures.json existed it falls back to the old
+    row-density profiler (find_figure_band), which misses line art and
+    faint half-tones.
 """
 import fitz
 import os
+import json
 from pathlib import Path
 import glob
 import re
@@ -82,6 +86,27 @@ def find_figure_band(page):
     pad = h * 0.006
     return (max(0.0, (y0 - pad) / h), min(1.0, (y1 + pad) / h),
             max(0.0, (min(cols) / w) - 0.01), min(1.0, (max(cols) / w) + 0.01))
+
+
+def band_for_figure(fig, src_page):
+    """Turn a figures.json record into (band, caption) for Flow.figure().
+    band is None for a full-page plate; for an inline figure it's the VLM's
+    vertical extent, with the x-extent tightened by the density profiler
+    when its band overlaps the VLM's rows."""
+    cap = (fig.get("caption_en") or fig.get("caption") or "").strip() \
+        or "[illustration from the original]"
+    y0, y1 = float(fig.get("y0", 0.0)), float(fig.get("y1", 1.0))
+    if fig.get("kind") == "full-page" or (y1 - y0) >= 0.85:
+        return None, cap
+    x0f, x1f = 0.0, 1.0
+    prof = find_figure_band(src_page) if src_page is not None else None
+    if prof:
+        py0, py1, px0, px1 = prof
+        if min(py1, y1) - max(py0, y0) > 0.15 * (y1 - y0):   # rows overlap
+            x0f, x1f = px0, px1
+            y0, y1 = min(y0, py0), max(y1, py1)
+    pad = 0.006
+    return (max(0.0, y0 - pad), min(1.0, y1 + pad), x0f, x1f), cap
 
 
 def parse_vlm_output(text: str) -> dict:
@@ -235,6 +260,16 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
     with open(f"{folder}/extracted.txt", "r", encoding="utf-8") as f:
         extractions = [p.strip() for p in f.read().split("\n---\n")]
 
+    # VLM-flagged figures (kind / vertical extent / translated caption),
+    # keyed by 0-based page index. When present it is the source of truth
+    # for figures; when absent (a book OCR'd before this existed) fall back
+    # to per-page density profiling.
+    fig_map = {}
+    if os.path.exists(f"{folder}/figures.json"):
+        with open(f"{folder}/figures.json", encoding="utf-8") as f:
+            fig_map = json.load(f)
+    use_vlm_figs = bool(fig_map) or os.path.exists(f"{folder}/figures.json")
+
     src_doc = None
     ocr_pdf = next((os.path.join(folder, f) for f in os.listdir(folder)
                     if f.endswith(".pdf") and "OCR" in f), None)
@@ -253,29 +288,32 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
         is_empty = (not tr) or tr in SKIP_MARKERS
         src_page = src_doc[i] if (src_doc is not None and i < len(src_doc)) else None
 
-        band = find_figure_band(src_page) if src_page is not None else None
+        # Collect (band, caption) figure placements for this page.
+        placements = []
+        if use_vlm_figs:
+            for fig in fig_map.get(str(i), []):
+                if src_page is None:
+                    break
+                placements.append(band_for_figure(fig, src_page))
+        elif src_page is not None:
+            band = find_figure_band(src_page)
+            if band is not None:
+                y0f, y1f, *_ = band
+                placements.append(
+                    (None if (y1f - y0f) > 0.85 else band,
+                     "[illustration from the original]"))
+            elif is_empty and interior_ink_fraction(src_page) > 0.04:
+                placements.append((None, "[illustration from the original]"))
 
-        if is_empty and band is None:
-            # nothing to translate and no illustration -> is it a whole-page
-            # plate, or just a blank/near-blank sheet?
-            if src_page is not None and interior_ink_fraction(src_page) > 0.04:
-                _, fig_h = flow._fig_size(src_page, None)
-                flow.section_label(st.get("page_num", ""), st.get("header", ""),
-                                   reserve=fig_h + FS * 1.6)
-                flow.figure(src_page)
-                figures += 1
-            continue
+        if is_empty and not placements:
+            continue  # genuinely blank sheet
 
-        if band is not None:
-            y0f, y1f, *_ = band
-            use_band = None if (y1f - y0f) > 0.85 else band
-            _, fig_h = flow._fig_size(src_page, use_band)
-            flow.section_label(st.get("page_num", ""), st.get("header", ""),
-                               reserve=fig_h + FS * 1.6)
-            flow.figure(src_page, use_band)
+        first_h = flow._fig_size(src_page, placements[0][0])[1] if placements else 0.0
+        flow.section_label(st.get("page_num", ""), st.get("header", ""),
+                           reserve=(first_h + FS * 1.6) if placements else 0.0)
+        for band, caption in placements:
+            flow.figure(src_page, band, caption=caption)
             figures += 1
-        else:
-            flow.section_label(st.get("page_num", ""), st.get("header", ""))
         if not is_empty:
             flow.body(tr)
             rendered += 1

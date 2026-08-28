@@ -11,6 +11,7 @@ Usage:
     python3 reprocess_extracted.py <folder> ...    # only these
 """
 import glob
+import json
 import os
 import sys
 
@@ -49,11 +50,18 @@ for folder in targets:
         canonical.append(
             f"PAGE_NUMBER: {n}\nHEADER: {f['header'] or 'none'}\nBODY_TEXT:\n{f['body']}")
 
+    figures_map = {str(i): p["figures"]
+                   for i, p in enumerate(parsed) if p.get("figures")}
+
     with open(os.path.join(folder, "extracted.txt"), "w", encoding="utf-8") as fh:
         fh.write("\n---\n".join(canonical))
     with open(os.path.join(folder, "page_numbers.txt"), "w", encoding="utf-8") as fh:
         fh.write("\n".join(nums))
+    with open(os.path.join(folder, "figures.json"), "w", encoding="utf-8") as fh:
+        json.dump(figures_map, fh, ensure_ascii=False, indent=1)
 
     real = sum(1 for n in nums if not n.startswith("["))
+    n_fig = sum(len(v) for v in figures_map.values())
     print(f"✓ {os.path.basename(folder)}: {len(raw_pages)} pages, "
-          f"{real} corroborated folios, {len(nums) - real} inferred")
+          f"{real} corroborated folios, {len(nums) - real} inferred, "
+          f"{n_fig} figure(s) on {len(figures_map)} page(s)")
