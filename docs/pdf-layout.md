@@ -1,0 +1,213 @@
+# How the PDF steps work
+
+Steps 3 and 4 turn `translation.txt` (+ the source scan + a couple of
+sidecar files) into the two output PDFs. This is the map of how — the
+tools, the shared layout engine, and the knobs — for anyone making
+formatting decisions.
+
+- [`pipeline/_render.py`](../pipeline/_render.py) — the shared text
+  layout engine
+- [`pipeline/3_english_only_pdf.py`](../pipeline/3_english_only_pdf.py) —
+  the flowing English reading copy
+- [`pipeline/4_side_by_side_pdf.py`](../pipeline/4_side_by_side_pdf.py) —
+  scan-left / translation-right
+
+---
+
+## The tool: PyMuPDF (`fitz`)
+
+One library does everything. It's imported as `fitz`. Only a handful of
+its primitives are used:
+
+| Call | What it does |
+|---|---|
+| `fitz.open()` | new empty PDF (output); `fitz.open(path)` opens the scan |
+| `doc.new_page(width, height)` | add a blank sheet; sizes are in **points** (72 pt = 1 inch) |
+| `page.insert_text((x, y), s, fontsize, fontname)` | one short string at a point (labels, headers) |
+| `page.insert_image(rect, stream=…)` | drop a JPEG into a rectangle |
+| `page.draw_line`, `page.draw_rect` | the divider, the footnote rules |
+| `page.show_pdf_page(rect, src, i)` | paint page `i` of another PDF into a rectangle — this is how the scan gets onto the left of the side-by-side |
+| `src_page.get_pixmap(matrix, clip)` | rasterise (part of) a scan page to pixels; `.tobytes("jpeg", jpg_quality=…)` for embedding |
+| `src_page.get_text("blocks")` | the scan's own embedded OCR text layer, as positioned boxes — used only for paragraph alignment |
+
+Coordinates: origin is **top-left**, y grows **downward**. A "rect" is
+`(x0, y0, x1, y1)`.
+
+Fonts are the PDF base-14 (`times-roman`, `times-italic`, `times-bold`) —
+always present, no font files to ship.
+
+---
+
+## `_render.py` — the text layout engine
+
+Both PDF steps flow body text through this. It exists because the old
+code did `text.replace("\n", " ")` and one `insert_textbox`, which threw
+away every line break, indent and `<i>` span (turning fencing drills into
+a wall of prose) and **silently truncated** anything that didn't fit.
+
+### The model
+
+Text → a list of `Line` objects. A `Line` has:
+
+- `indent` — left offset in points (from counting leading spaces in the
+  source line: drill blocks, braced command groups keep their shape).
+  `indent < 0` is a **sentinel** meaning "draw a horizontal rule here"
+  (the footnote separator).
+- `spans` — `[(text, italic_flag), …]`, so `<i>…</i>` becomes real
+  italics.
+- `gap` — a blank line (paragraph break); drawn as partial leading, not a
+  full empty line.
+
+### The two functions that matter
+
+- **`layout(text, width, size) -> [Line]`** — splits on `\n`, derives
+  each line's indent, greedy-word-wraps the rest to `width` at `size`.
+  Wrapping widths use `fitz.Font(...).text_length()` so accented and
+  italic glyphs advance correctly (an earlier version summed
+  `get_text_length()` and words like `DEUXIÈME` collided with the next
+  word).
+- **`draw(page, rect, lines, size, *, dry=False) -> (leftover, y_end)`** —
+  draws as many `Line`s as fit in `rect`, using a `fitz.TextWriter` (one
+  batched write, correct glyph metrics). **Returns the lines that didn't
+  fit** — the caller flows them to the next slot/page. Nothing is ever
+  dropped. `dry=True` measures without drawing (used to pick a font size
+  that fits).
+
+### Footnotes
+
+`2_translate.py` appends a `___FOOTNOTES___` block to a page's text.
+`split_footnotes(text)` peels it off; `footnote_lines(notes, …)` lays it
+as: a thin rule, an italic **"Translator's notes (AI):"** label (so it
+reads as distinct from the author's own inline `(1)(2)(3)` notes), then
+each note with a hanging indent.
+
+---
+
+## Step 3 — English-only (`3_english_only_pdf.py`)
+
+**Sheet:** portrait US Letter (612 × 792 pt), 56 pt margins → one text
+column `COL`. Body text 10 pt.
+
+**The `Flow` class** owns "the current output page and the y cursor" so
+the rest of the code never thinks about page breaks:
+
+- `section_label(page_num, header)` — draws `— [n] —   HEADER` + a rule.
+  Starts a fresh sheet if the label (plus a reserved height for a figure
+  that's about to follow) wouldn't fit — so a figure's label is never
+  orphaned at the bottom of a sheet.
+- `body(text)` — `split_footnotes`, then `_flow(layout(body))`, then the
+  footnote block smaller and grey. `_flow` loops `draw()` → new page →
+  `draw()` until there's no leftover.
+- `figure(src_page, band, caption)` — rasterise the scan page (or the
+  `band` sub-rectangle) at 150 dpi, embed as JPEG scaled to the column
+  width (capped at 82 % of column height), translated caption beneath.
+
+**Per source page**, the loop:
+
+1. Gets `page_num` / `header` from `extracted.txt` (`header` looked up in
+   `headers.json` for the English version).
+2. Builds figure **placements** for the page:
+   - Each entry in `figures.json` for this page → `band_for_figure()`.
+     `plate` = whole page (cropped to the density profiler's ink band
+     when portrait, to strip the running header / folio / scan margin);
+     `inset` = the profiler's band.
+   - If `figures.json` flagged **nothing**, run `find_figure_band()`
+     anyway — the VLM under-reports. A profiler hit → an `inset`
+     placement with a generic `[illustration from the original]` caption.
+3. `section_label`, then draw each figure, then `body(tr)` — **unless**
+   the body is just the figure's caption again (≤ 20 words, matches a
+   caption), in which case the body is skipped.
+
+Text flows continuously — consecutive source pages pack onto a sheet;
+a page's text can resume mid-sentence after an inserted run of plates,
+which is faithful to books that bind their plates mid-chapter.
+
+**`find_figure_band(page)`** — the density profiler. Rasterises the page
+small, profiles each row's dark-pixel fraction, finds the tallest
+contiguous run of near-solid rows in the interior 8–92 % that also spans
+> 30 % of the width. Returns `(y0, y1, x0, x1)` fractions or `None`. Tuned
+for framed half-tone plates; weak on faint line art (hence the VLM flag
+carries detection, this just does geometry).
+
+---
+
+## Step 4 — Side-by-side (`4_side_by_side_pdf.py`)
+
+**Sheet:** landscape US Letter (792 × 612 pt). Left rect `LEFT` for the
+scan, a vertical divider at x≈396, right rect `RIGHT` for the translation.
+
+**Left column:** `page.show_pdf_page(LEFT, src, i)` paints the whole scan
+page, fit-and-centred. No cropping, no detection — the figure comes along
+for free (this is why figures were easy here and hard in step 3).
+
+**Right column:**
+
+- Header row: `Page [n]` + the (translated) running header + a rule.
+- Body: try font size **9, then 8, then 7 pt** — the largest that fits
+  the column (`draw(dry=True)`). If even 7 pt overflows, draw what fits
+  and spill the rest onto a `(cont.)` continuation spread (same scan
+  repeated on the left). Text is never truncated.
+- Footnotes: a fixed strip is reserved at the **bottom** of the right
+  column; the body flows above it.
+- **Plate pages** (no body text): instead of `[blank / no text in
+  original]`, if `figures.json` has the page → `[plate — see facing
+  page]` + the translated caption. The scan on the left carries the
+  picture.
+
+### Paragraph alignment
+
+When it works, each translated paragraph on the right is top-anchored to
+roughly the same fraction down the page as its source paragraph sits on
+the scan, so reading across lands in the right place.
+
+- `paragraph_fracs(src_page)` — from `src_page.get_text("blocks")`
+  (the scan's embedded OCR layer): the y-fraction where each source
+  paragraph starts. `None` if the scan has no usable layer (many library
+  scans don't).
+- `reconcile_fracs(fracs, n_paras)` — maps those anchors onto the
+  translation's paragraph count. If the scan split into **line-level**
+  blocks (more anchors than paragraphs, > 2×), it resamples evenly — a
+  raw one-to-one map pinned whole pages' text to the top. `None` for < 2
+  anchors.
+- `render_aligned()` — dry-fits with the alignment whitespace; if the
+  page still fits, draws it anchored; if not, the caller falls back to
+  plain top-to-bottom flow. A patchy OCR layer (Google Books) mostly
+  fails the dry-fit and falls back — there's no clean "is this layer
+  reliable" signal, so the dry-fit is the real gate.
+
+Alignment rate is a rough scan-quality indicator: Gallica ~70–80 %,
+Google Books ~30–45 %.
+
+---
+
+## Sidecar files (all in `processed/<book>_translated/`)
+
+| File | Written by | Used by | Contents |
+|---|---|---|---|
+| `translation.txt` | step 2 | 3, 4 | one translated page per record, `\x1e`-separated |
+| `extracted.txt` | step 1 | 2, 3, 4 | `PAGE_NUMBER / HEADER / BODY_TEXT` scaffold per page |
+| `page_numbers.txt` | step 1 | (reference) | one reconciled folio per line; `[n]` = interpolated, not printed |
+| `figures.json` | step 1 (captions filled by step 2) | 3, 4 | `{ page_index: [ {kind: plate\|inset, caption, caption_en} ] }` |
+| `headers.json` | step 2 | 3, 4 | `{ raw_running_header: english }` |
+| `<book>_OCR.pdf` | step 1 | 3, 4 | verbatim copy of the source scan |
+
+---
+
+## Knobs
+
+All near the top of each file:
+
+- **Page size / margins** — `PAGE_W`, `PAGE_H`, `MARGIN`, `COL`, `LEFT`,
+  `RIGHT`, `DIVIDER_X`.
+- **Font sizes** — step 3 `FS = 10`; step 4 `SIZES = (9, 8, 7)`.
+- **Figure height cap** — step 3 `FIGURE_MAX_H = COL.height * 0.82`.
+- **Figure JPEG** — 150 dpi, `jpg_quality=72` (in `Flow.figure`). Raise
+  for sharper plates at the cost of file size.
+- **Density-profiler thresholds** — inside `find_figure_band()`: row
+  darkness `> 0.30`, height `> 8 %` (or `> 3 %` if very dense), width
+  `> 30 %`. Loosen to catch fainter illustrations, at the cost of false
+  positives on dense text.
+- **Alignment resample trigger** — `reconcile_fracs`: `len(fracs) >
+  n_paras * 2`.
+- **Leading / paragraph gap** — `_render.draw`'s `leading=1.28`,
+  `gap_frac=0.55`.

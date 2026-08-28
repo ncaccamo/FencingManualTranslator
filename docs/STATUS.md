@@ -198,6 +198,9 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
   failure mode + the prompt/code mitigation. The "why" behind
   `vlm_ocr_prompt.txt` / `translation_prompt.txt` and the `2_translate.py`
   guards.
+- `docs/pdf-layout.md` — how steps 3 & 4 render the PDFs: the `_render`
+  text engine, figure placement (`figures.json` + profiler), paragraph
+  alignment, and every layout knob.
 - `docs/remote-gpu.md` — remote-GPU mode + `rocm714` (both experimental).
 - `docker/ROCM714_NOTES.md` — why ROCm 7.14 is parked.
 - `setup/DEV_ENVIRONMENT_SETUP.md` — maintainer dev-box setup (VS Code,

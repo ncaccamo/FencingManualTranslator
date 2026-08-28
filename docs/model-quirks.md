@@ -62,15 +62,32 @@ legible, so the model guesses.
   appears inside an illustration or engraving plate, a library stamp, or a
   catalogue/accession annotation. … if it is set as a roman numeral (e.g.
   VIII), give the roman numeral, not an arabic conversion."
-- `reconcile_page_numbers()` ([`1_…py`](../pipeline/1_ocr_and_extract_vlm.py) L207):
-  a folio is trusted **only when ≥ 2 consecutive pages agree on the same
-  page-index→folio offset**. Otherwise the line is a bracketed sheet
-  ordinal, `[12]`. It never emits a number ≤ 0.
-- Bug found + fixed: Joseph-Renaud front matter got `[-27]…[-19]` when the
-  post-anchor extrapolation ran below 1. Front-matter / would-be-≤0 now
-  fall back to `[i+1]`.
+- `reconcile_page_numbers()` ([`1_…py`](../pipeline/1_ocr_and_extract_vlm.py)):
+  a folio is trusted when **a neighbouring sheet's folio continues the
+  printed sequence** (`i-1 → v-1` or `i+1 → v+1`). Non-trusted pages are
+  interpolated from the nearest trusted anchor and bracketed `[n]`. It
+  never emits ≤ 0.
+- Was a single **book-wide** index→folio offset: any folio off that offset
+  was discarded. Joseph-Renaud inserts a plates section partway through,
+  which shifts the offset, so the genuine run "20 21 22" got thrown away
+  and shown as the sheet ordinal `[40]`. The local-run rule fixes it —
+  a real "20 21 22" corroborates itself regardless of a later offset.
 - `page_numbers.txt` records the result, one line per page; `[n]` means
   "inferred, not a printed number".
+
+### 1.2b Folio / running-header leaked into BODY_TEXT
+
+**Seen:** Joseph-Renaud — a page's translation opened with a stray line
+`25` then `THE GUARD` (the folio and the running head "LA GARDE"), before
+the real body.
+
+**Failure:** the VLM sometimes drops the printed folio and the running
+header *into* `BODY_TEXT` instead of the `PAGE_NUMBER` / `HEADER` fields.
+
+**Mitigation:** `strip_leaked_headmatter()` peels leading body lines that
+are a bare number or that match a header seen elsewhere in the same book
+(it runs after all pages are parsed, so it has the book's whole header
+vocabulary). Also in `reprocess_extracted.py`.
 
 ### 1.3 Accents added to bare display capitals
 
@@ -155,12 +172,28 @@ profiler only does *geometry*:
   Same `width/height` signal, opposite correct action — auto-rotate broke
   JR. Figures are now embedded in source orientation; a sideways fold-out
   stays sideways.
-- **Under-reporting.** Gomard flagged only 8 (vs. a claimed ~20). Unclear
-  yet whether the VLM misses mid-book plates or the "~20" was a
-  density-profiler overcount — needs a physical-book check.
+- **Under-reporting, confirmed.** Gomard flagged 8; Joseph-Renaud skipped
+  plates in a run of near-identical ones ("SECOND MOVEMENT…"), and missed
+  engravings dropped into text pages (the Montmorency-Boutteville duel).
+  Fix: `3_english_only_pdf.py` runs `find_figure_band()` on **every** page
+  `figures.json` didn't flag — a profiler hit on an unflagged page is a
+  real miss more often than a false positive. Profiler-caught figures get
+  a generic `[illustration from the original]` caption (no VLM caption to
+  translate). JR went 31 → 44 figures, Gomard 8 → 10.
+- **Caption duplicated.** A plate page's OCR body *is* its caption line,
+  so the English-only PDF drew it once under the figure and again as body
+  text. `3_` now skips the body when it's ≤ 20 words and matches a
+  figure's caption.
+- **`FIGURES: none` leaked into the body.** The `BODY_TEXT` split only cut
+  a `FIGURES:` marker alone on its line; the VLM writes `FIGURES: none`
+  inline, so on near-blank pages the literal string became the page body.
+  Split at `^FIGURES:` regardless of what follows.
 
 `find_figure_band()` remains the sole detector for books OCR'd before
-`figures.json` existed (still misses line art).
+`figures.json` existed (still misses line art). Sideways fold-out
+engravings (Gomard) are embedded as-is — page geometry can't tell a
+landscape photo leaf (upright content) from a portrait leaf with a
+sideways plate.
 
 ### 1.8 Server death looked like a slow page
 
@@ -300,7 +333,7 @@ Each page gets up to **3 attempts**. An attempt is rejected if:
 | `looks_like_refusal()` | ~L430 | whole output is a refusal/echo → not even a fallback |
 | `strip_model_preamble()` → empty | ~L437 | preamble with nothing after it |
 | `has_wrong_script()` | L118 | CJK / Cyrillic / Hebrew / Arabic present (Greek is allowed — treatises quote it). Never kept, even as fallback |
-| `contains_too_much_non_english()` | L129 | after stripping `<i>…</i>`, > 35 % of words are in a French/Italian/German/Spanish/Latin stop-word list |
+| `contains_too_much_non_english()` | L129 | after stripping `<i>…</i>`: > 35 % of words in a small FR/IT/DE/ES/LA stop-word list, **or** > 5 % French-only constructs — elisions (`d'une`, `qu'il`; English contractions put a consonant after the apostrophe so they don't match) and endings needing French letters (`-ité`, `-eaux`, …). The stop-word list alone missed a page returned untranslated in dense technical French — its content words (`fendre`, `réserve`, `convenable`) aren't stop words |
 | too short | L456 | `len(candidate) < 0.5 × src_words` — but **only when `src_words ≥ 25`**, because plate captions and drill lines are legitimately terse and were being rejected |
 
 If all 3 attempts fail: keep the best non-garbled attempt as
@@ -318,15 +351,18 @@ current shape:
 - **Rule 2 — KEEP in French, wrap `<i>…</i>`:** named guards/actions with
   no plain-English equivalent — `garde`, `dégagement`, `coupé`, `doublé`,
   `riposte`, `remise`, `reprise`, `prise de fer`, `froissement`,
-  `croisé`, `liement`, `fente`, `appel`, the numbered lines
-  (`tierce`, `quarte`, …), and `épée` (which *is* the English term).
-  Plus Italian / German / Latin equivalents.
+  `croisé`, `liement`, `fente`, `appel`, `corps à corps`, `volte`, the
+  numbered lines (`tierce`, `quarte`, …), and `épée` (which *is* the
+  English term). Plus Italian / German / Latin equivalents. (Each book's
+  terminology page tends to surface one or two more — `corps à corps`
+  came back "body to body", `volte` was OK but pinned explicitly.)
 - **Rule 3 — TRANSLATE these** even though they look technical, and do
   **not** italicise: `fleuret`→foil, `sabre`→saber, `parade`→parry (never
   "riposte"), `coup droit`→straight thrust, `dérobement`→evasion,
   `doublement`→doubling, `une-deux`→one-two, bare `coup(s)`→thrust(s),
-  and the heading connectives **DE / DES / SUR / PAR / AVEC** → of /
-  against / with.
+  `soie` (of a blade)→tang (not "silk/thread"), `caver`→dig/drop the
+  point (not "cave"), `fort`/`faible`→forte/foible, and the heading
+  connectives **DE / DES / SUR / PAR / AVEC** → of / against / with.
 - **Rule 4 — headings are normal text.** All-caps line ⇒ almost always a
   heading, translate fully, no `<i>`, but keep a kept-term's accents
   intact (`PARRIES OF THE CROISÉ`, never `CROIS`).
@@ -351,10 +387,31 @@ ARM", `LE CROISÉ AU FLANC` → "THE CROSSBLOW TO THE FLANK".
 …`), so run them through the same `PROMPT_TEMPLATE` as body text — the
 rule-2/3/4 term policy and the `PARADES DE X` few-shots then apply.
 Result: "PARRY OF SIXTE", "PRISE DE FER ON THE EXTENDED ARM", "THE
-CROISÉ AT THE FLANK". `2_translate.py --captions` re-runs just this pass
-across all books (no body re-translate) for iterating.
+CROISÉ AT THE FLANK". `2_translate.py --captions` re-runs this pass —
+captions **and** running headers — across all books (no body
+re-translate) for iterating.
 
----
+### 2.10 Running headers translated separately
+
+`translate_headers()` collects each **distinct** running-head string from
+`extracted.txt`, translates it once through the full prompt (rule 4), and
+writes `headers.json` (`{ raw → english }`). The PDF steps look it up for
+the section label / right-column header — `FLEURET` → `FOIL`,
+`LES PARADES` → `THE PARRIES`, `LA GARDE` → `THE GUARD`. A book-title
+running head gets translated too (no per-book "keep in French" exception
+yet). Library-catalogue lines that leak into `HEADER` (`Bibliothèque
+Larousse 15720`, an author-credit line) pass through mangled — cosmetic.
+
+### 2.11 Author's footnotes vs. ours
+
+A page can carry the **author's** own `(1) (2) (3)` footnotes (plain prose
+in the OCR body, translated and flowed inline) *and* **our** glossary /
+`<fn>` notes (a `†N` marker + a grey ruled block). The dagger-vs-number
+split is the standard scholarly convention; on top of that our block now
+opens with an italic **"Translator's notes (AI):"** label
+(`_render.footnote_lines`). If it still reads as too much on
+footnote-dense pages, the lever is to defer a glossary term's gloss to a
+later occurrence that isn't already crowded.
 
 ## Part 3 — shared / architectural
 

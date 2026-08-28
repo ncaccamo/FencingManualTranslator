@@ -80,6 +80,7 @@ Optional files next to a source PDF in `books/`, matching its stem:
 | `setup/MANUAL_SECTION_II_HOST_PREREQUISITES.md` | user manual — bare-metal host setup |
 | `setup/MANUAL_SECTION_III_USAGE.md` | user manual — day-to-day operation, iteration loops, troubleshooting |
 | `docs/model-quirks.md` | every way the OCR / translation models fail on this corpus + the prompt/code mitigation — read before tuning a prompt |
+| `docs/pdf-layout.md` | how steps 3 & 4 build the PDFs — the `_render` engine, figure/alignment logic, the knobs |
 | `docs/remote-gpu.md` | running inference on a remote GPU (experimental) |
 | `CLAUDE.md` | orientation + hard invariants for AI coding agents |
 | `docker/ROCM714_NOTES.md` | why the ROCm 7.14 backend is parked |

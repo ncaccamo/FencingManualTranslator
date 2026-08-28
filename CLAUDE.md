@@ -61,6 +61,8 @@ the host's — a newer host runs the 24.04 container unchanged.
 - `docs/model-quirks.md` — catalogue of every OCR / translation model
   failure mode on this corpus + its prompt/code fix. Read before touching
   `vlm_ocr_prompt.txt` or `translation_prompt.txt`.
+- `docs/pdf-layout.md` — how steps 3 & 4 render the PDFs (`_render`
+  layout engine, figure placement, paragraph alignment, the knobs).
 - `docs/remote-gpu.md` — `backend.env`, remote-GPU mode, `rocm714`.
 - `docker/ROCM714_NOTES.md` — why the ROCm 7.14 backend is parked.
 - Session history: `git log` (HANDOFF.md / MANIFEST.md retired 2026-08-27).
