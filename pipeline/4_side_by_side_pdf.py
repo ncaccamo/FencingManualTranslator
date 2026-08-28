@@ -183,6 +183,10 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
     if os.path.exists(f"{folder}/figures.json"):
         with open(f"{folder}/figures.json", encoding="utf-8") as f:
             fig_map = json.load(f)
+    header_map = {}
+    if os.path.exists(f"{folder}/headers.json"):
+        with open(f"{folder}/headers.json", encoding="utf-8") as f:
+            header_map = json.load(f)
 
     src = fitz.open(ocr_pdf)
     n = min(len(src), len(translations))
