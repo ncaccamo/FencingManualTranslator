@@ -8,13 +8,16 @@ whose translation didn't fit. Now the right column flows through _render
 (line breaks, indentation, <i> italics), shrinks 9->8->7 pt to fit, and
 spills to "(cont.)" pages if even 7 pt overflows -- text is never dropped.
 
-Paragraph alignment: when the scan carries an embedded text layer (Gallica
-etc.), each translated paragraph is top-anchored at roughly the same
-fraction down the column as the corresponding source paragraph sits on the
-scan, so reading across lands near the right place. Only applied when the
-whole page's translation still fits with that whitespace; otherwise it
-falls back to plain flow. Books with no embedded layer always get plain
-flow.
+Paragraph alignment: when the scan carries a usable embedded text layer
+(Gallica etc.), each translated paragraph is top-anchored at roughly the
+same fraction down the column as the corresponding source paragraph sits
+on the scan, so reading across lands near the right place. `reconcile_fracs`
+maps the scan's anchors onto the translation's paragraph count, resampling
+when the scan splits into line-level rather than paragraph-level blocks
+(that mismatch was pinning whole pages' text to the top). The per-page
+dry-fit is the real gate -- a patchy layer (Google Books) mostly overflows
+it and falls back to plain flow. Books with no embedded layer always get
+plain flow.
 """
 import fitz
 import os
@@ -24,6 +27,7 @@ import re
 from datetime import datetime
 
 import _render
+import _pageio
 
 print("\n" + "=" * 60)
 print("STEP 4: SIDE-BY-SIDE PDF GENERATION")
@@ -65,6 +69,29 @@ def paragraph_fracs(src_page):
             fracs.append(min(0.98, max(0.0, y0 / H)))
         prev_y1 = max(prev_y1, y1)
     return fracs or None
+
+
+def reconcile_fracs(fracs, n_paras):
+    """Map the scan's paragraph anchors onto the translation's paragraph
+    count. None when there's nothing usable (<2 anchors). When the scan
+    has MORE anchors than the translation has paragraphs (line-level
+    blocks vs. paragraph-level prose), resample evenly so paragraph k
+    lands at a sensible fraction down the page rather than at the k-th
+    source line -- that mismatch was pinning whole pages' text to the top.
+    The per-page dry-fit in render_aligned() stays the real gate; a
+    genuinely patchy layer (Google Books) mostly fails that and falls back
+    to plain flow -- there's no clean frac-only signal for 'unreliable'."""
+    if not fracs or len(fracs) < 2:
+        return None
+    # Only step in for the pathological mismatch -- the scan's text layer
+    # split into line-level blocks (many more anchors than paragraphs),
+    # which pins the whole page's text to the top. A mild mismatch is left
+    # alone: render_aligned() only anchors paragraph k while k < len(fracs)
+    # and that behaviour was fine on clean scans.
+    if n_paras >= 2 and len(fracs) > n_paras * 2:
+        last = len(fracs) - 1
+        return [fracs[round(k * last / (n_paras - 1))] for k in range(n_paras)]
+    return fracs
 
 
 def render_aligned(page, y_top, tr, size, fracs, src_page, bottom=RIGHT.y1):
@@ -148,9 +175,9 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
         continue
 
     with open(f"{folder}/translation.txt", "r", encoding="utf-8") as f:
-        translations = [p.strip() for p in f.read().split("\n---\n")]
+        translations = [p.strip() for p in _pageio.split_pages(f.read())]
     with open(f"{folder}/extracted.txt", "r", encoding="utf-8") as f:
-        extractions = [p.strip() for p in f.read().split("\n---\n")]
+        extractions = [p.strip() for p in _pageio.split_pages(f.read())]
 
     src = fitz.open(ocr_pdf)
     n = min(len(src), len(translations))
@@ -194,9 +221,10 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
                 _render.draw(pg, (RIGHT.x0, body_bottom, RIGHT.x1, RIGHT.y1),
                              fn_lines, 7, color=(0.25, 0.25, 0.25))
 
-        # Try paragraph-aligned layout first (needs the scan's text layer,
-        # and the whole page must still fit with the alignment whitespace).
-        fracs = paragraph_fracs(src[i])
+        # Try paragraph-aligned layout first (needs a usable scan text
+        # layer, and the whole page must still fit with the whitespace).
+        n_paras = len([p for p in re.split(r"\n\s*\n", body_txt.strip()) if p.strip()])
+        fracs = reconcile_fracs(paragraph_fracs(src[i]), n_paras)
         if fracs and len(fracs) >= 2:
             for s in SIZES:
                 if render_aligned(page, y, body_txt, s, fracs, src[i], body_bottom):
