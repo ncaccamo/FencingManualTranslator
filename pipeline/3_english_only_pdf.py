@@ -11,14 +11,14 @@ drill / command-table structure. Now:
   * line breaks, indentation and <i> italics preserved via _render
   * overflow is impossible -- text that doesn't fit continues on the next
     sheet
-  * illustrations are kept with the reading. Primary source is the VLM:
-    1_ocr_and_extract_vlm.py writes figures.json (per page: full-page vs
-    inline, vertical extent, caption), 2_translate.py fills in the English
-    caption, and this step crops the region (or embeds the whole page for
-    a full-page plate) into the flow with the translated caption beneath.
-    For a book OCR'd before figures.json existed it falls back to the old
-    row-density profiler (find_figure_band), which misses line art and
-    faint half-tones.
+  * illustrations are kept with the reading. The VLM decides *whether* a
+    page has a picture and reads its caption (figures.json, written by
+    1_ocr_and_extract_vlm.py; caption translated by 2_translate.py). A
+    "plate" is embedded whole; an "inset" is cropped using the row-density
+    profiler for geometry (the VLM's coordinates weren't reliable), and if
+    the profiler finds nothing the whole page is embedded so the picture
+    is never dropped. For a book OCR'd before figures.json existed, the
+    profiler alone drives detection (misses line art / faint half-tones).
 """
 import fitz
 import os
@@ -90,23 +90,20 @@ def find_figure_band(page):
 
 def band_for_figure(fig, src_page):
     """Turn a figures.json record into (band, caption) for Flow.figure().
-    band is None for a full-page plate; for an inline figure it's the VLM's
-    vertical extent, with the x-extent tightened by the density profiler
-    when its band overlaps the VLM's rows."""
+    The VLM gives presence + kind + caption only; geometry comes from the
+    density profiler. 'plate' -> whole page (band None). 'inset' -> the
+    profiler's band; if the profiler finds nothing on a page the VLM says
+    has an inset, fall back to embedding the whole page so the picture is
+    never lost."""
     cap = (fig.get("caption_en") or fig.get("caption") or "").strip() \
         or "[illustration from the original]"
-    y0, y1 = float(fig.get("y0", 0.0)), float(fig.get("y1", 1.0))
-    if fig.get("kind") == "full-page" or (y1 - y0) >= 0.85:
+    if fig.get("kind") == "plate" or src_page is None:
         return None, cap
-    x0f, x1f = 0.0, 1.0
-    prof = find_figure_band(src_page) if src_page is not None else None
-    if prof:
-        py0, py1, px0, px1 = prof
-        if min(py1, y1) - max(py0, y0) > 0.15 * (y1 - y0):   # rows overlap
-            x0f, x1f = px0, px1
-            y0, y1 = min(y0, py0), max(y1, py1)
-    pad = 0.006
-    return (max(0.0, y0 - pad), min(1.0, y1 + pad), x0f, x1f), cap
+    prof = find_figure_band(src_page)
+    if prof is None:
+        return None, cap            # VLM saw an inset the profiler missed
+    y0f, y1f, *_ = prof
+    return (None if (y1f - y0f) > 0.85 else prof), cap
 
 
 def parse_vlm_output(text: str) -> dict:

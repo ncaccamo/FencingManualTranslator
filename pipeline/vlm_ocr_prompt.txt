@@ -36,15 +36,13 @@ BODY_TEXT:
 [verbatim transcription of the main text block, preserving line breaks where they occur naturally]
 
 FIGURES:
-[Report every illustration that is part of the WORK ITSELF -- an engraving, a woodcut, a line drawing, a diagram, a photographic plate. Do NOT report a decorative rule, a section ornament, a drop-cap, a printer's device / colophon, a library stamp, or the shadow of the facing page.
-If the page has none, write exactly one line:
-none
-Otherwise write one line per illustration, in this EXACT pipe-delimited form:
-<full-page OR inline> | <top> | <bottom> | <caption>
-  - "full-page": the illustration is essentially the whole page (a plate on its own leaf). Use 0.00 and 1.00 for <top>/<bottom>.
-  - "inline": the illustration sits on a page that also has running text. <top> and <bottom> are the fractions of the PAGE HEIGHT where the illustration begins and ends (0.00 = very top edge, 1.00 = very bottom edge), your best estimate.
-  - <caption>: the illustration's caption or title line, transcribed verbatim (e.g. "Fig. 12. -- La parade de quarte"). If there is no caption, write: none
-Example:
-inline | 0.18 | 0.55 | Fig. 4. -- Le salut]
+[Does THIS page carry a picture that is part of the work -- an engraving, woodcut, line drawing, diagram, or photographic plate? A decorative rule, a section ornament, a drop-cap initial, a printer's device / colophon, and a library stamp do NOT count.
+- If there is no such picture, write exactly:
+  none
+- Otherwise write one line for each picture, choosing the tag by how much of the page it fills:
+  plate | <caption>    -- the picture is essentially the whole page (little or no running text)
+  inset | <caption>    -- the picture sits on a page that also has running text
+  where <caption> is that picture's own caption or title line, transcribed exactly as printed (often a line starting "Fig." or "Pl."); if the picture has no caption line, write:  no caption
+Describe what is actually on THIS page -- do not copy the wording above.]
 
 Be extremely precise -- this transcription will be used for translation and scholarly work, and any silent change from what is actually printed on the page is a real error.

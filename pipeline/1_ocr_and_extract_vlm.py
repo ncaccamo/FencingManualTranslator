@@ -186,39 +186,32 @@ def parse_vlm_response(raw: str) -> dict:
 
 def parse_figures_block(raw: str) -> list:
     """Parse the FIGURES: section of a VLM response into a list of
-        {"kind": "full-page"|"inline", "y0": float, "y1": float, "caption": str}
-    Tolerant of a missing block, "none", stray bullets, and bad numbers."""
+        {"kind": "plate"|"inset", "caption": str}
+    'plate' = whole-page illustration, 'inset' = illustration sharing the
+    page with text. Geometry is left to 3_english_only_pdf.py (the density
+    profiler) -- the VLM only reliably gives presence + caption. Tolerant
+    of a missing block, "none", and stray bullets/quotes."""
     m = re.search(r'(?im)^[ \t]*FIGURES[ \t]*:[ \t]*\n?(.*)\Z', raw, re.S)
     if not m:
         return []
     figs = []
     for line in m.group(1).splitlines():
-        line = line.strip().lstrip("-*• ").strip()
-        if not line or line.lower() in ("none", "[none]", "figures: none"):
+        line = line.strip().lstrip("-*•[] ").strip().strip('"').strip()
+        low = line.lower()
+        if not low or low in ("none", "figures: none", "no figures"):
             continue
         parts = [p.strip() for p in line.split("|")]
-        if len(parts) < 4:
-            continue
         kind = parts[0].lower()
-        if "full" in kind:
-            kind = "full-page"
-        elif "inline" in kind:
-            kind = "inline"
+        if kind.startswith("plate") or "full" in kind or "whole" in kind:
+            kind = "plate"
+        elif kind.startswith("inset") or "inline" in kind or "text" in kind:
+            kind = "inset"
         else:
             continue
-        def _frac(s, default):
-            try:
-                return min(1.0, max(0.0, float(re.search(r'[\d.]+', s).group())))
-            except (AttributeError, ValueError):
-                return default
-        y0 = _frac(parts[1], 0.0)
-        y1 = _frac(parts[2], 1.0)
-        if y1 <= y0:
-            y0, y1 = 0.0, 1.0
-        cap = "|".join(parts[3:]).strip()
-        if cap.lower() in ("none", "[none]", ""):
-            cap = ""
-        figs.append({"kind": kind, "y0": y0, "y1": y1, "caption": cap})
+        cap = "|".join(parts[1:]).strip() if len(parts) > 1 else ""
+        if cap.lower() in ("no caption", "none", "n/a", "") or re.fullmatch(r"<.*>", cap):
+            cap = ""   # empty, or the model echoed the "<caption>" placeholder
+        figs.append({"kind": kind, "caption": cap})
     return figs
 
 
