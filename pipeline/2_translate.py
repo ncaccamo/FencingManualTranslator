@@ -184,6 +184,43 @@ def apply_always_translate(text: str) -> str:
     return text
 
 
+def _french_token_count(line: str) -> int:
+    toks = re.findall(r"\b[\wàâäéèêëïîôùûüç]+\b", line.lower())
+    n = sum(1 for w in toks if w in FRENCH_WORDS)
+    n += len(re.findall(r"\b[cdjlmnqst]['’][aeiouyhàâäéèêëïîôùûü]", line, re.I))
+    return n
+
+
+def retranslate_stray_french_headings(text: str) -> str:
+    """A short all-caps display heading on an otherwise-good page can come
+    back half-translated ("COMMENT ON DOIT HOLD THE SABER") -- the per-page
+    French ratio is too diluted by the good body to trip the quality gate.
+    Re-translate just those lines through the full prompt (as translate_headers
+    does), and keep the result only if it is less French than what we had."""
+    out = []
+    for line in text.split("\n"):
+        s = line.strip()
+        letters = [c for c in s if c.isalpha()]
+        is_heading = (
+            0 < len(s.split()) <= 9
+            and len(letters) >= 4
+            and sum(c.isupper() for c in letters) >= 0.6 * len(letters)
+        )
+        if not is_heading or _french_token_count(re.sub(r"</?i>", "", s)) == 0:
+            out.append(line)
+            continue
+        en = translate_with_llama(f"{PROMPT_TEMPLATE}\n\nText to translate:\n{s}")
+        en = strip_model_preamble((en or "").strip()).strip()
+        en = re.sub(r"(?m)^\s*#{1,6}\s+", "", en)
+        en = re.sub(r"</?i>", "", en).splitlines()[0].strip() if en else ""
+        en = apply_always_translate(en)
+        if en and _french_token_count(en) < _french_token_count(s):
+            out.append(en.upper() if s.isupper() else en)
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
 def has_wrong_script(text: str) -> bool:
     """Sources are all Latin-script (French/Italian/German/Spanish/Latin).
     CJK / Cyrillic / Hebrew / Arabic characters in the output mean the model
@@ -604,6 +641,7 @@ try:
                 candidate = re.sub(r'\*\*([^*\n]+)\*\*', r'\1', candidate)   # **bold**
                 candidate = re.sub(r'(?m)^\s{0,3}#{1,6}\s+', '', candidate)  # # heading
                 candidate = apply_always_translate(candidate)
+                candidate = retranslate_stray_french_headings(candidate)
 
                 # "This isn't fencing text" / "Please provide the text..." --
                 # the model had nothing real to translate. Not a fallback
