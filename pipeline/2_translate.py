@@ -209,16 +209,39 @@ _KEEP_TERMS = [
     ("doublé", []),
     ("croisé", []),
     ("appel", []),
+    # rassemblement/rassembler/rassemblant -- drawing the feet together; the
+    # 7B mangles it ("RASSEMBLANT" -> "RAASSEMBLANT" / "RASBLENDANT") so
+    # repair_mangled_terms() also snaps a quoted garbled token back.
+    ("rassemblement", []),
+    ("rassembler", []),
+    ("rassemblant", []),
 ]
 
+# A source-language token the 7B reliably garbles rather than keeping.
+_MANGLE_PRONE = [(r"rassembl", "rassemblant")]
 
-def enforce_kept_terms(text: str) -> str:
+
+def repair_mangled_terms(dst: str, src: str) -> str:
+    """When the SOURCE has a term the 7B is known to mangle and the output
+    has lost it, swap the first quoted non-English token back to the term."""
+    if not dst or not src:
+        return dst
+    for needle, term in _MANGLE_PRONE:
+        if re.search(needle, src, re.I) and not re.search(needle, dst, re.I):
+            dst = re.sub(
+                r'([«"“(])\s*[A-Za-zÀ-ÿ]{5,}\s*([»"”)])',
+                lambda m: f'{m.group(1)}<i>{term}</i>{m.group(2)}', dst, count=1)
+    return dst
+
+
+def enforce_kept_terms(text: str, src: str = "") -> str:
     """Make sure a rule-2 term is present and italicised: repair a known
     mistranslation, then wrap any bare occurrence in <i>...</i> (skipping
     what is already inside a tag). The term is lower-cased -- a technical
     term of art is set italic-lower even inside an all-caps caption."""
     if not text:
         return text
+    text = repair_mangled_terms(text, src)
     for term, wrongs in _KEEP_TERMS:
         for w in wrongs:
             text = re.sub(r"(?<!<i>)\b" + w + r"\b(?!</i>)",
@@ -641,7 +664,7 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
                 # a caption is one line -- join a multi-line rendering (a
                 # "FIG. N — TITLE / Nᵉ TEMPS : ..." caption comes back as two)
                 one = " ".join(l.strip() for l in en.splitlines() if l.strip())
-                one = enforce_kept_terms(apply_always_translate(one))
+                one = enforce_kept_terms(apply_always_translate(one), cap)
                 fig["caption_en"] = match_case(cap, one)
             else:
                 fig["caption_en"] = cap
@@ -813,7 +836,7 @@ try:
                 candidate = re.sub(r'\*\*([^*\n]+)\*\*', r'\1', candidate)   # **bold**
                 candidate = re.sub(r'(?m)^\s{0,3}#{1,6}\s+', '', candidate)  # # heading
                 candidate = apply_always_translate(candidate)
-                candidate = enforce_kept_terms(candidate)
+                candidate = enforce_kept_terms(candidate, clean_text)
                 candidate = retranslate_stray_french_headings(candidate)
 
                 # "This isn't fencing text" / "Please provide the text..." --

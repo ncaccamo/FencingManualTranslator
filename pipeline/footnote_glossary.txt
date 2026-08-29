@@ -18,6 +18,9 @@ doublé         | an attack that deceives the opponent's counter-parry by descri
 dégagement     | a simple attack that passes the point under or over the opponent's blade to the opposite line
 coupé          | a simple attack that passes the point over the opponent's tip rather than under the blade
 appel          | a sharp stamp of the front foot, used to provoke a reaction or mark tempo
+rassemblement  | bringing the feet together — the rear foot drawn up to the front (or the reverse), the opposite of a lunge
+rassembler     | to bring the feet together, drawing the rear foot up to the front
+rassemblant    | bringing the feet together while acting — the rear foot drawn up to the front
 remise         | replacing the point in the same line, without withdrawing the arm, after the first thrust missed
 reprise        | a renewed attack made after returning to guard, distinct from a remise
 temps d'arrêt  | a stop-thrust: a counter-hit landed into the opponent's attack, in the tempo of its preparation
