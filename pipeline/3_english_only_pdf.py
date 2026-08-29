@@ -163,9 +163,14 @@ class Flow:
             self._newpage()
         else:
             self.y += FS * 0.8  # breathing room above a new section
-        label = f"— {page_num} —" if page_num else "—"
+        # Only show a folio we actually trust. reconcile_page_numbers()
+        # brackets anything it inferred ("[5]") -- for front matter and
+        # skipped-number pages that's a meaningless sheet ordinal, so drop
+        # it and leave just the section rule.
+        trusted = page_num and not str(page_num).startswith("[")
+        label = f"— {page_num} —" if trusted else "—"
         if header:
-            label += f"    {header}"
+            label += f"    {header}" if trusted else f"   {header}"
         self.page.insert_text((COL.x0, self.y + FS + 2), label,
                               fontsize=FS + 1, fontname=_render.BOLD)
         self.y += FS * 1.5

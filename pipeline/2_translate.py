@@ -140,6 +140,29 @@ def pull_footnotes(text: str, source_text: str = "", seen: set = None):
     return f"{body}\n\n{FN_HEADER}\n" + "\n".join(lines), len(lines)
 
 
+# Rule-3 "always translate" terms the 7B drops inconsistently (leaves
+# "an arm called a fleuret" in the body, "ENTRAINEMENT" as a header).
+# Only unambiguous ones -- these have no other meaning in this corpus.
+# Longest first so "fleurettiste" wins before "fleuret".
+_ALWAYS_TRANSLATE = [
+    (r"fleurettistes", "foil fencers"), (r"fleurettiste", "foil fencer"),
+    (r"fleurets", "foils"), (r"fleuret", "foil"),
+    (r"entra[iî]nements", "training sessions"), (r"entra[iî]nement", "training"),
+    (r"escrimes", "fencing"), (r"escrime", "fencing"),
+]
+
+
+def apply_always_translate(text: str) -> str:
+    if not text:
+        return text
+    for pat, repl in _ALWAYS_TRANSLATE:
+        def _sub(m, r=repl):
+            g = m.group(0)
+            return r.upper() if g.isupper() else r.capitalize() if g[:1].isupper() else r
+        text = re.sub(r"\b" + pat + r"\b", _sub, text, flags=re.IGNORECASE)
+    return text
+
+
 def has_wrong_script(text: str) -> bool:
     """Sources are all Latin-script (French/Italian/German/Spanish/Latin).
     CJK / Cyrillic / Hebrew / Arabic characters in the output mean the model
@@ -393,7 +416,7 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
                 f"{PROMPT_TEMPLATE}\n\nText to translate:\n{cap}")
             en = strip_model_preamble((en or "").strip()).strip()
             en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
-            fig["caption_en"] = en.splitlines()[0].strip() if en else cap
+            fig["caption_en"] = apply_always_translate(en.splitlines()[0].strip()) if en else cap
             n += 1
     with open(fig_path, "w", encoding="utf-8") as fh:
         _json.dump(fig_map, fh, ensure_ascii=False, indent=1)
@@ -432,6 +455,7 @@ def translate_headers(folder: str, force: bool = False) -> int:
         en = strip_model_preamble((en or "").strip()).strip()
         en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
         en = re.sub(r'</?i>', '', en)          # a header is plain text (rule 4)
+        en = apply_always_translate(en)
         hmap[h] = en.splitlines()[0].strip() if en else h
         n += 1
     with open(hp, "w", encoding="utf-8") as fh:
@@ -547,6 +571,7 @@ try:
                 candidate = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', candidate)
                 candidate = re.sub(r'\*\*([^*\n]+)\*\*', r'\1', candidate)   # **bold**
                 candidate = re.sub(r'(?m)^\s{0,3}#{1,6}\s+', '', candidate)  # # heading
+                candidate = apply_always_translate(candidate)
 
                 # "This isn't fencing text" / "Please provide the text..." --
                 # the model had nothing real to translate. Not a fallback

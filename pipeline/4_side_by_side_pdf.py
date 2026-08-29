@@ -146,7 +146,10 @@ def new_spread(doc, src, src_idx, struct, *, cont=False):
     p.draw_line((DIVIDER_X, 10), (DIVIDER_X, PAGE_H - 10), width=1)
 
     y = RIGHT.y0
-    tag = f"Page {struct.get('page_num') or '?'}"
+    pn = struct.get("page_num") or ""
+    # a bracketed number is reconcile's inferred sheet ordinal, not a real
+    # folio -- don't present it as the page number
+    tag = f"Page {pn}" if pn and not str(pn).startswith("[") else "Page —"
     if cont:
         tag += "  (cont.)"
     p.insert_text((RIGHT.x0, y), tag, fontsize=9, fontname=_render.BOLD)
