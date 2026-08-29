@@ -166,7 +166,6 @@ _ALWAYS_TRANSLATE = [
     # "l'escrime au fleuret" -> "foil fencing"; the 7B renders it
     # "épée fencing with the fleuret" / "épée fencing with the foil".
     (r"escrime au fleuret", "foil fencing"), (r"au fleuret", "with the foil"),
-    (r"épée fencing with the (?:foil|fleuret)", "foil fencing"),
     (r"escrime à l['’]épée", "épée fencing"), (r"à l['’]épée", "with the épée"),
     # "au bout d'épée" -- idiom for a bout fenced with the épée, not a
     # literal "at the point of the sword"; the 7B renders it word-for-word.
@@ -187,6 +186,22 @@ def apply_always_translate(text: str) -> str:
             g = m.group(0)
             return r.upper() if g.isupper() else r.capitalize() if g[:1].isupper() else r
         text = re.sub(r"\b" + pat + r"\b", _sub, text, flags=re.IGNORECASE)
+    return _phrase_repairs(text)
+
+
+# Free-standing repairs for known 7B phrasings that _ALWAYS_TRANSLATE's
+# \b-anchored substitution can't reach (e.g. a phrase split by an <i> tag).
+def _phrase_repairs(text: str) -> str:
+    if not text:
+        return text
+    # "épée fencing with the foil/fleuret" (épée possibly tagged) -> foil fencing
+    text = re.sub(r"(?:<i>)?épée(?:</i>)?\s+fencing with the (?:foil|fleuret)",
+                  "foil fencing", text, flags=re.IGNORECASE)
+    # "Nᵉ temps" -> "Nth tempo"  (leaves "coup de temps", "temps d'arrêt" alone)
+    text = re.sub(
+        r"\b(\d{1,2}(?:er|re|nd|e|ème)?\.?)\s+temps\b",
+        lambda m: m.group(1) + (" TEMPO" if m.group(0).isupper() else " tempo"),
+        text, flags=re.IGNORECASE)
     return text
 
 
@@ -286,6 +301,10 @@ def match_case(src: str, dst: str) -> str:
             w = m.group(0)
             lead = first[0]
             first[0] = False
+            # keep a lone letter as-is ("Schéma A", point "B") -- never
+            # lower-case it as the article "a"
+            if len(w) == 1:
+                return w
             if not lead and w.lower() in _TITLE_STOPWORDS:
                 return w.lower()
             return w[:1].upper() + w[1:].lower()
@@ -656,14 +675,24 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
                 continue
             if fig.get("caption_en") and not force:
                 continue
-            en = translate_with_llama(
-                f"{PROMPT_TEMPLATE}\n\nText to translate:\n{cap}")
-            en = strip_model_preamble((en or "").strip()).strip()
-            en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
-            if en:
-                # a caption is one line -- join a multi-line rendering (a
-                # "FIG. N — TITLE / Nᵉ TEMPS : ..." caption comes back as two)
-                one = " ".join(l.strip() for l in en.splitlines() if l.strip())
+            one = ""
+            for attempt in range(3):
+                en = translate_with_llama(
+                    f"{PROMPT_TEMPLATE}\n\nText to translate:\n{cap}",
+                    temperature=0.3 + 0.25 * attempt)
+                en = strip_model_preamble((en or "").strip()).strip()
+                en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
+                if not en:
+                    continue
+                # a caption is one line -- join a multi-line rendering
+                cand = " ".join(l.strip() for l in en.splitlines() if l.strip())
+                # reject a caption the model just echoed back in French
+                if contains_too_much_non_english(cand):
+                    one = one or cand
+                    continue
+                one = cand
+                break
+            if one:
                 one = enforce_kept_terms(apply_always_translate(one), cap)
                 fig["caption_en"] = match_case(cap, one)
             else:

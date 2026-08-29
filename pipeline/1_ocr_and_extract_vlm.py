@@ -325,27 +325,38 @@ def _page_to_int(s: str):
 def _fold_caption_only_body(parsed: list) -> None:
     """A page that is just a plate and its caption: olmOCR-2 routinely puts
     the caption in BODY_TEXT ("FIG. 6. — PRISE DE FER ... / 2ᵉ TEMPS : ...")
-    -- sometimes AND in a FIGURES row, sometimes instead of one. Fold that
-    body into the figure's caption so it is translated once (as a caption)
-    and doesn't also flow as body text, and collapse the page to a single
-    image. Only fires when the page already has a figure and the body is
-    short and caption-shaped."""
+    -- sometimes AND in a FIGURES row, sometimes instead of one, sometimes
+    with NO figure row at all. Fold that body into the figure caption so it
+    is translated once (as a caption), and synthesise a plate when the VLM
+    named a figure in the body but flagged nothing."""
+    fig_lead = re.compile(r'(?i)^\s*(fig\.?|pl\.?|planche|sch[ée]ma)\b')
     for p in parsed:
         figs = p.get("figures") or []
         body = (p.get("body") or "").strip()
-        if not figs or not body:
+        if not body:
             continue
         words = body.split()
-        cap = (figs[0].get("caption") or "").strip()
+        cap = (figs[0].get("caption") or "").strip() if figs else ""
         caption_shaped = bool(
             re.match(r'(?i)\s*(fig\.?|pl\.?|planche|sch[ée]ma|\d+[eè]?r?\b)', body))
-        overlaps = bool(cap) and _norm_head(cap)[:20] in _norm_head(body)
+        # no figure row, but the whole body is a "FIG. N — ..." caption:
+        # the VLM saw a plate and only transcribed its caption
+        if not figs and fig_lead.match(body) and len(words) <= 40:
+            p["figures"] = [{"kind": "plate",
+                             "caption": re.sub(r'\s*\n\s*', ' — ', body).strip()}]
+            p["body"] = ""
+            continue
+        if not figs:
+            continue
         if not ((caption_shaped and len(words) <= 40)
-                or (overlaps and len(words) <= 25)
+                or (cap and _norm_head(cap)[:20] in _norm_head(body) and len(words) <= 25)
                 or len(words) <= 10):
             continue
-        merged = body if (not cap or _norm_head(cap) in _norm_head(body)) \
-            else f"{cap} {body}"
+        # the body is the fuller text -- prefer it; only prepend the figure
+        # row's caption when it adds something the body doesn't already carry
+        nb = _norm_head(body)
+        merged = body if (not cap or _norm_head(cap)[:25] in nb
+                          or len(body) >= len(cap)) else f"{cap} {body}"
         figs[0]["caption"] = re.sub(r'\s*\n\s*', ' — ', merged).strip()
         del figs[1:]                      # one image, one (now complete) caption
         p["body"] = ""
