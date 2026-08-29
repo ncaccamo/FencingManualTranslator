@@ -226,7 +226,9 @@ def parse_figures_block(raw: str) -> list:
     for line in m.group(1).splitlines():
         line = line.strip().lstrip("-*•[] ").strip().strip('"').strip()
         low = line.lower()
-        if not low or low in ("none", "figures: none", "no figures"):
+        if not low or low in ("none", "figures: none", "no figures", "* * *"):
+            continue
+        if line.startswith("!["):          # leaked Markdown image ref
             continue
         parts = [p.strip() for p in line.split("|")]
         kind = parts[0].lower()
@@ -234,6 +236,13 @@ def parse_figures_block(raw: str) -> list:
             kind = "plate"
         elif kind.startswith("inset") or "inline" in kind or "text" in kind:
             kind = "inset"
+        elif figs and re.match(r"[0-9a-zà-ÿ]", line):
+            # A follow-on line starting with a digit or lowercase -- a
+            # caption's second line ("2e TEMPS : le dérobement ..."), not
+            # a fresh title ("FIG. 5. —", "PRISE DE FER ..."). Append it.
+            if line.lower() not in figs[-1]["caption"].lower():
+                figs[-1]["caption"] = (figs[-1]["caption"] + " " + line).strip()
+            continue
         else:
             continue
         cap = "|".join(parts[1:]).strip() if len(parts) > 1 else ""
