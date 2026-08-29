@@ -276,7 +276,11 @@ def start_translation_server():
         "--model", TRANSLATION_MODEL,
         "--host", "0.0.0.0",
         "--port", "11434",
-        "--ctx-size", "4096",
+        # 8192, not 4096: PROMPT_TEMPLATE (term policy + EXAMPLES) is ~1.5k
+        # tokens and prepended to every call, so a long source page + a
+        # full-length response overran a 4096 window ("Context size has
+        # been exceeded" -> empty response -> "kept original text").
+        "--ctx-size", "8192",
         "--n-gpu-layers", "999",
         "--threads", str(os.cpu_count())
     ]
@@ -332,7 +336,10 @@ def translate_with_llama(prompt: str) -> str:
                         {"role": "user", "content": prompt}
                     ],
                     "temperature": 0.3,
-                    "max_tokens": 4096
+                    # a translated page is never longer than its source; the
+                    # >2500-word oversized guard handles the rare monster
+                    # page. Leaves room in the 8192 window for prompt+source.
+                    "max_tokens": 3000
                 },
                 timeout=1800
             )
