@@ -189,6 +189,49 @@ def apply_always_translate(text: str) -> str:
     return text
 
 
+# Rule-2 "keep in the source language" terms that the 7B keeps dropping the
+# <i>...</i> off (or mistranslating outright) on short fragments -- plate
+# captions especially. Only the unambiguously-French ones: a bare "riposte"
+# / "reprise" / "guard" is often legitimate English now and is left to the
+# model + prompt. Each entry: canonical term -> extra English mistranslations
+# to snap back to it. The <i> wrapper + footnote_glossary.txt then supply
+# the gloss (pull_footnotes, once per book).
+_KEEP_TERMS = [
+    ("prise de fer", [r"pri[sz]e of (?:the )?(?:blade|iron|steel)",
+                      r"taking of the (?:blade|iron)"]),
+    ("sentiment du fer", [r"feeling of (?:the )?(?:blade|iron|steel)"]),
+    ("corps à corps", [r"body[- ]to[- ]body", r"body contact"]),
+    ("liement", [r"binding of the blade"]),
+    ("froissement", []),
+    ("dégagement", [r"disengagement"]),
+    ("coupé", [r"\bcut[- ]over\b"]),
+    ("doublé", []),
+    ("croisé", []),
+    ("appel", []),
+]
+
+
+def enforce_kept_terms(text: str) -> str:
+    """Make sure a rule-2 term is present and italicised: repair a known
+    mistranslation, then wrap any bare occurrence in <i>...</i> (skipping
+    what is already inside a tag). The term is lower-cased -- a technical
+    term of art is set italic-lower even inside an all-caps caption."""
+    if not text:
+        return text
+    for term, wrongs in _KEEP_TERMS:
+        for w in wrongs:
+            text = re.sub(r"(?<!<i>)\b" + w + r"\b(?!</i>)",
+                          f"<i>{term}</i>", text, flags=re.IGNORECASE)
+        # wrap a bare occurrence not already tagged
+        text = re.sub(
+            r"(?<![\w>])" + term.replace(" ", r"\s+") + r"(?![\w<])",
+            lambda m: f"<i>{term}</i>", text, flags=re.IGNORECASE)
+        # collapse any accidental double-wrap
+        text = re.sub(f"<i>\\s*<i>{re.escape(term)}</i>\\s*</i>",
+                      f"<i>{term}</i>", text, flags=re.IGNORECASE)
+    return text
+
+
 _TITLE_STOPWORDS = {
     "a", "an", "the", "and", "or", "nor", "but", "of", "to", "in", "on", "at",
     "by", "for", "with", "from", "as", "per", "via",
@@ -566,8 +609,12 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
                 f"{PROMPT_TEMPLATE}\n\nText to translate:\n{cap}")
             en = strip_model_preamble((en or "").strip()).strip()
             en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
-            fig["caption_en"] = match_case(
-                cap, apply_always_translate(en.splitlines()[0].strip())) if en else cap
+            if en:
+                one = enforce_kept_terms(
+                    apply_always_translate(en.splitlines()[0].strip()))
+                fig["caption_en"] = match_case(cap, one)
+            else:
+                fig["caption_en"] = cap
             n += 1
     with open(fig_path, "w", encoding="utf-8") as fh:
         _json.dump(fig_map, fh, ensure_ascii=False, indent=1)
@@ -736,6 +783,7 @@ try:
                 candidate = re.sub(r'\*\*([^*\n]+)\*\*', r'\1', candidate)   # **bold**
                 candidate = re.sub(r'(?m)^\s{0,3}#{1,6}\s+', '', candidate)  # # heading
                 candidate = apply_always_translate(candidate)
+                candidate = enforce_kept_terms(candidate)
                 candidate = retranslate_stray_french_headings(candidate)
 
                 # "This isn't fencing text" / "Please provide the text..." --

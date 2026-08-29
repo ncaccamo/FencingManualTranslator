@@ -395,6 +395,16 @@ current shape:
   English term). Plus Italian / German / Latin equivalents. (Each book's
   terminology page tends to surface one or two more — `corps à corps`
   came back "body to body", `volte` was OK but pinned explicitly.)
+- **`enforce_kept_terms()` backstop** — the 7B drops the `<i>…</i>` off a
+  rule-2 term on short fragments (plate captions especially) and sometimes
+  mistranslates outright: `prise de fer` → "PRIZE OF THE BLADE" ("prise"
+  read as "prize"), `liement` left bare and unglossed. This deterministic
+  pass snaps a known mistranslation back to the term and wraps any bare
+  occurrence in `<i>…</i>` (lower-cased, even inside an all-caps caption)
+  so `pull_footnotes` / `footnote_glossary.txt` supply the gloss. Only the
+  unambiguously-French terms (`prise de fer`, `corps à corps`, `liement`,
+  `dégagement`, `coupé`, …) — a bare "riposte" / "reprise" is often real
+  English now and is left to the model.
 - **Rule 3 — TRANSLATE these** even though they look technical, and do
   **not** italicise: `fleuret`→foil, `sabre`→saber, `parade`→parry (never
   "riposte"), `coup droit`→straight thrust, `dérobement`→evasion,
