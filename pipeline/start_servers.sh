@@ -39,7 +39,9 @@ VLM_MODEL="${VLM_MODEL_PATH:-/models/allenai_olmOCR-2-7B-1025-Q6_K.gguf}"
 VLM_MMPROJ="${VLM_MMPROJ_PATH:-/models/mmproj-allenai_olmOCR-2-7B-1025-f16.gguf}"
 
 wait_health () {  # $1=port  $2=label
-    for _ in $(seq 1 60); do
+    # 240s: a first load on a cleared RADV shader cache compiles every
+    # pipeline (~2-3 min). The compose volume persists it; warm is ~60s.
+    for _ in $(seq 1 120); do
         if curl -sf "http://localhost:$1/health" >/dev/null 2>&1; then
             echo "[OK] $2 server ready (:$1)"; return 0
         fi

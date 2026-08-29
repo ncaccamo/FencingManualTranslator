@@ -33,6 +33,15 @@ services:
       - ./processed:/data/processed
       - ./pipeline:/host_scripts:ro
       - ./pipeline:/app:ro
+      # Persist the GPU shader / kernel cache across container recreation.
+      # RADV (Vulkan) compiles every pipeline on the first llama-server
+      # load and caches it under ~/.cache/mesa_shader_cache (+ radv_builtin
+      # _shaders); on the ephemeral overlay layer that ~2-3 min cold compile
+      # is paid again after every `compose up -d` that recreates the
+      # container. A named volume makes it a one-time cost. Backend-agnostic:
+      # also covers ~/.cache/comgr etc. if LLAMA_BACKEND switches to a rocm
+      # build. HOME is /home/ubuntu (image user ubuntu:1000).
+      - llama-cache:/home/ubuntu/.cache
     ports:
       - "11434:11434"
       - "11435:11435"
@@ -54,3 +63,6 @@ services:
 networks:
   ai-net:
     external: true
+
+volumes:
+  llama-cache:

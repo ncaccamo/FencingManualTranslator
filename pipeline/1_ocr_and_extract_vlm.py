@@ -408,7 +408,11 @@ def start_vlm_server(restart=False):
                             env=_llama_server_env())
 
     dots = 0
-    max_wait = 60 if restart else 120
+    # 240s cold ceiling: a first llama-server load on a cleared shader cache
+    # (RADV compiles every pipeline, ~2-3 min) used to blow the old 120s.
+    # Warm (docker-compose volume persists the cache) it's ~60s. `restart`
+    # only fires mid-run, cache already warm.
+    max_wait = 60 if restart else 240
     for attempt in range(max_wait // 2):
         time.sleep(2)
         dots = (dots + 1) % 4

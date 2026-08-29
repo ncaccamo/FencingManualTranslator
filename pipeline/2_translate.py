@@ -376,14 +376,15 @@ def start_translation_server():
         "--threads", str(os.cpu_count())
     ]
 
-    print("Starting server (loads ~7GB VRAM, may take 30-120s)...\n")
+    print("Starting server (loads ~7GB VRAM; ~60s warm, up to ~4min on a "
+          "cleared GPU shader cache)...\n")
 
     log_file = open("/tmp/translation_server.log", "w")
     proc = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT,
                             env=_llama_server_env())
     
     dots = 0
-    for attempt in range(90):
+    for attempt in range(120):   # 240s: cold RADV shader compile can take ~4min
         time.sleep(2)
         dots = (dots + 1) % 4
         elapsed = (attempt+1)*2
@@ -408,7 +409,7 @@ def start_translation_server():
         except Exception:
             pass
     
-    print(f"\n\n✗ Server timeout after 180s")
+    print(f"\n\n✗ Server timeout after 240s")
     print("Check logs: docker exec booktranslator-translator-1 cat /tmp/translation_server.log\n")
     log_file.close()
     proc.terminate()

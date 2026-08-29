@@ -170,6 +170,11 @@ ENV ROCR_VISIBLE_DEVICES=0
 ENV LLAMA_BACKEND=rocm
 
 RUN mkdir -p /app && chmod 777 /app
+# ~/.cache is a named volume (docker-compose) so the RADV/Vulkan shader
+# cache survives container recreation. Docker seeds a fresh named volume
+# from the image path's owner/mode -- create it world-writable here so the
+# non-root container user (compose `user:` / HOST_UID) can write it.
+RUN mkdir -p /home/ubuntu/.cache && chmod 777 /home/ubuntu/.cache
 WORKDIR /app
 
 RUN cat > /entrypoint.sh << 'ENTRYPOINT_EOF'
