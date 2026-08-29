@@ -338,7 +338,7 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
 
         first_h = flow._fig_size(src_page, placements[0][0])[1] if placements else 0.0
         hdr = st.get("header", "")
-        flow.section_label(st.get("page_num", ""), header_map.get(hdr, hdr),
+        flow.section_label(st.get("page_num", ""), re.sub(r"</?i>", "", header_map.get(hdr, hdr)),
                            reserve=(first_h + FS * 1.6) if placements else 0.0)
         for band, caption in placements:
             flow.figure(src_page, band, caption=caption)

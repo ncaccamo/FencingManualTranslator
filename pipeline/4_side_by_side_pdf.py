@@ -210,7 +210,7 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
     for i in range(n):
         struct = parse_vlm_output(extractions[i]) if i < len(extractions) else {}
         if struct.get("header"):
-            struct["header"] = header_map.get(struct["header"], struct["header"])
+            struct["header"] = re.sub(r"</?i>", "", header_map.get(struct["header"], struct["header"]))
         tr = translations[i]
 
         page, y = new_spread(doc, src, i, struct)

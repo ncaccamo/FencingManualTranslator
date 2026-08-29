@@ -431,6 +431,7 @@ def translate_headers(folder: str, force: bool = False) -> int:
         en = translate_with_llama(f"{PROMPT_TEMPLATE}\n\nText to translate:\n{h}")
         en = strip_model_preamble((en or "").strip()).strip()
         en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
+        en = re.sub(r'</?i>', '', en)          # a header is plain text (rule 4)
         hmap[h] = en.splitlines()[0].strip() if en else h
         n += 1
     with open(hp, "w", encoding="utf-8") as fh:
