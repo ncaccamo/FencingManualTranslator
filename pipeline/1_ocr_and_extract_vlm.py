@@ -194,21 +194,27 @@ def _norm_head(s: str) -> str:
 
 
 def strip_leaked_headmatter(body: str, known_headers: set) -> str:
-    """The VLM sometimes drops the running header and/or the printed folio
-    into BODY_TEXT instead of the HEADER / PAGE_NUMBER fields, so the page's
-    translation opens with a stray "25" and "THE GUARD". Peel those off the
-    top: a bare number line, or a line matching a header seen elsewhere in
-    this book."""
+    """Peel bookbinding apparatus off BODY_TEXT.
+
+    TOP: the VLM sometimes drops the running header and/or the printed
+    folio into the body, so the page opens with a stray "25" / "THE GUARD".
+
+    BOTTOM: printer's signature marks -- a lone small number, or the title
+    catchword (a short line matching one of the book's header words, e.g.
+    "ESCRIME.") -- sit at the foot of the first page of each gathering.
+
+    A line is apparatus when it is a bare roman/arabic number (<=4 digits,
+    optional trailing '.', optional leading superscript letter) or its
+    normalised form matches a header seen elsewhere in this book."""
+    def _is_apparatus(s):
+        return bool(re.fullmatch(r"[a-z]?[\dIVXLCDM]{1,4}\.?", s, re.I)) \
+            or _norm_head(s) in known_headers
+
     lines = body.split("\n")
-    while lines:
-        s = lines[0].strip()
-        if not s:
-            lines.pop(0)
-            continue
-        if re.fullmatch(r"[\dIVXLCDM]{1,5}\.?", s) or _norm_head(s) in known_headers:
-            lines.pop(0)
-            continue
-        break
+    while lines and (not lines[0].strip() or _is_apparatus(lines[0].strip())):
+        lines.pop(0)
+    while lines and (not lines[-1].strip() or _is_apparatus(lines[-1].strip())):
+        lines.pop()
     return "\n".join(lines).strip()
 
 
