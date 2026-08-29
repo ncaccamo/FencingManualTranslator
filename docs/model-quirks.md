@@ -426,6 +426,18 @@ running head gets translated too (no per-book "keep in French" exception
 yet). Library-catalogue lines that leak into `HEADER` (`Bibliothèque
 Larousse 15720`, an author-credit line) pass through mangled — cosmetic.
 
+**Case is not preserved by the model** — `ÉPÉE` came back `épée`,
+`LA GARDE` as `The Guard`, `SOCIÉTÉS` as `Societies`, inconsistently
+across a run. `match_case(src, dst)` now forces the translated head/caption
+to follow the *source's* case style: source ALL-CAPS → `dst.upper()`;
+source Title Case → Title Case (articles/prepositions stay lower); else
+sentence case. A manual that sets every running head in capitals (most of
+this corpus) gets uniform all-caps English heads. `<i>kept term</i>` spans
+keep their own casing. Applied in `translate_headers()`,
+`translate_figure_captions()` and `retranslate_stray_french_headings()`.
+Regenerating needs `2_translate.py --captions` (forces both) or deleting
+`headers.json` — an unforced pass skips strings already mapped.
+
 ### 2.11 Author's footnotes vs. ours
 
 A page can carry the **author's** own `(1) (2) (3)` footnotes (plain prose

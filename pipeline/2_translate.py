@@ -189,6 +189,56 @@ def apply_always_translate(text: str) -> str:
     return text
 
 
+_TITLE_STOPWORDS = {
+    "a", "an", "the", "and", "or", "nor", "but", "of", "to", "in", "on", "at",
+    "by", "for", "with", "from", "as", "per", "via",
+}
+
+
+def match_case(src: str, dst: str) -> str:
+    """Make a translated heading / caption follow the CASE STYLE of its
+    source, so a book that sets every running head in capitals gets an
+    all-caps English head too (not "épée" one page and "Épée" the next).
+      source ALL CAPS  -> dst.upper()
+      source Title Case -> Title Case (articles/prepositions stay lower)
+      anything else     -> capitalise the first letter only
+    Words the model kept in the source language (already inside <i>..</i>)
+    keep their own case."""
+    if not dst:
+        return dst
+    letters = [c for c in src if c.isalpha()]
+    if not letters:
+        return dst
+    words = [w for w in re.findall(r"[^\W\d_]+(?:['’-][^\W\d_]+)*", src) if any(c.isalpha() for c in w)]
+    upper_ratio = sum(c.isupper() for c in letters) / len(letters)
+
+    if upper_ratio >= 0.8 and len(letters) >= 2:
+        return _recase(dst, str.upper)
+    if words and all(w[0].isupper() for w in words):
+        def _title(m, first=[True]):
+            w = m.group(0)
+            lead = first[0]
+            first[0] = False
+            if not lead and w.lower() in _TITLE_STOPWORDS:
+                return w.lower()
+            return w[:1].upper() + w[1:].lower()
+        return _recase(dst, lambda s: re.sub(r"[^\W\d_]+(?:['’-][^\W\d_]+)*", _title, s))
+    # sentence case: first letter up, leave the rest as the model wrote it
+    return _recase(dst, lambda s: re.sub(r"[A-Za-zÀ-ÿ]", lambda m: m.group(0).upper(), s, count=1))
+
+
+def _recase(text: str, fn) -> str:
+    """Apply fn to the parts of `text` that are NOT inside <i>...</i>
+    (kept-in-source terms keep their own casing)."""
+    out, i = [], 0
+    for m in re.finditer(r"<i>.*?</i>", text, re.DOTALL | re.IGNORECASE):
+        out.append(fn(text[i:m.start()]))
+        out.append(m.group(0))
+        i = m.end()
+    out.append(fn(text[i:]))
+    return "".join(out)
+
+
 def _french_token_count(line: str) -> int:
     toks = re.findall(r"\b[\wàâäéèêëïîôùûüç]+\b", line.lower())
     n = sum(1 for w in toks if w in FRENCH_WORDS)
@@ -220,7 +270,7 @@ def retranslate_stray_french_headings(text: str) -> str:
         en = re.sub(r"</?i>", "", en).splitlines()[0].strip() if en else ""
         en = apply_always_translate(en)
         if en and _french_token_count(en) < _french_token_count(s):
-            out.append(en.upper() if s.isupper() else en)
+            out.append(match_case(s, en))
         else:
             out.append(line)
     return "\n".join(out)
@@ -516,7 +566,8 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
                 f"{PROMPT_TEMPLATE}\n\nText to translate:\n{cap}")
             en = strip_model_preamble((en or "").strip()).strip()
             en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
-            fig["caption_en"] = apply_always_translate(en.splitlines()[0].strip()) if en else cap
+            fig["caption_en"] = match_case(
+                cap, apply_always_translate(en.splitlines()[0].strip())) if en else cap
             n += 1
     with open(fig_path, "w", encoding="utf-8") as fh:
         _json.dump(fig_map, fh, ensure_ascii=False, indent=1)
@@ -556,7 +607,7 @@ def translate_headers(folder: str, force: bool = False) -> int:
         en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
         en = re.sub(r'</?i>', '', en)          # a header is plain text (rule 4)
         en = apply_always_translate(en)
-        hmap[h] = en.splitlines()[0].strip() if en else h
+        hmap[h] = match_case(h, en.splitlines()[0].strip()) if en else h
         n += 1
     with open(hp, "w", encoding="utf-8") as fh:
         _json.dump(hmap, fh, ensure_ascii=False, indent=1)
