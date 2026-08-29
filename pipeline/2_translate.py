@@ -170,6 +170,11 @@ _ALWAYS_TRANSLATE = [
     # "au bout d'épée" -- idiom for a bout fenced with the épée, not a
     # literal "at the point of the sword"; the 7B renders it word-for-word.
     (r"au bout d['’]épée", "an épée bout"),
+    # "un assaut d'épée" is just an épée bout -- there is no "leçon" in it,
+    # but the 7B pulls "lesson" in from the leçon-d'assaut rule and writes
+    # "a bout lesson with the épée". Repair the output.
+    (r"a bout lesson with the épée", "an épée bout"),
+    (r"bout lesson with the épée", "épée bout"),
 ]
 
 

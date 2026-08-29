@@ -24,6 +24,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - salle (d'armes) → fencing hall/room
    - assaut → bout   |   tireur → fencer   |   maître (d'armes) → fencing master
    - "leçon d'assaut" → "bout lesson" (a free-play lesson) — keep the word "lesson"; it is NOT the same as a bare "assaut" ("bout")
+   - "un assaut d'épée" → "an épée bout"  ("assaut de sabre" → "a saber bout", etc.) — plain "assaut", NO "lesson" (there is no "leçon" in it)
    - mouvement, mise en garde, botte, temps, mesure, ligne → movement, on-guard position, thrust/hit, tempo, distance, line
    - divers (as a heading) → miscellaneous
    - soie (of a blade) → tang   (NOT "silk" or "thread")
