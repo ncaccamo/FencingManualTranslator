@@ -36,13 +36,18 @@ BODY_TEXT:
 [verbatim transcription of the main text block, preserving line breaks where they occur naturally]
 
 FIGURES:
-[Does THIS page carry a picture that is part of the work -- an engraving, woodcut, line drawing, diagram, or photographic plate? A decorative rule, a section ornament, a drop-cap initial, a printer's device / colophon, and a library stamp do NOT count.
-- If there is no such picture, write exactly:
+[Look at the WHOLE page image. Report EVERY picture on it that is part of the work, no matter how small, faint, or lightly drawn. This includes:
+  - a photograph or half-tone plate
+  - an engraving or woodcut
+  - a geometric diagram or schema -- a labelled rectangle, arrows, lettered points (A, B, x, y), a "Schéma" / "Fig." line drawing
+  - a small cartoon or a tailpiece vignette at the foot of a page
+A pure horizontal rule, a row of asterisks / a dinkus, a large decorated drop-cap initial, the printer's device / colophon, and a library stamp do NOT count.
+- If the page has none of the above, write exactly:
   none
-- Otherwise write one line for each picture, choosing the tag by how much of the page it fills:
+- Otherwise write one line per picture, choosing the tag by how much of the page it fills:
   plate | <caption>    -- the picture is essentially the whole page (little or no running text)
   inset | <caption>    -- the picture sits on a page that also has running text
-  where <caption> is that picture's own caption or title line, transcribed exactly as printed (often a line starting "Fig." or "Pl."); if the picture has no caption line, write:  no caption
+  where <caption> is that picture's own caption or title line, transcribed exactly as printed (often a line starting "Fig.", "Pl." or "Schéma"); if there is no caption line, write:  no caption
 Describe what is actually on THIS page -- do not copy the wording above.]
 
 Be extremely precise -- this transcription will be used for translation and scholarly work, and any silent change from what is actually printed on the page is a real error.

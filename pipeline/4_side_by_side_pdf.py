@@ -253,8 +253,12 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
 
         # Try paragraph-aligned layout first (needs a usable scan text
         # layer, and the whole page must still fit with the whitespace).
+        # Skip it on a page with a figure -- the scan's text blocks span
+        # the gap where the picture sits, so the anchors jump and the
+        # translation ends up misaligned.
         n_paras = len([p for p in re.split(r"\n\s*\n", body_txt.strip()) if p.strip()])
-        fracs = reconcile_fracs(paragraph_fracs(src[i]), n_paras)
+        has_fig = bool(fig_map.get(str(i)))
+        fracs = None if has_fig else reconcile_fracs(paragraph_fracs(src[i]), n_paras)
         if fracs and len(fracs) >= 2:
             for s in SIZES:
                 if render_aligned(page, y, body_txt, s, fracs, src[i], body_bottom):
