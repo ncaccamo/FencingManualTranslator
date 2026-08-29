@@ -27,6 +27,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - soie (of a blade) → tang   (NOT "silk" or "thread")
    - caver → to dig / drop the point (lower the hand so the point goes under the line)   (NOT "cave")
    - fort / faible (of a blade) → forte / foible
+   - fer (the opponent's steel) → the blade   (NOT "iron"): "attaque au fer" → attack on the blade, "chercher le fer" → seek the blade, "quitter le fer" → leave the blade. BUT keep "prise de fer" and "sentiment du fer" as-is (rule 2).
    Do NOT wrap translated words in <i>…</i>. Only genuinely-kept foreign terms from rule 2 get tags.
 
 4. Headings, section titles, chapter titles, running heads, and figure captions are NORMAL TEXT — translate them fully and do NOT wrap them in <i>…</i>. A line in all capitals is almost always a heading, not a technical term. When a heading contains a rule-2 term you are keeping (e.g. "PARADES DU CROISÉ"), keep that word intact WITH its accents — do not drop letters ("PARRIES OF THE CROISÉ", never "CROIS").

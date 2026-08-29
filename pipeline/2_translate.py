@@ -149,6 +149,12 @@ _ALWAYS_TRANSLATE = [
     (r"fleurets", "foils"), (r"fleuret", "foil"),
     (r"entra[iî]nements", "training sessions"), (r"entra[iî]nement", "training"),
     (r"escrimes", "fencing"), (r"escrime", "fencing"),
+    # "fer" = the (opponent's) steel/blade. Safe phrases only -- NOT bare
+    # "fer", which would break the kept term "prise de fer" (rule 2) and
+    # the glossary term "sentiment du fer".
+    (r"attaques au fer", "attacks on the blade"), (r"attaque au fer", "attack on the blade"),
+    (r"sur le fer", "on the blade"), (r"au fer", "on the blade"),
+    (r"le fer", "the blade"),
 ]
 
 
