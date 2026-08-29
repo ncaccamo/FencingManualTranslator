@@ -355,12 +355,22 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
         # A page whose whole body is ~one line is a plate caption, not prose.
         caption_only_page = (not is_empty) and len(tr.split()) <= 20
 
+        # A scoring grid / poule table: the VLM transcribes it as <table>
+        # HTML markup, which is unreadable as flowing text -- reproduce the
+        # source page image instead and drop the markup body.
+        body_is_table = bool(re.search(r"<table[ >]", tr, re.I))
+
         # Collect (band, caption) figure placements for this page.
         placements = []
         if use_vlm_figs:
             for fig in fig_map.get(str(i), []):
                 if src_page is None:
                     break
+                # A library accession stamp the VLM mistook for a plate
+                # caption ("BIBLIOTHEQUE NATIONALE DE FRANCE 37502 ...").
+                if re.search(r"biblioth[eè]que nationale|\b\d{6,}\b",
+                             fig.get("caption", ""), re.I):
+                    continue
                 p = band_for_figure(fig, src_page, 0 if is_empty else len(tr.split()))
                 if p is not None:
                     placements.append(p)
@@ -386,6 +396,9 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
             elif is_empty and interior_ink_fraction(src_page) > 0.04:
                 placements.append((None, "[illustration from the original]"))
 
+        if body_is_table and src_page is not None and not placements:
+            placements.append((None, "[scoring table — reproduced from the original]"))
+
         if is_empty and not placements:
             continue  # genuinely blank sheet
 
@@ -405,7 +418,7 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
             _norm(tr) and (_norm(tr) in _norm(c) or _norm(c) in _norm(tr))
             for _, c in placements)
 
-        if not is_empty and not body_is_caption:
+        if not is_empty and not body_is_caption and not body_is_table:
             flow.body(tr)
             rendered += 1
 

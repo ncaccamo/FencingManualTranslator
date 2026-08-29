@@ -218,6 +218,15 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
 
         page, y = new_spread(doc, src, i, struct)
 
+        if re.search(r"<table[ >]", tr or "", re.I):
+            # A scoring grid the VLM transcribed as HTML markup: unreadable
+            # as flowing text, and the scan on the left carries the real
+            # grid. Don't paste the markup into the right column.
+            page.insert_text((RIGHT.x0, y + 4),
+                             "[scoring table — see facing page]",
+                             fontsize=9, fontname=_render.ITALIC)
+            continue
+
         if not tr or tr in SKIP_MARKERS:
             # A plate page (no body text, but figures.json has its caption):
             # show the translated caption instead of "[blank]" -- the scan
