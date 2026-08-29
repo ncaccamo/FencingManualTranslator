@@ -167,6 +167,9 @@ _ALWAYS_TRANSLATE = [
     # "épée fencing with the fleuret" (hallucinates épée, keeps fleuret).
     (r"escrime au fleuret", "foil fencing"), (r"au fleuret", "with the foil"),
     (r"escrime à l['’]épée", "épée fencing"), (r"à l['’]épée", "with the épée"),
+    # "au bout d'épée" -- idiom for a bout fenced with the épée, not a
+    # literal "at the point of the sword"; the 7B renders it word-for-word.
+    (r"au bout d['’]épée", "an épée bout"),
 ]
 
 
