@@ -6,6 +6,9 @@ processed/
 __pycache__/
 *.pyc
 
+# eval harness: baselines/ IS tracked; per-run reports are not
+evals/reports/*.md
+
 # Model files (these live in ~/llm_models anyway, outside this folder,
 # but excluding just in case one ever ends up here)
 *.gguf
