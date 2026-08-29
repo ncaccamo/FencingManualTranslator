@@ -27,7 +27,20 @@ if not os.path.exists(PROMPT_FILE):
 with open(PROMPT_FILE, "r", encoding="utf-8") as f:
     PROMPT_TEMPLATE = f.read().strip()
 
-FRENCH_WORDS = {"le", "la", "les", "un", "une", "des", "du", "de", "et", "est", "sont", "dans", "sur", "par", "pour", "avec", "au", "aux", "en", "il", "elle", "on", "ne", "pas", "mais", "ou", "si", "que", "qui", "quoi", "ce", "cet", "cette", "ces", "son", "sa", "ses", "leur", "mon", "ma", "ton", "ta", "notre", "votre"}
+FRENCH_WORDS = {
+    "le", "la", "les", "un", "une", "des", "du", "de", "d", "et", "est", "sont", "était", "étaient",
+    "dans", "sur", "sous", "par", "pour", "avec", "sans", "vers", "chez", "entre", "depuis",
+    "au", "aux", "en", "il", "ils", "elle", "elles", "on", "je", "tu", "nous", "vous",
+    "ne", "n", "pas", "plus", "point", "rien", "jamais", "mais", "ou", "où", "si", "donc",
+    "que", "qu", "qui", "quoi", "dont", "quel", "quelle", "quels", "quelles",
+    "ce", "cet", "cette", "ces", "cela", "ceci", "celui", "celle", "ceux",
+    "son", "sa", "ses", "leur", "leurs", "mon", "ma", "mes", "ton", "ta", "tes", "notre", "votre",
+    "à", "se", "s", "lui", "moi", "toi", "soi", "l", "c", "j", "m", "t",
+    "être", "avoir", "fait", "faire", "faites", "était", "être", "sera", "ont", "avait", "avaient",
+    "tout", "tous", "toute", "toutes", "bien", "très", "aussi", "ainsi", "alors", "comme",
+    "quand", "lorsque", "puisque", "parce", "afin", "selon", "malgré", "cependant", "toutefois",
+    "encore", "déjà", "toujours", "peut", "doit", "peu", "trop", "assez",
+}
 ITALIAN_WORDS = {"il", "lo", "la", "i", "gli", "le", "un", "uno", "una", "del", "della", "di", "e", "è", "sono", "in", "su", "per", "con", "da", "a", "che", "questo", "questa", "quello", "quella", "mio", "tuo", "suo"}
 GERMAN_WORDS = {"der", "die", "das", "ein", "eine", "und", "ist", "sind", "in", "im", "auf", "zu", "von", "mit", "den", "dem", "des", "als", "wie", "dass", "aus", "nach", "bei", "an", "vor", "hinter", "über"}
 SPANISH_WORDS = {"el", "la", "los", "las", "un", "una", "y", "es", "son", "en", "de", "del", "por", "para", "con", "al", "que", "este", "esta", "ese", "esa", "mi", "tu", "su", "nuestro", "vuestro"}
@@ -149,16 +162,13 @@ def contains_too_much_non_english(text: str) -> bool:
     non_english_count = sum(1 for w in words if w in NON_ENGLISH_INDICATORS)
     if non_english_count / len(words) > 0.35:
         return True
-    # The stop-word list is small; a page left untranslated in dense
-    # technical French can still slip under 0.35 (its content words aren't
-    # in it). Backstop on constructs that are French but not English:
-    #   - elision: consonant + apostrophe + vowel/h, no space ("d'une",
-    #     "l'épée", "qu'il") -- English contractions ("it's", "don't") put
-    #     a consonant after the apostrophe, so they don't match
-    #   - endings that require French-specific letters
+    # Backstop for a page that stayed mostly French but is short on the
+    # stop words above: elision (consonant + apostrophe + vowel, "d'une" /
+    # "qu'il" -- English contractions put a consonant after the apostrophe)
+    # and endings that need French-specific letters.
     fr = len(re.findall(r"\b[cdjlmnqst]['’][aeiouyhàâäéèêëïîôùûü]", text, re.I)) \
         + len(re.findall(r"\w(?:ité|eaux|aient|âtre|euse|eux|oué)\b", text, re.I))
-    return fr / len(words) > 0.05
+    return fr / len(words) > 0.045
 
 
 # An optional leading politeness token the model likes to prepend to both
