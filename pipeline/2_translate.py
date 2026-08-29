@@ -150,6 +150,8 @@ _ALWAYS_TRANSLATE = [
     (r"entra[iî]nements", "training sessions"), (r"entra[iî]nement", "training"),
     (r"escrimes", "fencing"), (r"escrime", "fencing"),
     (r"sociétés", "societies"), (r"société", "society"),
+    (r"demi-fentes", "half-lunges"), (r"demi-fente", "half-lunge"),
+    (r"fentes", "lunges"), (r"fente", "lunge"),
     # "leçon d'assaut" = a free-play lesson; the 7B collapses it to just
     # "the bout" (drops "leçon"). Bare "assaut" -> "bout" is left to the
     # prompt (rule 3) -- "assaut" alone is sometimes "assault" in a duel.
@@ -160,6 +162,10 @@ _ALWAYS_TRANSLATE = [
     (r"attaques au fer", "attacks on the blade"), (r"attaque au fer", "attack on the blade"),
     (r"sur le fer", "on the blade"), (r"au fer", "on the blade"),
     (r"le fer", "the blade"),
+    # "l'escrime au fleuret" -> "foil fencing"; the 7B renders it
+    # "épée fencing with the fleuret" (hallucinates épée, keeps fleuret).
+    (r"escrime au fleuret", "foil fencing"), (r"au fleuret", "with the foil"),
+    (r"escrime à l['’]épée", "épée fencing"), (r"à l['’]épée", "with the épée"),
 ]
 
 

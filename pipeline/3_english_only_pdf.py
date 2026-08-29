@@ -49,10 +49,14 @@ def find_figure_band(page):
     profiling. Returns (y0f, y1f, x0f, x1f) fractions, or None.
 
     Only the vertical interior (8%-92% of height) is searched -- the outer
-    strips are where scanner-bed black and binding shadow live and they
-    would otherwise register as a solid 'figure'. A hit is a contiguous run
-    of near-solid rows that is either tall (>8% of page) or shorter but very
-    dense (engravings run ~0.9 black), and spans most of the text width."""
+    strips are where scanner-bed black and binding shadow live.
+
+    Two stages: find a dense SEED run (rows >30% black -- a photo band or
+    the crowded core of an engraving), then GROW it up and down while rows
+    still carry ink (>4% black), stopping at a gap of clearly-blank rows.
+    The grow stage is what pulls in the sparse top/bottom of a line
+    engraving and its caption -- density profiling alone clipped those
+    (page 23 of Joseph-Renaud came out as a 9%-tall strip)."""
     pix = page.get_pixmap(matrix=fitz.Matrix(1.0, 1.0), colorspace=fitz.csGRAY)
     w, h, s = pix.width, pix.height, pix.samples
     if not s:
@@ -61,6 +65,11 @@ def find_figure_band(page):
     ytop, ybot = int(h * 0.08), int(h * 0.92)
     rows = [sum(1 for x in range(mx, w - mx) if s[y * w + x] < 170) / (w - 2 * mx)
             for y in range(ytop, ybot)]
+    n = len(rows)
+
+    # --- seed: longest run of rows over the dense threshold, at least 4%
+    # of the page tall (a real figure core -- a stray dense row on a text
+    # page won't form a run this long) ---
     best = (0, 0)
     run0 = None
     for k, d in enumerate(rows + [0.0]):
@@ -72,21 +81,40 @@ def find_figure_band(page):
                 best = (run0, k)
             run0 = None
     k0, k1 = best
-    if k1 <= k0:
+    if (k1 - k0) < h * 0.04:
         return None
-    seg = rows[k0:k1]
-    mean = sum(seg) / len(seg)
+    seed_mean = sum(rows[k0:k1]) / (k1 - k0)
+    seed_h = (k1 - k0) / h
+
+    # --- grow: extend up to 10% of the page each way, stopping at a run
+    # of blank rows. Pulls in the sparse frame + caption of a line
+    # engraving that only its crowded core cleared the seed threshold. ---
+    limit = int(h * 0.10)
+    blank = max(4, int(h * 0.025))
+    lo = max(0, k0 - limit)
+    gap = 0
+    while k0 > lo and gap < blank:
+        k0 -= 1
+        gap = gap + 1 if rows[k0] < 0.04 else 0
+    k0 += gap
+    hi = min(n, k1 + limit)
+    gap = 0
+    while k1 < hi and gap < blank:
+        gap = gap + 1 if rows[k1] < 0.04 else 0
+        k1 += 1
+    k1 -= gap
+
     frac_h = (k1 - k0) / h
-    step = max(1, (k1 - k0) // 30)
+    step = max(1, (k1 - k0) // 40)
     cols = [x for x in range(w)
             if any(s[(ytop + y) * w + x] < 170 for y in range(k0, k1, step))]
     wext = (max(cols) - min(cols)) / w if cols else 0.0
-    if not ((frac_h > 0.08 or (frac_h > 0.03 and mean > 0.60)) and wext > 0.30):
+    if not (wext > 0.30 and (frac_h > 0.08 or (seed_h > 0.03 and seed_mean > 0.55))):
         return None
     y0, y1 = ytop + k0, ytop + k1
-    pad = h * 0.006
+    pad = h * 0.008
     return (max(0.0, (y0 - pad) / h), min(1.0, (y1 + pad) / h),
-            max(0.0, (min(cols) / w) - 0.01), min(1.0, (max(cols) / w) + 0.01))
+            max(0.0, (min(cols) / w) - 0.015), min(1.0, (max(cols) / w) + 0.015))
 
 
 def band_for_figure(fig, src_page):

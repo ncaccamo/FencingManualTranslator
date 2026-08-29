@@ -5,7 +5,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
 1. Translate EVERYTHING into modern English. The output must be entirely English (Latin script only). Do not leave French / Italian / German / Spanish / Latin sentences, phrases, headings, or captions untranslated. Never write a note to yourself in any language.
 
 2. KEEP a word in its original language ONLY if English-language fencing literature itself normally keeps it in that language — i.e. named guards and actions that have no plain English equivalent. Keep, and wrap in <i>…</i>:
-   - French: garde, engagement, dégagement, coupé, doublé, riposte, remise, reprise, prise de fer, froissement, croisé, liement, fente, appel, corps à corps, volte, and the numbered lines/parries prime, seconde, tierce, quarte, quinte, sixte, septime, octave
+   - French: garde, engagement, dégagement, coupé, doublé, riposte, remise, reprise, prise de fer, froissement, croisé, liement, appel, corps à corps, volte, and the numbered lines/parries prime, seconde, tierce, quarte, quinte, sixte, septime, octave
    - "parade de tierce" etc. = "parry of tierce" — translate "parade" to "parry" (rule 3) but keep the line name (tierce, quarte, …).
    - épée — keep as "épée" (it IS the English term), wrap in <i>épée</i>
    - Italian: guardia, affondo, stoccata, imbroccata, mandritto, riverso, punta
@@ -19,7 +19,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - coup droit → straight thrust   (NOT "straight right/clothes"; "droit" here = straight)
    - dérobement → evasion (of the blade)   (NOT "degrading")
    - doublement → doubling   |   déroulé/coulé → glide
-   - une-deux → one-two   |   coup(s) (as a bare word) → thrust(s) / blow(s)
+   - une-deux → one-two   |   fente → lunge   |   demi-fente → half-lunge   |   coup(s) (as a bare word) → thrust(s) / blow(s)
    - DE / DES / SUR / PAR / AVEC inside a heading → of / against / with — always translate them
    - salle (d'armes) → fencing hall/room
    - assaut → bout   |   tireur → fencer   |   maître (d'armes) → fencing master
@@ -100,7 +100,7 @@ PARRIES OF DÉGAGEMENTS
 Input:
 ATTAQUES PAR UN COUP DROIT, AVEC DEMI-FENTE
 Output:
-ATTACKS WITH A STRAIGHT THRUST, WITH A HALF-FENTE
+ATTACKS WITH A STRAIGHT THRUST, WITH A HALF-LUNGE
 
 Input:
 AVEC PETIT SAUT EN AVANT
@@ -110,7 +110,7 @@ WITH A SMALL LEAP FORWARD
 Input:
 AVEC FENTE COMPLÈTE
 Output:
-WITH A FULL FENTE
+WITH A FULL LUNGE
 
 Input:
 COUPS SUR DES FEINTES
