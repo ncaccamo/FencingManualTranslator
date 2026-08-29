@@ -134,8 +134,7 @@ def band_for_figure(fig, src_page, body_words=0):
     substantial translated body, in which case a small drawing/vignette
     isn't worth blanketing the (untranslated) source scan over the reading:
     skip it (the side-by-side PDF still shows the original)."""
-    cap = (fig.get("caption_en") or fig.get("caption") or "").strip() \
-        or "[illustration from the original]"
+    cap = (fig.get("caption_en") or fig.get("caption") or "").strip()
     if src_page is None:
         return None, cap
     prof = find_figure_band(src_page)
@@ -262,7 +261,7 @@ class Flow:
             h, w = FIGURE_MAX_H, FIGURE_MAX_H * (cw / ch)
         return w, h
 
-    def figure(self, src_page, band=None, caption="[illustration from the original]"):
+    def figure(self, src_page, band=None, caption=""):
         """Embed src_page (optionally cropped to `band`, a
         (y0f,y1f,x0f,x1f) fraction rect) scaled into the column. Figures
         are embedded in their source orientation -- auto-rotation was
@@ -285,10 +284,11 @@ class Flow:
         self.page.insert_image(fitz.Rect(x0, self.y, x0 + w, self.y + h),
                                stream=pix.tobytes("jpeg", jpg_quality=72))
         self.y += h + 4
-        for vl in _render.layout(caption, COL.width, FS - 1):
-            _, self.y = _render.draw(self.page,
-                                     (COL.x0, self.y, COL.x1, COL.y1), [vl], FS - 1)
-        self.y += FS * 0.6
+        if caption.strip():
+            for vl in _render.layout(caption, COL.width, FS - 1):
+                _, self.y = _render.draw(self.page,
+                                         (COL.x0, self.y, COL.x1, COL.y1), [vl], FS - 1)
+            self.y += FS * 0.6
 
 
 def make_cover(doc, book):
@@ -383,18 +383,17 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
                     y0f, y1f, *_ = prof
                     placements.append(
                         (None if (y1f - y0f) > 0.85 else prof,
-                         tr if caption_only_page else "[illustration from the original]"))
+                         tr if caption_only_page else ""))
                 elif is_empty and interior_ink_fraction(src_page) > 0.04:
-                    placements.append((None, "[illustration from the original]"))
+                    placements.append((None, ""))
         elif src_page is not None:
             band = find_figure_band(src_page)
             if band is not None:
                 y0f, y1f, *_ = band
                 placements.append(
-                    (None if (y1f - y0f) > 0.85 else band,
-                     "[illustration from the original]"))
+                    (None if (y1f - y0f) > 0.85 else band, ""))
             elif is_empty and interior_ink_fraction(src_page) > 0.04:
-                placements.append((None, "[illustration from the original]"))
+                placements.append((None, ""))
 
         if body_is_table and src_page is not None and not placements:
             placements.append((None, "[scoring table — reproduced from the original]"))
@@ -415,7 +414,7 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
         def _norm(s):
             return re.sub(r"[^a-z0-9 ]", "", s.lower()).strip()
         body_is_caption = placements and caption_only_page and any(
-            _norm(tr) and (_norm(tr) in _norm(c) or _norm(c) in _norm(tr))
+            _norm(tr) and _norm(c) and (_norm(tr) in _norm(c) or _norm(c) in _norm(tr))
             for _, c in placements)
 
         if not is_empty and not body_is_caption and not body_is_table:
