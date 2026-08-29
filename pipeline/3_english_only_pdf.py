@@ -125,13 +125,15 @@ def find_figure_band(page):
             max(0.0, (min(cols) / w) - 0.015), min(1.0, (max(cols) / w) + 0.015))
 
 
-def band_for_figure(fig, src_page):
-    """Turn a figures.json record into (band, caption) for Flow.figure().
-    The VLM gives presence + kind + caption only; geometry comes from the
-    density profiler. 'plate' -> whole page (band None). 'inset' -> the
-    profiler's band; if the profiler finds nothing on a page the VLM says
-    has an inset, fall back to embedding the whole page so the picture is
-    never lost."""
+def band_for_figure(fig, src_page, body_words=0):
+    """Turn a figures.json record into (band, caption) for Flow.figure(),
+    or None for "no placement". The VLM gives presence + kind + caption
+    only; geometry comes from the density profiler. 'plate' -> whole page
+    (band None). 'inset' -> the profiler's band; if the profiler can't
+    localize it, fall back to the whole page -- UNLESS the page carries a
+    substantial translated body, in which case a small drawing/vignette
+    isn't worth blanketing the (untranslated) source scan over the reading:
+    skip it (the side-by-side PDF still shows the original)."""
     cap = (fig.get("caption_en") or fig.get("caption") or "").strip() \
         or "[illustration from the original]"
     if src_page is None:
@@ -147,10 +149,12 @@ def band_for_figure(fig, src_page):
             return None, cap
         y0f, y1f, *_ = prof
         return (prof if (y1f - y0f) >= 0.60 else None), cap
+    whole_page = prof is None or (prof[1] - prof[0]) > 0.85
+    if whole_page and body_words >= 60:
+        return None                 # small drawing on a real text page: skip
     if prof is None:
         return None, cap            # VLM saw an inset the profiler missed
-    y0f, y1f, *_ = prof
-    return (None if (y1f - y0f) > 0.85 else prof), cap
+    return (None if whole_page else prof), cap
 
 
 def parse_vlm_output(text: str) -> dict:
@@ -357,7 +361,9 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
             for fig in fig_map.get(str(i), []):
                 if src_page is None:
                     break
-                placements.append(band_for_figure(fig, src_page))
+                p = band_for_figure(fig, src_page, 0 if is_empty else len(tr.split()))
+                if p is not None:
+                    placements.append(p)
             # The VLM under-reports -- runs of near-identical plates, and
             # engravings dropped into text pages. On any page it did NOT
             # flag, fall back to the density profiler.

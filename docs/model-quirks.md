@@ -195,6 +195,16 @@ profiler only does *geometry*:
   picture. Fix: for a `plate` only, keep the band when it spans ≥ 60 % of
   the page height, else embed the whole page (a plate *is* the page;
   cropping is worth ~15 %, not 45 %). JR pp. 45 / 47.
+- **A small drawing blanketed a whole text page.** The VLM correctly
+  flagged a tiny vignette on folio 74 of Joseph-Renaud (a dense page of
+  regulation text) as `inset | no caption`. The profiler couldn't
+  localize something that small, so `band_for_figure()` fell back to
+  embedding the *whole source page* — dropping a full page of translated
+  regulations behind an untranslated scan. Fix: when the fallback would
+  be a whole-page embed **and** the page carries ≥ 60 words of translated
+  body, skip the figure entirely (`band_for_figure` returns `None`); the
+  side-by-side PDF still shows the original. A localized band (< 85 % of
+  the page) is still placed inline.
 - **A results / poule table linearised into garbled `BODY_TEXT`.** A
   tournament bout table (2-D grid, ruled cells) is not prose; the VLM
   read it row-major into an unusable word salad. `vlm_ocr_prompt.txt`
