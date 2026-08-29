@@ -221,6 +221,42 @@ def retranslate_stray_french_headings(text: str) -> str:
     return "\n".join(out)
 
 
+def _shout_ratio(text: str) -> float:
+    """Fraction of letters that are uppercase. Only meaningful with enough
+    letters to average over -- returns 0 for short strings (a plate caption
+    or a heading is legitimately all-caps)."""
+    letters = [c for c in text if c.isalpha()]
+    if len(letters) < 25:
+        return 0.0
+    return sum(c.isupper() for c in letters) / len(letters)
+
+
+def deshout(text: str, source: str) -> str:
+    """Qwen sometimes latches onto a source paragraph that opens with a
+    small-caps word ('L'ESCRIME au fleuret ...') and renders the WHOLE page
+    in capitals. Last-resort repair: lowercase a shouting line, re-capitalise
+    sentence starts, and keep any token that is genuinely all-caps in the
+    source line (acronyms, a section title)."""
+    keep = {w for w in re.findall(r"\b[A-ZÀ-Þ]{2,}\b", source)}
+    out = []
+    for line in text.split("\n"):
+        if _shout_ratio(line) <= 0.85:
+            out.append(line)
+            continue
+        lowered = re.sub(r"[A-Za-zÀ-ÿ]+",
+                         lambda m: m.group(0) if m.group(0) in keep
+                         else m.group(0).capitalize() if m.group(0).istitle()
+                         else m.group(0).lower(),
+                         line)
+        lowered = re.sub(r"(^\s*[\"«(]?\s*[a-zà-ÿ])",
+                         lambda m: m.group(1).upper(), lowered)
+        lowered = re.sub(r"([.!?]\s+[\"«(]?)([a-zà-ÿ])",
+                         lambda m: m.group(1) + m.group(2).upper(), lowered)
+        lowered = re.sub(r"\bi\b", "I", lowered)
+        out.append(lowered)
+    return "\n".join(out)
+
+
 def has_wrong_script(text: str) -> bool:
     """Sources are all Latin-script (French/Italian/German/Spanish/Latin).
     CJK / Cyrillic / Hebrew / Arabic characters in the output mean the model
@@ -624,7 +660,9 @@ try:
                 else:
                     full_prompt = (f"{PROMPT_TEMPLATE}\n\nTranslate the following into "
                                    f"fluent English. Do NOT repeat any of it in the "
-                                   f"original language.\n\nText to translate:\n{clean_text}")
+                                   f"original language. Match the capitalisation of the "
+                                   f"source; do NOT write the text in all capitals."
+                                   f"\n\nText to translate:\n{clean_text}")
                     temp = 0.3 + 0.25 * attempt
                 candidate = translate_with_llama(full_prompt, temperature=temp)
 
@@ -673,6 +711,13 @@ try:
                     time.sleep(8)
                     continue
 
+                # Qwen rendered the whole page in capitals (source wasn't).
+                # Retry for a clean one; deshout() is the fallback repair.
+                if _shout_ratio(candidate) > 0.85 and _shout_ratio(clean_text) < 0.6:
+                    print(" → all caps")
+                    time.sleep(6)
+                    continue
+
                 # Length sanity check -- but only for pages with enough source
                 # text for the ratio to mean anything. Plate captions, drill
                 # lists and dimension callouts are legitimately terse and were
@@ -692,9 +737,22 @@ try:
                 # Never drop a page. Keep the best non-garbled attempt
                 # (flagged for review), or fall back to the original text so
                 # the page still appears in the output for a human to fix.
-                if best_candidate:
+                if best_candidate and _shout_ratio(best_candidate) > 0.85 \
+                        and _shout_ratio(clean_text) < 0.6 \
+                        and not contains_too_much_non_english(best_candidate) \
+                        and not (src_words >= 25
+                                 and len(best_candidate.split()) < 0.5 * src_words):
+                    # The only thing wrong was the all-caps shout: repair the
+                    # case and keep it as a normal page, no review banner.
+                    fixed, n_fn = pull_footnotes(deshout(best_candidate, clean_text),
+                                                 clean_text, glossed)
+                    translated_pages.append(fixed)
+                    print(" ✓ (deshouted)")
+                elif best_candidate:
                     print(" ⚠ kept (low confidence)")
-                    translated_pages.append(f"[low-confidence translation — review]\n{best_candidate}")
+                    body = deshout(best_candidate, clean_text) \
+                        if _shout_ratio(best_candidate) > 0.85 else best_candidate
+                    translated_pages.append(f"[low-confidence translation — review]\n{body}")
                 elif src_words < 15:
                     # Every attempt was a refusal/preamble and there was
                     # barely any source text -- it's an effectively blank
