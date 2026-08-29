@@ -195,6 +195,21 @@ profiler only does *geometry*:
   picture. Fix: for a `plate` only, keep the band when it spans ≥ 60 % of
   the page height, else embed the whole page (a plate *is* the page;
   cropping is worth ~15 %, not 45 %). JR pp. 45 / 47.
+- **A plate's two-line caption split across FIGURES and BODY_TEXT.**
+  The `FIG. N — TITLE` / `Nᵉ TEMPS : …` plates (JR pp. 34–36) came out of
+  olmOCR-2 with line 1 in a `FIGURES:` row and both lines in `BODY_TEXT`,
+  fields out of order (`FIGURES:` before `BODY_TEXT:`), and `no caption`
+  on its own line. Three parser bugs compounded: the `FIGURES:` capture
+  ran to end-of-response and swallowed the leaked `BODY_TEXT:`; `"text" in
+  kind` matched the literal line `BODY_TEXT:` and made it a spurious
+  `inset`; `no caption` wasn't a recognised empty sentinel. Fixes: cut the
+  `FIGURES:` block at a following `BODY_TEXT:`/`PAGE_NUMBER:`/`HEADER:`
+  marker; match `kind` with `startswith("inset"/"inline")` only; treat
+  `no caption` as empty. Plus `_fold_caption_only_body()`: when a page has
+  a figure and a short caption-shaped body, the body is folded into the
+  figure caption (translated once, as a caption) and the page collapses to
+  one image — so the English-only PDF stops dropping the second line and
+  the side-by-side stops showing a worse duplicate translation.
 - **A figure emitted as a Markdown image ref, not a FIGURES entry.**
   olmOCR-2 rendered a labelled line diagram ("Schéma A", straight lines +
   lettered points — invisible to the density profiler) as

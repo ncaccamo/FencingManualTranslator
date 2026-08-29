@@ -368,17 +368,29 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
         # Collect (band, caption) figure placements for this page.
         placements = []
         if use_vlm_figs:
-            for fig in fig_map.get(str(i), []):
-                if src_page is None:
-                    break
-                # A library accession stamp the VLM mistook for a plate
-                # caption ("BIBLIOTHEQUE NATIONALE DE FRANCE 37502 ...").
-                if re.search(r"biblioth[eè]que nationale|\b\d{6,}\b",
-                             fig.get("caption", ""), re.I):
-                    continue
-                p = band_for_figure(fig, src_page, 0 if is_empty else len(tr.split()))
-                if p is not None:
-                    placements.append(p)
+            figs_here = [
+                f for f in fig_map.get(str(i), [])
+                # a library accession stamp the VLM mistook for a caption
+                # ("BIBLIOTHEQUE NATIONALE DE FRANCE 37502 ...")
+                if not re.search(r"biblioth[eè]que nationale|\b\d{6,}\b",
+                                 f.get("caption", ""), re.I)]
+            if figs_here and src_page is not None:
+                # One page = one embedded image. Several figures.json rows
+                # for a page are almost always the VLM splitting ONE plate's
+                # multi-line caption (a "FIG. N —" title row + a
+                # "Nᵉ TEMPS : ..." row). Embed once. On a caption-only page
+                # the full translated body IS the caption -- both lines,
+                # rendered as prose -- otherwise join the rows.
+                if caption_only_page and not is_empty:
+                    cap = tr
+                else:
+                    cap = " ".join(
+                        (f.get("caption_en") or f.get("caption") or "").strip()
+                        for f in figs_here).strip()
+                bf = band_for_figure(figs_here[0], src_page,
+                                     0 if is_empty else len(tr.split()))
+                if bf is not None:
+                    placements.append((bf[0], cap))
             # The VLM under-reports -- runs of near-identical plates, and
             # engravings dropped into text pages. On any page it did NOT
             # flag, fall back to the density profiler.

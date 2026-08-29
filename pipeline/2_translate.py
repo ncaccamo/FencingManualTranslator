@@ -610,8 +610,10 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
             en = strip_model_preamble((en or "").strip()).strip()
             en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
             if en:
-                one = enforce_kept_terms(
-                    apply_always_translate(en.splitlines()[0].strip()))
+                # a caption is one line -- join a multi-line rendering (a
+                # "FIG. N — TITLE / Nᵉ TEMPS : ..." caption comes back as two)
+                one = " ".join(l.strip() for l in en.splitlines() if l.strip())
+                one = enforce_kept_terms(apply_always_translate(one))
                 fig["caption_en"] = match_case(cap, one)
             else:
                 fig["caption_en"] = cap

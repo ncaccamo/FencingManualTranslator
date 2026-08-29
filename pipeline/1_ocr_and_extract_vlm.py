@@ -261,18 +261,25 @@ def parse_figures_block(raw: str) -> list:
     m = re.search(r'(?im)^[ \t]*FIGURES[ \t]*:[ \t]*\n?(.*)\Z', raw, re.S)
     if not m:
         return figs
-    for line in m.group(1).splitlines():
+    block = m.group(1)
+    # olmOCR-2 sometimes emits the fields out of order and BODY_TEXT lands
+    # AFTER the FIGURES block -- cut it off so a leaked caption/paragraph
+    # isn't parsed as figure rows.
+    block = re.split(r'(?im)^[ \t]*(?:BODY_TEXT|PAGE_NUMBER|HEADER)[ \t]*:',
+                     block, 1)[0]
+    for line in block.splitlines():
         line = line.strip().lstrip("-*•[] ").strip().strip('"').strip()
-        low = line.lower()
-        if not low or low in ("none", "figures: none", "no figures", "* * *"):
+        low = line.lower().rstrip(".")
+        if not low or low in ("none", "figures: none", "no figures",
+                              "no caption", "* * *"):
             continue
         if line.startswith("!["):          # leaked Markdown image ref
             continue
         parts = [p.strip() for p in line.split("|")]
-        kind = parts[0].lower()
-        if kind.startswith("plate") or "full" in kind or "whole" in kind:
+        kind = parts[0].lower().rstrip(":")
+        if kind.startswith("plate") or "full page" in kind or "whole page" in kind:
             kind = "plate"
-        elif kind.startswith("inset") or "inline" in kind or "text" in kind:
+        elif kind.startswith("inset") or kind.startswith("inline"):
             kind = "inset"
         elif figs and re.match(r"[0-9a-zà-ÿ]", line):
             # A follow-on line starting with a digit or lowercase -- a
@@ -313,6 +320,35 @@ def _page_to_int(s: str):
     if m:
         return int(m.group())
     return _roman_to_int(s)
+
+
+def _fold_caption_only_body(parsed: list) -> None:
+    """A page that is just a plate and its caption: olmOCR-2 routinely puts
+    the caption in BODY_TEXT ("FIG. 6. — PRISE DE FER ... / 2ᵉ TEMPS : ...")
+    -- sometimes AND in a FIGURES row, sometimes instead of one. Fold that
+    body into the figure's caption so it is translated once (as a caption)
+    and doesn't also flow as body text, and collapse the page to a single
+    image. Only fires when the page already has a figure and the body is
+    short and caption-shaped."""
+    for p in parsed:
+        figs = p.get("figures") or []
+        body = (p.get("body") or "").strip()
+        if not figs or not body:
+            continue
+        words = body.split()
+        cap = (figs[0].get("caption") or "").strip()
+        caption_shaped = bool(
+            re.match(r'(?i)\s*(fig\.?|pl\.?|planche|sch[ée]ma|\d+[eè]?r?\b)', body))
+        overlaps = bool(cap) and _norm_head(cap)[:20] in _norm_head(body)
+        if not ((caption_shaped and len(words) <= 40)
+                or (overlaps and len(words) <= 25)
+                or len(words) <= 10):
+            continue
+        merged = body if (not cap or _norm_head(cap) in _norm_head(body)) \
+            else f"{cap} {body}"
+        figs[0]["caption"] = re.sub(r'\s*\n\s*', ' — ', merged).strip()
+        del figs[1:]                      # one image, one (now complete) caption
+        p["body"] = ""
 
 
 def reconcile_page_numbers(page_raws: list) -> list:
@@ -686,6 +722,7 @@ try:
         _known_heads = {_norm_head(p["header"]) for p in parsed if p["header"]}
         for p in parsed:
             p["body"] = strip_leaked_headmatter(p["body"], _known_heads)
+        _fold_caption_only_body(parsed)
         reconciled_nums = reconcile_page_numbers([p["page_raw"] for p in parsed])
 
         canonical_pages = []
