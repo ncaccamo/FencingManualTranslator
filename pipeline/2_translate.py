@@ -301,10 +301,10 @@ def match_case(src: str, dst: str) -> str:
             w = m.group(0)
             lead = first[0]
             first[0] = False
-            # keep a lone letter as-is ("Schéma A", point "B") -- never
-            # lower-case it as the article "a"
+            # a lone letter is a figure label ("Schéma A", point "B"),
+            # not the article "a" -- upper-case it, never lower-case it
             if len(w) == 1:
-                return w
+                return w.upper()
             if not lead and w.lower() in _TITLE_STOPWORDS:
                 return w.lower()
             return w[:1].upper() + w[1:].lower()
