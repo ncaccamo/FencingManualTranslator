@@ -150,6 +150,7 @@ _ALWAYS_TRANSLATE = [
     (r"entra[iî]nements", "training sessions"), (r"entra[iî]nement", "training"),
     (r"escrimes", "fencing"), (r"escrime", "fencing"),
     (r"sociétés", "societies"), (r"société", "society"),
+    (r"divers", "miscellaneous"),
     (r"demi-fentes", "half-lunges"), (r"demi-fente", "half-lunge"),
     (r"fentes", "lunges"), (r"fente", "lunge"),
     # "leçon d'assaut" = a free-play lesson; the 7B collapses it to just
