@@ -149,6 +149,10 @@ _ALWAYS_TRANSLATE = [
     (r"fleurets", "foils"), (r"fleuret", "foil"),
     (r"entra[iî]nements", "training sessions"), (r"entra[iî]nement", "training"),
     (r"escrimes", "fencing"), (r"escrime", "fencing"),
+    # "leçon d'assaut" = a free-play lesson; the 7B collapses it to just
+    # "the bout" (drops "leçon"). Bare "assaut" -> "bout" is left to the
+    # prompt (rule 3) -- "assaut" alone is sometimes "assault" in a duel.
+    (r"leçons d['’]assaut", "bout lessons"), (r"leçon d['’]assaut", "bout lesson"),
     # "fer" = the (opponent's) steel/blade. Safe phrases only -- NOT bare
     # "fer", which would break the kept term "prise de fer" (rule 2) and
     # the glossary term "sentiment du fer".

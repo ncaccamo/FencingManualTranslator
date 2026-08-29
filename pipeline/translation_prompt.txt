@@ -23,6 +23,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - DE / DES / SUR / PAR / AVEC inside a heading → of / against / with — always translate them
    - salle (d'armes) → fencing hall/room
    - assaut → bout   |   tireur → fencer   |   maître (d'armes) → fencing master
+   - "leçon d'assaut" → "bout lesson" (a free-play lesson) — keep the word "lesson"; it is NOT the same as a bare "assaut" ("bout")
    - mouvement, mise en garde, botte, temps, mesure, ligne → movement, on-guard position, thrust/hit, tempo, distance, line
    - soie (of a blade) → tang   (NOT "silk" or "thread")
    - caver → to dig / drop the point (lower the hand so the point goes under the line)   (NOT "cave")
