@@ -213,8 +213,16 @@ def strip_leaked_headmatter(body: str, known_headers: set) -> str:
     lines = body.split("\n")
     while lines and (not lines[0].strip() or _is_apparatus(lines[0].strip())):
         lines.pop(0)
-    while lines and (not lines[-1].strip() or _is_apparatus(lines[-1].strip())):
-        lines.pop()
+    # Tail: a signature is at most catchword + number, so strip at most 2
+    # apparatus lines, and never strip the last line if it is the only
+    # content left (a one-line page could be a legitimate short entry).
+    for _ in range(2):
+        while lines and not lines[-1].strip():
+            lines.pop()
+        if len(lines) > 1 and _is_apparatus(lines[-1].strip()):
+            lines.pop()
+        else:
+            break
     return "\n".join(lines).strip()
 
 
