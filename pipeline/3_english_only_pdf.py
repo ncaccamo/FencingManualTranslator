@@ -138,9 +138,15 @@ def band_for_figure(fig, src_page):
         return None, cap
     prof = find_figure_band(src_page)
     if fig.get("kind") == "plate":
-        # Whole-page plate: the profiler's band crops off the running
-        # header, page number and scan margins; whole page if none found.
-        return prof, cap
+        # Whole-page plate: the profiler's band only exists to crop off the
+        # running header, page number and scan margins -- worth ~15% of the
+        # sheet. If the band it found is tighter than that (a faint line
+        # engraving with no dense core clips to seed +/-22%), it is cropping
+        # the art, not the apparatus -- embed the whole page instead.
+        if prof is None:
+            return None, cap
+        y0f, y1f, *_ = prof
+        return (prof if (y1f - y0f) >= 0.60 else None), cap
     if prof is None:
         return None, cap            # VLM saw an inset the profiler missed
     y0f, y1f, *_ = prof

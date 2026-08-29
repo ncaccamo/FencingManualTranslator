@@ -41,6 +41,7 @@ FIGURES:
   - an engraving or woodcut
   - a geometric diagram or schema -- a labelled rectangle, arrows, lettered points (A, B, x, y), a "Schéma" / "Fig." line drawing
   - a small cartoon or a tailpiece vignette at the foot of a page
+  - a printed grid or table that only makes sense as a 2-D layout -- a tournament poule / results table / bracket, a ruled scoring grid, a measurement table with rules between the cells. Report it here instead of trying to linearise it into BODY_TEXT.
 A pure horizontal rule, a row of asterisks / a dinkus, a large decorated drop-cap initial, the printer's device / colophon, and a library stamp do NOT count.
 - If the page has none of the above, write exactly:
   none

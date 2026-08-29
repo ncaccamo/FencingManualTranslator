@@ -188,6 +188,20 @@ profiler only does *geometry*:
   a `FIGURES:` marker alone on its line; the VLM writes `FIGURES: none`
   inline, so on near-blank pages the literal string became the page body.
   Split at `^FIGURES:` regardless of what follows.
+- **A full-page plate crop-clipped the art.** For a `plate`,
+  `band_for_figure()` handed the profiler's ink band straight through, to
+  trim the running header / folio / scan margin. On a faint line engraving
+  with no dense core the band collapses to `seed ±22%` and crops the
+  picture. Fix: for a `plate` only, keep the band when it spans ≥ 60 % of
+  the page height, else embed the whole page (a plate *is* the page;
+  cropping is worth ~15 %, not 45 %). JR pp. 45 / 47.
+- **A results / poule table linearised into garbled `BODY_TEXT`.** A
+  tournament bout table (2-D grid, ruled cells) is not prose; the VLM
+  read it row-major into an unusable word salad. `vlm_ocr_prompt.txt`
+  `FIGURES:` now lists "a printed grid or table that only makes sense as
+  a 2-D layout" as a picture to report there instead of transcribing —
+  so the page image is embedded and the garbled text never reaches the
+  translator. JR p. 46. *(Takes effect on re-OCR.)*
 
 `find_figure_band()` remains the sole detector for books OCR'd before
 `figures.json` existed (still misses line art). Sideways fold-out
