@@ -373,7 +373,7 @@ def start_translation_server():
     proc.terminate()
     return None
 
-def translate_with_llama(prompt: str) -> str:
+def translate_with_llama(prompt: str, temperature: float = 0.3) -> str:
     for attempt in range(3):
         try:
             response = requests.post(
@@ -385,7 +385,7 @@ def translate_with_llama(prompt: str) -> str:
                         {"role": "system", "content": "You are an expert translator of historical fencing texts."},
                         {"role": "user", "content": prompt}
                     ],
-                    "temperature": 0.3,
+                    "temperature": temperature,
                     # a translated page is never longer than its source; the
                     # >2500-word oversized guard handles the rare monster
                     # page. Leaves room in the 8192 window for prompt+source.
@@ -572,8 +572,19 @@ try:
             for attempt in range(3):
                 print(f"  Page {i}/{len(pages)} (try {attempt + 1})", end="", flush=True)
 
-                full_prompt = f"{PROMPT_TEMPLATE}\n\nText to translate:\n{clean_text}"
-                candidate = translate_with_llama(full_prompt)
+                # After a first failure, raise the temperature and add a
+                # blunt instruction -- the 7B sometimes gets stuck echoing
+                # the French source verbatim, and a hotter sample + the
+                # extra line breaks it out.
+                if attempt == 0:
+                    full_prompt = f"{PROMPT_TEMPLATE}\n\nText to translate:\n{clean_text}"
+                    temp = 0.3
+                else:
+                    full_prompt = (f"{PROMPT_TEMPLATE}\n\nTranslate the following into "
+                                   f"fluent English. Do NOT repeat any of it in the "
+                                   f"original language.\n\nText to translate:\n{clean_text}")
+                    temp = 0.3 + 0.25 * attempt
+                candidate = translate_with_llama(full_prompt, temperature=temp)
 
                 if not candidate:
                     print(" → failed")
