@@ -173,6 +173,15 @@ def parse_vlm_response(raw: str) -> dict:
 
     page_raw = _clean(pn.group(1) if pn else "")
     header = _clean(hd.group(1) if hd else "")
+
+    # olmOCR-2 sometimes skips the PAGE_NUMBER field entirely and just opens
+    # the response with the bare folio on its own line ("\n29\n\nPARADES ...").
+    # Only salvage it when the field is truly absent -- an explicit
+    # "PAGE_NUMBER: none" is a real "no folio here" signal, not this.
+    if pn is None and not page_raw:
+        lead = re.match(r'\s*([IVXLCDM\d]{1,4}\.?)\s*\n', raw, re.I)
+        if lead:
+            page_raw = _clean(lead.group(1))
     if bd:
         # BODY_TEXT runs to end-of-response OR to the FIGURES: marker
         # (alone on its line, or "FIGURES: none" / "FIGURES: plate | ..."
@@ -233,10 +242,25 @@ def parse_figures_block(raw: str) -> list:
     page with text. Geometry is left to 3_english_only_pdf.py (the density
     profiler) -- the VLM only reliably gives presence + caption. Tolerant
     of a missing block, "none", and stray bullets/quotes."""
+    figs = []
+
+    # olmOCR-2 sometimes renders a figure it noticed as a Markdown image
+    # ref in the BODY instead of a FIGURES: entry -- "![Schéma A.](http...)"
+    # with a hallucinated URL, often followed by the caption on its own
+    # line. Treat each as an inset; caption = the alt text, else the short
+    # line right after it.
+    for im in re.finditer(r'!\[([^\]]*)\]\([^)]*\)[ \t]*(?:\n[ \t]*([^\n]*))?',
+                          raw):
+        cap = im.group(1).strip()
+        nxt = (im.group(2) or "").strip()
+        if not cap and nxt and (len(nxt.split()) <= 6 or
+                                re.match(r'(?i)(sch[ée]ma|fig|pl|planche)\b', nxt)):
+            cap = nxt
+        figs.append({"kind": "inset", "caption": re.sub(r'^\W+|\W+$', '', cap)})
+
     m = re.search(r'(?im)^[ \t]*FIGURES[ \t]*:[ \t]*\n?(.*)\Z', raw, re.S)
     if not m:
-        return []
-    figs = []
+        return figs
     for line in m.group(1).splitlines():
         line = line.strip().lstrip("-*•[] ").strip().strip('"').strip()
         low = line.lower()

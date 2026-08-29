@@ -8,6 +8,7 @@ VERBATIM TRANSCRIPTION -- FOLLOW EXACTLY:
 - Do NOT add accents to capital letters that are printed without them, even when the word carries that accent in modern French. Period French typography -- and display/title capitals especially -- routinely set E, A, EPEE, ECOLE, SABRE, EPREUVE as bare capitals; transcribe the bare capital exactly as set. (Do not remove an accent that IS printed.)
 - If a word or character is genuinely illegible, mark it [?] rather than guessing at a plausible word.
 - Preserve paragraph breaks as they appear in the main text block.
+- Do NOT emit Markdown image syntax (`![...](...)`) or any URL for a picture. A picture is reported ONLY in the FIGURES section below, never in BODY_TEXT.
 
 IGNORE NON-PAGE CONTENT:
 The photograph or scan of this page may include things that are not part of THIS page's printed text: the edge or shadow of the facing page, the book's binding/gutter, a photographer's hand or a ruler, library stamps, old handwritten annotations in the margin, or a publisher's/printer's device (an engraved logo or colophon) with motto lettering worked into it. Do not transcribe any of that -- read and transcribe only the primary printed text block belonging to this page.

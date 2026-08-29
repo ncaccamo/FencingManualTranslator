@@ -195,6 +195,21 @@ profiler only does *geometry*:
   picture. Fix: for a `plate` only, keep the band when it spans ≥ 60 % of
   the page height, else embed the whole page (a plate *is* the page;
   cropping is worth ~15 %, not 45 %). JR pp. 45 / 47.
+- **A figure emitted as a Markdown image ref, not a FIGURES entry.**
+  olmOCR-2 rendered a labelled line diagram ("Schéma A", straight lines +
+  lettered points — invisible to the density profiler) as
+  `![Schéma A.](http://…fabricated-url…)` inside BODY_TEXT, so
+  `parse_figures_block` saw nothing and step 2 stripped the tag. Now the
+  parser scans the whole response for `![alt](url)`, makes each an `inset`
+  (caption = alt text, or the short line after it), and `band_for_figure`
+  embeds the **whole source page** for a captioned inset the profiler
+  can't localize (the un-localizable *caption-less* vignette is still
+  skipped — see below). Prompt also now forbids Markdown image syntax.
+- **PAGE_NUMBER field skipped, folio left as the first body line.** Same
+  page: no `PAGE_NUMBER:` line at all, the response just opened with
+  `29\n\n…`. `parse_vlm_response` now salvages a leading bare
+  roman/arabic line as the folio *only* when the field is entirely absent
+  (an explicit `PAGE_NUMBER: none` still means "no folio").
 - **A small drawing blanketed a whole text page.** The VLM correctly
   flagged a tiny vignette on folio 74 of Joseph-Renaud (a dense page of
   regulation text) as `inset | no caption`. The profiler couldn't

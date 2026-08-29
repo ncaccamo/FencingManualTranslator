@@ -149,8 +149,13 @@ def band_for_figure(fig, src_page, body_words=0):
         y0f, y1f, *_ = prof
         return (prof if (y1f - y0f) >= 0.60 else None), cap
     whole_page = prof is None or (prof[1] - prof[0]) > 0.85
-    if whole_page and body_words >= 60:
-        return None                 # small drawing on a real text page: skip
+    if whole_page and body_words >= 60 and not cap:
+        # An un-localizable inset with NO caption on a full text page is a
+        # decorative vignette (JR folio 74) -- not worth blanketing the
+        # source scan over the reading. A captioned one ("Schéma A", a
+        # labelled line diagram the profiler can't see) is referenced by
+        # the text and must appear: fall through and embed the whole page.
+        return None
     if prof is None:
         return None, cap            # VLM saw an inset the profiler missed
     return (None if whole_page else prof), cap
