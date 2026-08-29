@@ -301,6 +301,11 @@ def reconcile_page_numbers(page_raws: list) -> list:
     the printed sequence (i-1 -> v-1, or i+1 -> v+1): a real run like
     "20, 21, 22" corroborates itself even if a later section of the book
     runs on a different index->folio offset (inserted plates shift it).
+    It is ALSO trusted when the VLM's own read equals what interpolation
+    from the nearest anchor predicts -- one misread folio between two plate
+    inserts ("22, 12, 24") would otherwise leave the correctly-read 24
+    bracketed just because its neighbour is garbage. This promotion runs to
+    a fixed point so a whole run of good folios rides off one anchor.
     Everything else is interpolated from the nearest trusted anchor and
     bracketed '[n]'; with no anchor at all, the plain sheet ordinal.
     Never emits <= 0.
@@ -318,6 +323,20 @@ def reconcile_page_numbers(page_raws: list) -> list:
     anchors = [i for i in range(n) if trusted[i]]
     if not anchors:
         return [f"[{i + 1}]" for i in range(n)]
+
+    # Fixed-point promotion: a read that matches the nearest anchor's
+    # prediction is itself corroboration.
+    changed = True
+    while changed:
+        changed = False
+        for i in range(n):
+            if trusted[i] or ints[i] is None or ints[i] <= 0:
+                continue
+            j = min(anchors, key=lambda a: abs(a - i))
+            if ints[i] == ints[j] + (i - j):
+                trusted[i] = True
+                anchors = sorted(anchors + [i])
+                changed = True
 
     out = []
     for i in range(n):
