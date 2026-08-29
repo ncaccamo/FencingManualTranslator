@@ -164,8 +164,9 @@ _ALWAYS_TRANSLATE = [
     (r"sur le fer", "on the blade"), (r"au fer", "on the blade"),
     (r"le fer", "the blade"),
     # "l'escrime au fleuret" -> "foil fencing"; the 7B renders it
-    # "épée fencing with the fleuret" (hallucinates épée, keeps fleuret).
+    # "épée fencing with the fleuret" / "épée fencing with the foil".
     (r"escrime au fleuret", "foil fencing"), (r"au fleuret", "with the foil"),
+    (r"épée fencing with the (?:foil|fleuret)", "foil fencing"),
     (r"escrime à l['’]épée", "épée fencing"), (r"à l['’]épée", "with the épée"),
     # "au bout d'épée" -- idiom for a bout fenced with the épée, not a
     # literal "at the point of the sword"; the 7B renders it word-for-word.
@@ -317,6 +318,33 @@ def retranslate_stray_french_headings(text: str) -> str:
         else:
             out.append(line)
     return "\n".join(out)
+
+
+_SENT_END = tuple('.!?:;»)"”’…—')
+
+
+def match_boundary_punctuation(dst: str, src: str) -> str:
+    """A page is one leaf of a longer work; it can begin or end mid-sentence.
+    The 7B tends to "finish" a dangling sentence with a full stop (and the
+    next page then opens with what looks like a fragment). If the SOURCE
+    page doesn't end on sentence-ending punctuation, drop a full stop the
+    model added and mark the run-on with an ellipsis; if the source page
+    STARTS lower-case (a continuation) but the translation capitalised its
+    first word, lower-case it back."""
+    if not dst or not src:
+        return dst
+    s = src.rstrip()
+    d = dst.rstrip()
+    tail = dst[len(d):]
+    if s and s[-1] not in _SENT_END and not re.search(r'\b(?:etc|cf|ibid|op)\.$', s):
+        if d.endswith('.') and not d.endswith('..'):
+            d = d[:-1].rstrip() + ' …'
+    dst = d + tail
+    s0 = src.lstrip()
+    if s0[:1].islower():
+        dst = re.sub(r'^(\s*)([A-Z])(?=[a-zà-ÿ])',
+                     lambda m: m.group(1) + m.group(2).lower(), dst, count=1)
+    return dst
 
 
 def _shout_ratio(text: str) -> float:
@@ -833,6 +861,7 @@ try:
                     time.sleep(8)
                     continue
 
+                candidate = match_boundary_punctuation(candidate, clean_text)
                 candidate, n_fn = pull_footnotes(candidate, clean_text, glossed)
                 translated_pages.append(candidate)
                 success = True

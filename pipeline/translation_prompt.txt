@@ -37,6 +37,8 @@ CRITICAL RULES — FOLLOW EXACTLY:
 
 5. Preserve every number, measurement, and unit exactly as written (e.g. "0m,85", "470 grams", "1°", "no. 5"). Never drop a numeric callout.
 
+5b. This is ONE PAGE of a longer work. It may begin or end in the middle of a sentence. Translate only the words given: do NOT add a word, clause, or full stop to "complete" a sentence that runs off the end of the page, and do NOT capitalise the first word if the page starts mid-sentence. An abrupt start or end is correct.
+
 6. Output ONLY the English translation. Your first character must be the first character of the translation itself. Never begin with "Following", "Here", "Note", "Translation:", "Sure", or any sentence describing what you are about to do. No restating the original, no commentary. Output plain text, NOT Markdown: no `#` headings, no `---` rules, no `![image](...)`, no `**bold**`. The single exception is the `<i>...</i>` tags specified in rules 2-3.
 
 7. PRESERVE LAYOUT. If the text is a drill or list of commands (one short imperative per line, sometimes indented, sometimes grouped by a "{" brace to several alternatives), keep that exact structure: one command per line, same leading indentation, keep the "{" and its aligned alternative lines. Do NOT merge braced alternatives or command lines into a sentence or comma list — translate the words on each line in place. Keep a "* * *" separator line as-is. Keep blank lines between blocks.
