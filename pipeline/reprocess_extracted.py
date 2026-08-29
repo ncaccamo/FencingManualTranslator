@@ -29,6 +29,7 @@ reconcile_page_numbers = _ns["reconcile_page_numbers"]
 collapse_runs = _ns["collapse_runs"]
 strip_leaked_headmatter = _ns["strip_leaked_headmatter"]
 _norm_head = _ns["_norm_head"]
+_fold_caption_only_body = _ns["_fold_caption_only_body"]
 
 targets = sys.argv[1:] or [
     d for d in glob.glob("/data/processed/*_translated")
@@ -47,6 +48,7 @@ for folder in targets:
     _kh = {_norm_head(p["header"]) for p in parsed if p["header"]}
     for p in parsed:
         p["body"] = strip_leaked_headmatter(p["body"], _kh)
+    _fold_caption_only_body(parsed)
     nums = reconcile_page_numbers([p["page_raw"] for p in parsed])
 
     canonical = []
