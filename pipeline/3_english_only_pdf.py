@@ -86,10 +86,11 @@ def find_figure_band(page):
     seed_mean = sum(rows[k0:k1]) / (k1 - k0)
     seed_h = (k1 - k0) / h
 
-    # --- grow: extend up to 10% of the page each way, stopping at a run
-    # of blank rows. Pulls in the sparse frame + caption of a line
-    # engraving that only its crowded core cleared the seed threshold. ---
-    limit = int(h * 0.10)
+    # --- grow: extend up to 22% of the page each way while rows carry
+    # ink, stopping at a blank gap. Pulls in the top of a tall photo or
+    # the sparse frame+caption of a line engraving whose only >30%-dense
+    # rows were its crowded core. ---
+    limit = int(h * 0.22)
     blank = max(4, int(h * 0.025))
     lo = max(0, k0 - limit)
     gap = 0
@@ -104,7 +105,14 @@ def find_figure_band(page):
         k1 += 1
     k1 -= gap
 
+    band = rows[k0:k1]
     frac_h = (k1 - k0) / h
+    b_mean = sum(band) / len(band)
+    b_std = (sum((r - b_mean) ** 2 for r in band) / len(band)) ** 0.5
+    # A uniform, moderately-light band is a text column, not a picture:
+    # reject unless it's dark (photo) or highly uneven (line art).
+    if 0.04 < b_mean < 0.20 and b_std < b_mean * 0.8:
+        return None
     step = max(1, (k1 - k0) // 40)
     cols = [x for x in range(w)
             if any(s[(ytop + y) * w + x] < 170 for y in range(k0, k1, step))]
