@@ -64,5 +64,10 @@ the host's — a newer host runs the 24.04 container unchanged.
 - `docs/pdf-layout.md` — how steps 3 & 4 render the PDFs (`_render`
   layout engine, figure placement, paragraph alignment, the knobs).
 - `docs/remote-gpu.md` — `backend.env`, remote-GPU mode, `rocm714`.
+- `docs/evaluation-and-tuning.md` — maintainer-only: the `evals/`
+  regression harness, gold-reference scoring, model swaps, fine-tuning.
+  The operator's books/corpus/baselines are git-ignored (`books/`,
+  `processed/`, `evals/gold|baselines|reports/`) — the repo is a general
+  tool, not tied to a specific corpus.
 - `docker/ROCM714_NOTES.md` — why the ROCm 7.14 backend is parked.
 - Session history: `git log` (HANDOFF.md / MANIFEST.md retired 2026-08-27).

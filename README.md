@@ -82,5 +82,6 @@ Optional files next to a source PDF in `books/`, matching its stem:
 | `docs/model-quirks.md` | every way the OCR / translation models fail on this corpus + the prompt/code mitigation — read before tuning a prompt |
 | `docs/pdf-layout.md` | how steps 3 & 4 build the PDFs — the `_render` engine, figure/alignment logic, the knobs |
 | `docs/remote-gpu.md` | running inference on a remote GPU (experimental) |
+| `docs/evaluation-and-tuning.md` | **maintainer-only** — the regression harness (`evals/`), gold-reference scoring, swapping the translation model, the fine-tuning plan. Not needed to run the pipeline. |
 | `CLAUDE.md` | orientation + hard invariants for AI coding agents |
 | `docker/ROCM714_NOTES.md` | why the ROCm 7.14 backend is parked |
