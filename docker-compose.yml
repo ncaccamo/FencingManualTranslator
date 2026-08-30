@@ -33,10 +33,10 @@ services:
       - ./processed:/data/processed
       - ./pipeline:/host_scripts:ro
       - ./pipeline:/app:ro
-      # Gold reference pairs for the eval harness (French/Italian original +
-      # a published translation). Local-only, git-ignored. rw so the OCR
-      # step can write src.txt / ref.txt back next to the PDFs.
-      - ./evals/gold:/data/gold
+      # The eval harness + its local-only, git-ignored data (gold reference
+      # pairs, baselines). rw so gold OCR / alignment / scoring can write
+      # back. The harness code is tracked; the data under gold/ is not.
+      - ./evals:/data/evals
       # Persist the GPU shader / kernel cache across container recreation.
       # RADV (Vulkan) compiles every pipeline on the first llama-server
       # load and caches it under ~/.cache/mesa_shader_cache (+ radv_builtin
