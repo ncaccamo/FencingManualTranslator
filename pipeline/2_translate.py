@@ -96,6 +96,16 @@ _CAT3 = [
     ("caver",          "to drop the point"),
 ]
 
+# canonical singular French for the "Fr. <term>" note, so a plural form
+# ("appels") doesn't produce a second note distinct from "Fr. appel".
+_CAT3_NOTE = {
+    "rassemblements": "rassemblement", "rassemblant": "rassemblement",
+    "rassembler": "rassemblement", "dérobements": "dérobement",
+    "dégagements": "dégagement", "liements": "liement",
+    "froissements": "froissement", "coupés": "coupé",
+    "coulés": "coulé", "déroulé": "coulé", "appels": "appel",
+}
+
 
 def enforce_cat3_footnotes(text: str, seen: set, footnote: bool = True) -> str:
     """Backstop for Category-3 terms. Translate EVERY occurrence the model
@@ -118,14 +128,18 @@ def enforce_cat3_footnotes(text: str, seen: set, footnote: bool = True) -> str:
         pat = re.compile(r"(?:<i>\s*)?(?<![\w-])" + re.escape(fr)
                          + r"(?![\w-])(?:\s*</i>)?", re.I)
         first = [True]
+        note_fr = _CAT3_NOTE.get(fr, fr)
 
-        def _sub(m, fr=fr, en=en, first=first):
+        def _sub(m, en=en, note_fr=note_fr, first=first):
             g = m.group(0)
             r = (en.upper() if g.isupper()
                  else en.capitalize() if g[:1].isupper() else en)
-            if footnote and first[0] and fr not in seen:
-                r += f"<fn>Fr. {fr}</fn>"
-                seen.add(fr)
+            if footnote and first[0] and note_fr not in seen:
+                # mask the tag we add too, so a later _CAT3 pass can't
+                # match the French term sitting inside it
+                masked.append(f"<fn>Fr. {note_fr}</fn>")
+                r += f"\x00{len(masked) - 1}\x00"
+                seen.add(note_fr)
             first[0] = False
             return r
 
@@ -715,7 +729,9 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
             if one:
                 one = enforce_kept_terms(apply_always_translate(one), cap)
                 # captions don't render a footnote block: translate the
-                # Category-3 terms but drop the <fn> marker.
+                # Category-3 terms but drop any <fn> marker (backstop's and
+                # a stray one from the model).
+                one = re.sub(r"<fn>.*?</fn>|</?fn>", "", one, flags=re.DOTALL)
                 one = enforce_cat3_footnotes(one, set(), footnote=False)
                 fig["caption_en"] = match_case(cap, one)
             else:
