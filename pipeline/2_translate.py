@@ -101,9 +101,19 @@ def enforce_cat3_footnotes(text: str, seen: set, footnote: bool = True) -> str:
     """Backstop for Category-3 terms. Translate EVERY occurrence the model
     left in French (bare or italicised) to its English rendering, and on
     the FIRST one in a book append "<fn>Fr. <term></fn>". Case of the
-    surrounding token is preserved."""
+    surrounding token is preserved. `<fn>...</fn>` spans already in the
+    text (the model's own source refs) are masked so a French term inside
+    one is never re-wrapped."""
     if not text:
         return text
+    masked = []
+
+    def _mask(m):
+        masked.append(m.group(0))
+        return f"\x00{len(masked) - 1}\x00"
+
+    text = re.sub(r"<fn>.*?</fn>", _mask, text, flags=re.DOTALL | re.IGNORECASE)
+
     for fr, en in _CAT3:
         pat = re.compile(r"(?:<i>\s*)?(?<![\w-])" + re.escape(fr)
                          + r"(?![\w-])(?:\s*</i>)?", re.I)
@@ -120,6 +130,8 @@ def enforce_cat3_footnotes(text: str, seen: set, footnote: bool = True) -> str:
             return r
 
         text = pat.sub(_sub, text)
+
+    text = re.sub(r"\x00(\d+)\x00", lambda m: masked[int(m.group(1))], text)
     return text
 
 
@@ -135,17 +147,25 @@ def pull_footnotes(text: str, source_text: str = "", seen: set = None):
         seen = set()
     numbered = []
 
+    _cat3_fr = {t for t, _ in _CAT3}
+
     def take(m):
-        note = re.sub(r"\s+", " ", m.group(1)).strip()
-        key = _strip_accents(note.lower())
-        if not note or key in seen or len(numbered) >= FN_MAX_PER_PAGE:
+        note = re.sub(r"</?fn>", "", re.sub(r"\s+", " ", m.group(1))).strip()
+        # accept only a bare "Fr. <cat-3 French term>" -- the 14B sometimes
+        # footnotes a Cat-2 term or puts the English rendering in the note.
+        ref = re.sub(r"^Fr\.\s*", "", note, flags=re.I).lower().rstrip(".")
+        if not note or ref not in _cat3_fr:
             return ""                       # drop the tag, keep the phrase
+        key = _strip_accents(note.lower())
+        if key in seen or len(numbered) >= FN_MAX_PER_PAGE:
+            return ""
         seen.add(key)
         numbered.append(note)
         return f"{FN_MARK}{len(numbered)}"
 
     body = re.sub(r"<fn>(.*?)</fn>", take, text,
                   flags=re.DOTALL | re.IGNORECASE).strip()
+    body = re.sub(r"</?fn>", "", body)       # sweep any stray/dangling tag
     if not numbered:
         return body, 0
     lines = [f"{FN_MARK}{i} {n}" for i, n in enumerate(numbered, 1)]
