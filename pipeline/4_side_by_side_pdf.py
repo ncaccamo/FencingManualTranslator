@@ -25,10 +25,10 @@ import json
 from pathlib import Path
 import glob
 import re
-from datetime import datetime
 
 import _render
 import _pageio
+import _cover
 
 print("\n" + "=" * 60)
 print("STEP 4: SIDE-BY-SIDE PDF GENERATION")
@@ -196,18 +196,7 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
     print(f"Creating: {book}  ({n} pages)")
 
     doc = fitz.open()
-    cover = doc.new_page(width=PAGE_W, height=PAGE_H)
-    cx, cy = 60, 150
-    for txt, fs, fn in [
-        ("Side-by-Side Translation", 20, _render.BOLD),
-        (book, 12, _render.ITALIC),
-        ("Left: original scan    Right: English translation", 11, _render.ROMAN),
-        (f"Generated {datetime.now():%B %d, %Y}", 10, _render.ROMAN),
-        ("Translation model: Qwen2.5-7B-Instruct    OCR model: olmOCR-2-7B-1025", 9, _render.ROMAN),
-        ("AI-generated translation for research use. Not authoritative.", 9, _render.ITALIC),
-    ]:
-        cover.insert_text((cx, cy), txt, fontsize=fs, fontname=fn)
-        cy += fs + 12
+    _cover.render(doc, book, page_w=PAGE_W, page_h=PAGE_H, margin=48)
 
     cont_pages = aligned = 0
     for i in range(n):

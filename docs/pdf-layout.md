@@ -180,6 +180,29 @@ Google Books ~30–45 %.
 
 ---
 
+## Cover page (`_cover.py`)
+
+Both steps append a first page built by `_cover.render(doc, stem, …)` —
+one shared renderer so the two covers can't drift (they did once: a
+hard-coded model name outlived a model swap and sat wrong on every cover).
+
+What it shows and where each piece comes from:
+
+| Block | Source |
+|---|---|
+| title · author · year · publisher | `books/<stem>.meta.json` (falls back to the bare stem) |
+| "The original work is in the public domain." + digitisation source/URL | `meta.json` (`rights`, `source`, `source_id`, `source_url`, `source_terms`) |
+| disclosure sentence, method, reading-conventions | constants in `_cover.py` |
+| OCR / translation model names | live from `VLM_MODEL_PATH` / `TRANSLATION_MODEL_PATH` (OCR label drops the quant tag) |
+| `Pipeline <sha> · generated <date>` | `PIPELINE_VERSION` env (set by `run_full_pipeline.sh`); omitted on a bare `docker exec` |
+| CC0 line + GitHub URL | constants |
+| `pipeline id: <stem>` footer | the stem, for traceability back to `processed/` |
+
+`books/<stem>.meta.json` is generated from `books/library.md` by
+`scripts/make_book_meta.py` (`--force` to overwrite, or pass stems).
+`publisher` is usually left `""` for you to hand-add. The `books/`
+sidecars are git-ignored, like the rest of the private corpus.
+
 ## Sidecar files (all in `processed/<book>_translated/`)
 
 | File | Written by | Used by | Contents |

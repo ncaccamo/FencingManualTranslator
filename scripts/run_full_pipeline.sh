@@ -2,6 +2,12 @@
 WORKDIR=~/BookTranslator
 cd "$WORKDIR" || exit 1
 
+# Stamp the cover page with the pipeline revision. `docker exec` does not
+# inherit host env, so pass it explicitly on the steps that build PDFs.
+# Manual `docker exec` invocations just omit the line (see pipeline/_cover.py).
+PIPELINE_VERSION=$(git -C "$WORKDIR" rev-parse --short HEAD 2>/dev/null)
+export PIPELINE_VERSION
+
 echo ""
 echo "╔═══════════════════════════════════════════════════════╗"
 echo "║  HISTORICAL FENCING TRANSLATOR – VLM PIPELINE         ║"
@@ -45,7 +51,7 @@ echo ""
 
 echo "[3/4] AI Translation..."
 echo "────────────────────────────────────────────────────────"
-echo "  → This step loads Qwen2.5-7B (translation model)"
+echo "  → This step loads Qwen2.5-14B (translation model)"
 echo "  → Translates extracted text to English"
 echo "  → Preserves technical fencing terms"
 echo "  → Time: ~10-20 seconds per page"
@@ -55,8 +61,8 @@ echo ""
 
 echo "[4/4] PDF Generation..."
 echo "────────────────────────────────────────────────────────"
-docker exec booktranslator-translator-1 python3 /app/3_english_only_pdf.py
-docker exec booktranslator-translator-1 python3 /app/4_side_by_side_pdf.py
+docker exec -e PIPELINE_VERSION booktranslator-translator-1 python3 /app/3_english_only_pdf.py
+docker exec -e PIPELINE_VERSION booktranslator-translator-1 python3 /app/4_side_by_side_pdf.py
 echo ""
 
 echo "╔═══════════════════════════════════════════════════════╗"

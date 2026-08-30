@@ -26,10 +26,10 @@ import json
 from pathlib import Path
 import glob
 import re
-from datetime import datetime
 
 import _render
 import _pageio
+import _cover
 
 print("\n" + "=" * 60)
 print("STEP 3: ENGLISH-ONLY PDF GENERATION")
@@ -296,21 +296,6 @@ class Flow:
             self.y += FS * 0.6
 
 
-def make_cover(doc, book):
-    p = doc.new_page(width=PAGE_W, height=PAGE_H)
-    x, y = MARGIN, 150
-    for txt, fs, fn in [
-        ("English Translation", 20, _render.BOLD),
-        (book, 12, _render.ITALIC),
-        (f"Generated {datetime.now():%B %d, %Y}", 10, _render.ROMAN),
-        ("Translation model: Qwen2.5-7B-Instruct", 9, _render.ROMAN),
-        ("OCR model: olmOCR-2-7B-1025", 9, _render.ROMAN),
-        ("AI-generated translation for research use. Not authoritative.", 9, _render.ITALIC),
-    ]:
-        p.insert_text((x, y), txt, fontsize=fs, fontname=fn)
-        y += fs + 12
-
-
 created_count = 0
 
 for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.isdir(f)]:
@@ -349,7 +334,7 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
     print(f"Creating: {book}  ({len(translations)} pages)")
 
     doc = fitz.open()
-    make_cover(doc, book)
+    _cover.render(doc, book, page_w=PAGE_W, page_h=PAGE_H, margin=MARGIN)
     flow = Flow(doc)
 
     rendered = figures = 0
