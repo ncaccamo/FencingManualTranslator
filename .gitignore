@@ -1,13 +1,19 @@
-# Pipeline input/output -- large, derived, not code
+# The user's private working data -- never committed. The repo is a
+# general fencing-manual translation pipeline; the specific corpus, its
+# registry, gold reference pairs, and per-book eval baselines belong to
+# whoever runs it, not to the product.
 books/
 processed/
+evals/gold/*
+!evals/gold/.gitkeep
+evals/baselines/*
+!evals/baselines/.gitkeep
+evals/reports/*
+!evals/reports/.gitkeep
 
 # Python
 __pycache__/
 *.pyc
-
-# eval harness: baselines/ IS tracked; per-run reports are not
-evals/reports/*.md
 
 # Model files (these live in ~/llm_models anyway, outside this folder,
 # but excluding just in case one ever ends up here)
