@@ -34,7 +34,7 @@ fi
 # `docker exec` shell does not inherit the entrypoint's version of the path.
 export LD_LIBRARY_PATH="/usr/local/lib/llama-$SUFFIX:${LD_LIBRARY_PATH:-}"
 
-TRANSLATION_MODEL="${MODEL_PATH:-/models/Qwen2.5-7B-Instruct-Q6_K.gguf}"
+TRANSLATION_MODEL="${MODEL_PATH:-/models/Qwen2.5-14B-Instruct-Q4_K_M.gguf}"
 VLM_MODEL="${VLM_MODEL_PATH:-/models/allenai_olmOCR-2-7B-1025-Q6_K.gguf}"
 VLM_MMPROJ="${VLM_MMPROJ_PATH:-/models/mmproj-allenai_olmOCR-2-7B-1025-f16.gguf}"
 

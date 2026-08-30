@@ -50,7 +50,7 @@ The two models load **one at a time**, not together, to fit in 16 GB:
 - **Vision / OCR** — `olmOCR-2-7B-1025` (Q6_K, ~5.8 GB; a Qwen2.5-VL
   fine-tune specialised for document OCR). Reads each page image and
   returns structured text.
-- **Translation** — `Qwen2.5-7B-Instruct` (Q6_K, ~5.8 GB). Translates the
+- **Translation** — `Qwen2.5-14B-Instruct` (Q4_K_M, ~8.6 GB). Translates the
   extracted text.
 
 The OCR step (step 1) loads the vision model on port 11435 and unloads it
@@ -66,7 +66,7 @@ between books.
 | GPU backend | ROCm 7.2.4 **and** Vulkan (LunarG SDK), both compiled into the image | Two interchangeable ways to run llama.cpp on the AMD GPU. Vulkan is currently the faster of the two on this hardware and is the default; ROCm is kept as a fallback. Switching is a config edit, not a rebuild. |
 | Containerisation | Docker + Docker Compose | Isolates the ROCm/Vulkan libraries, Python environment and tooling from the host. The container runs as your host UID so files in `processed/` are yours, not root's. |
 | OCR / extraction | `olmOCR-2-7B-1025` via `llama-server` | A vision-language model reads the page image directly. Unlike plain OCR it also parses *structure* — it separates the page number, the running header and the body, and it transcribes drill layout and marginalia sensibly. A legacy Tesseract path (`1_ocr_and_extract.py`) is kept in the repo for reference but is not used. |
-| Translation | `Qwen2.5-7B-Instruct` via `llama-server` | Text-only translation, steered entirely by `translation_prompt.txt`. |
+| Translation | `Qwen2.5-14B-Instruct` via `llama-server` | Text-only translation, steered entirely by `translation_prompt.txt`. |
 | PDF generation | PyMuPDF (`fitz`), with a custom text layouter (`pipeline/_render.py`) | Assembles the two output PDFs, pulls figure crops from the scan, and lays out rich text (line breaks, indentation, `<i>` italics, footnote blocks) with overflow-safe flow. |
 | Prompts | Plain-text files (`translation_prompt.txt`, `vlm_ocr_prompt.txt`) | Kept editable outside the code, per the original design requirement — change translation behaviour without touching Python. |
 

@@ -96,7 +96,8 @@ translation model doesn't have to coexist with olmOCR.
 
 | model | quant | ~weights | fits |
 |---|---|---|---|
-| current | Qwen2.5-7B Q6_K | 6.3 GB | yes |
+| **default** | Qwen2.5-14B-Instruct Q4_K_M | 8.6 GB | yes (~11 GB total) |
+| alternative | Qwen2.5-7B-Instruct Q6_K | 6.3 GB | yes |
 | candidate | Qwen2.5-14B-Instruct Q4_K_M | 8.6 GB | yes (~11 GB total, ~5 GB headroom) |
 | — | 14B Q5_K_M | 10 GB | tight |
 | — | 14B Q6_K / 32B any | — | no |

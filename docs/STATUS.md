@@ -17,7 +17,7 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 - **OCR:** olmOCR-2-7B-1025 via llama-server on :11435 is the default and
   only path. Tesseract path (`1_ocr_and_extract.py`) is kept for reference
   / a no-VLM fallback, not used.
-- **Translation:** Qwen2.5-7B on :11434. Never drops a page; flags
+- **Translation:** Qwen2.5-14B-Instruct (Q4_K_M) on :11434. Never drops a page; flags
   low-confidence output inline.
 - **PDFs:** English-only (flowing column, figures in reading order) and
   side-by-side (scan left / translation right, paragraph-aligned where the
@@ -62,7 +62,7 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    That's a separate product now (llama-swap on :11500 serving a chat +
    a coding model, one resident, Open WebUI dropdown drives the swap).
    This item predates the project split; BookTranslator serves only its
-   two pipeline models (olmOCR-2, Qwen2.5-7B), sequentially, by design.
+   two pipeline models (olmOCR-2, Qwen2.5-14B), sequentially, by design.
 2. **Footnotes** — DONE. Bare `†Fr. <term>` source refs on Category-3 terms (16
    curated terms) → `2_translate.py::pull_footnotes` appends a
    `___FOOTNOTES___` block, keyed off the SOURCE text (the 7B model won't

@@ -14,7 +14,7 @@ import backend_config as bc
 import _pageio
 
 PROMPT_FILE = "/app/translation_prompt.txt"
-TRANSLATION_MODEL = os.environ.get("TRANSLATION_MODEL_PATH", "/models/Qwen2.5-7B-Instruct-Q6_K.gguf")
+TRANSLATION_MODEL = os.environ.get("TRANSLATION_MODEL_PATH", "/models/Qwen2.5-14B-Instruct-Q4_K_M.gguf")
 LLAMA_API_URL = f"{bc.translate_base_url()}/v1/chat/completions"
 
 # Returned by start_translation_server() when BACKEND_MODE=remote.
@@ -549,9 +549,9 @@ def start_translation_server():
         return None
 
     print("\n" + "="*60)
-    print("LOADING TRANSLATION MODEL (Qwen2.5-7B)")
+    print("LOADING TRANSLATION MODEL")
     print("="*60 + "\n")
-    print("Model: Qwen2.5-7B-Instruct-Q6_K.gguf (~6.0GB)")
+    print(f"Model: {Path(TRANSLATION_MODEL).name}")
     print("Port:  11434 | GPU: Full offload\n")
 
     if not os.path.exists(TRANSLATION_MODEL):

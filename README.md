@@ -17,7 +17,7 @@ Each book runs through four scripts in `pipeline/`, writing to
 | Step | Script | Does | Output |
 |---|---|---|---|
 | 1 | `1_ocr_and_extract_vlm.py` | page image → structured text (olmOCR-2-7B on :11435) | `raw_ocr.txt`, `extracted.txt`, `page_numbers.txt` |
-| 2 | `2_translate.py` | extracted text → English (Qwen2.5-7B on :11434) | `translation.txt` |
+| 2 | `2_translate.py` | extracted text → English (Qwen2.5-14B-Instruct on :11434) | `translation.txt` |
 | 3 | `3_english_only_pdf.py` | flowing English reading copy, figures inline | `… — English Only (Portrait).pdf` |
 | 4 | `4_side_by_side_pdf.py` | scan left / translation right, paragraph-aligned | `… — Side by Side (Landscape).pdf` |
 
