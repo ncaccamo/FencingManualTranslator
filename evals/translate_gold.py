@@ -32,8 +32,13 @@ translate = _ns["translate_with_llama"]
 PROMPT = _ns["PROMPT_TEMPLATE"]
 apply_always = _ns["apply_always_translate"]
 enforce_terms = _ns["enforce_kept_terms"]
+enforce_cat3 = _ns["enforce_cat3_footnotes"]
+pull_footnotes = _ns["pull_footnotes"]
 boundary = _ns["match_boundary_punctuation"]
 deshout = _ns["deshout"]
+
+_CAT3_SEEN: set = set()
+_FN_SEEN: set = set()
 shout = _ns["_shout_ratio"]
 too_french = _ns["contains_too_much_non_english"]
 strip_preamble = _ns["strip_model_preamble"]
@@ -53,12 +58,14 @@ def translate_page(fr: str) -> str:
         if not out:
             continue
         out = re.sub(r"(?m)^\s*-{3,}\s*$", "* * *", out)
-        out = enforce_terms(apply_always(out), fr)
+        out = enforce_cat3(enforce_terms(apply_always(out), fr), _CAT3_SEEN)
         best = best or out
         if too_french(out) or (shout(out) > 0.85 and shout(fr) < 0.6):
             time.sleep(3); continue
-        return boundary(out, fr)
-    return deshout(boundary(best, fr), fr) if best else "[untranslated]"
+        out, _ = pull_footnotes(boundary(out, fr), fr, _FN_SEEN)
+        return out
+    fixed, _ = pull_footnotes(deshout(boundary(best, fr), fr), fr, _FN_SEEN)
+    return fixed if best else "[untranslated]"
 
 
 def main():

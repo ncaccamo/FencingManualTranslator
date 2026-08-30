@@ -30,7 +30,16 @@ def _ngrams(seq, n):
     return Counter(tuple(seq[i:i + n]) for i in range(len(seq) - n + 1))
 
 
+def _plain(s: str) -> str:
+    """Strip pipeline markup before scoring: <i>/<fn> tags, the whole
+    ___FOOTNOTES___ block, and †N reference marks."""
+    s = s.split("___FOOTNOTES___")[0]
+    s = re.sub(r"</?i>|<fn>.*?</fn>|†\d+", "", s, flags=re.DOTALL | re.IGNORECASE)
+    return re.sub(r"\s+", " ", s).strip()
+
+
 def chrf(hyp: str, ref: str, cn=6, wn=2, beta=2.0) -> float:
+    hyp, ref = _plain(hyp), _plain(ref)
     def score(h, r, N, tok):
         tp = fp = fn = 0
         for n in range(1, N + 1):
