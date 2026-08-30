@@ -76,7 +76,7 @@ evals/gold/<stem>/
   is both the pipeline's weakest area and the least representative.
 - **Also yields**: a term-authority table (how the professional
   translator handled `prise de fer`, `liement`, …) feeding rules 2/3 and
-  `footnote_glossary.txt`; hand-picked few-shot passages for the prompt's
+  the prompt's term rules (2 / 3 / 3b); hand-picked few-shot passages for its
   EXAMPLES block.
 - **Copyright**: originals are public domain; translations may not be.
   Private use as an eval reference / glossary source / local-model SFT

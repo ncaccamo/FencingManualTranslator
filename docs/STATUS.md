@@ -63,7 +63,7 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    a coding model, one resident, Open WebUI dropdown drives the swap).
    This item predates the project split; BookTranslator serves only its
    two pipeline models (olmOCR-2, Qwen2.5-7B), sequentially, by design.
-2. **Footnotes** — DONE (mechanism). `pipeline/footnote_glossary.txt` (16
+2. **Footnotes** — DONE. Bare `†Fr. <term>` source refs on Category-3 terms (16
    curated terms) → `2_translate.py::pull_footnotes` appends a
    `___FOOTNOTES___` block, keyed off the SOURCE text (the 7B model won't
    keep terms in French to anchor an inline marker), each term glossed

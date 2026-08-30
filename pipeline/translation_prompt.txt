@@ -4,48 +4,59 @@ CRITICAL RULES — FOLLOW EXACTLY:
 
 1. Translate EVERYTHING into modern English. The output must be entirely English (Latin script only). Do not leave French / Italian / German / Spanish / Latin sentences, phrases, headings, or captions untranslated. Never write a note to yourself in any language.
 
-2. KEEP a word in its original language ONLY if English-language fencing literature itself normally keeps it in that language — i.e. named guards and actions that have no plain English equivalent. Keep, and wrap in <i>…</i>:
-   - French: garde, engagement, dégagement, coupé, doublé, riposte, remise, reprise, prise de fer, froissement, croisé, liement, appel, corps à corps, volte, rassemblement / rassembler / rassemblant, and the numbered lines/parries prime, seconde, tierce, quarte, quinte, sixte, septime, octave. Spell each EXACTLY — "rassemblant", never "raassemblant" / "rasblendant".
-   - "parade de tierce" etc. = "parry of tierce" — translate "parade" to "parry" (rule 3) but keep the line name (tierce, quarte, …).
-   - épée — keep as "épée" (it IS the English term), wrap in <i>épée</i>
+2. KEEP in the original language, wrapped in <i>…</i>, ONLY this small set — the terms English-language fencing literature itself retains:
+   - French: riposte, remise, reprise, croisé, corps à corps, volte, sentiment du fer, and the numbered lines/parries prime, seconde, tierce, quarte, quinte, sixte, septime, octave.
+   - "parade de tierce" = "parry of tierce" — translate "parade" (rule 3), keep the number.
+   - épée — keep as "épée" (it IS the English term), wrap in <i>épée</i>.
    - Italian: guardia, affondo, stoccata, imbroccata, mandritto, riverso, punta
    - German: Ausfallen, Zornhau, Versetzung, Absetzen, Winden
    - Latin: custodia, puncta
+   EVERYTHING ELSE is translated — including garde, engagement, parade, coupé, dégagement, liement, appel, prise de fer (see rules 3 and 3b).
 
-3. TRANSLATE these even though they look technical — they have standard English names:
-   - fleuret → foil
-   - sabre → saber
-   - parade → parry   (a "parade" is never a "riposte" — do not confuse them)
-   - coup droit → straight thrust   (NOT "straight right/clothes"; "droit" here = straight)
-   - dérobement → evasion (of the blade)   (NOT "degrading")
-   - doublement → doubling   |   déroulé/coulé → glide
-   - une-deux → one-two   |   fente → lunge   |   demi-fente → half-lunge   |   coup(s) (as a bare word) → thrust(s) / blow(s)
-   - DE / DES / SUR / PAR / AVEC inside a heading → of / against / with — always translate them
-   - salle (d'armes) → fencing hall/room
-   - assaut → bout   |   tireur → fencer   |   maître (d'armes) → fencing master
-   - "leçon d'assaut" → "bout lesson" (a free-play lesson) — keep the word "lesson"; it is NOT the same as a bare "assaut" ("bout")
-   - "un assaut d'épée" → "an épée bout"  ("assaut de sabre" → "a saber bout", etc.) — plain "assaut", NO "lesson" (there is no "leçon" in it)
+3. TRANSLATE these to their standard English names — plain text, NO <i>…</i>:
+   - garde → guard   |   engagement → engagement   |   parade → parry (a parade is never a riposte)
+   - fleuret → foil   |   sabre → saber   |   doublé → double   |   doublement → doubling
+   - coup droit → straight thrust   (NOT "straight right"; "droit" here = straight)
+   - dérobement → evasion (of the blade)   |   déroulé → glide
+   - une-deux → one-two   |   fente → lunge   |   demi-fente → half-lunge   |   coup(s) (bare) → thrust(s) / blow(s)
+   - assaut → bout   |   tireur → fencer   |   maître (d'armes) → fencing master   |   salle (d'armes) → fencing hall/room
+   - "leçon d'assaut" → "bout lesson" (keep the word "lesson" — NOT the same as a bare "assaut")
+   - "un assaut d'épée" → "an épée bout"  (plain "assaut", NO "lesson")
    - mouvement, mise en garde, botte, temps, mesure, ligne → movement, on-guard position, thrust/hit, tempo, distance, line
+   - temps d'arrêt / coup d'arrêt → stop-hit / stop-thrust
    - divers (as a heading) → miscellaneous
    - soie (of a blade) → tang   (NOT "silk" or "thread")
-   - caver → to dig / drop the point (lower the hand so the point goes under the line)   (NOT "cave")
    - fort / faible (of a blade) → forte / foible
-   - fer (the opponent's steel) → the blade   (NOT "iron"): "attaque au fer" → attack on the blade, "chercher le fer" → seek the blade, "quitter le fer" → leave the blade. BUT keep "prise de fer" and "sentiment du fer" as-is (rule 2) — write "<i>prise de fer</i>", NEVER "prize of the blade" / "prize of iron" ("prise" is not "prize").
-   Do NOT wrap translated words in <i>…</i>. Only genuinely-kept foreign terms from rule 2 get tags.
+   - fer (the opponent's steel) → the blade   (NOT "iron"): "attaque au fer" → attack on the blade, "chercher le fer" → seek the blade.
 
-4. Headings, section titles, chapter titles, running heads, and figure captions are NORMAL TEXT — translate them fully and do NOT wrap them in <i>…</i>. A line in all capitals is almost always a heading, not a technical term. When a heading contains a rule-2 term you are keeping (e.g. "PARADES DU CROISÉ"), keep that word intact WITH its accents — do not drop letters ("PARRIES OF THE CROISÉ", never "CROIS").
+3b. TRANSLATE these too, and the FIRST time each one appears in the text you are given, write it as  English<fn>Fr. original</fn>  — a bare source reference, NOT an explanation, nothing added. Later occurrences: just the English.
+   - prise de fer → taking the blade
+   - liement → bind
+   - coupé → cut-over
+   - dégagement → disengagement
+   - froissement → graze
+   - coulé → glide
+   - caver → to drop the point
+   - à-propos → sense of timing
+   - coup de temps → time-hit
+   - appel → stamp of the foot
+   - rassemblement / rassembler / rassemblant → gathering (of the feet)   (spell the French EXACTLY: "rassemblant", never "raassemblant")
+   Example:  "… and by a bind<fn>Fr. liement</fn> he carried the blade aside."
+   In a HEADING (rule 4) translate the term but omit the <fn> tag.
+
+4. Headings, section titles, chapter titles, running heads, and figure captions are NORMAL TEXT — translate them fully, no <i>…</i>, no <fn> tags. A line in all capitals is almost always a heading, not a technical term. When a heading contains a KEPT rule-2 term (e.g. "PARADES DU CROISÉ"), keep that word intact WITH its accents — do not drop letters ("PARRIES OF THE CROISÉ", never "CROIS").
 
 5. Preserve every number, measurement, and unit exactly as written (e.g. "0m,85", "470 grams", "1°", "no. 5"). Never drop a numeric callout.
 
 5b. This is ONE PAGE of a longer work. It may begin or end in the middle of a sentence. Translate only the words given: do NOT add a word, clause, or full stop to "complete" a sentence that runs off the end of the page, and do NOT capitalise the first word if the page starts mid-sentence. An abrupt start or end is correct.
 
-6. Output ONLY the English translation. Your first character must be the first character of the translation itself. Never begin with "Following", "Here", "Note", "Translation:", "Sure", or any sentence describing what you are about to do. No restating the original, no commentary. Output plain text, NOT Markdown: no `#` headings, no `---` rules, no `![image](...)`, no `**bold**`. The single exception is the `<i>...</i>` tags specified in rules 2-3.
+6. Output ONLY the English translation. Your first character must be the first character of the translation itself. Never begin with "Following", "Here", "Note", "Translation:", "Sure", or any sentence describing what you are about to do. No restating the original, no commentary. Output plain text, NOT Markdown: no `#` headings, no `---` rules, no `![image](...)`, no `**bold**`. The only markup allowed is `<i>...</i>` (rule 2) and `<fn>Fr. ...</fn>` (rule 3b).
 
 7. PRESERVE LAYOUT. If the text is a drill or list of commands (one short imperative per line, sometimes indented, sometimes grouped by a "{" brace to several alternatives), keep that exact structure: one command per line, same leading indentation, keep the "{" and its aligned alternative lines. Do NOT merge braced alternatives or command lines into a sentence or comma list — translate the words on each line in place. Keep a "* * *" separator line as-is. Keep blank lines between blocks.
 
 8. Ignore and do not transcribe ornament / colophon / publisher's-device motto text if any slipped through (e.g. a sower motto around a logo).
 
-9. If a word or short phrase genuinely has NO clean English equivalent and your rendering loses real precision, give your best English rendering and immediately follow it with <fn>ORIGINAL — one short clause</fn>. Use this rarely. (A curated glossary also adds end-of-page notes automatically, so you do not need to gloss common terms of art like liement, froissement, prise de fer.)
+9. NO translator commentary. The only footnotes you ever produce are the bare <fn>Fr. …</fn> source references from rule 3b. Never explain, define, gloss, or annotate a term or passage.
 
 EXAMPLES
 
@@ -57,7 +68,7 @@ FOURTH MOVEMENT OF THE ON-GUARD POSITION.
 Input:
 L'escrime au fleuret, à l'épée et au sabre demande une garde différente.
 Output:
-Fencing with the foil, the <i>épée</i>, and the saber calls for a different <i>garde</i>.
+Fencing with the foil, the <i>épée</i>, and the saber calls for a different guard.
 
 Input:
 Cherchez l'épée et menacez.
@@ -76,10 +87,15 @@ Doublez { dessus
          dessous.
 Rompez.
 Output:
-<i>Doublé</i> { high
-        inside
-        low.
+Double { high
+       inside
+       low.
 Break.
+
+Input:
+Sur une attaque au fer, ripostez par un liement de quarte, puis dégagez.
+Output:
+Against an attack on the blade, riposte with a bind<fn>Fr. liement</fn> in quarte, then disengage<fn>Fr. dégagement</fn>.
 
 These manuals use many short ALL-CAPS section headings of the form
 "<ACTION> DE/DES/SUR/PAR <THING>". Translate EVERY word, including the
@@ -99,7 +115,7 @@ PARRIES OF DOUBLINGS
 Input:
 PARADES DE DÉGAGEMENTS
 Output:
-PARRIES OF DÉGAGEMENTS
+PARRIES OF DISENGAGEMENTS
 
 Input:
 ATTAQUES PAR UN COUP DROIT, AVEC DEMI-FENTE

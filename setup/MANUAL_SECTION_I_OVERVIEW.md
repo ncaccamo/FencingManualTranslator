@@ -20,9 +20,9 @@ expects:
   *froissement*, *liement*, *coulé* and the named lines stay as they are;
   *fleuret* becomes "foil", *parade* becomes "parry", and headings are
   translated in full.
-- **A short glossary footnote** is emitted the first time each hard term
-  appears in a book, so a reader meeting *dégagement* on page 40 has its
-  sense once without the translator having to gloss it inline every time.
+- **A bare source footnote** — `Fr. liement` — is emitted the first time
+  each hard term (`bind`, `disengagement`, `taking the blade`, …) appears
+  in a book, so a reader can see the original word. Not an explanation.
 - **Original page structure is preserved** as far as each output format
   allows — page numbers, running headers, drill and command layout,
   brace-grouped alternatives, and figures pulled from the scan.
@@ -68,7 +68,7 @@ between books.
 | OCR / extraction | `olmOCR-2-7B-1025` via `llama-server` | A vision-language model reads the page image directly. Unlike plain OCR it also parses *structure* — it separates the page number, the running header and the body, and it transcribes drill layout and marginalia sensibly. A legacy Tesseract path (`1_ocr_and_extract.py`) is kept in the repo for reference but is not used. |
 | Translation | `Qwen2.5-7B-Instruct` via `llama-server` | Text-only translation, steered entirely by `translation_prompt.txt`. |
 | PDF generation | PyMuPDF (`fitz`), with a custom text layouter (`pipeline/_render.py`) | Assembles the two output PDFs, pulls figure crops from the scan, and lays out rich text (line breaks, indentation, `<i>` italics, footnote blocks) with overflow-safe flow. |
-| Prompts | Plain-text files (`translation_prompt.txt`, `vlm_ocr_prompt.txt`, `footnote_glossary.txt`) | Kept editable outside the code, per the original design requirement — change translation behaviour without touching Python. |
+| Prompts | Plain-text files (`translation_prompt.txt`, `vlm_ocr_prompt.txt`) | Kept editable outside the code, per the original design requirement — change translation behaviour without touching Python. |
 
 ## I.4 — The pipeline
 
@@ -107,9 +107,9 @@ page-for-page).
 
 - Technical terms are preserved and wrapped in `<i>…</i>`; headings and
   captions are translated in full.
-- Each hard term from `footnote_glossary.txt` that appears in a page's
-  *source* text is glossed once per book, appended under a
-  `___FOOTNOTES___` marker on that page.
+- Each Category-3 term (see `translation_prompt.txt` rule 3b) is
+  translated and gets a bare `Fr. <term>` footnote on its first
+  occurrence per book, under a `___FOOTNOTES___` marker on that page.
 - Output is validated: wrong-script output (CJK / Cyrillic / etc.),
   more than ~35 % non-English words, output under half the source length,
   or a bare model preamble / refusal ("Here is the translation:", "Please
@@ -191,8 +191,8 @@ writing:
   content there.
 - **Only clean flatbed/library scans have been run** — not a
   phone-photographed book.
-- The glossary footnotes have **no inline reference mark** — they are a
-  per-book "first appearance" gloss, not numbered call-outs.
+- These source footnotes carry a `†N` inline mark and a matching line in
+  the page's "Original terms:" block.
 
 These are output-quality gaps in pipeline code. The infrastructure
 (Sections II / III) is stable.

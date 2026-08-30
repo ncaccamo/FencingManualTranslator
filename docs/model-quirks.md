@@ -329,24 +329,22 @@ thrust and the hit is easy … Example:"* (genuine Gomard scoring text).
 Every alternative now has to name the act of translating or be a fixed
 filler token. If you widen them, re-test against that false-positive set.
 
-### 2.3 Won't self-select footnotes; won't keep terms in French inline
+### 2.3 Footnotes: model-emitted `<fn>`, deterministically backstopped
 
-**Seen:** across many test pages, the model emitted **zero** `<fn>` tags
-(rule 9), and it will not leave a term in French mid-sentence to anchor an
-inline marker — it translates everything (which is rule 1, so that part is
-correct).
+**Seen (old design):** the 7B emitted almost **zero** `<fn>` tags on its
+own, so footnotes used to be driven by a source-keyed definitional
+glossary (`footnote_glossary.txt`).
 
-**Consequence / design pivot:** footnotes are **source-keyed**, not
-model-selected. [`pipeline/footnote_glossary.txt`](../pipeline/footnote_glossary.txt)
-holds ~16 curated `term | gloss` lines. `pull_footnotes()`
-([`2_…py`](../pipeline/2_translate.py) L79) scans the **source** text of
-each page for those terms and appends a `___FOOTNOTES___` block the first
-time each one appears in a book — glossed once, then never again. Max 4
-per page. `_render.py` splits that block off; `3_` renders it end-of-
-section in small grey type, `4_` reserves a strip at the bottom of the
-right column. The model `<fn>` path still works but is rarely taken.
-Glossary keys are accent-stripped (`_strip_accents`) so `dégagement` and
-`degagement` both match.
+**Now (2026-08-30 term-policy revision):** the glossary is deleted — its
+definitions were translator commentary. Footnotes are **only** the bare
+`†Fr. <term>` source reference on a Category-3 term (see 2.8). The prompt
+tells the model to write `English<fn>Fr. term</fn>` on first use;
+`enforce_cat3_footnotes()` is the backstop (translates every stray French
+Cat-3 occurrence, footnotes the first). `pull_footnotes()` turns `<fn>`
+tags into `†N` + a `___FOOTNOTES___` block, deduped once per book, max 4
+per page. `_render.py` splits that block off; `3_` renders it in small
+grey type, `4_` reserves a strip at the foot of the right column. PDF
+label: "Original terms:".
 
 ### 2.4 Braced command groups still flatten ~half the time
 
@@ -399,34 +397,35 @@ misaligns.
 
 ### 2.8 The translation prompt's term policy, condensed
 
-The prompt (`translation_prompt.txt`) went through several passes. The
-current shape:
+Revised 2026-08-30 to a **translate-by-default** policy — the earlier
+inherited list kept too much in French. Three categories:
 
-- **Rule 2 — KEEP in French, wrap `<i>…</i>`:** named guards/actions with
-  no plain-English equivalent — `garde`, `dégagement`, `coupé`, `doublé`,
-  `riposte`, `remise`, `reprise`, `prise de fer`, `froissement`,
-  `croisé`, `liement`, `fente`, `appel`, `corps à corps`, `volte`, the
-  numbered lines (`tierce`, `quarte`, …), and `épée` (which *is* the
-  English term). Plus Italian / German / Latin equivalents. (Each book's
-  terminology page tends to surface one or two more — `corps à corps`
-  came back "body to body", `volte` was OK but pinned explicitly.)
-- **`enforce_kept_terms()` backstop** — the 7B drops the `<i>…</i>` off a
-  rule-2 term on short fragments (plate captions especially) and sometimes
-  mistranslates outright: `prise de fer` → "PRIZE OF THE BLADE" ("prise"
-  read as "prize"), `liement` left bare and unglossed. This deterministic
-  pass snaps a known mistranslation back to the term and wraps any bare
-  occurrence in `<i>…</i>` (lower-cased, even inside an all-caps caption)
-  so `pull_footnotes` / `footnote_glossary.txt` supply the gloss. Only the
-  unambiguously-French terms (`prise de fer`, `corps à corps`, `liement`,
-  `dégagement`, `coupé`, …) — a bare "riposte" / "reprise" is often real
-  English now and is left to the model.
-- **Rule 3 — TRANSLATE these** even though they look technical, and do
-  **not** italicise: `fleuret`→foil, `sabre`→saber, `parade`→parry (never
-  "riposte"), `coup droit`→straight thrust, `dérobement`→evasion,
-  `doublement`→doubling, `une-deux`→one-two, bare `coup(s)`→thrust(s),
-  `soie` (of a blade)→tang (not "silk/thread"), `caver`→dig/drop the
-  point (not "cave"), `fort`/`faible`→forte/foible, and the heading
-  connectives **DE / DES / SUR / PAR / AVEC** → of / against / with.
+- **Cat 1 — translate, plain text (default).** Everything not listed
+  below, plus explicitly `garde`→guard, `engagement`→engagement,
+  `parade`→parry, `doublé`→double, `fer`→the blade, `temps`→tempo,
+  `temps d'arrêt`→stop-hit, `soie`→tang, `fort`/`faible`→forte/foible,
+  the heading connectives **DE / DES / SUR / PAR / AVEC**.
+- **Cat 2 — KEEP in French, `<i>…</i>`** (the tight retained set English
+  fencing literature itself keeps): `riposte`, `remise`, `reprise`,
+  `croisé`, `corps à corps`, `volte`, `sentiment du fer`, the numbered
+  parries `prime`…`octave`, `épée`. Plus Italian / German / Latin.
+  Backstop: `enforce_kept_terms()` (`_KEEP_TERMS` = `corps à corps`,
+  `sentiment du fer`, `croisé`, `volte`) re-italicises and repairs
+  "body to body" etc.
+- **Cat 3 — translate, + a bare `†Fr. <term>` footnote on the first
+  occurrence per book** (`rule 3b`): `prise de fer`→taking the blade,
+  `liement`→bind, `coupé`→cut-over, `dégagement`→disengagement,
+  `froissement`→graze, `coulé`→glide, `caver`→drop the point,
+  `à-propos`→sense of timing, `coup de temps`→time-hit, `appel`→stamp of
+  the foot, `rassemblement`/`-er`/`-ant`→gathering of the feet. The model
+  emits `English<fn>Fr. term</fn>`; `enforce_cat3_footnotes()` is the
+  backstop (translates every stray French occurrence, footnotes the
+  first). NOT an explanatory gloss — just the source word.
+- **`footnote_glossary.txt` deleted** — the definitional glosses were
+  translator commentary, which the "clean translation, no editorial
+  voice" goal rules out. `pull_footnotes()` now only turns the model's
+  own `<fn>` tags into `†N` + a `___FOOTNOTES___` block, deduped once per
+  book. The PDF label is "Original terms:".
 - **Rule 4 — headings are normal text.** All-caps line ⇒ almost always a
   heading, translate fully, no `<i>`, but keep a kept-term's accents
   intact (`PARRIES OF THE CROISÉ`, never `CROIS`).

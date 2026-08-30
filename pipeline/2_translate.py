@@ -73,67 +73,79 @@ def _strip_accents(s: str) -> str:
                    if unicodedata.category(c) != "Mn")
 
 
-def _load_glossary(path="/app/footnote_glossary.txt") -> dict:
-    g = {}
-    try:
-        for line in open(path, encoding="utf-8"):
-            line = line.strip()
-            if not line or line.startswith("#") or "|" not in line:
-                continue
-            term, gloss = line.split("|", 1)
-            g[_strip_accents(term.strip().lower())] = (term.strip(), gloss.strip())
-    except FileNotFoundError:
-        pass
-    return g
+# Category-3 terms (see translation_prompt.txt): translate to the English
+# rendering, and on the FIRST occurrence in a book mark it as
+# "English<fn>Fr. <term></fn>" -- a bare source reference, never an
+# explanatory gloss. The model does this from the prompt;
+# enforce_cat3_footnotes() is the backstop for when it leaves the term in
+# French or forgets the note. Plural before singular so the longer pattern
+# wins.
+_CAT3 = [
+    ("prise de fer",   "taking the blade"),
+    ("rassemblements", "gatherings of the feet"), ("rassemblement", "gathering of the feet"),
+    ("rassemblant",    "gathering the feet"),     ("rassembler",   "to gather the feet"),
+    ("dérobements",    "evasions of the blade"),   ("dérobement",   "evasion of the blade"),
+    ("dégagements",    "disengagements"),          ("dégagement",   "disengagement"),
+    ("liements",       "binds"),                   ("liement",      "bind"),
+    ("froissements",   "grazes"),                  ("froissement",  "graze"),
+    ("coup de temps",  "time-hit"),
+    ("coupés",         "cut-overs"),               ("coupé",        "cut-over"),
+    ("coulés",         "glides"), ("coulé", "glide"), ("déroulé", "glide"),
+    ("à-propos",       "sense of timing"),
+    ("appels",         "stamps of the foot"),      ("appel",        "stamp of the foot"),
+    ("caver",          "to drop the point"),
+]
 
 
-GLOSSARY = _load_glossary()
+def enforce_cat3_footnotes(text: str, seen: set, footnote: bool = True) -> str:
+    """Backstop for Category-3 terms. Translate EVERY occurrence the model
+    left in French (bare or italicised) to its English rendering, and on
+    the FIRST one in a book append "<fn>Fr. <term></fn>". Case of the
+    surrounding token is preserved."""
+    if not text:
+        return text
+    for fr, en in _CAT3:
+        pat = re.compile(r"(?:<i>\s*)?(?<![\w-])" + re.escape(fr)
+                         + r"(?![\w-])(?:\s*</i>)?", re.I)
+        first = [True]
+
+        def _sub(m, fr=fr, en=en, first=first):
+            g = m.group(0)
+            r = (en.upper() if g.isupper()
+                 else en.capitalize() if g[:1].isupper() else en)
+            if footnote and first[0] and fr not in seen:
+                r += f"<fn>Fr. {fr}</fn>"
+                seen.add(fr)
+            first[0] = False
+            return r
+
+        text = pat.sub(_sub, text)
+    return text
 
 
 def pull_footnotes(text: str, source_text: str = "", seen: set = None):
-    """Attach numbered notes to a translated page and append a delimited
-    block (the header can't collide with the page separator).
-
-    Two sources, both anchored to a real spot in the TRANSLATION with a
-    `†N` marker:
-      1. explicit `phrase<fn>note</fn>` the model emitted -- rare with a
-         7B model.
-      2. a `footnote_glossary.txt` term the translation kept as
-         `<i>term</i>` and that hasn't been glossed earlier in the book --
-         the first such occurrence gets a `†N` right after `</i>` and a
-         "term — gloss" line. Matching is on the italicised text only
-         (accents ignored, trailing plural -s allowed), NOT the French
-         source -- a substring scan of the source glossed the verb
-         *appeler* as the term *appel*. Pass a per-book `seen` to dedupe.
-    `source_text` is unused now; kept for call-site compatibility.
+    """Turn the model's inline `phrase<fn>note</fn>` tags into `†N` markers
+    plus a trailing ___FOOTNOTES___ block (the header can't collide with
+    the page separator). A note whose text was already used earlier in the
+    book -- tracked in `seen` -- is dropped to its bare phrase, so a
+    Category-3 source reference like "Fr. liement" appears once per book.
+    `source_text` is unused; kept for call-site compatibility.
     Returns (text, n_notes)."""
     if seen is None:
         seen = set()
     numbered = []
 
-    def take(note):
-        numbered.append(re.sub(r"\s+", " ", note).strip())
+    def take(m):
+        note = re.sub(r"\s+", " ", m.group(1)).strip()
+        key = _strip_accents(note.lower())
+        if not note or key in seen or len(numbered) >= FN_MAX_PER_PAGE:
+            return ""                       # drop the tag, keep the phrase
+        seen.add(key)
+        numbered.append(note)
         return f"{FN_MARK}{len(numbered)}"
 
-    body = re.sub(r"<fn>(.*?)</fn>", lambda m: take(m.group(1)),
-                  text, flags=re.DOTALL | re.IGNORECASE).strip()
-
-    def gloss_italic(m):
-        if len(numbered) >= FN_MAX_PER_PAGE:
-            return m.group(0)
-        inner = _strip_accents(m.group(1).strip().lower())
-        for key, (term, gloss) in GLOSSARY.items():
-            if key in seen:
-                continue
-            if inner == key or inner == key + "s" or \
-               re.search(r"\b" + re.escape(key) + r"s?\b", inner):
-                seen.add(key)
-                return m.group(0) + take(f"{term} — {gloss}")
-        return m.group(0)
-
-    body = re.sub(r"<i>(.*?)</i>", gloss_italic, body,
-                  flags=re.DOTALL | re.IGNORECASE)
-
+    body = re.sub(r"<fn>(.*?)</fn>", take, text,
+                  flags=re.DOTALL | re.IGNORECASE).strip()
     if not numbered:
         return body, 0
     lines = [f"{FN_MARK}{i} {n}" for i, n in enumerate(numbered, 1)]
@@ -157,9 +169,9 @@ _ALWAYS_TRANSLATE = [
     # "the bout" (drops "leçon"). Bare "assaut" -> "bout" is left to the
     # prompt (rule 3) -- "assaut" alone is sometimes "assault" in a duel.
     (r"leçons d['’]assaut", "bout lessons"), (r"leçon d['’]assaut", "bout lesson"),
-    # "fer" = the (opponent's) steel/blade. Safe phrases only -- NOT bare
-    # "fer", which would break the kept term "prise de fer" (rule 2) and
-    # the glossary term "sentiment du fer".
+    # "fer" (the opponent's steel) -> "the blade" (Category 1). NOT bare
+    # "fer": leave "prise de fer" / "sentiment du fer" for their own
+    # handlers (Cat 3 / Cat 2).
     (r"attaques au fer", "attacks on the blade"), (r"attaque au fer", "attack on the blade"),
     (r"sur le fer", "on the blade"), (r"au fer", "on the blade"),
     (r"le fer", "the blade"),
@@ -205,34 +217,21 @@ def _phrase_repairs(text: str) -> str:
     return text
 
 
-# Rule-2 "keep in the source language" terms that the 7B keeps dropping the
-# <i>...</i> off (or mistranslating outright) on short fragments -- plate
-# captions especially. Only the unambiguously-French ones: a bare "riposte"
-# / "reprise" / "guard" is often legitimate English now and is left to the
-# model + prompt. Each entry: canonical term -> extra English mistranslations
-# to snap back to it. The <i> wrapper + footnote_glossary.txt then supply
-# the gloss (pull_footnotes, once per book).
+# Category-2 "keep in the source language, italic" terms that the 7B
+# drops the <i>...</i> off or mistranslates -- plate captions especially.
+# Only the tight retained set; riposte / remise / reprise / the parry
+# numbers the model handles on its own. Each entry: term -> English
+# mistranslations to snap back to it.
 _KEEP_TERMS = [
-    ("prise de fer", [r"pri[sz]e of (?:the )?(?:blade|iron|steel)",
-                      r"taking of the (?:blade|iron)"]),
-    ("sentiment du fer", [r"feeling of (?:the )?(?:blade|iron|steel)"]),
     ("corps à corps", [r"body[- ]to[- ]body", r"body contact"]),
-    ("liement", [r"binding of the blade"]),
-    ("froissement", []),
-    ("dégagement", [r"disengagement"]),
-    ("coupé", [r"\bcut[- ]over\b"]),
-    ("doublé", []),
+    ("sentiment du fer", [r"feeling of (?:the )?(?:blade|iron|steel)"]),
     ("croisé", []),
-    ("appel", []),
-    # rassemblement/rassembler/rassemblant -- drawing the feet together; the
-    # 7B mangles it ("RASSEMBLANT" -> "RAASSEMBLANT" / "RASBLENDANT") so
-    # repair_mangled_terms() also snaps a quoted garbled token back.
-    ("rassemblement", []),
-    ("rassembler", []),
-    ("rassemblant", []),
+    ("volte", []),
 ]
 
-# A source-language token the 7B reliably garbles rather than keeping.
+# A source-language token the 7B reliably garbles. rassemblant is now a
+# Category-3 (translated) term, so snap the garble back to the BARE French
+# word -- enforce_cat3_footnotes() then translates it and adds the note.
 _MANGLE_PRONE = [(r"rassembl", "rassemblant")]
 
 
@@ -245,15 +244,16 @@ def repair_mangled_terms(dst: str, src: str) -> str:
         if re.search(needle, src, re.I) and not re.search(needle, dst, re.I):
             dst = re.sub(
                 r'([«"“(])\s*[A-Za-zÀ-ÿ]{5,}\s*([»"”)])',
-                lambda m: f'{m.group(1)}<i>{term}</i>{m.group(2)}', dst, count=1)
+                lambda m: f'{m.group(1)}{term}{m.group(2)}', dst, count=1)
     return dst
 
 
 def enforce_kept_terms(text: str, src: str = "") -> str:
-    """Make sure a rule-2 term is present and italicised: repair a known
-    mistranslation, then wrap any bare occurrence in <i>...</i> (skipping
-    what is already inside a tag). The term is lower-cased -- a technical
-    term of art is set italic-lower even inside an all-caps caption."""
+    """Make sure a Category-2 term is present and italicised: repair a
+    known mistranslation, then wrap any bare occurrence in <i>...</i>
+    (skipping what is already inside a tag). The term is lower-cased -- a
+    technical term of art is set italic-lower even inside an all-caps
+    caption."""
     if not text:
         return text
     text = repair_mangled_terms(text, src)
@@ -694,6 +694,9 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
                 break
             if one:
                 one = enforce_kept_terms(apply_always_translate(one), cap)
+                # captions don't render a footnote block: translate the
+                # Category-3 terms but drop the <fn> marker.
+                one = enforce_cat3_footnotes(one, set(), footnote=False)
                 fig["caption_en"] = match_case(cap, one)
             else:
                 fig["caption_en"] = cap
@@ -735,7 +738,7 @@ def translate_headers(folder: str, force: bool = False) -> int:
         en = strip_model_preamble((en or "").strip()).strip()
         en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
         en = re.sub(r'</?i>', '', en)          # a header is plain text (rule 4)
-        en = apply_always_translate(en)
+        en = enforce_cat3_footnotes(apply_always_translate(en), set(), footnote=False)
         hmap[h] = match_case(h, en.splitlines()[0].strip()) if en else h
         n += 1
     with open(hp, "w", encoding="utf-8") as fh:
@@ -788,7 +791,8 @@ try:
         print(f"Pages: {len(pages)}\n")
         
         translated_pages = []
-        glossed = set()   # footnote each glossary term once per book
+        fn_seen = set()     # dedupe <fn> note text across the book
+        cat3_seen = set()   # footnote each Category-3 term once per book
 
         for i, page_text in enumerate(pages, 1):
             if not page_text.strip() or "VLM Error" in page_text:
@@ -866,6 +870,7 @@ try:
                 candidate = re.sub(r'(?m)^\s{0,3}#{1,6}\s+', '', candidate)  # # heading
                 candidate = apply_always_translate(candidate)
                 candidate = enforce_kept_terms(candidate, clean_text)
+                candidate = enforce_cat3_footnotes(candidate, cat3_seen)
                 candidate = retranslate_stray_french_headings(candidate)
 
                 # "This isn't fencing text" / "Please provide the text..." --
@@ -914,7 +919,7 @@ try:
                     continue
 
                 candidate = match_boundary_punctuation(candidate, clean_text)
-                candidate, n_fn = pull_footnotes(candidate, clean_text, glossed)
+                candidate, n_fn = pull_footnotes(candidate, clean_text, fn_seen)
                 translated_pages.append(candidate)
                 success = True
                 print(f" ✓{'  (%d fn)' % n_fn if n_fn else ''}")
@@ -932,7 +937,7 @@ try:
                     # The only thing wrong was the all-caps shout: repair the
                     # case and keep it as a normal page, no review banner.
                     fixed, n_fn = pull_footnotes(deshout(best_candidate, clean_text),
-                                                 clean_text, glossed)
+                                                 clean_text, fn_seen)
                     translated_pages.append(fixed)
                     print(" ✓ (deshouted)")
                 elif best_candidate:

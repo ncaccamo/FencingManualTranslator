@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _rules import (
     apply_always_translate, match_case, enforce_kept_terms,
+    enforce_cat3_footnotes, pull_footnotes,
     repair_mangled_terms, contains_too_much_non_english,
     match_boundary_punctuation, deshout, _phrase_repairs,
     parse_figures_block, reconcile_page_numbers, _fold_caption_only_body,
@@ -37,9 +38,10 @@ def test_always_translate():
         assert apply_always_translate(src) == want, (src, apply_always_translate(src))
 
 
-def test_always_translate_keeps_prise_de_fer():
-    out = apply_always_translate("la prise de fer").lower()
-    assert "prise de fer" in out, out
+def test_always_translate_leaves_prise_de_fer_for_cat3():
+    # apply_always_translate must NOT touch "prise de fer" -- it's Cat 3,
+    # handled (with the footnote) by enforce_cat3_footnotes.
+    assert apply_always_translate("la prise de fer") == "la prise de fer"
 
 
 def test_phrase_epee_fencing_with_the_foil():
@@ -71,23 +73,50 @@ def test_match_case():
 
 
 def test_match_case_leaves_italic_alone():
-    out = match_case("PRISE DE FER SUR LE BRAS", "<i>prise de fer</i> on the arm")
-    assert "<i>prise de fer</i>" in out and "ON THE ARM" in out, out
+    out = match_case("CROISÉ SUR LE BRAS", "<i>croisé</i> on the arm")
+    assert "<i>croisé</i>" in out and "ON THE ARM" in out, out
 
 
-def test_enforce_kept_terms():
+def test_enforce_kept_terms():  # Cat-2 only now
     for dst, src, needle in [
-        ("PRIZE OF THE BLADE ON THE ARM", "PRISE DE FER SUR LE BRAS", "<i>prise de fer</i>"),
         ("a body-to-body was forbidden", "un corps à corps", "<i>corps à corps</i>"),
-        ("a disengagement then a cut-over", "un dégagement puis un coupé", "<i>dégagement</i>"),
-        ("This movement is called rassembler.", "s'appelle rassembler", "<i>rassembler</i>"),
+        ("he made a croisé", "il fit un croisé", "<i>croisé</i>"),
+        ("a feeling of the blade", "le sentiment du fer", "<i>sentiment du fer</i>"),
     ]:
         assert needle in enforce_kept_terms(dst, src), (dst, enforce_kept_terms(dst, src))
 
 
-def test_repair_mangled_rassemblant():
-    assert '<i>rassemblant</i>' in repair_mangled_terms(
-        'IN "RAASSEMBLANT".', "EN « RASSEMBLANT ».")
+def test_enforce_cat3_translates_and_footnotes_once():
+    seen = set()
+    out = enforce_cat3_footnotes(
+        "a prise de fer, then a <i>liement</i>, then another liement", seen)
+    assert out == ("a taking the blade<fn>Fr. prise de fer</fn>, then a "
+                   "bind<fn>Fr. liement</fn>, then another bind"), out
+    assert seen == {"prise de fer", "liement"}
+
+
+def test_enforce_cat3_caption_mode_no_footnote():
+    assert enforce_cat3_footnotes("PARADE DU DÉGAGEMENT", set(), footnote=False) \
+        == "PARADE DU DISENGAGEMENT"
+
+
+def test_enforce_cat3_leaves_english_alone():
+    assert enforce_cat3_footnotes("a bind and a disengagement", set()) \
+        == "a bind and a disengagement"
+
+
+def test_pull_footnotes_dedupes_across_book():
+    seen = set()
+    body, n = pull_footnotes("a bind<fn>Fr. liement</fn> then a bind<fn>Fr. liement</fn>",
+                             "", seen)
+    assert n == 1 and body.count("†") == 2  # one marker in text, one in block
+    assert body.endswith("†1 Fr. liement")
+
+
+def test_repair_mangled_rassemblant_to_bare_french():
+    # rassemblant is Cat 3 now -> mangle repair yields the BARE French word
+    out = repair_mangled_terms('IN "RAASSEMBLANT".', "EN « RASSEMBLANT ».")
+    assert 'rassemblant' in out and '<i>' not in out, out
 
 
 def test_repair_mangled_leaves_clean_quote_alone():

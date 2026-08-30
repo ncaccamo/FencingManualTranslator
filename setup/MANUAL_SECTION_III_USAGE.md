@@ -59,7 +59,7 @@ Each step decides for itself which books to act on:
 So the normal iteration loops are:
 
 - **Tune the translation** — edit `pipeline/translation_prompt.txt` or
-  `pipeline/footnote_glossary.txt`, `rm translation.txt`, re-run steps
+  the term rules in `pipeline/translation_prompt.txt`, `rm translation.txt`, re-run steps
   2, 3, 4.
 - **Tune a PDF's layout** — edit `pipeline/3_…` or `pipeline/4_…`, re-run
   just that step. `pipeline/` is mounted read-only into the container at
