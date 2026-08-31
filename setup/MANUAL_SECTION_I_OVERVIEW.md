@@ -174,7 +174,7 @@ writing:
 - **Table-of-contents pages half-translate** — a few kept terms
   (`coupé`, `battement`) slip through untranslated on dotted-leader
   pages.
-- **Florid literary prose defeats the 7B model** — technical drill text
+- **Florid literary prose defeats the translation model** — technical drill text
   translates well; long rhetorical passages (e.g. LaMarche's
   `Le Fleuret et l'Épée`) can come back partly in French under a
   `[low-confidence]` flag.

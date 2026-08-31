@@ -1,7 +1,7 @@
 # Model quirks & prompt tweaks — a field guide
 
-Everything the two models (olmOCR-2-7B for OCR, Qwen2.5-7B for
-translation) get *wrong* in this corpus, the concrete example that
+Everything the two models (olmOCR-2-7B-1025 for OCR, Qwen2.5-14B-Instruct
+for translation — both env-overridable) get *wrong* in this corpus, the concrete example that
 surfaced it, why it happens, and the mitigation that's now in the code or
 the prompt. Written to be studied — if you're tuning a prompt or adding a
 book, read this first so you don't re-derive a solved problem.
@@ -322,11 +322,15 @@ matching what `2_translate.py` already did.
 
 ---
 
-## Part 2 — Translation (Qwen2.5-7B-Instruct, port 11434)
+## Part 2 — Translation (Qwen2.5-14B-Instruct-Q4_K_M, port 11434)
 
-The 7B model follows the term-policy well and the output-hygiene rules
-intermittently. Every guard below exists because the prompt alone wasn't
-enough.
+Default since 2026-08; `TRANSLATION_MODEL_PATH` overrides it. The 14B was
+chosen because the term policy's `<fn>` emission (Rule 3b) needs its
+stronger instruction-following — the 7B it replaced emitted almost none.
+The model follows the term policy well and the output-hygiene rules
+intermittently; every guard below exists because the prompt alone wasn't
+enough. Notes that still say "the 7B" describe a failure mode the 14B
+shares to some degree unless stated otherwise.
 
 ### 2.1 Markdown emission → page-separator collision  ⚠ highest-stakes
 
@@ -412,7 +416,7 @@ with how it handles them in body text.
 
 Low priority (contents pages are navigational), noted for awareness.
 
-### 2.6 Literary prose defeats the 7B model
+### 2.6 Literary prose defeats the translation model
 
 **Seen:** LaMarche (`Le Fleuret et l'Épée`) — florid 19th-c. literary
 passages like *"Arrêtons-nous, et de face regardons le fencer ainsi

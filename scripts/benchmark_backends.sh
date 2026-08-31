@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 CONTAINER=booktranslator-translator-1
-TRANSLATION_MODEL="/models/Qwen2.5-7B-Instruct-Q6_K.gguf"
-VLM_MODEL="/models/Qwen2-VL-7B-Instruct-Q6_K.gguf"
+TRANSLATION_MODEL="${TRANSLATION_MODEL_PATH:-/models/Qwen2.5-14B-Instruct-Q4_K_M.gguf}"
+VLM_MODEL="${VLM_MODEL_PATH:-/models/allenai_olmOCR-2-7B-1025-Q6_K.gguf}"
 
 echo "Stopping any running llama-server to free VRAM..."
 docker exec "$CONTAINER" pkill -f llama-server 2>/dev/null || true
@@ -25,10 +25,10 @@ run_bench () {
 
 rm -f /tmp/booktranslator_bench_results.txt
 for backend in rocm rocm714 vulkan; do
-    run_bench "$backend" "$TRANSLATION_MODEL" "Qwen2.5-7B-Instruct (translation)"
+    run_bench "$backend" "$TRANSLATION_MODEL" "translation model"
 done
 for backend in rocm rocm714 vulkan; do
-    run_bench "$backend" "$VLM_MODEL" "Qwen2-VL-7B-Instruct (VLM OCR)"
+    run_bench "$backend" "$VLM_MODEL" "VLM / OCR model"
 done
 
 echo ""
