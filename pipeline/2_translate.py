@@ -281,6 +281,11 @@ _KEEP_TERMS = [
     ("sentiment du fer", [r"feeling of (?:the )?(?:blade|iron|steel)"]),
     ("croisé", []),
     ("volte", []),
+    # riposte / remise / reprise: normally kept by the model, but a bare
+    # heading ("DE LA RIPOSTE.") gets mangled -- "OF THE RAPIER RAPIER".
+    ("riposte", [r"rapier(?:[- ]?(?:rapier|response|riposte|reply))?", r"riposte response"]),
+    ("remise", []),
+    ("reprise", []),
 ]
 
 # A source-language token the 7B reliably garbles. rassemblant is now a
@@ -967,7 +972,9 @@ def translate_headers(folder: str, force: bool = False) -> int:
         en = strip_model_preamble((en or "").strip()).strip()
         en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
         en = re.sub(r'</?i>', '', en)          # a header is plain text (rule 4)
-        en = enforce_cat3_footnotes(apply_always_translate(en), set(), footnote=False)
+        en = enforce_kept_terms(apply_always_translate(en), h)   # snap "RAPIER RAPIER" -> riposte
+        en = enforce_cat3_footnotes(en, set(), footnote=False)
+        en = re.sub(r'</?i>', '', en)          # drop the <i> enforce_kept_terms added
         hmap[h] = match_case(h, en.splitlines()[0].strip()) if en else h
         n += 1
     with open(hp, "w", encoding="utf-8") as fh:
