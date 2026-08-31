@@ -15,6 +15,12 @@ import _pageio
 
 PROMPT_FILE = "/app/translation_prompt.txt"
 TRANSLATION_MODEL = os.environ.get("TRANSLATION_MODEL_PATH", "/models/Qwen2.5-14B-Instruct-Q4_K_M.gguf")
+# Request "model" label. Ignored by a single-model llama-server (local /
+# simple remote); the routing key under llama-swap. Kept in sync with the
+# actual model via env, falling back to the model file's own name.
+TRANSLATION_MODEL_NAME = (os.environ.get("TRANSLATION_MODEL_NAME")
+                          or os.environ.get("MODEL_NAME")
+                          or Path(TRANSLATION_MODEL).stem)
 LLAMA_API_URL = f"{bc.translate_base_url()}/v1/chat/completions"
 
 # Returned by start_translation_server() when BACKEND_MODE=remote.
@@ -842,7 +848,7 @@ def translate_with_llama(prompt: str, temperature: float = 0.3) -> str:
                 LLAMA_API_URL,
                 headers={"Content-Type": "application/json", **bc.auth_headers()},
                 json={
-                    "model": "qwen2.5-7b-instruct",
+                    "model": TRANSLATION_MODEL_NAME,
                     "messages": [
                         {"role": "system", "content": "You are an expert translator of historical fencing texts."},
                         {"role": "user", "content": prompt}

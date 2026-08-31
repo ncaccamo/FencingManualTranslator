@@ -55,6 +55,9 @@ import _pageio
 
 VLM_MODEL_PATH = os.environ.get("VLM_MODEL_PATH", "/models/allenai_olmOCR-2-7B-1025-Q6_K.gguf")
 VLM_MMPROJ_PATH = os.environ.get("VLM_MMPROJ_PATH", "")
+# Request "model" label -- ignored by a single-model llama-server, the
+# routing key under llama-swap. Env-overridable, else the model file name.
+VLM_MODEL_NAME = os.environ.get("VLM_MODEL_NAME") or Path(VLM_MODEL_PATH).stem
 
 
 def _find_matching_mmproj(model_path_str: str) -> str:
@@ -789,7 +792,7 @@ def extract_page_with_vlm(image_b64: str, size_kb: float, page_num: int, total_p
             f"{bc.ocr_base_url()}/v1/chat/completions",
             headers={"Content-Type": "application/json", **bc.auth_headers()},
             json={
-                "model": "olmocr2",
+                "model": VLM_MODEL_NAME,
                 "messages": [{
                     "role": "user",
                     "content": [
