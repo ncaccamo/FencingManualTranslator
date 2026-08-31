@@ -20,7 +20,107 @@ from _rules import (
     match_boundary_punctuation, deshout, _phrase_repairs,
     parse_figures_block, reconcile_page_numbers, _fold_caption_only_body,
     strip_leaked_headmatter,
+    apply_glossary_mode, extract_source_footnotes, label_margin_notes,
+    _clean_caption, fix_parry_names,
+    salvage_leaked_folio_header, dehyphenate_across_pages,
+    drop_google_boilerplate, mark_handwritten_inscriptions,
 )
+
+
+def test_salvage_leaked_folio_header():
+    p = [{"page_raw": "", "header": "", "figures": [],
+          "body": "246 DES ATTAQUES SUR PRÉPARATIONS.\n\ntaque, une différence."}]
+    salvage_leaked_folio_header(p, {"des attaques sur preparations"})
+    assert p[0]["page_raw"] == "246"
+    assert p[0]["header"] == "DES ATTAQUES SUR PRÉPARATIONS"
+    assert p[0]["body"] == "taque, une différence."
+
+
+def test_salvage_leaves_numbered_drill_alone():
+    p = [{"page_raw": "", "header": "", "figures": [],
+          "body": "1° Le coup droit de quarte.\nDans cette riposte."}]
+    salvage_leaked_folio_header(p, set())
+    assert p[0]["page_raw"] == "" and p[0]["body"].startswith("1°")
+
+
+def test_dehyphenate_across_pages():
+    p = [{"body": "les traités déjà pu-"}, {"body": "bliés, on pourrait"}]
+    dehyphenate_across_pages(p)
+    assert p[0]["body"].endswith("déjà publiés,")
+    assert p[1]["body"] == "on pourrait"
+
+
+def test_dehyphenate_skips_capital_continuation():
+    p = [{"body": "composé par Henry de Sainct-"}, {"body": "Didier, gentilhomme"}]
+    dehyphenate_across_pages(p)
+    assert p[0]["body"].endswith("Sainct-") and p[1]["body"].startswith("Didier")
+
+
+def test_reconcile_tight_gap_promotes():
+    assert reconcile_page_numbers(["14", "", "16"]) == ["14", "15", "16"]
+
+
+def test_reconcile_plate_run_stays_bracketed():
+    out = reconcile_page_numbers(["16", "", "", "", "17"])
+    assert all(x.startswith("[") for x in out)
+
+
+def test_reconcile_single_plate_leaf_bracketed():
+    out = reconcile_page_numbers(["16", "", "17"])
+    assert out[1].startswith("[")
+
+
+def test_glossary_mode_keeps_headword_french():
+    src = ("TERMES TECHNIQUES\n\nÉchappement. — Glissade du pied gauche.\n"
+           "Esquive. — Mouvement du corps.\nCoup droit. — Attaque simple.")
+    dst = ("TECHNICAL TERMS\n\nEvasion. — Backward slide of the left foot.\n"
+           "Evasion. — Movement of the body.\nStraight thrust. — Simple attack.")
+    out = apply_glossary_mode(dst, src)
+    assert "<i>Échappement</i> —" in out
+    assert "<i>Esquive</i> —" in out
+    assert "Backward slide of the left foot" in out
+
+
+def test_glossary_mode_ignores_toc():
+    src = ("Nomenclature. — Parts of the blade......... 50\n"
+           "Notions of distance. — Attacks......... 53\n"
+           "Parries. — How to take them......... 56")
+    dst = src
+    assert apply_glossary_mode(dst, src) == dst
+
+
+def test_extract_source_footnotes():
+    state = {}
+    txt = ("The riposte can be made immediately (1), or at a lost tempo.\n\n"
+           "(1) The origin of the expression is not easy to explain.")
+    out = extract_source_footnotes(txt, state)
+    assert "___FOOTNOTES___" in out
+    assert out.split("___FOOTNOTES___")[1].strip().startswith("(1)")
+    assert "(1) The origin" not in out.split("___FOOTNOTES___")[0]
+
+
+def test_label_margin_notes():
+    txt = ("The main body paragraph goes on for a while about the left hand "
+           "and its uses in a serious affair.\n\n"
+           "The lesson must teach in what cases one can use the left hand.")
+    out = label_margin_notes(txt)
+    assert "[margin note] The lesson must teach" in out
+    assert "___FOOTNOTES___" in out
+
+
+def test_clean_caption_drops_stamps_and_markdown():
+    assert _clean_caption("BRITISH MUSEUM JUN 27 1947") == ""
+    assert _clean_caption("ALPH. ROQUES, — 51, High Holborn, — LONDRES.") == ""
+    assert _clean_caption(
+        "![Photograph of a man](page_10.png) — DEUXIÈME MOUVEMENT.") \
+        == "DEUXIÈME MOUVEMENT."
+
+
+def test_fix_parry_names():
+    assert fix_parry_names("Parry of second.", "Parade de seconde.") \
+        == "Parry of seconde."
+    assert fix_parry_names("Parry of second.", "Some other caption") \
+        == "Parry of second."
 
 
 def test_always_translate():
@@ -72,9 +172,19 @@ def test_match_case():
         assert match_case(src, dst) == want, (src, dst, match_case(src, dst))
 
 
-def test_match_case_leaves_italic_alone():
-    out = match_case("CROISÉ SUR LE BRAS", "<i>croisé</i> on the arm")
-    assert "<i>croisé</i>" in out and "ON THE ARM" in out, out
+def test_match_case_italic_follows_all_caps():
+    # ALL-CAPS source line: the kept <i> term goes up with the rest
+    # (tags stay lowercase), so it doesn't sit lowercase mid-caption.
+    out = match_case("UN COMMENCEMENT DE CORPS A CORPS.",
+                     "beginning of <i>corps à corps</i>.")
+    assert out == "BEGINNING OF <i>CORPS À CORPS</i>.", out
+
+
+def test_match_case_sentence_lowers_shout_keeps_italic():
+    # sentence-case source: lower the model's over-capitalisation but leave
+    # a kept <i> term's own casing intact
+    out = match_case("Parade de seconde.", "PARRY OF <i>seconde</i>")
+    assert out == "Parry of <i>seconde</i>", out
 
 
 def test_enforce_kept_terms():  # Cat-2 only now
@@ -138,7 +248,10 @@ def test_english_page_not_flagged():
 
 
 def test_boundary_strips_added_full_stop():
-    assert match_boundary_punctuation("was lacking.", "manquait") == "was lacking …"
+    # source ends mid-sentence -> strip the model's added terminal
+    # punctuation, add nothing; the page just continues on the next.
+    assert match_boundary_punctuation("was lacking.", "manquait") == "was lacking"
+    assert match_boundary_punctuation("the blade —", "la lame") == "the blade"
 
 
 def test_boundary_lowercases_continuation():

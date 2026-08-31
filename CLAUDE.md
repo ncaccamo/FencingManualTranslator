@@ -71,3 +71,8 @@ the host's — a newer host runs the 24.04 container unchanged.
   tool, not tied to a specific corpus.
 - `docker/ROCM714_NOTES.md` — why the ROCm 7.14 backend is parked.
 - Session history: `git log` (HANDOFF.md / MANIFEST.md retired 2026-08-27).
+
+## Workflow notes
+- Ask for my input on decisions you think need it.
+- Make changes freely based on feedback, and commit them unless I say otherwise.
+- Do not push anything to remote until I explicitly say to.

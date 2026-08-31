@@ -97,28 +97,49 @@ def reconcile_fracs(fracs, n_paras):
 
 def render_aligned(page, y_top, tr, size, fracs, src_page, bottom=RIGHT.y1):
     """Draw the translation with each paragraph top-anchored to its source
-    paragraph's height. Returns True on success, False if it won't fit (so
-    the caller can fall back to plain flow)."""
+    paragraph's height. Returns True on success, False when the caller
+    should fall back to plain flow.
+
+    Anchoring can only ADD whitespace (push a paragraph down to its source
+    fraction), never remove it. So:
+      * if any single anchor gap is huge, or the total added whitespace is
+        more than a third of the column, the anchors are untrustworthy
+        (patchy Google Books text layer) -> plain flow;
+      * if the anchored layout overflows only a little, compress every gap
+        proportionally so a bigger font still fits (better than shrinking
+        to 7 pt with full gaps);
+      * otherwise render as-is."""
     paras = [p for p in re.split(r"\n\s*\n", tr.strip()) if p.strip()]
     span0, span1 = displayed_scan_span(src_page)
     span_h = span1 - span0
     laid = [_render.layout(p, RIGHT.width, size) for p in paras]
+    line_h = [sum(size * LEADING if not ln.gap else size * LEADING * 0.55
+                  for ln in L) for L in laid]
 
-    # dry pass: will it fit with the alignment whitespace?
     cur = y_top
-    for k, lines in enumerate(laid):
-        if k < len(fracs):
-            cur = max(cur, span0 + fracs[k] * span_h)
-        cur += sum(size * LEADING if not ln.gap else size * LEADING * 0.55
-                   for ln in lines) + PARA_GAP
-        if cur > bottom:
+    gaps = []
+    for k, h in enumerate(line_h):
+        anchor = (span0 + fracs[k] * span_h) if k < len(fracs) else None
+        want = max(cur, anchor) if anchor is not None else cur
+        gaps.append(want - cur)
+        cur = want + h + PARA_GAP
+    W = sum(gaps)
+    Gmax = max(gaps) if gaps else 0.0
+    X = cur - bottom                                    # overflow (<=0 fits)
+    NORMAL_GAP = size * LEADING
+
+    if Gmax > max(55.0, 5 * NORMAL_GAP) or W > 0.35 * (bottom - y_top):
+        return False
+    scale = 1.0
+    if X > 0:
+        if W <= 0 or X > 0.8 * W:
             return False
+        scale = max(0.0, 1.0 - X / W)
 
     cur = y_top
-    for k, lines in enumerate(laid):
-        if k < len(fracs):
-            cur = max(cur, min(span0 + fracs[k] * span_h, bottom - size))
-        _, cur = _render.draw(page, (RIGHT.x0, cur, RIGHT.x1, bottom), lines, size)
+    for k, L in enumerate(laid):
+        cur = min(cur + gaps[k] * scale, bottom - size)
+        _, cur = _render.draw(page, (RIGHT.x0, cur, RIGHT.x1, bottom), L, size)
         cur += PARA_GAP
     return True
 
@@ -134,12 +155,15 @@ def parse_vlm_output(text: str) -> dict:
     return result
 
 
-def new_spread(doc, src, src_idx, struct, *, cont=False):
+_load_rotate = _render.load_rotate
+
+
+def new_spread(doc, src, src_idx, struct, *, cont=False, rotate=0):
     """One landscape page: original scan left, labels + divider right.
     Returns (page, right_rect_top_y)."""
     p = doc.new_page(width=PAGE_W, height=PAGE_H)
     try:
-        p.show_pdf_page(LEFT, src, src_idx)
+        p.show_pdf_page(LEFT, src, src_idx, rotate=rotate)
     except Exception as e:
         p.insert_text((LEFT.x0 + 10, LEFT.y0 + 20), f"[original page unavailable: {e}]",
                       fontsize=9, fontname=_render.ROMAN)
@@ -147,16 +171,25 @@ def new_spread(doc, src, src_idx, struct, *, cont=False):
 
     y = RIGHT.y0
     pn = struct.get("page_num") or ""
-    # a bracketed number is reconcile's inferred sheet ordinal, not a real
-    # folio -- don't present it as the page number
-    tag = f"Page {pn}" if pn and not str(pn).startswith("[") else "Page —"
-    if cont:
-        tag += "  (cont.)"
-    p.insert_text((RIGHT.x0, y), tag, fontsize=9, fontname=_render.BOLD)
-    y += 14
-    if struct.get("header"):
-        p.insert_text((RIGHT.x0, y), struct["header"].replace("\n", " "),
-                      fontsize=8, fontname=_render.ITALIC)
+    # a bracketed number is reconcile's inference, not a read folio -- don't
+    # present it at all (front matter, unnumbered plate leaves). A tight
+    # single-page gap between two read folios was already promoted to a
+    # real number upstream.
+    trusted = pn and not str(pn).startswith("[")
+    tag = (f"Page {pn}{'  (cont.)' if cont else ''}" if trusted
+           else "(cont.)" if cont else None)
+    if tag:
+        p.insert_text((RIGHT.x0, y), tag, fontsize=9, fontname=_render.BOLD)
+        y += 14
+    hdr = (struct.get("header") or "").replace("\n", " ").strip()
+    if hdr and len(hdr.split()) > 12:
+        # not a running head -- a title-page title etc. Wrap it as a block
+        # instead of a single clipped line.
+        _, y = _render.draw(page, (RIGHT.x0, y, RIGHT.x1, RIGHT.y1),
+                            _render.layout(f"<i>{hdr}</i>", RIGHT.width, 8), 8)
+        y += 4
+    elif hdr:
+        p.insert_text((RIGHT.x0, y), hdr, fontsize=8, fontname=_render.ITALIC)
         y += 12
     p.draw_line((RIGHT.x0, y), (RIGHT.x1, y), width=0.5)
     y += 8
@@ -199,7 +232,9 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
 
     src = fitz.open(ocr_pdf)
     n = min(len(src), len(translations))
-    print(f"Creating: {book}  ({n} pages)")
+    _rot = _load_rotate(folder)
+    print(f"Creating: {book}  ({n} pages)"
+          + (f"  [rotate {_rot[1]}° {_rot[0]}]" if _rot else ""))
 
     doc = fitz.open()
     _cover.render(doc, book, page_w=PAGE_W, page_h=PAGE_H, margin=48)
@@ -211,28 +246,26 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
             struct["header"] = re.sub(r"</?i>", "", header_map.get(struct["header"], struct["header"]))
         tr = translations[i]
 
-        page, y = new_spread(doc, src, i, struct)
+        # a scoring/poule table: step 2 left a [[TABLE]] sentinel where the
+        # markup was. Render it as a short pointer among the prose (the
+        # real grid is on the facing scan); a pure-table page becomes just
+        # the pointer.
+        tr = re.sub(r"(?m)^\s*\[\[TABLE\]\]\s*$",
+                    "[table — see facing page]", tr or "")
 
-        if re.search(r"<table[ >]", tr or "", re.I):
-            # A scoring grid the VLM transcribed as HTML markup: unreadable
-            # as flowing text, and the scan on the left carries the real
-            # grid. Don't paste the markup into the right column.
-            page.insert_text((RIGHT.x0, y + 4),
-                             "[scoring table — see facing page]",
-                             fontsize=9, fontname=_render.ITALIC)
-            continue
+        rot = _rot[1] if (_rot and (_rot[0] == "all" or str(i) in fig_map)) else 0
+        page, y = new_spread(doc, src, i, struct, rotate=rot)
 
         if not tr or tr in SKIP_MARKERS:
-            # A plate page (no body text, but figures.json has its caption):
-            # show the translated caption instead of "[blank]" -- the scan
-            # on the left already carries the picture.
+            # No body text. If figures.json has a caption for the page,
+            # render just that -- the plate is on the facing scan, so a
+            # "see facing page" pointer would only be noise. No caption ->
+            # say whether the original page is blank.
             caps = [f.get("caption_en") or f.get("caption")
                     for f in fig_map.get(str(i), [])
                     if f.get("caption_en") or f.get("caption")]
             if caps:
-                page.insert_text((RIGHT.x0, y + 4), "[plate — see facing page]",
-                                 fontsize=9, fontname=_render.ITALIC)
-                yy = y + 22
+                yy = y + 4
                 for c in caps:
                     for vl in _render.layout(c, RIGHT.width, 9):
                         _, yy = _render.draw(page, (RIGHT.x0, yy, RIGHT.x1, RIGHT.y1),
@@ -291,7 +324,7 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
         while leftover:
             cont_pages += 1
             leftover = _render.strip_leading_gaps(leftover)
-            page, y = new_spread(doc, src, i, struct, cont=True)
+            page, y = new_spread(doc, src, i, struct, cont=True, rotate=rot)
             leftover, _ = _render.draw(
                 page, (RIGHT.x0, y, RIGHT.x1, RIGHT.y1), leftover, SIZES[-1])
 

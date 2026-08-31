@@ -193,6 +193,14 @@ def pull_footnotes(text: str, source_text: str = "", seen: set = None):
 _ALWAYS_TRANSLATE = [
     (r"fleurettistes", "foil fencers"), (r"fleurettiste", "foil fencer"),
     (r"fleurets", "foils"), (r"fleuret", "foil"),
+    # "contre-" as a compound prefix = "counter-", not "against-"
+    (r"contre-dégagements", "counter-disengagements"),
+    (r"contre-dégagement", "counter-disengagement"),
+    (r"contre-dégagez", "counter-disengage"), (r"contre-dégager", "counter-disengage"),
+    # equipment / material vocab the model hedges on and leaves in French
+    (r"crispins", "cuffs"), (r"crispin", "cuff"),
+    (r"cuissards", "thigh guards"), (r"cuissard", "thigh guard"),
+    (r"schémas", "diagrams"), (r"schéma", "diagram"),
     (r"entra[iî]nements", "training sessions"), (r"entra[iî]nement", "training"),
     (r"escrimes", "fencing"), (r"escrime", "fencing"),
     (r"sociétés", "societies"), (r"société", "society"),
@@ -248,6 +256,12 @@ def _phrase_repairs(text: str) -> str:
         r"\b(\d{1,2}(?:er|re|nd|e|ème)?\.?)\s+temps\b",
         lambda m: m.group(1) + (" TEMPO" if m.group(0).isupper() else " tempo"),
         text, flags=re.IGNORECASE)
+    # model already wrote "against-disengage..." for "contre-dégage..."
+    text = re.sub(r"\b([Aa])gainst-(?=(?:dis)?engag|dégag)",
+                  lambda m: ("C" if m.group(1).isupper() else "c") + "ounter-", text)
+    # "glacé fabric" / "neither varnished nor glacé" -> glazed
+    text = re.sub(r"\bglac[ée]s?\b",
+                  lambda m: "Glazed" if m.group(0)[:1].isupper() else "glazed", text)
     return text
 
 
@@ -308,43 +322,62 @@ def enforce_kept_terms(text: str, src: str = "") -> str:
 _TITLE_STOPWORDS = {
     "a", "an", "the", "and", "or", "nor", "but", "of", "to", "in", "on", "at",
     "by", "for", "with", "from", "as", "per", "via",
+    # French particles, so "Parade de Sixte." still reads as Title Case
+    "de", "du", "des", "la", "le", "les", "à", "au", "aux", "et", "ou",
+    "d", "l", "en", "sur", "par", "dans",
 }
 
 
 def match_case(src: str, dst: str) -> str:
     """Make a translated heading / caption follow the CASE STYLE of its
-    source, so a book that sets every running head in capitals gets an
-    all-caps English head too (not "épée" one page and "Épée" the next).
-      source ALL CAPS  -> dst.upper()
-      source Title Case -> Title Case (articles/prepositions stay lower)
-      anything else     -> capitalise the first letter only
-    Words the model kept in the source language (already inside <i>..</i>)
-    keep their own case."""
+    source line, faithfully -- a book that sets a running head in capitals
+    gets an all-caps English head, a sentence-case caption gets a
+    sentence-case English caption (even if the model shouted it).
+      source ALL CAPS   -> dst.upper()  (incl. kept <i> terms)
+      source Title Case -> Title Case (particles stay lower)
+      anything else     -> sentence case: first letter up, the rest down
+                           (acronyms present in the source are preserved)
+    Words the model kept in the source language (<i>..</i>) keep their own
+    case, EXCEPT under ALL CAPS where the whole line goes up together."""
     if not dst:
         return dst
     letters = [c for c in src if c.isalpha()]
     if not letters:
         return dst
-    words = [w for w in re.findall(r"[^\W\d_]+(?:['’-][^\W\d_]+)*", src) if any(c.isalpha() for c in w)]
+    words = [w for w in re.findall(r"[^\W\d_]+(?:['’-][^\W\d_]+)*", src)
+             if any(c.isalpha() for c in w)]
     upper_ratio = sum(c.isupper() for c in letters) / len(letters)
+    src_acronyms = {w.upper() for w in words if w.isupper() and len(w) >= 2}
 
     if upper_ratio >= 0.8 and len(letters) >= 2:
-        return _recase(dst, str.upper)
-    if words and all(w[0].isupper() for w in words):
+        # uppercase everything, then restore the lowercase markup tags
+        return re.sub(r"</?(?:i|fn)>", lambda m: m.group(0).lower(),
+                      dst.upper(), flags=re.I)
+
+    sig = [w for w in words if w.lower() not in _TITLE_STOPWORDS]
+    if sig and all(w[0].isupper() for w in sig):
         def _title(m, first=[True]):
             w = m.group(0)
             lead = first[0]
             first[0] = False
-            # a lone letter is a figure label ("Schéma A", point "B"),
-            # not the article "a" -- upper-case it, never lower-case it
             if len(w) == 1:
+                return w.upper()                       # figure label ("Schéma A")
+            if w.upper() in src_acronyms:
                 return w.upper()
             if not lead and w.lower() in _TITLE_STOPWORDS:
                 return w.lower()
             return w[:1].upper() + w[1:].lower()
         return _recase(dst, lambda s: re.sub(r"[^\W\d_]+(?:['’-][^\W\d_]+)*", _title, s))
-    # sentence case: first letter up, leave the rest as the model wrote it
-    return _recase(dst, lambda s: re.sub(r"[A-Za-zÀ-ÿ]", lambda m: m.group(0).upper(), s, count=1))
+
+    # sentence case: lower the model's over-capitalisation, keep source
+    # acronyms, then upper the very first letter.
+    def _sent(s):
+        s = re.sub(r"[^\W\d_]+",
+                   lambda m: m.group(0) if (m.group(0).upper() in src_acronyms
+                                            and len(m.group(0)) >= 2)
+                   else m.group(0).lower(), s)
+        return re.sub(r"[A-Za-zÀ-ÿ]", lambda m: m.group(0).upper(), s, count=1)
+    return _recase(dst, _sent)
 
 
 def _recase(text: str, fn) -> str:
@@ -357,6 +390,153 @@ def _recase(text: str, fn) -> str:
         i = m.end()
     out.append(fn(text[i:]))
     return "".join(out)
+
+
+# ---------------------------------------------------------------------------
+# Glossary-mode (Rule: a "termes techniques" / definitions section is a
+# lexicon of the SOURCE language -- keep every headword in the original,
+# italic; translate only the definition. See docs/model-quirks.md.
+# ---------------------------------------------------------------------------
+_GLOSS_MARKERS = re.compile(
+    r"TERMES\s+TECHNIQUES|PARTICULARIT[ÉE]S|EXPRESSIONS?\s+ET\s+TERMES"
+    r"|TERMES\s+ET\s+EXPRESSIONS", re.I)
+_GLOSS_SRC_LINE = re.compile(
+    r"(?m)^[ \t]*([A-ZÀ-Þ][^\n—–]{1,45}?)[ \t]*\.?[ \t]*[—–][ \t]+\S")
+_TOC_LINE = re.compile(r"(?m)(?:\.{3,}|…)\s*\d+\s*$")
+_GLOSS_DST_LINE = re.compile(
+    r"^([ \t]*)([A-ZÀ-Þ][^\n—–]{0,60}?)[ \t]*\.?[ \t]*([—–])[ \t]+(.*)$")
+
+
+def apply_glossary_mode(dst: str, src: str) -> str:
+    """In a detected glossary section, put each entry's headword back in the
+    original language, italicised; keep the model's translated definition.
+    Aligns dst dash-lines to src dash-lines by position; bails if the
+    counts diverge (the model merged/split entries)."""
+    if not dst or not src:
+        return dst
+    src_lines = _GLOSS_SRC_LINE.findall(src)
+    if len(_TOC_LINE.findall(src)) >= 3:
+        return dst                                    # table of contents
+    if len(src_lines) < 3 and not (_GLOSS_MARKERS.search(src) and src_lines):
+        return dst
+    heads = [re.sub(r"\s+", " ", h).strip().strip(".").strip() for h in src_lines]
+    dst_lines = dst.split("\n")
+    n_dash = sum(1 for ln in dst_lines if _GLOSS_DST_LINE.match(ln))
+    if abs(n_dash - len(heads)) > 1 or n_dash < 3:
+        return dst
+    it = iter(heads)
+    out = []
+    for ln in dst_lines:
+        m = _GLOSS_DST_LINE.match(ln)
+        if not m:
+            out.append(ln)
+            continue
+        h = next(it, None)
+        if h is None:
+            out.append(ln)
+            continue
+        out.append(f"{m.group(1)}<i>{h}</i> {m.group(3)} {m.group(4)}".rstrip())
+    return "\n".join(out)
+
+
+def extract_source_footnotes(text: str, state: dict) -> str:
+    """Pull the book's own numbered footnotes ("(1) L'origine de ...") out
+    of the body and into the ___FOOTNOTES___ block, so a reader can tell
+    body from note. A footnote that runs off the bottom of a page (no
+    terminal punctuation) sets state['open']; the next page's leading
+    lower-case paragraph is then taken as its continuation and rendered in
+    that page's note strip, prefixed '…'."""
+    parts = text.split("\n" + FN_HEADER + "\n", 1)
+    body = parts[0]
+    existing = parts[1] if len(parts) > 1 else ""
+    paras = re.split(r"\n\s*\n", body.strip())
+    keep, notes = [], []
+
+    if (state.get("open") and paras and paras[0][:1].islower()
+            and not re.match(r"\(?\d{1,2}\)?[ .]", paras[0].strip())):
+        notes.append("… " + re.sub(r"\s+", " ", paras.pop(0)).strip())
+        state["open"] = False
+
+    for p in paras:
+        s = re.sub(r"\s+", " ", p).strip()
+        if re.match(r"\(\d{1,2}\)[ . ]", s):
+            notes.append(s)
+            state["open"] = not re.search(r"[.!?»”\"')\]]\s*$", s)
+        else:
+            keep.append(p)
+
+    if not notes:
+        return text
+    block = "\n".join(notes)
+    if existing.strip():
+        block = existing.rstrip() + "\n" + block
+    new_body = "\n\n".join(keep).strip()
+    return f"{new_body}\n\n{FN_HEADER}\n{block}".strip()
+
+
+def label_margin_notes(text: str) -> str:
+    """A printed shoulder-note captured by the VLM as a trailing standalone
+    short paragraph -> move it to the note strip labelled '[margin note]'
+    so it is clearly not body text."""
+    parts = text.split("\n" + FN_HEADER + "\n", 1)
+    body = parts[0]
+    existing = parts[1] if len(parts) > 1 else ""
+    paras = [p for p in re.split(r"\n\s*\n", body.strip()) if p.strip()]
+    if len(paras) < 2:
+        return text
+    last = paras[-1].strip()
+    letters = [c for c in last if c.isalpha()]
+    if ("\n" in last or len(last.split()) > 20 or last[:1] in "([{«"
+            or re.match(r"\d", last) or re.match(r"[A-Za-zÀ-ÿ]?\d+[°ºo]", last)
+            or (letters and sum(c.isupper() for c in letters) > 0.7 * len(letters))):
+        return text
+    note = "[margin note] " + re.sub(r"\s+", " ", last)
+    block = (existing.rstrip() + "\n" if existing.strip() else "") + note
+    rest = "\n\n".join(paras[:-1])
+    return f"{rest}\n\n{FN_HEADER}\n{block}"
+
+
+_CAPTION_JUNK = re.compile(
+    r"biblioth[eè]que\s+nationale|british\s+museum|library\s+of\s+congress"
+    r"|\b\d{5,}\b|high\s+holborn|\blondres\b|\bimp\.\b|\blith\.\b|\bdel\.\b"
+    r"|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\s+\d{4}\b",
+    re.I)
+
+
+def _clean_caption(cap: str) -> str:
+    """Strip Markdown image refs, hallucinated scene descriptions and
+    library/printer stamps from a raw figure caption."""
+    if not cap:
+        return cap
+    cap = re.sub(r"!?\[[^\]]*\]\([^)]*\)", "", cap)          # ![alt](url)
+    cap = re.sub(r"\((?:two|a|an|the)\s+fencers?\b[^)]*\)", "", cap, flags=re.I)
+    cap = re.sub(r"(?i)\bcorrect(?:ing|ed)?\b[^.:]*\btranslation\b[^.:]*[.:]", "", cap)
+    cap = re.sub(r"(?i)\bbased on the (?:given|critical) rules?\b[^.]*\.?", "", cap)
+    cap = re.sub(r"^\s*[—–\-]\s*", "", cap.strip())
+    cap = re.sub(r"\s{2,}", " ", cap).strip(" —–-")
+    if _CAPTION_JUNK.search(cap):
+        return ""
+    return cap.strip()
+
+
+_PARRY_WRONG = {
+    "first": "prime", "second": "seconde", "third": "tierce", "fourth": "quarte",
+    "fifth": "quinte", "sixth": "sixte", "seventh": "septime", "eighth": "octave",
+}
+
+
+def fix_parry_names(en: str, src: str) -> str:
+    """Numbered parries (prime..octave) are Category-2 -- kept, not
+    translated. When the source names one and the model turned it into an
+    English ordinal, snap it back."""
+    if not en or not re.search(
+            r"parade\s+d|de\s+(?:prime|seconde|tierce|quarte|quinte|sixte|septime|octave)",
+            src, re.I):
+        return en
+    for wrong, right in _PARRY_WRONG.items():
+        en = re.sub(r"\b(of\s+|parry\s+of\s+)" + wrong + r"\b",
+                    lambda m, r=right: m.group(1) + r, en, flags=re.I)
+    return en
 
 
 def _french_token_count(line: str) -> int:
@@ -401,20 +581,22 @@ _SENT_END = tuple('.!?:;»)"”’…—')
 
 def match_boundary_punctuation(dst: str, src: str) -> str:
     """A page is one leaf of a longer work; it can begin or end mid-sentence.
-    The 7B tends to "finish" a dangling sentence with a full stop (and the
-    next page then opens with what looks like a fragment). If the SOURCE
-    page doesn't end on sentence-ending punctuation, drop a full stop the
-    model added and mark the run-on with an ellipsis; if the source page
-    STARTS lower-case (a continuation) but the translation capitalised its
-    first word, lower-case it back."""
+    The model tends to "finish" a dangling sentence with a full stop (and
+    the next page then opens with what looks like a fragment). If the
+    SOURCE page doesn't end on sentence-ending punctuation, strip whatever
+    terminal punctuation the model tacked on -- and add NOTHING; the page
+    just ends on its last word and continues on the next. If the source
+    page STARTS lower-case (a continuation) but the translation capitalised
+    its first word, lower-case it back."""
     if not dst or not src:
         return dst
     s = src.rstrip()
     d = dst.rstrip()
     tail = dst[len(d):]
     if s and s[-1] not in _SENT_END and not re.search(r'\b(?:etc|cf|ibid|op)\.$', s):
-        if d.endswith('.') and not d.endswith('..'):
-            d = d[:-1].rstrip() + ' …'
+        d2 = re.sub(r'[\s.…—–-]+$', '', d)
+        if d2:
+            d = d2
     dst = d + tail
     s0 = src.lstrip()
     if s0[:1].islower():
@@ -703,7 +885,9 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
     n = 0
     for figs in fig_map.values():
         for fig in figs:
-            cap = (fig.get("caption") or "").strip()
+            cap = _clean_caption((fig.get("caption") or "").strip())
+            if cap != (fig.get("caption") or "").strip():
+                fig["caption"] = cap            # persist the cleaned source caption
             if not cap:
                 fig.pop("caption_en", None)
                 continue
@@ -727,13 +911,16 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
                 one = cand
                 break
             if one:
+                one = _clean_caption(one)
                 one = enforce_kept_terms(apply_always_translate(one), cap)
+                one = fix_parry_names(one, cap)
                 # captions don't render a footnote block: translate the
                 # Category-3 terms but drop any <fn> marker (backstop's and
                 # a stray one from the model).
-                one = re.sub(r"<fn>.*?</fn>|</?fn>", "", one, flags=re.DOTALL)
+                one = re.sub(r"<fn>.*?</fn>|</?fn>", "", one,
+                             flags=re.DOTALL | re.IGNORECASE)
                 one = enforce_cat3_footnotes(one, set(), footnote=False)
-                fig["caption_en"] = match_case(cap, one)
+                fig["caption_en"] = match_case(cap, one) or cap
             else:
                 fig["caption_en"] = cap
             n += 1
@@ -829,6 +1016,7 @@ try:
         translated_pages = []
         fn_seen = set()     # dedupe <fn> note text across the book
         cat3_seen = set()   # footnote each Category-3 term once per book
+        fn_state = {}       # cross-page state for the book's own footnotes
 
         for i, page_text in enumerate(pages, 1):
             if not page_text.strip() or "VLM Error" in page_text:
@@ -843,6 +1031,25 @@ try:
                 print(f"  Page {i}/{len(pages)} — no body text, skipped")
                 translated_pages.append("[Empty page]")
                 continue
+
+            # A step-1 marker page ("[handwritten inscription — see original]")
+            # -- pass it through verbatim, never translate it.
+            if re.fullmatch(r"\[[^\[\]\n]+\]", clean_text.strip()):
+                translated_pages.append(clean_text.strip())
+                print(f"  Page {i}/{len(pages)} — marker page, passthrough")
+                continue
+
+            # A scoring / poule table: replace each <table>..</table> with a
+            # [[TABLE]] sentinel; steps 3 & 4 embed the scan for it. A page
+            # that is nothing but table(s) skips the model entirely.
+            if re.search(r"<table\b", clean_text, re.I):
+                clean_text = re.sub(r"<table\b.*?</table\s*>", "\n[[TABLE]]\n",
+                                    clean_text, flags=re.I | re.S)
+                clean_text = re.sub(r"\n{3,}", "\n\n", clean_text).strip()
+                if re.fullmatch(r"(?:\s*\[\[TABLE\]\]\s*)+", clean_text):
+                    translated_pages.append("[[TABLE]]")
+                    print(f"  Page {i}/{len(pages)} — table-only page, passthrough")
+                    continue
 
             # A near-blank page (stray mark, bare page number, single word)
             # isn't worth a model call -- the model just replies "Please
@@ -904,9 +1111,12 @@ try:
                 candidate = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', candidate)
                 candidate = re.sub(r'\*\*([^*\n]+)\*\*', r'\1', candidate)   # **bold**
                 candidate = re.sub(r'(?m)^\s{0,3}#{1,6}\s+', '', candidate)  # # heading
+                candidate = re.sub(r"(?im)^\s*\[+\s*TABLE[^\]\n]*\]+\s*$",
+                                   "[[TABLE]]", candidate)      # normalise the sentinel
                 candidate = apply_always_translate(candidate)
                 candidate = enforce_kept_terms(candidate, clean_text)
                 candidate = enforce_cat3_footnotes(candidate, cat3_seen)
+                candidate = apply_glossary_mode(candidate, clean_text)
                 candidate = retranslate_stray_french_headings(candidate)
 
                 # "This isn't fencing text" / "Please provide the text..." --
@@ -956,6 +1166,8 @@ try:
 
                 candidate = match_boundary_punctuation(candidate, clean_text)
                 candidate, n_fn = pull_footnotes(candidate, clean_text, fn_seen)
+                candidate = extract_source_footnotes(candidate, fn_state)
+                candidate = label_margin_notes(candidate)
                 translated_pages.append(candidate)
                 success = True
                 print(f" ✓{'  (%d fn)' % n_fn if n_fn else ''}")

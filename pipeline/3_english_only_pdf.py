@@ -194,9 +194,10 @@ class Flow:
     """Owns the current output page and vertical cursor; opens new pages
     on demand so callers never have to think about page breaks."""
 
-    def __init__(self, doc):
+    def __init__(self, doc, rotate=0):
         self.doc = doc
         self.page = None
+        self.rotate = rotate               # per-book plate rotation (0/90/180/270)
         self.y = COL.y1  # forces a new page on first write
 
     def _newpage(self):
@@ -218,14 +219,24 @@ class Flow:
         # skipped-number pages that's a meaningless sheet ordinal, so drop
         # it and leave just the section rule.
         trusted = page_num and not str(page_num).startswith("[")
-        label = f"— {page_num} —" if trusted else "—"
-        if header:
-            label += f"    {header}" if trusted else f"   {header}"
-        self.page.insert_text((COL.x0, self.y + FS + 2), label,
-                              fontsize=FS + 1, fontname=_render.BOLD)
+        long_hdr = bool(header) and len(header.split()) > 12   # a title, not a running head
+        head_inline = "" if long_hdr else (header or "")
+        if trusted and head_inline:
+            label = f"— {page_num} —    {head_inline}"
+        elif trusted:
+            label = f"— {page_num} —"
+        else:                              # no trusted folio: header alone, or nothing
+            label = head_inline
+        if label:
+            self.page.insert_text((COL.x0, self.y + FS + 2), label,
+                                  fontsize=FS + 1, fontname=_render.BOLD)
         self.y += FS * 1.5
         self.page.draw_line((COL.x0, self.y), (COL.x1, self.y), width=0.4)
         self.y += FS * 0.7
+        if long_hdr:
+            self._flow(_render.layout(f"<i>{header}</i>", COL.width, FS - 1),
+                       FS - 1, color=(0.3, 0.3, 0.3))
+            self.y += FS * 0.3
 
     def body(self, text):
         body_txt, notes = _render.split_footnotes(text)
@@ -257,9 +268,10 @@ class Flow:
             return (x1f - x0f) * r.width, (y1f - y0f) * r.height
         return r.width, r.height
 
-    @classmethod
-    def _fig_size(cls, src_page, band):
-        cw, ch = cls._clip_dims(src_page, band)
+    def _fig_size(self, src_page, band):
+        cw, ch = self._clip_dims(src_page, band)
+        if self.rotate in (90, 270):
+            cw, ch = ch, cw
         w = COL.width
         h = w * (ch / cw)
         if h > FIGURE_MAX_H:
@@ -287,7 +299,8 @@ class Flow:
         pix = src_page.get_pixmap(matrix=fitz.Matrix(150 / 72, 150 / 72), clip=clip)
         x0 = COL.x0 + (COL.width - w) / 2
         self.page.insert_image(fitz.Rect(x0, self.y, x0 + w, self.y + h),
-                               stream=pix.tobytes("jpeg", jpg_quality=72))
+                               stream=pix.tobytes("jpeg", jpg_quality=72),
+                               rotate=self.rotate)
         self.y += h + 4
         if caption.strip():
             for vl in _render.layout(caption, COL.width, FS - 1):
@@ -342,20 +355,24 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
 
     doc = fitz.open()
     _cover.render(doc, book, page_w=PAGE_W, page_h=PAGE_H, margin=MARGIN)
-    flow = Flow(doc)
+    _rot = _render.load_rotate(folder)
+    flow = Flow(doc, rotate=_rot[1] if _rot else 0)
 
     rendered = figures = 0
     for i, tr in enumerate(translations):
         st = parse_vlm_output(extractions[i]) if i < len(extractions) else {}
-        is_empty = (not tr) or tr in SKIP_MARKERS
         src_page = src_doc[i] if (src_doc is not None and i < len(src_doc)) else None
+
+        # A scoring grid / poule table: step 2 left a [[TABLE]] sentinel.
+        # Embed the source page image for it and strip the sentinel from
+        # the body so any surrounding prose still renders.
+        body_is_table = "[[TABLE]]" in (tr or "")
+        if body_is_table:
+            tr = re.sub(r"(?m)^\s*\[\[TABLE\]\]\s*$", "", tr or "").strip()
+
+        is_empty = (not tr) or tr in SKIP_MARKERS
         # A page whose whole body is ~one line is a plate caption, not prose.
         caption_only_page = (not is_empty) and len(tr.split()) <= 20
-
-        # A scoring grid / poule table: the VLM transcribes it as <table>
-        # HTML markup, which is unreadable as flowing text -- reproduce the
-        # source page image instead and drop the markup body.
-        body_is_table = bool(re.search(r"<table[ >]", tr, re.I))
 
         # Collect (band, caption) figure placements for this page.
         placements = []
@@ -405,7 +422,7 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
                 placements.append((None, ""))
 
         if body_is_table and src_page is not None and not placements:
-            placements.append((None, "[scoring table — reproduced from the original]"))
+            placements.append((None, "[table — reproduced from the original]"))
 
         if is_empty and not placements:
             continue  # genuinely blank sheet
@@ -426,7 +443,7 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
             _norm(tr) and _norm(c) and (_norm(tr) in _norm(c) or _norm(c) in _norm(tr))
             for _, c in placements)
 
-        if not is_empty and not body_is_caption and not body_is_table:
+        if not is_empty and not body_is_caption:
             flow.body(tr)
             rendered += 1
 

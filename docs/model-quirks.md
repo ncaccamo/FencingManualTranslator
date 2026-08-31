@@ -64,9 +64,15 @@ legible, so the model guesses.
   VIII), give the roman numeral, not an arabic conversion."
 - `reconcile_page_numbers()` ([`1_…py`](../pipeline/1_ocr_and_extract_vlm.py)):
   a folio is trusted when **a neighbouring sheet's folio continues the
-  printed sequence** (`i-1 → v-1` or `i+1 → v+1`). Non-trusted pages are
-  interpolated from the nearest trusted anchor and bracketed `[n]`. It
-  never emits ≤ 0.
+  printed sequence** (`i-1 → v-1` or `i+1 → v+1`, also across a short run
+  of *unread* pages). Non-trusted pages are interpolated from the nearest
+  trusted anchor and bracketed `[n]`. It never emits ≤ 0.
+- **Tight-gap promotion:** a run of *unread* pages bracketed by two read
+  folios `P … Q` where `Q − P == run + 1` is filled in exactly (`P+1,
+  P+2, …`) and shown as real numbers, not `[n]`. A run of **unnumbered
+  plate leaves** breaks that arithmetic (text 16 → 3 plates → text 17,
+  `Q−P = 1 ≠ 4`) and stays bracketed. The PDF steps then *suppress* a
+  bracketed folio line entirely rather than print `Page —`.
 - Was a single **book-wide** index→folio offset: any folio off that offset
   was discarded. Joseph-Renaud inserts a plates section partway through,
   which shifts the offset, so the genuine run "20 21 22" got thrown away
@@ -83,11 +89,21 @@ the real body.
 
 **Failure:** the VLM sometimes drops the printed folio and the running
 header *into* `BODY_TEXT` instead of the `PAGE_NUMBER` / `HEADER` fields.
+Gomard 1845 does this on **~50 body pages** — line 1 is `246 DES ATTAQUES
+SUR PRÉPARATIONS.` (folio + running head together), which also empties
+`PAGE_NUMBER`, so every folio ends up interpolated and bracketed.
 
-**Mitigation:** `strip_leaked_headmatter()` peels leading body lines that
-are a bare number or that match a header seen elsewhere in the same book
-(it runs after all pages are parsed, so it has the book's whole header
-vocabulary). Also in `reprocess_extracted.py`.
+**Mitigations** (all in `postprocess_parsed_pages()`, shared with
+`reprocess_extracted.py`):
+
+- `salvage_leaked_folio_header()` — line 1 matching `<num> <ALL-CAPS
+  HEAD>` (either order) → the number goes to `PAGE_NUMBER` as a **trusted**
+  read, the caps run to `HEADER`, the line is stripped from the body.
+  Guarded: the caps run must match a header seen elsewhere in the book or
+  otherwise look like a running head.
+- `strip_leaked_headmatter()` — still the backstop for a bare leaked
+  number or header with no companion, using the book's whole header
+  vocabulary.
 
 ### 1.3 Accents added to bare display capitals
 
@@ -128,14 +144,46 @@ one command per line, preserve leading indentation, render a brace group
 as `command { ` then each item on its own aligned line. Still only
 partly effective — see 2.4.
 
-### 1.6 Printed marginalia are dropped
+### 1.6 Printed marginalia — inconsistent
 
-**Seen:** Gomard 1845 — printed marginal side-notes next to the main text.
+**Seen:** Gomard 1845 — printed marginal shoulder-notes next to the main
+text.
 
-**Behaviour:** olmOCR silently omits them and transcribes the main column
-cleanly. **Accepted as-is** — the main text stays uncontaminated, and the
-side-notes in this book are cross-references, not substance. Flagged here
-in case a future source carries real content in the margin.
+**Behaviour:** olmOCR *mostly* omits them, but sometimes appends one to
+`BODY_TEXT` as a trailing standalone paragraph, which then gets translated
+and dumped at the bottom of the column by the alignment pass — reading as
+a body non-sequitur.
+
+**Mitigation:** `label_margin_notes()` ([`2_…py`](../pipeline/2_translate.py))
+— a trailing single-line paragraph of ≤ 20 words that isn't a heading /
+footnote / list item is moved to the note strip as `[margin note] …`, so
+it's clearly not body. Non-destructive (never deleted).
+
+### 1.6b Cross-page word hyphenation
+
+**Seen:** Gomard 1845 — a word split by end-of-page hyphenation in the
+original (`… déjà pu-` | `bliés, on …`) — **19 pages**. Each fragment
+translated on its own is garbage ("already pu- / blés, one could…").
+
+**Mitigation:** `dehyphenate_across_pages()` — when page *i* ends
+lowercase+hyphen and page *i+1* starts lowercase, the completion fragment
+(plus glued punctuation) is spliced up to close the word on page *i*. A
+capitalised continuation (`Sainct-` | `Didier`, `La-` | `Boëssière`) is a
+real hyphenated name and is left alone.
+
+### 1.6c Glossary / "termes techniques" sections
+
+**Seen:** Kirchhoffer — a multi-page *TERMES TECHNIQUES* section, plus
+shorter *Particularités* runs (`Headword. — definition`). The model
+translates the headwords inconsistently — some kept French, some
+anglicised, and two distinct French terms (`échappement`, `esquive`) both
+collapse to "evasion".
+
+**Mitigation:** `apply_glossary_mode()` — when the source page is a run of
+`Headword. — def` lines (or carries a section marker) and isn't a table
+of contents, each entry's headword is put back in the **original
+language, italic**; only the definition keeps the model's translation.
+Aligns dst lines to src lines by position; bails if the counts diverge.
 
 ### 1.7 Figure detection — VLM flag + density-profiler geometry
 
@@ -479,14 +527,19 @@ Regenerating needs `2_translate.py --captions` (forces both) or deleting
 
 ### 2.11 Author's footnotes vs. ours
 
-A page can carry the **author's** own `(1) (2) (3)` footnotes (plain prose
-in the OCR body, translated and flowed inline) *and* **our** glossary /
-`<fn>` notes (a `†N` marker + a grey ruled block). The dagger-vs-number
-split is the standard scholarly convention; on top of that our block now
-opens with an italic **"Translator's notes (AI):"** label
-(`_render.footnote_lines`). If it still reads as too much on
-footnote-dense pages, the lever is to defer a glossary term's gloss to a
-later occurrence that isn't already crowded.
+A page can carry the **author's** own `(1) (2) (3)` footnotes *and*
+**our** Category-3 `<fn>` source references. Both now land in the same
+grey ruled block (`_render.footnote_lines`, label **"Notes:"**), so a
+reader can always tell body from note:
+
+- `extract_source_footnotes()` ([`2_…py`](../pipeline/2_translate.py)) —
+  a body paragraph starting `(N) …` is moved to the note block. A
+  footnote that runs off the bottom of a page (no terminal punctuation)
+  sets a cross-page flag; the next page's leading lower-case paragraph is
+  then taken as its continuation and rendered `… <tail>` in *that* page's
+  block (the two halves aren't stitched into one, but each renders as a
+  note, not as body).
+- `pull_footnotes()` — our `†N` Category-3 markers, deduped once per book.
 
 ## Part 3 — shared / architectural
 

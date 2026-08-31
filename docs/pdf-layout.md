@@ -169,11 +169,15 @@ the scan, so reading across lands in the right place.
   blocks (more anchors than paragraphs, > 2×), it resamples evenly — a
   raw one-to-one map pinned whole pages' text to the top. `None` for < 2
   anchors.
-- `render_aligned()` — dry-fits with the alignment whitespace; if the
-  page still fits, draws it anchored; if not, the caller falls back to
-  plain top-to-bottom flow. A patchy OCR layer (Google Books) mostly
-  fails the dry-fit and falls back — there's no clean "is this layer
-  reliable" signal, so the dry-fit is the real gate.
+- `render_aligned()` — anchoring can only *add* whitespace (push a
+  paragraph down to its source fraction), never remove it, so the dry pass
+  measures three things: total added whitespace `W`, the largest single
+  anchor gap `Gmax`, and overflow `X`.
+  - `Gmax` > ~55 pt, or `W` > 35 % of the column → the anchors are
+    untrustworthy (patchy Google Books layer) → **plain flow**.
+  - `0 < X ≤ 0.8·W` → compress every gap by `1 − X/W` so a bigger font
+    still fits (better than shrinking to 7 pt with full gaps).
+  - otherwise → draw anchored as-is.
 
 Alignment rate is a rough scan-quality indicator: Gallica ~70–80 %,
 Google Books ~30–45 %.
@@ -202,6 +206,24 @@ What it shows and where each piece comes from:
 `scripts/make_book_meta.py` (`--force` to overwrite, or pass stems).
 `publisher` is usually left `""` for you to hand-add. The `books/`
 sidecars are git-ignored, like the rest of the private corpus.
+
+### Other per-book override files (next to the PDF in `books/`)
+
+| File | Effect |
+|---|---|
+| `<stem>.crop` | `left,top,right,bottom` fractions trimmed before OCR |
+| `<stem>.rotate` | `cw` / `ccw` / `180`, optionally `all:` (default `plates:`) — rotates the embedded scan when a book's plates are printed sideways (Gomard). `plates:` = figure pages only. Steps 3 & 4, via `_render.load_rotate()`. |
+
+### Tables and folios in the PDFs
+
+- A scoring / poule grid is a `[[TABLE]]` sentinel in `translation.txt`
+  (step 2 never hands the `<table>` markup to the model). Step 4 renders
+  it as `[table — see facing page]` among the prose; step 3 embeds the
+  source page and drops the sentinel.
+- A folio the reconciler only inferred (`[n]`) produces **no** "Page"
+  line at all in either PDF — front matter and unnumbered plate leaves
+  just get the section rule. Tight-gap-forced folios were promoted to
+  real numbers upstream and *do* show.
 
 ## Sidecar files (all in `processed/<book>_translated/`)
 

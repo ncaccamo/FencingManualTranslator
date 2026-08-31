@@ -17,8 +17,27 @@ computed by the font, not by summing get_text_length() -- an earlier version
 did the latter and accented words like "DEUXIÈME" / "Coupé" collided with the
 following word.
 """
+import os
 import re
+from pathlib import Path
+
 import fitz
+
+
+def load_rotate(folder):
+    """books/<stem>.rotate -> (scope, degrees) or None. Content is one
+    token: cw | ccw | 180, optionally prefixed 'plates:' (default) or
+    'all:'. Used by steps 3 & 4 to rotate a book's sideways-scanned plates
+    (Gomard) when embedding the source page."""
+    stem = Path(folder).name.replace("_translated", "")
+    for base in (f"/data/books/{stem}.rotate", f"{folder}/{stem}.rotate"):
+        if os.path.exists(base):
+            tok = open(base).read().strip().lower()
+            scope = "all" if tok.startswith("all:") else "plates"
+            tok = tok.split(":")[-1]
+            deg = {"cw": 270, "ccw": 90, "90": 270, "-90": 90, "180": 180}.get(tok)
+            return (scope, deg) if deg else None
+    return None
 
 # reserved names for the built-in PDF base-14 fonts
 ROMAN, ITALIC, BOLD = "times-roman", "times-italic", "times-bold"
@@ -172,7 +191,7 @@ def footnote_lines(notes, width, size):
     source references ("Fr. liement"), not commentary. Returns list[Line]
     (first is a rule sentinel: indent<0)."""
     out = [Line(indent=-1.0)]  # rule marker for draw()
-    for j, vl in enumerate(_wrap(_spans("<i>Original terms:</i>"),
+    for j, vl in enumerate(_wrap(_spans("<i>Notes:</i>"),
                                  width, size)):
         out.append(Line(0.0 if j == 0 else size * 0.9, vl))
     for n in notes:

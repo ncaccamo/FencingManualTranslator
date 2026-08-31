@@ -30,6 +30,7 @@ collapse_runs = _ns["collapse_runs"]
 strip_leaked_headmatter = _ns["strip_leaked_headmatter"]
 _norm_head = _ns["_norm_head"]
 _fold_caption_only_body = _ns["_fold_caption_only_body"]
+postprocess_parsed_pages = _ns["postprocess_parsed_pages"]
 
 targets = sys.argv[1:] or [
     d for d in glob.glob("/data/processed/*_translated")
@@ -45,6 +46,7 @@ for folder in targets:
     raw_pages = [collapse_runs(p) for p in
                  _pageio.split_pages(open(raw_path, encoding="utf-8").read())]
     parsed = [parse_vlm_response(p) for p in raw_pages]
+    postprocess_parsed_pages(parsed)
     _kh = {_norm_head(p["header"]) for p in parsed if p["header"]}
     for p in parsed:
         p["body"] = strip_leaked_headmatter(p["body"], _kh)
