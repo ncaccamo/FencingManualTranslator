@@ -17,7 +17,6 @@ What comes from where:
 """
 import json
 import os
-import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -43,10 +42,12 @@ RIGHTS = "This translation is released under CC0 1.0 (public domain dedication).
 
 _DEFAULT_ORIG_RIGHTS = "The original work is in the public domain."
 _VENDOR_PREFIXES = ("allenai_", "bartowski_", "TheBloke_", "Qwen_")
-_QUANT_TAIL = re.compile(r"[-.](?:Q\d+(?:_[A-Z0-9]+)*|IQ\d.*|f16|bf16|fp16)$", re.I)
 
 
-def _model_label(env_var, *, keep_quant=True):
+def _model_label(env_var):
+    """Basename of the model file, minus '.gguf' and a vendor prefix. The
+    quantization tag is kept -- it's part of the provenance (Q6_K OCR,
+    Q4_K_M translation reproduce differently from f16)."""
     p = os.environ.get(env_var, "")
     if not p:
         return ""
@@ -57,8 +58,6 @@ def _model_label(env_var, *, keep_quant=True):
         if name.startswith(pre):
             name = name[len(pre):]
             break
-    if not keep_quant:
-        name = _QUANT_TAIL.sub("", name)
     return name
 
 
@@ -140,10 +139,10 @@ def render(doc, stem, *, page_w, page_h, margin):
     block(DISCLOSURE, 10, italic=True, gap_after=12)
 
     block("OCR model: "
-          + (_model_label("VLM_MODEL_PATH", keep_quant=False) or "olmOCR-2-7B-1025"),
+          + (_model_label("VLM_MODEL_PATH") or "olmOCR-2-7B-1025-Q6_K"),
           9, gap_after=3)
     block("Translation model: "
-          + (_model_label("TRANSLATION_MODEL_PATH") or "Qwen2.5-14B-Instruct"),
+          + (_model_label("TRANSLATION_MODEL_PATH") or "Qwen2.5-14B-Instruct-Q4_K_M"),
           9, gap_after=3)
 
     ver = _pipeline_version()
