@@ -165,8 +165,14 @@ def new_spread(doc, src, src_idx, struct, *, cont=False):
 
 created_count = 0
 
+# PDF_ONLY=stem[,stem...] limits the rebuild to those books (comma or
+# space separated). Handy after a cover / layout tweak.
+_only = set(os.environ.get("PDF_ONLY", "").replace(",", " ").split())
+
 for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.isdir(f)]:
     book = Path(folder).name.replace("_translated", "")
+    if _only and book not in _only:
+        continue
 
     if not os.path.exists(f"{folder}/translation.txt"):
         print(f"⊘ Skip (no translation): {book}")
