@@ -185,7 +185,7 @@ def new_spread(doc, src, src_idx, struct, *, cont=False, rotate=0):
     if hdr and len(hdr.split()) > 12:
         # not a running head -- a title-page title etc. Wrap it as a block
         # instead of a single clipped line.
-        _, y = _render.draw(page, (RIGHT.x0, y, RIGHT.x1, RIGHT.y1),
+        _, y = _render.draw(p, (RIGHT.x0, y, RIGHT.x1, RIGHT.y1),
                             _render.layout(f"<i>{hdr}</i>", RIGHT.width, 8), 8)
         y += 4
     elif hdr:
