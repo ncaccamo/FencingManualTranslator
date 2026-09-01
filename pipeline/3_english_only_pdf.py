@@ -206,13 +206,18 @@ class Flow:
 
     LABEL_H = FS * 2.4
 
-    def section_label(self, page_num, header, reserve=0.0):
+    def section_label(self, page_num, header, reserve=0.0, compact=False):
         # `reserve` = extra height the caller will use right after the label;
         # if the label + that reserve won't fit, start a fresh sheet so the
         # label is never orphaned from its content (e.g. a figure).
-        if self.page is None or self.y + self.LABEL_H + reserve > COL.y1:
+        # `compact` (figure-only pages) drops the breathing room above and
+        # tightens the rule, so a run of small/landscape plates can pack
+        # two to a sheet when they genuinely fit (portrait plates hit the
+        # 82%-height cap and still get one each -- no shrinking to force it).
+        label_h = self.LABEL_H * (0.6 if compact else 1.0)
+        if self.page is None or self.y + label_h + reserve > COL.y1:
             self._newpage()
-        else:
+        elif not compact:
             self.y += FS * 0.8  # breathing room above a new section
         # Only show a folio we actually trust. reconcile_page_numbers()
         # brackets anything it inferred ("[5]") -- for front matter and
@@ -239,9 +244,9 @@ class Flow:
             self.page.insert_text(
                 (COL.x1 - _render._w(header_right, 0, FS + 1), self.y + FS + 2),
                 header_right, fontsize=FS + 1, fontname=_render.BOLD)
-        self.y += FS * 1.5
+        self.y += FS * (1.0 if compact else 1.5)
         self.page.draw_line((COL.x0, self.y), (COL.x1, self.y), width=0.4)
-        self.y += FS * 0.7
+        self.y += FS * (0.4 if compact else 0.7)
         if long_hdr:
             self._flow(_render.layout(f"<i>{header}</i>", COL.width, FS - 1),
                        FS - 1, color=(0.3, 0.3, 0.3))
@@ -453,7 +458,8 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
         first_h = flow._fig_size(src_page, placements[0][0])[1] if placements else 0.0
         hdr = st.get("header", "")
         flow.section_label(st.get("page_num", ""), re.sub(r"</?i>", "", header_map.get(hdr, hdr)),
-                           reserve=(first_h + FS * 1.6) if placements else 0.0)
+                           reserve=(first_h + FS * 1.6) if placements else 0.0,
+                           compact=bool(is_empty and placements))
         for band, caption in placements:
             flow.figure(src_page, band, caption=caption)
             figures += 1

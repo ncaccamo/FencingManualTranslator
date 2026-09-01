@@ -246,6 +246,29 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
     doc = fitz.open()
     _cover.render(doc, book, page_w=PAGE_W, page_h=PAGE_H, margin=48)
 
+    # Book-level alignment gate: paragraph alignment needs a usable scan
+    # text layer. On a book where most pages don't have one (Google-Books
+    # scans), the per-page bail still fires but the result is a jitter of
+    # aligned / bailed / near-miss pages. If fewer than ALIGN_MIN_RATE of
+    # the text pages can align, don't attempt it anywhere -- a consistent
+    # plain flow reads better.
+    _ALIGN_MIN_RATE = float(os.environ.get("ALIGN_MIN_RATE", "0.55"))
+    _txt = _ok = 0
+    for i in range(n):
+        t = translations[i]
+        if not t or t in SKIP_MARKERS or fig_map.get(str(i)):
+            continue
+        _txt += 1
+        bt, _ = _render.split_footnotes(t)
+        npar = len([p for p in re.split(r"\n\s*\n", bt.strip()) if p.strip()])
+        fr = reconcile_fracs(paragraph_fracs(src[i]), npar)
+        if fr and len(fr) >= 2:
+            _ok += 1
+    book_align = _txt >= 8 and _ok >= _ALIGN_MIN_RATE * _txt
+    if _txt:
+        print(f"  text layer usable on {_ok}/{_txt} pages"
+              + ("" if book_align else "  → book-level plain flow"))
+
     cont_pages = aligned = 0
     for i in range(n):
         struct = parse_vlm_output(extractions[i]) if i < len(extractions) else {}
@@ -302,7 +325,8 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
         # translation ends up misaligned.
         n_paras = len([p for p in re.split(r"\n\s*\n", body_txt.strip()) if p.strip()])
         has_fig = bool(fig_map.get(str(i)))
-        fracs = None if has_fig else reconcile_fracs(paragraph_fracs(src[i]), n_paras)
+        fracs = (None if (has_fig or not book_align)
+                 else reconcile_fracs(paragraph_fracs(src[i]), n_paras))
         if fracs and len(fracs) >= 2:
             for s in SIZES:
                 if render_aligned(page, y, body_txt, s, fracs, src[i], body_bottom):

@@ -808,6 +808,22 @@ def is_near_blank(text: str) -> bool:
     letters = re.findall(r"[^\W\d_]", text, flags=re.UNICODE)
     return len(text.split()) < 2 or len(letters) < 8
 
+
+_TOC_LINE_RE = re.compile(r"^.{1,70}?[.·•…\s]{4,}\s*\d{1,4}\s*$")
+
+
+def is_toc_page(text: str) -> bool:
+    """A table-of-contents / index page: most lines are
+    `entry text … dot-leader … page number`. Such a page is neither prose
+    nor a clean heading list -- the model applies the term policy
+    unevenly and (worse) staples a once-per-book `<fn>` footnote onto a
+    contents line. Detected pages translate with footnotes suppressed."""
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    if len(lines) < 4:
+        return False
+    hits = sum(1 for l in lines if _TOC_LINE_RE.match(l))
+    return hits >= 0.5 * len(lines)
+
 def _llama_server_env() -> dict:
     """A `docker exec` of this script inherits only the image-level
     LD_LIBRARY_PATH; llama-server links its backend impl .so
@@ -1131,6 +1147,8 @@ try:
                 print(f"  Page {i}/{len(pages)} — marker page, passthrough")
                 continue
 
+            page_is_toc = is_toc_page(clean_text)
+
             # A scoring / poule table: replace each <table>..</table> with a
             # [[TABLE]] sentinel; steps 3 & 4 embed the scan for it. A page
             # that is nothing but table(s) (+ maybe a heading) skips the
@@ -1245,9 +1263,16 @@ try:
                                        "[[TABLE]]", candidate)
                 candidate = apply_always_translate(candidate)
                 candidate = enforce_kept_terms(candidate, clean_text)
-                candidate = enforce_cat3_footnotes(candidate, cat3_seen)
-                candidate = retranslate_stray_french_headings(candidate)
-                candidate = fix_subheading_spacing(candidate)
+                # on a ToC page: translate the Cat-3 terms but emit NO
+                # footnote marker (a contents line must not carry one, and
+                # it would burn the once-per-book note), and skip the
+                # heading re-translate pass (every entry looks like a
+                # heading) to keep the "entry … NN" structure intact.
+                candidate = enforce_cat3_footnotes(
+                    candidate, cat3_seen, footnote=not page_is_toc)
+                if not page_is_toc:
+                    candidate = retranslate_stray_french_headings(candidate)
+                    candidate = fix_subheading_spacing(candidate)
 
                 # "This isn't fencing text" / "Please provide the text..." --
                 # the model had nothing real to translate. Not a fallback

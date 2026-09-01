@@ -96,8 +96,11 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    rules, iteration loops, `reprocess_extracted.py`, helper-script table,
    troubleshooting). Keep in sync as behaviour changes. Section II is
    current.
-6. **English-only PDF** wastes vertical space over a run of consecutive
-   figure pages (one figure per sheet) — could pack 2/sheet.
+6. **English-only PDF** figure packing — `section_label(compact=True)` on
+   figure-only pages (2026-09-01) drops the label chrome so a run of
+   small/landscape plates packs two to a sheet when they genuinely fit.
+   Portrait plates hit the `FIGURE_MAX_H` (82% column) cap and still get
+   one each — by design, no shrinking to force a pair.
 7. `rocm714` backend — wired everywhere but not compiled; build it in
    `BackendBuildstage` and sync in.
 8. ~~Backend-selection port to `LocalAIChat`.~~ DONE + verified
@@ -144,8 +147,11 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
   sideways fold-out engravings.
 - Paragraph alignment against a sparse/patchy embedded text layer —
   Gomard's Google OCR gave 47% aligned vs. Spinnewyn's 71% on a cleaner
-  Gallica layer. Below some threshold it should probably fall back to
-  plain top-to-bottom flow rather than anchor on unreliable block boxes.
+  Gallica layer. **Book-level bail (2026-09-01):** step 4 counts the text
+  pages with a usable text layer up front; below `ALIGN_MIN_RATE` (0.55)
+  it renders the whole book in plain top-to-bottom flow instead of a
+  jitter of aligned / bailed / near-miss pages. Tune with the env var;
+  watch the "text layer usable on N/M pages" print.
 - Books with printed marginalia — olmOCR-2 silently drops the side-notes.
   Acceptable for now (main text stays clean); flagged in case a source
   carries substantive content in the margins.

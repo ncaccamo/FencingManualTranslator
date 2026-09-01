@@ -453,11 +453,17 @@ not solved. Open item in [STATUS](STATUS.md) #1.
 ### 2.5 ToC / dotted-leader pages half-translate kept terms
 
 **Seen:** contents pages list entries like `Coupé . . . . 44`. The model
-translates the surrounding structure but leaves scattered kept-terms
-(`coupé`, `battement`) untranslated and *un-italicised* — inconsistent
-with how it handles them in body text.
+translates the entries unevenly, and `enforce_cat3_footnotes` would
+staple the once-per-book `<fn>` note onto a contents line if the book's
+first `coupé` happens to be there.
 
-Low priority (contents pages are navigational), noted for awareness.
+**Mitigation (2026-09-01):** `is_toc_page()` — a page where ≥ 50% of the
+non-blank lines match `text … dot-leader … page-number`. On a detected
+ToC page, `enforce_cat3_footnotes(..., footnote=False)` (translate the
+Cat-3 term, emit **no** marker) and skip
+`retranslate_stray_french_headings` / `fix_subheading_spacing` (every
+entry looks like a heading). Cat-1 / Cat-2 rules run unchanged, so the
+entries still translate consistently with the body.
 
 ### 2.6 Literary prose defeats the translation model
 
