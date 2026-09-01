@@ -252,7 +252,7 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
     # aligned / bailed / near-miss pages. If fewer than ALIGN_MIN_RATE of
     # the text pages can align, don't attempt it anywhere -- a consistent
     # plain flow reads better.
-    _ALIGN_MIN_RATE = float(os.environ.get("ALIGN_MIN_RATE", "0.55"))
+    _ALIGN_MIN_RATE = float(os.environ.get("ALIGN_MIN_RATE", "0.65"))
     _txt = _ok = 0
     for i in range(n):
         t = translations[i]
