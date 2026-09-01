@@ -125,7 +125,11 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    `level` field in `_render.py`, size/weight/spacing per level, and
    likely a VLM-prompt change + full re-OCR + an eval loop. Scoped and
    rejected as too large for batch 2. Related: title-page special layout,
-   and the deferred "section/part-title display size".
+   and the deferred "section/part-title display size". **When this lands
+   it supersedes `fix_subheading_spacing()`** (2026-09-01 stop-gap — an
+   all-caps heuristic that moves the blank line to *before* a run-in
+   sub-heading; the hierarchy feature will space headings from a real
+   signal instead).
 
 ## Not yet tested
 

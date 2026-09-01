@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _rules import (
     apply_always_translate, match_case, enforce_kept_terms,
-    enforce_cat3_footnotes, pull_footnotes,
+    enforce_cat3_footnotes, pull_footnotes, fix_subheading_spacing,
     repair_mangled_terms, contains_too_much_non_english,
     match_boundary_punctuation, deshout, _phrase_repairs,
     parse_figures_block, reconcile_page_numbers, _fold_caption_only_body,
@@ -121,6 +121,17 @@ def test_extract_source_footnotes_ignores_numbered_drill():
     txt = ("1. Advance the front foot.\n\n2. Lunge to the target.\n\n"
            "3. Recover to guard.")
     assert "___FOOTNOTES___" not in extract_source_footnotes(txt, state)
+
+
+def test_fix_subheading_spacing():
+    # gap after the subheading, none before -> move it before
+    src = "End of the previous paragraph.\nLES GRANDS ESCRIMEURS\n\nThe great fencers of the era."
+    out = fix_subheading_spacing(src)
+    assert out == ("End of the previous paragraph.\n\nLES GRANDS ESCRIMEURS\n"
+                   "The great fencers of the era.")
+    # a normal sentence is never touched
+    keep = "He advanced.\nThe attack was parried.\n\nThen the riposte landed."
+    assert fix_subheading_spacing(keep) == keep
 
 
 def test_extract_source_footnotes_continuation_before_own_notes():

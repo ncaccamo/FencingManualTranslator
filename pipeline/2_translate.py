@@ -506,6 +506,44 @@ def label_margin_notes(text: str, has_fig: bool = False) -> str:
     return f"{rest}\n\n{FN_HEADER}\n{block}"
 
 
+def _looks_like_subheading(s: str) -> bool:
+    s = s.strip()
+    if re.search(r"[.!?:;,]$", s):
+        return False
+    words = s.split()
+    letters = [c for c in s if c.isalpha()]
+    return (1 <= len(words) <= 8 and len(s) <= 55 and len(letters) >= 3
+            and sum(c.isupper() for c in letters) >= 0.85 * len(letters))
+
+
+def fix_subheading_spacing(text: str) -> str:
+    """A run-in sub-heading ("LES GRANDS ESCRIMEURS") often comes back
+    jammed against the paragraph above it with a blank line *below* — the
+    reverse of how it should read. Move the blank: gap before the
+    sub-heading, tight to the paragraph it introduces.
+
+    NOTE: a stop-gap. Superseded once the heading-hierarchy feature lands
+    (docs/STATUS.md open item 9) -- that will space headings from a real
+    signal instead of this all-caps heuristic. Guarded tight (line above
+    ends a sentence, line below opens one) so a mis-fire can't glue two
+    real paragraphs together."""
+    lines = text.split("\n")
+    out, i, n = [], 0, len(lines)
+    while i < n:
+        cur = lines[i]
+        if (out and out[-1].strip()
+                and re.search(r"[.!?»”\"')\]]\s*$", out[-1])
+                and _looks_like_subheading(cur)
+                and i + 2 < n and not lines[i + 1].strip()
+                and lines[i + 2].strip() and lines[i + 2].lstrip()[:1].isupper()):
+            out += ["", cur]        # blank before; skip the blank after
+            i += 2
+            continue
+        out.append(cur)
+        i += 1
+    return "\n".join(out)
+
+
 _CAPTION_JUNK = re.compile(
     r"biblioth[eè]que\s+nationale|british\s+museum|library\s+of\s+congress"
     r"|\b\d{5,}\b|high\s+holborn|\blondres\b|\bimp\.\b|\blith\.\b|\bdel\.\b"
@@ -1198,6 +1236,7 @@ try:
                 candidate = enforce_kept_terms(candidate, clean_text)
                 candidate = enforce_cat3_footnotes(candidate, cat3_seen)
                 candidate = retranslate_stray_french_headings(candidate)
+                candidate = fix_subheading_spacing(candidate)
 
                 # "This isn't fencing text" / "Please provide the text..." --
                 # the model had nothing real to translate. Not a fallback
