@@ -63,15 +63,19 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    a coding model, one resident, Open WebUI dropdown drives the swap).
    This item predates the project split; BookTranslator serves only its
    two pipeline models (olmOCR-2, Qwen2.5-14B), sequentially, by design.
-2. **Footnotes** — DONE. Bare `†Fr. <term>` source refs on Category-3 terms (16
-   curated terms) → `2_translate.py::pull_footnotes` appends a
-   `___FOOTNOTES___` block, keyed off the SOURCE text (the 7B model won't
-   keep terms in French to anchor an inline marker), each term glossed
-   ONCE per book on first occurrence. `_render.py` splits the block off;
-   `3_` renders it end-of-section (small grey type + rule), `4_` reserves
-   a bottom strip in the right column. Model `<fn>` path also supported
-   but rarely used. TODO: expand the glossary as more books surface terms;
-   the notes have no inline reference mark (glossary path).
+2. **Footnotes** — DONE. `† French: <term>` source refs on Category-3
+   terms (16 curated) with a `†N` inline mark → `2_translate.py`
+   (`enforce_cat3_footnotes` backstop + `pull_footnotes`) appends a
+   `___FOOTNOTES___` block, each term once per book. The book's **own**
+   `(1)`/`1.` footnotes are pulled into the same block by
+   `extract_source_footnotes()`; margin notes by `label_margin_notes()`.
+   `_render.py` splits the block off (no label — each line
+   self-identifies); `3_` renders it end-of-section (small grey type +
+   rule), `4_` reserves a bottom strip in the right column. A footnote
+   that spans two source pages renders as two halves, one per spread
+   (tail prefixed `…`) — **kept split by design** (2026-09-01), fidelity
+   to the original's pagination over readability. TODO: expand the
+   curated term set as more books surface terms.
 3. ~~More full books.~~ DONE — five now (see Current state). Each surfaced
    something: Spinnewyn → `\n---\n` separator collision + VLM server-death
    detection gap; Gomard 1845 → Google Books scan / printed marginalia
@@ -105,6 +109,23 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    child servers (correct); the `:11500` setup probe is `local`-mode
    guarded. LocalAIChat's own STATUS "Verified" table also covers
    local/vulkan, local/rocm7, and remote against a real LAN stand-in.
+
+9. **Heading tier / per-book header scheme** — FUTURE WORK, own effort.
+   The renderer has two buckets: `HEADER:` → small italic running-head
+   line, and `BODY_TEXT` → flowed prose, one size. There is no third
+   rendering for a part / section / chapter title, so a title olmOCR-2
+   files in the body just reads as one more prose line, and which bucket
+   a given title lands in varies page to page. `reconcile_headers()`
+   (batch 2, 2026-09-01) makes the *placement* consistent by repetition —
+   a one-off title always goes to the body, a repeated one always to the
+   bar — but everything in the body still renders flat. The real fix is a
+   heading hierarchy: a pre-pass that samples the book, infers its
+   heading scheme (what's a part title vs a section title vs a running
+   head — feasibility unclear, olmOCR-2 sees one page at a time), a
+   `level` field in `_render.py`, size/weight/spacing per level, and
+   likely a VLM-prompt change + full re-OCR + an eval loop. Scoped and
+   rejected as too large for batch 2. Related: title-page special layout,
+   and the deferred "section/part-title display size".
 
 ## Not yet tested
 

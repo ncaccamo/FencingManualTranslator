@@ -123,6 +123,24 @@ def test_extract_source_footnotes_ignores_numbered_drill():
     assert "___FOOTNOTES___" not in extract_source_footnotes(txt, state)
 
 
+def test_extract_source_footnotes_continuation_before_own_notes():
+    # page N: a note runs off the bottom (no terminal punctuation)
+    state = {}
+    extract_source_footnotes(
+        "Body (1).\n\n(1) The origin of this expression is not easy to", state)
+    assert state["open"] is True
+    # page N+1: continuation, then N+1's own (1) and (2)
+    out = extract_source_footnotes(
+        "explain, since the early masters disagree.\n\n"
+        "More body referring to (1) and (2).\n\n"
+        "(1) A first footnote of page N+1.\n\n"
+        "(2) A second footnote of page N+1.", state)
+    block = [l for l in out.split("___FOOTNOTES___")[1].strip().splitlines() if l]
+    assert block[0].startswith("… explain, since")     # continuation first
+    assert block[1].startswith("(1)") and block[2].startswith("(2)")
+    assert state["open"] is False
+
+
 def test_clean_caption_drops_stamps_and_markdown():
     assert _clean_caption("BRITISH MUSEUM JUN 27 1947") == ""
     assert _clean_caption("ALPH. ROQUES, — 51, High Holborn, — LONDRES.") == ""
