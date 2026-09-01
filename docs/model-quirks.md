@@ -159,6 +159,14 @@ a body non-sequitur.
 footnote / list item is moved to the note strip as `[margin note] …`, so
 it's clearly not body. Non-destructive (never deleted).
 
+*2026-09-01:* tightened after three false positives on Prévost (a plate's
+second caption title tagged `[margin note]`). It now bails when the page
+carries a figure (`has_fig`), when the trailing line matches a figure
+caption shape (`_FIG_TITLE_RE` — "Parry of …", "Position", "Fig."), or
+when the page isn't prose-dominant (< 3 real paragraphs). Cost: a genuine
+shoulder-note on a 2-paragraph page now stays in the body — judged the
+lesser evil.
+
 ### 1.6b Cross-page word hyphenation
 
 **Seen:** Gomard 1845 — a word split by end-of-page hyphenation in the
@@ -174,16 +182,46 @@ real hyphenated name and is left alone.
 ### 1.6c Glossary / "termes techniques" sections
 
 **Seen:** Kirchhoffer — a multi-page *TERMES TECHNIQUES* section, plus
-shorter *Particularités* runs (`Headword. — definition`). The model
-translates the headwords inconsistently — some kept French, some
-anglicised, and two distinct French terms (`échappement`, `esquive`) both
-collapse to "evasion".
+shorter *Particularités* runs (`Headword. — definition`).
 
-**Mitigation:** `apply_glossary_mode()` — when the source page is a run of
-`Headword. — def` lines (or carries a section marker) and isn't a table
-of contents, each entry's headword is put back in the **original
-language, italic**; only the definition keeps the model's translation.
-Aligns dst lines to src lines by position; bails if the counts diverge.
+**History:** `apply_glossary_mode()` (2026-08-31) kept every headword in
+the source language, italic, and translated only the definition.
+**Removed 2026-09-01** — leaving the term untranslated left the reader
+without the English word the body text uses for it. A glossary section
+now goes through the normal term policy like body text; the facing scan
+still carries the original headword.
+
+### 1.2c Running header vs. one-off title — `reconcile_headers()`
+
+**Seen:** all three review books — a part title (`QUATRIÈME PARTIE`), a
+section opener (`DES CONTRES`), a title-page title, a plate caption: any
+of these lands in the VLM's `HEADER:` field on the page where it sits at
+the top, and in `BODY_TEXT` elsewhere, so the same kind of line renders
+as a small italic running head on one page and body text on the next.
+
+**Mitigation:** `reconcile_headers()` resolves it by the one reliable
+signal — repetition. A `HEADER:` string seen on **< 2 pages** is not a
+running head: it is prepended to the body as its own line and the field
+cleared. A `HEADER:` that *is* repeated stays in the bar on every page of
+that section. The inverse also fires: an empty `HEADER:` whose body opens
+with a line that is *exactly* a confirmed running head lifts that line
+back up. No heading tier, no size/weight/centring — a title in the body
+just renders as a plain line where it falls (deliberate scope limit; a
+real heading hierarchy needs a VLM-prompt change + re-OCR).
+
+### 1.2d Plate caption in `HEADER:`; scanner apparatus in `HEADER:`
+
+* `fold_caption_header_into_figure()` — on a page that carries a figure
+  and little/no body, a `HEADER:` matching a caption shape
+  (`_CAPTION_SHAPE_RE` — `Parade de …`, `Planche N`, `Nᵉ position`,
+  `Salut`, …) is folded into the figure caption and the field cleared, so
+  a plate page never carries a running head and the caption renders as
+  one unit. Runs before `reconcile_headers()`.
+* `drop_scan_apparatus()` — a scanner target card ("Contraste
+  insuffisant"), a library plate ("Bibliothèque Larousse 15720"), a bare
+  shelfmark ("NF Z 43-120-14"), a BnF catalogue line ("… / par …",
+  "Auteur du texte") in `HEADER:` or a near-empty body is blanked.
+  `drop_google_boilerplate()` also covers the Gallica terms-of-use page.
 
 ### 1.7 Figure detection — VLM flag + density-profiler geometry
 
@@ -347,7 +385,7 @@ side-by-side PDF.
 | Where | What |
 |---|---|
 | `pipeline/_pageio.py` | the separator is now `PAGE_SEP = "\n\x1e\n"` — U+001E, a non-printing control char that **cannot** occur in OCR text or model output. `split_pages()` still reads legacy `\n---\n` files so old `processed/` folders don't need a re-run. This is the real fix. |
-| `2_translate.py` (after each candidate) | still rewrites `^-{3,}$` → `* * *` and strips `![alt](url)`, `**bold**`, `^#{1,6} ` — defence-in-depth, and keeps the reading clean regardless |
+| `2_translate.py` (after each candidate) | strips `![alt](url)`, `**bold**`, `^#{1,6} `, a hallucinated `Image of a hand …` body line, and a decorative-ornament line (`---`, `* * *`, `• • •`) — the ornament is dropped to a blank line, not rendered as `* * *` (that was hit-or-miss and looked wrong on Gomard p255) |
 | `translation_prompt.txt` rule 6 | "Output plain text, NOT Markdown: no `#` headings, no `---` rules, no `![image](...)`, no `**bold**`. The single exception is `<i>...</i>`." |
 
 ### 2.2 Model meta-responses leak in as page content
@@ -394,9 +432,14 @@ tells the model to write `English<fn>Fr. term</fn>` on first use;
 `enforce_cat3_footnotes()` is the backstop (translates every stray French
 Cat-3 occurrence, footnotes the first). `pull_footnotes()` turns `<fn>`
 tags into `†N` + a `___FOOTNOTES___` block, deduped once per book, max 4
-per page. `_render.py` splits that block off; `3_` renders it in small
-grey type, `4_` reserves a strip at the foot of the right column. PDF
-label: "Original terms:".
+per page, and normalises the note text to **`French: <term>`** (accepts
+either `Fr.` or `French:` from the model). `_render.py` splits that block
+off; `3_` renders it in small grey type, `4_` reserves a strip at the
+foot of the right column.
+
+*2026-09-01:* the block's `"Notes:"` label was removed — each line now
+self-identifies (`(1)` from the book, `[margin note] …`, `French: …`), so
+the label just cost a line.
 
 ### 2.4 Braced command groups still flatten ~half the time
 
@@ -514,8 +557,14 @@ writes `headers.json` (`{ raw → english }`). The PDF steps look it up for
 the section label / right-column header — `FLEURET` → `FOIL`,
 `LES PARADES` → `THE PARRIES`, `LA GARDE` → `THE GUARD`. A book-title
 running head gets translated too (no per-book "keep in French" exception
-yet). Library-catalogue lines that leak into `HEADER` (`Bibliothèque
-Larousse 15720`, an author-credit line) pass through mangled — cosmetic.
+yet). A trailing lone `:` is stripped (`DES CONTRES:` → `DES CONTRES`).
+Only genuine repeated running heads reach here now — one-off titles and
+scanner apparatus are filtered upstream (1.2c / 1.2d).
+
+**Two-part running heads** (`SABRE` left, `ATTAQUE ET PARADE` right —
+Kirchhoffer): `parse_vlm_response()` keeps them as `left\tright`;
+`translate_headers()` translates each half separately; steps 3/4 draw the
+halves left- and right-aligned on the header line.
 
 **Case is not preserved by the model** — `ÉPÉE` came back `épée`,
 `LA GARDE` as `The Guard`, `SOCIÉTÉS` as `Societies`, inconsistently
@@ -532,16 +581,20 @@ Regenerating needs `2_translate.py --captions` (forces both) or deleting
 ### 2.11 Author's footnotes vs. ours
 
 A page can carry the **author's** own `(1) (2) (3)` footnotes *and*
-**our** Category-3 `<fn>` source references. Both now land in the same
-grey ruled block (`_render.footnote_lines`, label **"Notes:"**), so a
+**our** Category-3 `<fn>` source references. Both land in the same grey
+ruled block (`_render.footnote_lines`, no label since 2026-09-01), so a
 reader can always tell body from note:
 
 - `extract_source_footnotes()` ([`2_…py`](../pipeline/2_translate.py)) —
-  a body paragraph starting `(N) …` is moved to the note block. A
-  footnote that runs off the bottom of a page (no terminal punctuation)
-  sets a cross-page flag; the next page's leading lower-case paragraph is
-  then taken as its continuation and rendered `… <tail>` in *that* page's
-  block (the two halves aren't stitched into one, but each renders as a
+  a body paragraph starting `(N) …` is moved to the note block. Prévost
+  sets its notes as a bare `1. … 2. …` run at the page foot instead: a
+  **trailing** run of paragraphs numbered sequentially from 1 is treated
+  as notes too, guarded against a numbered drill (first body paragraph
+  also numbered → no; line above the run ends `:` → no; single short
+  note → no). A footnote that runs off the bottom of a page (no terminal
+  punctuation) sets a cross-page flag; the next page's leading lower-case
+  paragraph is taken as its continuation and rendered `… <tail>` in
+  *that* page's block (halves aren't stitched, but each renders as a
   note, not as body).
 - `pull_footnotes()` — our `†N` Category-3 markers, deduped once per book.
 

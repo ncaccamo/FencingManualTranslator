@@ -143,7 +143,7 @@ def enforce_cat3_footnotes(text: str, seen: set, footnote: bool = True) -> str:
             if footnote and first[0] and note_fr not in seen:
                 # mask the tag we add too, so a later _CAT3 pass can't
                 # match the French term sitting inside it
-                masked.append(f"<fn>Fr. {note_fr}</fn>")
+                masked.append(f"<fn>French: {note_fr}</fn>")
                 r += f"\x00{len(masked) - 1}\x00"
                 seen.add(note_fr)
             first[0] = False
@@ -171,12 +171,14 @@ def pull_footnotes(text: str, source_text: str = "", seen: set = None):
 
     def take(m):
         note = re.sub(r"</?fn>", "", re.sub(r"\s+", " ", m.group(1))).strip()
-        # accept only a bare "Fr. <cat-3 French term>" -- the 14B sometimes
-        # footnotes a Cat-2 term or puts the English rendering in the note.
-        ref = re.sub(r"^Fr\.\s*", "", note, flags=re.I).lower().rstrip(".")
+        # accept only a bare source reference ("Fr. liement" / "French:
+        # liement") for a cat-3 term -- the 14B sometimes footnotes a
+        # Cat-2 term or puts the English rendering in the note.
+        ref = re.sub(r"^(?:fr\.|french:)\s*", "", note, flags=re.I).lower().rstrip(".")
         if not note or ref not in _cat3_fr:
             return ""                       # drop the tag, keep the phrase
-        key = _strip_accents(note.lower())
+        note = f"French: {ref}"             # canonical rendered form
+        key = _strip_accents(ref)
         if key in seen or len(numbered) >= FN_MAX_PER_PAGE:
             return ""
         seen.add(key)
@@ -268,6 +270,11 @@ def _phrase_repairs(text: str) -> str:
     # "glacé fabric" / "neither varnished nor glacé" -> glazed
     text = re.sub(r"\bglac[ée]s?\b",
                   lambda m: "Glazed" if m.group(0)[:1].isupper() else "glazed", text)
+    # a title-page byline: French "PAR X ET Y" -> "By X and Y", not
+    # "Translated by ..." (the model reads "par" as the translation credit).
+    text = re.sub(
+        r"(?m)^([ \t]*)Translated by(?=[ \t]+[\"“'’A-ZÀ-Þ][^\n]{0,60}$)",
+        r"\1By", text)
     return text
 
 
@@ -403,51 +410,12 @@ def _recase(text: str, fn) -> str:
     return "".join(out)
 
 
-# ---------------------------------------------------------------------------
-# Glossary-mode (Rule: a "termes techniques" / definitions section is a
-# lexicon of the SOURCE language -- keep every headword in the original,
-# italic; translate only the definition. See docs/model-quirks.md.
-# ---------------------------------------------------------------------------
-_GLOSS_MARKERS = re.compile(
-    r"TERMES\s+TECHNIQUES|PARTICULARIT[ÉE]S|EXPRESSIONS?\s+ET\s+TERMES"
-    r"|TERMES\s+ET\s+EXPRESSIONS", re.I)
-_GLOSS_SRC_LINE = re.compile(
-    r"(?m)^[ \t]*([A-ZÀ-Þ][^\n—–]{1,45}?)[ \t]*\.?[ \t]*[—–][ \t]+\S")
-_TOC_LINE = re.compile(r"(?m)(?:\.{3,}|…)\s*\d+\s*$")
-_GLOSS_DST_LINE = re.compile(
-    r"^([ \t]*)([A-ZÀ-Þ][^\n—–]{0,60}?)[ \t]*\.?[ \t]*([—–])[ \t]+(.*)$")
-
-
-def apply_glossary_mode(dst: str, src: str) -> str:
-    """In a detected glossary section, put each entry's headword back in the
-    original language, italicised; keep the model's translated definition.
-    Aligns dst dash-lines to src dash-lines by position; bails if the
-    counts diverge (the model merged/split entries)."""
-    if not dst or not src:
-        return dst
-    src_lines = _GLOSS_SRC_LINE.findall(src)
-    if len(_TOC_LINE.findall(src)) >= 3:
-        return dst                                    # table of contents
-    if len(src_lines) < 3 and not (_GLOSS_MARKERS.search(src) and src_lines):
-        return dst
-    heads = [re.sub(r"\s+", " ", h).strip().strip(".").strip() for h in src_lines]
-    dst_lines = dst.split("\n")
-    n_dash = sum(1 for ln in dst_lines if _GLOSS_DST_LINE.match(ln))
-    if abs(n_dash - len(heads)) > 1 or n_dash < 3:
-        return dst
-    it = iter(heads)
-    out = []
-    for ln in dst_lines:
-        m = _GLOSS_DST_LINE.match(ln)
-        if not m:
-            out.append(ln)
-            continue
-        h = next(it, None)
-        if h is None:
-            out.append(ln)
-            continue
-        out.append(f"{m.group(1)}<i>{h}</i> {m.group(3)} {m.group(4)}".rstrip())
-    return "\n".join(out)
+# NOTE: an earlier "glossary mode" kept every headword of a "termes
+# techniques" section in the source language (italic) and translated only
+# the definition. Dropped 2026-09-01: leaving the term untranslated left
+# the reader without the English word the body text uses for it. A
+# glossary section now goes through the normal term policy like body text
+# (the facing page still carries the original). See docs/model-quirks.md.
 
 
 def extract_source_footnotes(text: str, state: dict) -> str:
@@ -463,14 +431,35 @@ def extract_source_footnotes(text: str, state: dict) -> str:
     paras = re.split(r"\n\s*\n", body.strip())
     keep, notes = [], []
 
+    _NOTE_START = re.compile(r"^\(?(\d{1,2})[.)]\s+\S")
+
     if (state.get("open") and paras and paras[0][:1].islower()
-            and not re.match(r"\(?\d{1,2}\)?[ .]", paras[0].strip())):
+            and not _NOTE_START.match(paras[0].strip())):
         notes.append("… " + re.sub(r"\s+", " ", paras.pop(0)).strip())
         state["open"] = False
 
-    for p in paras:
+    # A bare "1. .. 2. .." run at the FOOT of the page is the book's own
+    # footnote block (Prévost sets notes this way, not "(1)"). Guard
+    # against a numbered drill/procedure: not when the first body
+    # paragraph is itself numbered, not when the line above the run ends
+    # with ':', require the run sequential from 1, and either >=2 notes or
+    # a single substantial (>=12-word) one.
+    _tail = len(paras)
+    while _tail > 0 and _NOTE_START.match(paras[_tail - 1].strip()):
+        _tail -= 1
+    _tnums = [int(_NOTE_START.match(paras[k].strip()).group(1))
+              for k in range(_tail, len(paras))]
+    _treat_tail = (
+        0 < _tail < len(paras)
+        and not _NOTE_START.match(paras[0].strip())
+        and not paras[_tail - 1].rstrip().endswith(":")
+        and _tnums == list(range(1, len(_tnums) + 1))
+        and (len(_tnums) >= 2 or len(paras[-1].split()) >= 12))
+
+    for _idx, p in enumerate(paras):
         s = re.sub(r"\s+", " ", p).strip()
-        if re.match(r"\(\d{1,2}\)[ . ]", s):
+        _is_tail_note = _treat_tail and _idx >= _tail
+        if _is_tail_note or re.match(r"\(\d{1,2}\)[ . ]", s):
             notes.append(s)
             state["open"] = not re.search(r"[.!?»”\"')\]]\s*$", s)
         else:
@@ -485,20 +474,30 @@ def extract_source_footnotes(text: str, state: dict) -> str:
     return f"{new_body}\n\n{FN_HEADER}\n{block}".strip()
 
 
-def label_margin_notes(text: str) -> str:
+_FIG_TITLE_RE = re.compile(
+    r"(?i)^\s*(?:parry|parade|thrust|coup|lunge|figure|fig\.|plate|pl\.|planche"
+    r"|salut|guard|on guard|en garde|développement|\w+\s+(?:position|movement))\b")
+
+
+def label_margin_notes(text: str, has_fig: bool = False) -> str:
     """A printed shoulder-note captured by the VLM as a trailing standalone
     short paragraph -> move it to the note strip labelled '[margin note]'
-    so it is clearly not body text."""
+    so it is clearly not body text. Skipped on a figure page (the trailing
+    short line there is a caption title, not a shoulder note) and on a page
+    that isn't prose-dominant."""
+    if has_fig:
+        return text
     parts = text.split("\n" + FN_HEADER + "\n", 1)
     body = parts[0]
     existing = parts[1] if len(parts) > 1 else ""
     paras = [p for p in re.split(r"\n\s*\n", body.strip()) if p.strip()]
-    if len(paras) < 2:
+    if len(paras) < 3:                       # need a prose-dominant page
         return text
     last = paras[-1].strip()
     letters = [c for c in last if c.isalpha()]
     if ("\n" in last or len(last.split()) > 20 or last[:1] in "([{«"
             or re.match(r"\d", last) or re.match(r"[A-Za-zÀ-ÿ]?\d+[°ºo]", last)
+            or _FIG_TITLE_RE.match(last)     # a figure caption title, not a note
             or (letters and sum(c.isupper() for c in letters) > 0.7 * len(letters))):
         return text
     note = "[margin note] " + re.sub(r"\s+", " ", last)
@@ -521,9 +520,21 @@ def _clean_caption(cap: str) -> str:
         return cap
     cap = re.sub(r"!?\[[^\]]*\]\([^)]*\)", "", cap)          # ![alt](url)
     cap = re.sub(r"\((?:two|a|an|the)\s+fencers?\b[^)]*\)", "", cap, flags=re.I)
+    # hallucinated scene description ("Image of a hand holding a sword in
+    # the sixth position", "Photograph of a man in fencing attire ...") --
+    # drop any such segment, keep a real caption line that follows it.
+    _SCENE = (r"(?:an?\s+)?(?:image|photo(?:graph)?|drawing|illustration|picture"
+              r"|sketch|depiction|engraving|figure)\s+(?:of|showing|depicting)\b")
+    cap = " ".join(
+        s for s in re.split(r"(?<=[.!?])\s+|\n+", cap)
+        if not re.match(r"(?i)\s*" + _SCENE, s)).strip()
+    cap = re.sub(r"(?i)^\s*" + _SCENE + r"[^.\n]*", "", cap).strip()
     cap = re.sub(r"(?i)\bcorrect(?:ing|ed)?\b[^.:]*\btranslation\b[^.:]*[.:]", "", cap)
     cap = re.sub(r"(?i)\bbased on the (?:given|critical) rules?\b[^.]*\.?", "", cap)
     cap = re.sub(r"^\s*[—–\-]\s*", "", cap.strip())
+    # a trailing empty-caption placeholder the VLM tacked on ("... (La
+    # Garde) none", "... au tac none")
+    cap = re.sub(r"(?i)[\s—–-]*\b(?:none|no\s+caption|n/?a)\s*\.?\s*$", "", cap).strip()
     cap = re.sub(r"\s{2,}", " ", cap).strip(" —–-")
     if _CAPTION_JUNK.search(cap):
         return ""
@@ -604,7 +615,12 @@ def match_boundary_punctuation(dst: str, src: str) -> str:
     s = src.rstrip()
     d = dst.rstrip()
     tail = dst[len(d):]
-    if s and s[-1] not in _SENT_END and not re.search(r'\b(?:etc|cf|ibid|op)\.$', s):
+    # a trailing hyphen / en-dash at a page foot is hyphenation the
+    # cross-page de-hyphenation couldn't join (next page starts with a
+    # capital) -- never terminal punctuation, so strip it too.
+    if s and (s[-1] in "-–"
+              or (s[-1] not in _SENT_END
+                  and not re.search(r'\b(?:etc|cf|ibid|op)\.$', s))):
         d2 = re.sub(r'[\s.…—–-]+$', '', d)
         if d2:
             d = d2
@@ -964,10 +980,7 @@ def translate_headers(folder: str, force: bool = False) -> int:
             h = m.group(1).strip()
             if h and h.lower() not in ("none", "n/a", "-"):
                 raw.add(h)
-    n = 0
-    for h in sorted(raw):
-        if h in hmap and not force:
-            continue
+    def _one(h):
         en = translate_with_llama(f"{PROMPT_TEMPLATE}\n\nText to translate:\n{h}")
         en = strip_model_preamble((en or "").strip()).strip()
         en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
@@ -975,7 +988,21 @@ def translate_headers(folder: str, force: bool = False) -> int:
         en = enforce_kept_terms(apply_always_translate(en), h)   # snap "RAPIER RAPIER" -> riposte
         en = enforce_cat3_footnotes(en, set(), footnote=False)
         en = re.sub(r'</?i>', '', en)          # drop the <i> enforce_kept_terms added
-        hmap[h] = match_case(h, en.splitlines()[0].strip()) if en else h
+        en = en.splitlines()[0].strip() if en else ""
+        en = re.sub(r'\s*:\s*$', '', en)       # "CONTRES:" -> "CONTRES" (P8)
+        return match_case(h, en) if en else h
+
+    n = 0
+    for h in sorted(raw):
+        if h in hmap and not force:
+            continue
+        # "left\tright" == a two-part running head (F13); translate the
+        # halves separately so the model doesn't collapse the gap.
+        if "\t" in h:
+            l, r = h.split("\t", 1)
+            hmap[h] = _one(l) + "\t" + _one(r)
+        else:
+            hmap[h] = _one(h)
         n += 1
     with open(hp, "w", encoding="utf-8") as fh:
         _json.dump(hmap, fh, ensure_ascii=False, indent=1)
@@ -1039,6 +1066,9 @@ try:
 
             # Clean VLM structured output before translation
             clean_text = clean_vlm_extraction(page_text)
+            page_has_fig = (bool(re.search(r"(?im)^\s*FIGURES\s*:", page_text))
+                            and not re.search(r"(?im)^\s*FIGURES\s*:\s*none\s*$",
+                                              page_text))
 
             if not clean_text.strip():
                 print(f"  Page {i}/{len(pages)} — no body text, skipped")
@@ -1054,14 +1084,34 @@ try:
 
             # A scoring / poule table: replace each <table>..</table> with a
             # [[TABLE]] sentinel; steps 3 & 4 embed the scan for it. A page
-            # that is nothing but table(s) skips the model entirely.
-            if re.search(r"<table\b", clean_text, re.I):
+            # that is nothing but table(s) (+ maybe a heading) skips the
+            # model's attempt to linearise the grid.
+            page_had_table = bool(re.search(r"<table\b", clean_text, re.I))
+            if page_had_table:
                 clean_text = re.sub(r"<table\b.*?</table\s*>", "\n[[TABLE]]\n",
                                     clean_text, flags=re.I | re.S)
+                # a table the OCR truncated (page cut off mid-grid) has no
+                # closing tag -- collapse the dangling <table ...> to end.
+                clean_text = re.sub(r"<table\b.*\Z", "\n[[TABLE]]\n",
+                                    clean_text, flags=re.I | re.S)
+                clean_text = re.sub(r"(?:\[\[TABLE\]\]\s*){2,}", "[[TABLE]]\n",
+                                    clean_text)
                 clean_text = re.sub(r"\n{3,}", "\n\n", clean_text).strip()
-                if re.fullmatch(r"(?:\s*\[\[TABLE\]\]\s*)+", clean_text):
-                    translated_pages.append("[[TABLE]]")
-                    print(f"  Page {i}/{len(pages)} — table-only page, passthrough")
+                residue = re.sub(r"\[\[TABLE\]\]", "", clean_text).strip()
+                res_paras = [p for p in re.split(r"\n\s*\n", residue) if p.strip()]
+                if not any(len(p.split()) > 12 for p in res_paras):
+                    # table(s) + at most a short heading/caption: translate
+                    # just the heading text, keep one sentinel, drop the grid.
+                    cap = ""
+                    if residue:
+                        raw = translate_with_llama(
+                            f"{PROMPT_TEMPLATE}\n\nText to translate:\n{residue}")
+                        cap = re.sub(r'(?m)^\s*#{1,6}\s+', '',
+                                     strip_model_preamble((raw or residue).strip())).strip()
+                        cap = apply_always_translate(cap)
+                    out = f"{cap}\n\n[[TABLE]]" if cap else "[[TABLE]]"
+                    translated_pages.append(out)
+                    print(f"  Page {i}/{len(pages)} — table page, grid skipped")
                     continue
 
             # A near-blank page (stray mark, bare page number, single word)
@@ -1119,17 +1169,34 @@ try:
                 # lone "---" thematic break used to collide with the page
                 # separator used everywhere downstream (178 pages -> 179,
                 # every later page misaligned). Strip all of it; <i>...</i>
-                # is the only markup the pipeline expects.
-                candidate = re.sub(r'(?m)^\s*-{3,}\s*$', '* * *', candidate)
+                # is the only markup the pipeline expects. A decorative
+                # section-break ornament (dinkus / row of asterisks) is
+                # dropped to a blank line -- rendering it as "* * *" was
+                # hit-or-miss and looked wrong (Gomard p255).
+                candidate = re.sub(r'(?m)^[ \t]*(?:-{3,}|\*(?:[ \t]*\*)+|•(?:[ \t]*•)+)[ \t]*$',
+                                   '', candidate)
                 candidate = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', candidate)
                 candidate = re.sub(r'\*\*([^*\n]+)\*\*', r'\1', candidate)   # **bold**
                 candidate = re.sub(r'(?m)^\s{0,3}#{1,6}\s+', '', candidate)  # # heading
-                candidate = re.sub(r"(?im)^\s*\[+\s*TABLE[^\]\n]*\]+\s*$",
-                                   "[[TABLE]]", candidate)      # normalise the sentinel
+                # a whole body line that is a hallucinated figure
+                # description ("Image of a hand holding a sword ...")
+                candidate = re.sub(
+                    r"(?im)^[ \t]*(?:an?\s+)?(?:image|photo(?:graph)?|drawing|"
+                    r"illustration|picture|sketch|depiction)\s+(?:of|showing|"
+                    r"depicting)\b[^\n]*$", "", candidate)
+                # normalise the table sentinel: the model turns "[[TABLE]]"
+                # into "[ TABLE ]", "[TABLE]" or a bare "TABLE" line.
+                if page_had_table:
+                    candidate = re.sub(r"(?im)^[ \t]*\[*[ \t]*TABLE[ \t]*\]*[ \t]*$",
+                                       "[[TABLE]]", candidate)
+                    candidate = re.sub(r"(?:\[\[TABLE\]\][ \t]*\n?){2,}",
+                                       "[[TABLE]]\n", candidate)
+                else:
+                    candidate = re.sub(r"(?im)^\s*\[+\s*TABLE[^\]\n]*\]+\s*$",
+                                       "[[TABLE]]", candidate)
                 candidate = apply_always_translate(candidate)
                 candidate = enforce_kept_terms(candidate, clean_text)
                 candidate = enforce_cat3_footnotes(candidate, cat3_seen)
-                candidate = apply_glossary_mode(candidate, clean_text)
                 candidate = retranslate_stray_french_headings(candidate)
 
                 # "This isn't fencing text" / "Please provide the text..." --
@@ -1180,7 +1247,7 @@ try:
                 candidate = match_boundary_punctuation(candidate, clean_text)
                 candidate, n_fn = pull_footnotes(candidate, clean_text, fn_seen)
                 candidate = extract_source_footnotes(candidate, fn_state)
-                candidate = label_margin_notes(candidate)
+                candidate = label_margin_notes(candidate, has_fig=page_has_fig)
                 translated_pages.append(candidate)
                 success = True
                 print(f" ✓{'  (%d fn)' % n_fn if n_fn else ''}")

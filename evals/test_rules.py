@@ -20,10 +20,12 @@ from _rules import (
     match_boundary_punctuation, deshout, _phrase_repairs,
     parse_figures_block, reconcile_page_numbers, _fold_caption_only_body,
     strip_leaked_headmatter,
-    apply_glossary_mode, extract_source_footnotes, label_margin_notes,
+    extract_source_footnotes, label_margin_notes,
     _clean_caption, fix_parry_names,
     salvage_leaked_folio_header, dehyphenate_across_pages,
     drop_google_boilerplate, mark_handwritten_inscriptions,
+    drop_scan_apparatus, fold_caption_header_into_figure, reconcile_headers,
+    parse_vlm_response,
 )
 
 
@@ -61,32 +63,17 @@ def test_reconcile_tight_gap_promotes():
 
 
 def test_reconcile_plate_run_stays_bracketed():
+    # 16 .. (3 unnumbered leaves) .. 17 : the two folio reads are a valid
+    # monotonic pair and now show; the unnumbered middle stays bracketed
+    # (suppressed by the PDF steps).
     out = reconcile_page_numbers(["16", "", "", "", "17"])
-    assert all(x.startswith("[") for x in out)
+    assert out[0] == "16" and out[-1] == "17"
+    assert all(x.startswith("[") for x in out[1:-1])
 
 
 def test_reconcile_single_plate_leaf_bracketed():
     out = reconcile_page_numbers(["16", "", "17"])
     assert out[1].startswith("[")
-
-
-def test_glossary_mode_keeps_headword_french():
-    src = ("TERMES TECHNIQUES\n\nÉchappement. — Glissade du pied gauche.\n"
-           "Esquive. — Mouvement du corps.\nCoup droit. — Attaque simple.")
-    dst = ("TECHNICAL TERMS\n\nEvasion. — Backward slide of the left foot.\n"
-           "Evasion. — Movement of the body.\nStraight thrust. — Simple attack.")
-    out = apply_glossary_mode(dst, src)
-    assert "<i>Échappement</i> —" in out
-    assert "<i>Esquive</i> —" in out
-    assert "Backward slide of the left foot" in out
-
-
-def test_glossary_mode_ignores_toc():
-    src = ("Nomenclature. — Parts of the blade......... 50\n"
-           "Notions of distance. — Attacks......... 53\n"
-           "Parries. — How to take them......... 56")
-    dst = src
-    assert apply_glossary_mode(dst, src) == dst
 
 
 def test_extract_source_footnotes():
@@ -102,10 +89,38 @@ def test_extract_source_footnotes():
 def test_label_margin_notes():
     txt = ("The main body paragraph goes on for a while about the left hand "
            "and its uses in a serious affair.\n\n"
+           "A second full paragraph of ordinary prose so the page reads as "
+           "prose-dominant and not just a caption with a stray line.\n\n"
            "The lesson must teach in what cases one can use the left hand.")
     out = label_margin_notes(txt)
     assert "[margin note] The lesson must teach" in out
     assert "___FOOTNOTES___" in out
+
+
+def test_label_margin_notes_skipped_on_figure_page():
+    txt = ("A first paragraph.\n\nA second paragraph.\n\nParry of septime.")
+    assert label_margin_notes(txt, has_fig=True) == txt
+    # even without has_fig, a caption-shaped trailing line is not a note
+    assert "[margin note]" not in label_margin_notes(txt)
+
+
+def test_extract_source_footnotes_bare_number_tail():
+    state = {}
+    txt = ("Body paragraph one about the guard position and how it is held.\n\n"
+           "Body paragraph two, continuing on for a good while longer here.\n\n"
+           "1. Redaction of the Academy of Arms of Paris.\n\n"
+           "2. The name of the wall was first given to a similar exercise.")
+    out = extract_source_footnotes(txt, state)
+    block = out.split("___FOOTNOTES___")[1]
+    assert "1. Redaction" in block and "2. The name" in block
+    assert "1. Redaction" not in out.split("___FOOTNOTES___")[0]
+
+
+def test_extract_source_footnotes_ignores_numbered_drill():
+    state = {}
+    txt = ("1. Advance the front foot.\n\n2. Lunge to the target.\n\n"
+           "3. Recover to guard.")
+    assert "___FOOTNOTES___" not in extract_source_footnotes(txt, state)
 
 
 def test_clean_caption_drops_stamps_and_markdown():
@@ -200,8 +215,8 @@ def test_enforce_cat3_translates_and_footnotes_once():
     seen = set()
     out = enforce_cat3_footnotes(
         "a prise de fer, then a <i>liement</i>, then another liement", seen)
-    assert out == ("a taking the blade<fn>Fr. prise de fer</fn>, then a "
-                   "bind<fn>Fr. liement</fn>, then another bind"), out
+    assert out == ("a taking the blade<fn>French: prise de fer</fn>, then a "
+                   "bind<fn>French: liement</fn>, then another bind"), out
     assert seen == {"prise de fer", "liement"}
 
 
@@ -217,10 +232,10 @@ def test_enforce_cat3_leaves_english_alone():
 
 def test_pull_footnotes_dedupes_across_book():
     seen = set()
-    body, n = pull_footnotes("a bind<fn>Fr. liement</fn> then a bind<fn>Fr. liement</fn>",
+    body, n = pull_footnotes("a bind<fn>Fr. liement</fn> then a bind<fn>French: liement</fn>",
                              "", seen)
     assert n == 1 and body.count("†") == 2  # one marker in text, one in block
-    assert body.endswith("†1 Fr. liement")
+    assert body.endswith("†1 French: liement")
 
 
 def test_repair_mangled_rassemblant_to_bare_french():
@@ -287,10 +302,30 @@ def test_reconcile_trusts_run():
 
 
 def test_reconcile_promotes_matching_read():
-    # 20-21-22 is a trusted run; 12 is a misread plate folio; 24 is read
-    # correctly and matches the run's projection -> promoted, not bracketed
+    # 24 matches the run's projection -> promoted. The misread "12" sits in
+    # a tight EXACT single-slot gap (22 .. 24) -> forced to the real folio.
     assert reconcile_page_numbers(["20", "21", "22", "12", "24"]) \
+        == ["20", "21", "22", "23", "24"]
+    # ...but if that slot is a PLATE leaf it carries no folio -> bracketed.
+    assert reconcile_page_numbers(["20", "21", "22", "12", "24"],
+                                  is_plate=[0, 0, 0, 1, 0]) \
         == ["20", "21", "22", "[23]", "24"]
+
+
+def test_reconcile_monotonic_chain_across_plates():
+    # text p.160, four unnumbered leaves, text p.161, then p.162 -- sheet !=
+    # folio so the strict check can't fire; the monotonic chain trusts them.
+    out = reconcile_page_numbers(
+        ["160", "", "", "", "", "161", "", "162"],
+        is_plate=[0, 1, 0, 0, 0, 0, 0, 0])
+    assert out[0] == "160" and out[5] == "161" and out[7] == "162"
+
+
+def test_reconcile_forces_single_slot_misread():
+    # Gomard: ...301, 302, [903 misread], 304, 305... -> 302 and 304 are
+    # trusted off their neighbours, so the exact single-slot gap forces 303.
+    assert reconcile_page_numbers(
+        ["301", "302", "903", "304", "305"]) == ["301", "302", "303", "304", "305"]
 
 
 def test_reconcile_brackets_uncorroborated():
@@ -338,6 +373,68 @@ def test_strip_leaked_folio_top():
 def test_strip_tail_capped_at_two():
     assert strip_leaked_headmatter("Body.\nESCRIME\nESCRIME\n5", {"escrime"}) \
         == "Body.\nESCRIME"
+
+
+def test_reconcile_headers_one_off_to_body():
+    parsed = [
+        {"header": "DES PARADES", "body": "a", "figures": []},
+        {"header": "DES PARADES", "body": "b", "figures": []},
+        {"header": "QUATRIÈME PARTIE", "body": "c", "figures": []},
+    ]
+    reconcile_headers(parsed)
+    assert parsed[2]["header"] == "" and parsed[2]["body"].startswith("QUATRIÈME PARTIE")
+    assert parsed[0]["header"] == "DES PARADES"      # repeated -> kept
+
+
+def test_reconcile_headers_lifts_confirmed_from_body():
+    parsed = [
+        {"header": "DES CONTRES", "body": "x", "figures": []},
+        {"header": "DES CONTRES", "body": "y", "figures": []},
+        {"header": "", "body": "DES CONTRES\n\nLe contre se fait ...", "figures": []},
+    ]
+    reconcile_headers(parsed)
+    assert parsed[2]["header"] == "DES CONTRES"
+    assert not parsed[2]["body"].startswith("DES CONTRES")
+
+
+def test_fold_caption_header_into_figure():
+    parsed = [{"header": "PARADE DE TIERCE.", "body": "",
+               "figures": [{"kind": "plate", "caption": ""}]}]
+    fold_caption_header_into_figure(parsed)
+    assert parsed[0]["header"] == ""
+    assert parsed[0]["figures"][0]["caption"] == "PARADE DE TIERCE"
+
+
+def test_fold_caption_header_keeps_real_running_head():
+    parsed = [{"header": "DES PARADES", "body": "long body " * 40,
+               "figures": [{"kind": "inset", "caption": "Fig. 3"}]}]
+    fold_caption_header_into_figure(parsed)
+    assert parsed[0]["header"] == "DES PARADES"
+
+
+def test_drop_scan_apparatus():
+    parsed = [{"header": "Insufficient contrast", "body": "", "figures": []},
+              {"header": "Bibliothèque Larousse 15720", "body": "", "figures": []}]
+    drop_scan_apparatus(parsed)
+    assert parsed[0]["header"] == "" and parsed[1]["header"] == ""
+
+
+def test_parse_two_part_header():
+    raw = "PAGE_NUMBER: 53\nHEADER: SABRE     ATTACK AND PARRY\nBODY_TEXT:\ntext"
+    assert parse_vlm_response(raw)["header"] == "SABRE\tATTACK AND PARRY"
+
+
+def test_phrase_repairs_translated_by():
+    assert _phrase_repairs("Translated by Prévost and Jollivet") \
+        == "By Prévost and Jollivet"
+    # a real sentence is untouched
+    assert _phrase_repairs("Translated by hand, the manuscript survives.") \
+        == "Translated by hand, the manuscript survives."
+
+
+def test_boundary_strips_trailing_hyphen():
+    assert match_boundary_punctuation("the move was per-", "le mouvement fut par-") \
+        == "the move was per"
 
 
 def _run_plain() -> int:

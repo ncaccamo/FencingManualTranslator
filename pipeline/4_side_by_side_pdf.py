@@ -182,7 +182,14 @@ def new_spread(doc, src, src_idx, struct, *, cont=False, rotate=0):
         p.insert_text((RIGHT.x0, y), tag, fontsize=9, fontname=_render.BOLD)
         y += 14
     hdr = (struct.get("header") or "").replace("\n", " ").strip()
-    if hdr and len(hdr.split()) > 12:
+    if "\t" in hdr:
+        # a two-part running head: topic left, sub-topic right (F13).
+        left, right = [s.strip() for s in hdr.split("\t", 1)]
+        p.insert_text((RIGHT.x0, y), left, fontsize=8, fontname=_render.ITALIC)
+        p.insert_text((RIGHT.x1 - _render._w(right, 1, 8), y), right,
+                      fontsize=8, fontname=_render.ITALIC)
+        y += 12
+    elif hdr and len(hdr.split()) > 12:
         # not a running head -- a title-page title etc. Wrap it as a block
         # instead of a single clipped line.
         _, y = _render.draw(p, (RIGHT.x0, y, RIGHT.x1, RIGHT.y1),

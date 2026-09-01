@@ -165,7 +165,9 @@ def parse_vlm_response(raw: str) -> dict:
     Returns {"page_raw": str, "header": str, "body": str} ("" == not present).
     """
     pn = re.search(r'^[ \t]*PAGE_NUMBER[ \t]*:[ \t]*(.+?)[ \t]*$', raw, re.I | re.M)
-    hd = re.search(r'^[ \t]*HEADER[ \t]*:[ \t]*(.+?)[ \t]*$', raw, re.I | re.M)
+    hd = re.search(r'^[ \t]*HEADER[ \t]*:[ \t]*(.*?)[ \t]*'
+                   r'(?=\n[ \t]*(?:BODY_TEXT|FIGURES|PAGE_NUMBER)[ \t]*:|\Z)',
+                   raw, re.I | re.S | re.M)
     bd = re.search(r'^[ \t]*BODY_TEXT[ \t]*:[ \t]*\n?(.*)\Z', raw, re.I | re.S | re.M)
 
     def _clean(v: str) -> str:
@@ -174,8 +176,23 @@ def parse_vlm_response(raw: str) -> dict:
             return ""
         return v
 
+    def _clean_header(v: str) -> str:
+        """"" (none) / "text" / "left\\tright" for a two-part running head
+        (topic left, sub-topic right -- olmOCR-2 emits these on a newline
+        or across a wide gap). Steps 3/4 render the halves left-/right-
+        aligned; translate_headers() translates each half."""
+        v = (v or "").strip().strip("[]").strip()
+        if not v or v.split("\n", 1)[0].strip().lower() in (
+                "none", "n/a", "-", "not visible"):
+            return ""
+        parts = [p.strip() for p in re.split(r"\n+|[ \t]{3,}", v, maxsplit=1) if p.strip()]
+        if (len(parts) == 2 and "\n" not in parts[1]
+                and all(2 <= len(p) <= 48 for p in parts)):
+            return parts[0] + "\t" + parts[1]
+        return re.sub(r"\s+", " ", parts[0]) if parts else ""
+
     page_raw = _clean(pn.group(1) if pn else "")
-    header = _clean(hd.group(1) if hd else "")
+    header = _clean_header(hd.group(1) if hd else "")
 
     # olmOCR-2 sometimes skips the PAGE_NUMBER field entirely and just opens
     # the response with the bare folio on its own line ("\n29\n\nPARADES ...").
@@ -443,13 +460,17 @@ _GBOOKS_MARKERS = (
     "usage guidelines",
     "consignes d’utilisation", "consignes d'utilisation",
     "à propos de ce livre",
+    # Gallica / BnF equivalents
+    "site gallica", "gallica.bnf.fr", "collections de la bnf",
+    "les contenus accessibles sur le site gallica",
+    "conditions de la réutilisation", "conditions d’utilisation de gallica",
 )
 
 
 def drop_google_boilerplate(parsed: list) -> None:
-    """Google Books prepends 2-3 pages of scanning boilerplate. Blank them
-    so they are not translated into the output (the scan still shows on the
-    side-by-side left page)."""
+    """Google Books / Gallica prepend 2-3 pages of scanning boilerplate.
+    Blank them so they are not translated into the output (the scan still
+    shows on the side-by-side left page)."""
     for p in parsed[:8]:
         blob = ((p.get("header") or "") + " " + (p.get("body") or "")).lower()
         if any(mk in blob for mk in _GBOOKS_MARKERS):
@@ -489,6 +510,121 @@ _PLATE_CAPTION_RE = re.compile(
     r"|parade\s+de\s+\w+.*"
     r")[ \t]*$")
 
+# A line shaped like a plate/figure caption title -- used to decide whether
+# a HEADER that olmOCR-2 emitted on a figure page is really the caption
+# (fold_caption_header_into_figure). Broader than _PLATE_CAPTION_RE (which
+# gates plate *synthesis*); only applied on pages that already carry a
+# figure, so the wider net is safe.
+_CAPTION_SHAPE_RE = re.compile(
+    r"(?i)^[ \t]*(?:"
+    r"planche\s+[ivxlcdm\d]+\b"
+    r"|pl\.\s*[ivxlcdm\d]+\b"
+    r"|fig(?:ure|\.)?\s*[ivxlcdm\d]+\b"
+    r"|sch[ée]ma\s+\w+\b"
+    r"|(?:première|deuxième|troisième|quatrième|cinquième|sixième|septième|"
+    r"huitième|neuvième|dixième|\d+[eè]?(?:me)?)\s+(?:position|mouvement)\b"
+    r"|coup\s+(?:tir[ée]|touch[ée]|de\s+temps|port[ée]|d['’a-zà-ÿ]+)\b"
+    r"|parade\s+(?:de\s+|d[eu]\s+)?[\wà-ÿ]+"
+    r"|salut\b|en\s+garde\b|garde\b|développement\b|position\b"
+    r"|.*\bposition,?\s+ou\b"
+    r").*$")
+
+_SCAN_APPARATUS_RE = re.compile(
+    r"insufficient\s+contrast|contraste\s+insuffisant|mire\s+de\s+|test\s+chart"
+    r"|résolution\s+insuffisante|texte\s+détérior|reliure\s+défectueuse"
+    r"|pages?\s+manquantes?|auteur\s+du\s+texte"
+    r"|biblioth[eè]que\s+[\wàâäéèêëïîôùûç.'’-]+\s+\d{3,}"
+    r"|\bex[- ]?libris\b|n[°o]\s*d['’]?(?:inventaire|entrée)\b"
+    r"|/\s*par\s+[A-ZÀ-Þ]",                      # BnF catalog "Title / par Author"
+    re.I)
+# a bare library shelfmark on its own line ("NF Z 43-120-14", "RES 8-V-1234")
+_SHELFMARK_RE = re.compile(
+    r"^(?=.*\d)(?=.*[A-Z])[A-Z0-9]{1,4}(?:[ .\-]+[A-Z0-9]{1,6}){2,5}$")
+
+
+def drop_scan_apparatus(parsed: list) -> None:
+    """Scanner target cards and library accession plates ("Contraste
+    insuffisant", "Bibliothèque Larousse 15720", a bare shelfmark) get
+    filed as a HEADER or a one-line body. Blank them so they are not
+    translated or drawn as a running head. Gated on a near-empty page so a
+    real chapter that just mentions a library is untouched."""
+    for p in parsed:
+        head = (p.get("header") or "").strip()
+        body = (p.get("body") or "").strip()
+        body1 = body.split("\n", 1)[0].strip()
+        if _SCAN_APPARATUS_RE.search(head) or _SHELFMARK_RE.match(head):
+            p["header"] = head = ""            # a marker in HEADER: never a running head
+        is_junk = (_SCAN_APPARATUS_RE.search(f"{head}\n{body}")
+                   or (body1 and _SHELFMARK_RE.match(body1) and len(body.split()) <= 4))
+        if not is_junk:
+            continue
+        if len(body.split()) <= 15:
+            p["header"] = ""
+        if (_SCAN_APPARATUS_RE.search(body) or len(body.split()) <= 8
+                or (body1 and _SHELFMARK_RE.match(body1))):
+            p["body"] = ""
+            p["figures"] = []
+
+
+def fold_caption_header_into_figure(parsed: list) -> None:
+    """olmOCR-2 files a plate's caption line in HEADER: (it is the most
+    heading-shaped text on a plate page). Steps 3/4 then draw it as the
+    running head while the figure caption renders separately -- the caption
+    ends up split, and it is a section header on some plates but not
+    others. On a page that carries a figure and little/no body, move a
+    caption-shaped HEADER into the figure caption and clear HEADER, so the
+    plate page has no running head and the caption renders as one unit."""
+    for p in parsed:
+        head = (p.get("header") or "").replace("\t", " — ").strip().rstrip(".")
+        figs = p.get("figures") or []
+        if not head or not figs:
+            continue
+        if len((p.get("body") or "").split()) > 25:
+            continue
+        if not _CAPTION_SHAPE_RE.match(head):
+            continue
+        f0 = figs[0]
+        cap = (f0.get("caption") or "").strip().rstrip(".")
+        nh, nc = _norm_head(head), _norm_head(cap)
+        if not cap or nc in nh:
+            f0["caption"] = head              # header is the fuller line
+        elif nh not in nc:
+            f0["caption"] = f"{head} — {cap}"  # genuinely different -> join
+        p["header"] = ""
+
+
+def reconcile_headers(parsed: list) -> None:
+    """The header bar is for a genuine running header -- one repeated at the
+    top of the page across a section. olmOCR-2 also files one-off titles in
+    HEADER: (a part/section title caught at the top of a fresh page, a
+    title-page title, a plate caption) inconsistently, so the same kind of
+    line renders as a running head on one page and body text on the next
+    (P8/P10/K2). Resolve it by the one reliable signal -- repetition:
+
+      * HEADER seen on < 2 pages -> not a running head: prepend it to the
+        body as its own line, clear HEADER.
+      * HEADER empty but the body opens with a line that is exactly a
+        confirmed running head -> lift that line into HEADER.
+
+    Run AFTER fold_caption_header_into_figure() so plate captions have
+    already been routed to the figure, not the body."""
+    from collections import Counter
+    counts = Counter(_norm_head(p["header"])
+                     for p in parsed if (p.get("header") or "").strip())
+    confirmed = {h for h, c in counts.items() if h and c >= 2}
+    for p in parsed:
+        head = (p.get("header") or "").strip()
+        if head and _norm_head(head) not in confirmed:
+            body = p.get("body") or ""
+            p["body"] = f"{head}\n\n{body}".lstrip() if body.strip() else head
+            p["header"] = ""
+        elif not head:
+            body = p.get("body") or ""
+            first, _, rest = body.lstrip("\n").partition("\n")
+            if first.strip() and _norm_head(first) in confirmed:
+                p["header"] = first.strip()
+                p["body"] = rest.lstrip("\n")
+
 
 def recover_plate_captions(parsed: list) -> None:
     """Gomard's plate captions run vertically and OCR grabs them
@@ -514,8 +650,10 @@ def recover_plate_captions(parsed: list) -> None:
             p["body"] = ""
             continue
         # (2) flagged figure, empty caption -> look here then at neighbours
+        # (widen to +-2: a Gomard fold-out plate's caption is often on the
+        # leaf before or after the image).
         if figs and not any((f.get("caption") or "").strip() for f in figs):
-            for j in (idx, idx - 1, idx + 1):
+            for j in (idx, idx - 1, idx + 1, idx - 2, idx + 2):
                 if 0 <= j < len(parsed):
                     cap = _cap_line(parsed[j].get("body"))
                     if cap:
@@ -525,45 +663,50 @@ def recover_plate_captions(parsed: list) -> None:
 
 def postprocess_parsed_pages(parsed: list) -> None:
     """Run every Group-A structural salvage in order. Called once, right
-    after parse_vlm_response() over the whole book."""
+    after parse_vlm_response() over the whole book. reconcile_headers() and
+    fold_caption_header_into_figure() run separately, AFTER
+    _fold_caption_only_body()."""
     kh = {_norm_head(p["header"]) for p in parsed if p.get("header")}
     salvage_leaked_folio_header(parsed, kh)
     dehyphenate_across_pages(parsed)
     drop_google_boilerplate(parsed)
+    drop_scan_apparatus(parsed)
     mark_handwritten_inscriptions(parsed)
     recover_plate_captions(parsed)
 
 
-def reconcile_page_numbers(page_raws: list) -> list:
+def reconcile_page_numbers(page_raws: list, is_plate: list = None) -> list:
     """olmOCR-2 reliably reads a real printed folio, but it will also invent
     a plausible-looking number from a stray mark -- an engraver's plate
     number inside an illustration, a library accession stamp -- or silently
     convert 'VIII' to '8'.
 
-    A reported folio is TRUSTED when a neighbouring sheet's folio continues
-    the printed sequence (i-1 -> v-1, or i+1 -> v+1): a real run like
-    "20, 21, 22" corroborates itself even if a later section of the book
-    runs on a different index->folio offset (inserted plates shift it).
-    It is ALSO trusted when the VLM's own read equals what interpolation
-    from the nearest anchor predicts -- one misread folio between two plate
-    inserts ("22, 12, 24") would otherwise leave the correctly-read 24
-    bracketed just because its neighbour is garbage. This promotion runs to
-    a fixed point so a whole run of good folios rides off one anchor.
+    A reported folio is TRUSTED when:
+      * a neighbouring sheet's folio continues the printed sequence
+        (i-1 -> v-1, or i+1 -> v+1), directly or across a short unread gap;
+      * the VLM's own read equals what interpolation from the nearest anchor
+        predicts (fixed-point, so a whole run rides off one anchor); or
+      * MONOTONIC-CHAIN: two folio reads separated only by unnumbered leaves
+        (blanks / unflagged plates) where the folio rises by 1..(sheet gap)
+        -- this handles "text p.N, plate leaves, text p.N+1" books where
+        sheet != folio so the strict-sequence check can't fire.
+
     Everything else is interpolated from the nearest trusted anchor and
     bracketed '[n]'; with no anchor at all, the plain sheet ordinal.
-    Never emits <= 0.
+
+    `is_plate[i]` (a whole-page illustration -- no printed folio) lets the
+    tight-gap fill skip plate leaves when checking the arithmetic. Never
+    emits <= 0.
     """
     ints = [_page_to_int(p) for p in page_raws]
     n = len(ints)
+    plate = [bool(is_plate[i]) if is_plate and i < len(is_plate) else False
+             for i in range(n)]
 
     trusted = [False] * n
     for i, v in enumerate(ints):
         if v is None or v <= 0:
             continue
-        # a neighbouring sheet continues the printed sequence -- directly,
-        # or across a short run of UNREAD pages (a dropped folio between
-        # two good ones). An unread gap only counts if every slot in it is
-        # None; a misread number in the gap does not.
         for d in (1, 2, 3):
             lo_ok = (i - d >= 0 and ints[i - d] == v - d
                      and all(ints[k] is None for k in range(i - d + 1, i)))
@@ -573,12 +716,18 @@ def reconcile_page_numbers(page_raws: list) -> list:
                 trusted[i] = True
                 break
 
+    # Monotonic-chain: consecutive folio reads with only unnumbered leaves
+    # between them, folio rising by at least 1 and at most the sheet gap.
+    reads = [i for i in range(n) if ints[i] and ints[i] > 0]
+    for a, b in zip(reads, reads[1:]):
+        if (all(ints[k] is None or plate[k] for k in range(a + 1, b))
+                and 1 <= ints[b] - ints[a] <= (b - a)):
+            trusted[a] = trusted[b] = True
+
     anchors = [i for i in range(n) if trusted[i]]
     if not anchors:
         return [f"[{i + 1}]" for i in range(n)]
 
-    # Fixed-point promotion: a read that matches the nearest anchor's
-    # prediction is itself corroboration.
     changed = True
     while changed:
         changed = False
@@ -591,11 +740,12 @@ def reconcile_page_numbers(page_raws: list) -> list:
                 anchors = sorted(anchors + [i])
                 changed = True
 
-    # Tight-gap promotion: a run of unread pages bracketed by two trusted
-    # folios P .. Q where Q - P == (run length + 1) is filled in exactly --
-    # the values are forced, so present them as real ("15"), not "[15]".
-    # A run of UNNUMBERED plate leaves breaks the arithmetic (folio 16 ->
-    # 3 plates -> folio 17, Q-P=1 != 4) and stays bracketed -> suppressed.
+    # Tight-gap promotion: a run of non-trusted pages bracketed by two
+    # trusted folios P .. Q, where Q - P == (non-plate slots in the run) + 1,
+    # is filled in exactly -- the values are forced, so present them as real
+    # ("303"), not "[303]", even where the read was a misread ("903"). A run
+    # with an extra UNNUMBERED plate leaf the VLM didn't flag breaks the
+    # arithmetic (Q-P too small) and stays bracketed -> suppressed.
     folio = [ints[i] if trusted[i] else None for i in range(n)]
     i = 0
     while i < n:
@@ -607,12 +757,16 @@ def reconcile_page_numbers(page_raws: list) -> list:
             i += 1
         hi = i - 1                                          # run is [lo..hi]
         if lo - 1 >= 0 and hi + 1 < n and trusted[lo - 1] and trusted[hi + 1]:
-            P, Q = ints[lo - 1], ints[hi + 1]
-            if Q - P == (hi - lo + 2):
+            P, Q = folio[lo - 1], folio[hi + 1]
+            nonplate = [k for k in range(lo, hi + 1) if not plate[k]]
+            if P and Q and Q - P == len(nonplate) + 1:
+                cur = P
                 for k in range(lo, hi + 1):
-                    if ints[k] is None:            # only fill genuinely unread
-                        folio[k] = P + (k - (lo - 1))
-                        trusted[k] = True
+                    if plate[k]:
+                        continue
+                    cur += 1
+                    folio[k] = cur
+                    trusted[k] = True
 
     anchors = sorted(k for k in range(n) if trusted[k])
     out = []
@@ -623,7 +777,7 @@ def reconcile_page_numbers(page_raws: list) -> list:
                        else str(folio[i]))                  # printed / forced folio
             continue
         j = min(anchors, key=lambda a: abs(a - i))          # nearest trusted sheet
-        guess = folio[j] + (i - j)                          # 1 sheet == 1 folio
+        guess = (folio[j] or 0) + (i - j)                   # 1 sheet == 1 folio
         out.append(f"[{guess}]" if guess >= 1 else f"[{i + 1}]")
     return out
 
@@ -943,7 +1097,12 @@ try:
         for p in parsed:
             p["body"] = strip_leaked_headmatter(p["body"], _known_heads)
         _fold_caption_only_body(parsed)
-        reconciled_nums = reconcile_page_numbers([p["page_raw"] for p in parsed])
+        fold_caption_header_into_figure(parsed)
+        reconcile_headers(parsed)
+        _is_plate = [any(f.get("kind") == "plate" for f in (p.get("figures") or []))
+                     for p in parsed]
+        reconciled_nums = reconcile_page_numbers(
+            [p["page_raw"] for p in parsed], _is_plate)
 
         canonical_pages = []
         for raw, fields, pnum in zip(extracted_pages, parsed, reconciled_nums):

@@ -219,8 +219,13 @@ class Flow:
         # skipped-number pages that's a meaningless sheet ordinal, so drop
         # it and leave just the section rule.
         trusted = page_num and not str(page_num).startswith("[")
-        long_hdr = bool(header) and len(header.split()) > 12   # a title, not a running head
-        head_inline = "" if long_hdr else (header or "")
+        two_part = "\t" in (header or "")
+        header_left, header_right = (
+            [s.strip() for s in header.split("\t", 1)] if two_part
+            else (header or "", ""))
+        long_hdr = (not two_part and bool(header)
+                    and len(header.split()) > 12)   # a title, not a running head
+        head_inline = "" if long_hdr else header_left
         if trusted and head_inline:
             label = f"— {page_num} —    {head_inline}"
         elif trusted:
@@ -230,6 +235,10 @@ class Flow:
         if label:
             self.page.insert_text((COL.x0, self.y + FS + 2), label,
                                   fontsize=FS + 1, fontname=_render.BOLD)
+        if two_part and header_right:      # sub-topic, flush right (F13)
+            self.page.insert_text(
+                (COL.x1 - _render._w(header_right, 0, FS + 1), self.y + FS + 2),
+                header_right, fontsize=FS + 1, fontname=_render.BOLD)
         self.y += FS * 1.5
         self.page.draw_line((COL.x0, self.y), (COL.x1, self.y), width=0.4)
         self.y += FS * 0.7
@@ -398,7 +407,17 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
                         for f in figs_here).strip()
                 bf = band_for_figure(figs_here[0], src_page,
                                      0 if is_empty else len(tr.split()))
-                if bf is not None:
+                # F8b: don't let a decorative vignette on a text page swallow
+                # the whole sheet (P20/P21 -- "Figure 1" over 40+ words of
+                # translated prose). A full-page band + substantial body +
+                # empty/bare caption -> keep the text, drop the picture.
+                _bare_cap = re.match(
+                    r"(?i)^\s*(?:fig(?:ure|\.)?|pl(?:ate|\.)?|planche|sch[ée]ma)"
+                    r"\s*\.?\s*[ivxlcdm\d]*\s*\.?\s*$", cap or "")
+                full_page = bf is not None and bf[0] is None
+                if bf is not None and not (
+                        full_page and not caption_only_page
+                        and len(tr.split()) > 40 and (not cap or _bare_cap)):
                     placements.append((bf[0], cap))
             # The VLM under-reports -- runs of near-identical plates, and
             # engravings dropped into text pages. On any page it did NOT
@@ -407,9 +426,13 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
                 prof = find_figure_band(src_page)
                 if prof is not None:
                     y0f, y1f, *_ = prof
-                    placements.append(
-                        (None if (y1f - y0f) > 0.85 else prof,
-                         tr if caption_only_page else ""))
+                    band = None if (y1f - y0f) > 0.85 else prof
+                    # same F8b guard: a full-page profiler band must not
+                    # bury a page of real translated prose.
+                    if not (band is None and not caption_only_page
+                            and len(tr.split()) > 40):
+                        placements.append(
+                            (band, tr if caption_only_page else ""))
                 elif is_empty and interior_ink_fraction(src_page) > 0.04:
                     placements.append((None, ""))
         elif src_page is not None:

@@ -94,7 +94,10 @@ the rest of the code never thinks about page breaks:
 - `section_label(page_num, header)` — draws `— [n] —   HEADER` + a rule.
   Starts a fresh sheet if the label (plus a reserved height for a figure
   that's about to follow) wouldn't fit — so a figure's label is never
-  orphaned at the bottom of a sheet.
+  orphaned at the bottom of a sheet. `header` is only a **genuine
+  repeated running head** by the time it gets here (`reconcile_headers()`
+  in step 1 sends one-off titles to the body); a `left\tright` value is
+  drawn as a two-part head.
 - `body(text)` — `split_footnotes`, then `_flow(layout(body))`, then the
   footnote block smaller and grey. `_flow` loops `draw()` → new page →
   `draw()` until there's no leftover.
@@ -216,14 +219,25 @@ sidecars are git-ignored, like the rest of the private corpus.
 
 ### Tables and folios in the PDFs
 
-- A scoring / poule grid is a `[[TABLE]]` sentinel in `translation.txt`
-  (step 2 never hands the `<table>` markup to the model). Step 4 renders
-  it as `[table — see facing page]` among the prose; step 3 embeds the
-  source page and drops the sentinel.
+- A scoring / poule grid is a `[[TABLE]]` sentinel in `translation.txt`.
+  Step 2 replaces every `<table>…</table>` (and a `<table>` the OCR
+  truncated at the page foot) with the sentinel, collapses repeats, and
+  — if what's left is only a short heading — translates just that
+  heading and skips the model on the grid. If the model still mangles a
+  surviving sentinel to a bare `TABLE` line, a post-pass snaps it back.
+  Step 4 renders `[table — see facing page]` among the prose; step 3
+  embeds the source page and drops the sentinel.
 - A folio the reconciler only inferred (`[n]`) produces **no** "Page"
   line at all in either PDF — front matter and unnumbered plate leaves
-  just get the section rule. Tight-gap-forced folios were promoted to
-  real numbers upstream and *do* show.
+  just get the section rule. Tight-gap-forced folios (incl. a single
+  misread slot between two trusted folios, e.g. Gomard `903`→`303`, and
+  monotonic-chain folios across unnumbered plate leaves) were promoted
+  upstream and *do* show.
+- **Two-part running head** (`SABRE` / `ATTAQUE ET PARADE`): drawn with
+  the first half at the column's left edge and the second flush right.
+- A full-page decorative vignette is **not** embedded as a whole-page
+  "Figure N" in the English-only PDF when the page also has 40+ words of
+  translated prose — the text wins, the vignette is dropped.
 
 ## Sidecar files (all in `processed/<book>_translated/`)
 

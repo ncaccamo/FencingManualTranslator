@@ -31,6 +31,8 @@ strip_leaked_headmatter = _ns["strip_leaked_headmatter"]
 _norm_head = _ns["_norm_head"]
 _fold_caption_only_body = _ns["_fold_caption_only_body"]
 postprocess_parsed_pages = _ns["postprocess_parsed_pages"]
+fold_caption_header_into_figure = _ns["fold_caption_header_into_figure"]
+reconcile_headers = _ns["reconcile_headers"]
 
 targets = sys.argv[1:] or [
     d for d in glob.glob("/data/processed/*_translated")
@@ -51,7 +53,11 @@ for folder in targets:
     for p in parsed:
         p["body"] = strip_leaked_headmatter(p["body"], _kh)
     _fold_caption_only_body(parsed)
-    nums = reconcile_page_numbers([p["page_raw"] for p in parsed])
+    fold_caption_header_into_figure(parsed)
+    reconcile_headers(parsed)
+    _is_plate = [any(f.get("kind") == "plate" for f in (p.get("figures") or []))
+                 for p in parsed]
+    nums = reconcile_page_numbers([p["page_raw"] for p in parsed], _is_plate)
 
     canonical = []
     for raw, f, n in zip(raw_pages, parsed, nums):
