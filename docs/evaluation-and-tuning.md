@@ -36,12 +36,21 @@ python3 evals/check.py                               # "these N pages of book X 
 python3 evals/freeze.py <stem> --force               # if the change is an improvement you accept
 ```
 
-**Known limitation:** `translation.txt` page-diffs are swamped by
-re-translation nondeterminism (the model rewords every page slightly at
-temp 0.3). The trustworthy signals are the *deterministic* artifacts
-(`figures.json`, `page_numbers.txt`, `headers.json`, `extracted.txt`) and
-the metrics table. A deterministic eval mode (temp 0 + fixed seed) is the
-fix — not yet wired in.
+**Nondeterminism:** at the production `temp 0.3` the model rewords every
+page slightly, so a plain re-run diff of `translation.txt` is noise. For
+an eval run set **`EVAL_DETERMINISTIC=1`** (optionally `EVAL_SEED=<n>`,
+default 1234) — `2_translate.py::translate_with_llama` then forces
+`temperature 0` + that seed on every request, so an unchanged book
+reproduces byte-for-byte and a `check.py` page-diff is a real change.
+The retry ladder still runs but every attempt is the same greedy decode
+(a failing page fails identically). Use it for `check.py`; leave it off
+for production. The deterministic sidecars (`figures.json`,
+`page_numbers.txt`, `headers.json`, `extracted.txt`) don't need it.
+
+```bash
+docker exec -e EVAL_DETERMINISTIC=1 booktranslator-translator-1 \
+  python3 /app/2_translate.py       # then steps 3-4, then check.py
+```
 
 ---
 

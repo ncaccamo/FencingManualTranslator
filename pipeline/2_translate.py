@@ -23,6 +23,14 @@ TRANSLATION_MODEL_NAME = (os.environ.get("TRANSLATION_MODEL_NAME")
                           or Path(TRANSLATION_MODEL).stem)
 LLAMA_API_URL = f"{bc.translate_base_url()}/v1/chat/completions"
 
+# Deterministic mode for the eval harness: temp 0 + a fixed seed so a
+# re-run of an unchanged book reproduces byte-for-byte and `evals/check.py`
+# page-diffs mean something. Off by default (production uses temp 0.3 with
+# the 3-try retry ladder).
+EVAL_DETERMINISTIC = os.environ.get("EVAL_DETERMINISTIC", "").lower() in (
+    "1", "true", "yes", "on")
+EVAL_SEED = int(os.environ.get("EVAL_SEED", "1234"))
+
 # Returned by start_translation_server() when BACKEND_MODE=remote.
 REMOTE_SERVER = object()
 
@@ -901,23 +909,26 @@ def start_translation_server():
     return None
 
 def translate_with_llama(prompt: str, temperature: float = 0.3) -> str:
+    body = {
+        "model": TRANSLATION_MODEL_NAME,
+        "messages": [
+            {"role": "system", "content": "You are an expert translator of historical fencing texts."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.0 if EVAL_DETERMINISTIC else temperature,
+        # a translated page is never longer than its source; the >2500-word
+        # oversized guard handles the rare monster page. Leaves room in the
+        # 8192 window for prompt+source.
+        "max_tokens": 3000,
+    }
+    if EVAL_DETERMINISTIC:
+        body["seed"] = EVAL_SEED
     for attempt in range(3):
         try:
             response = requests.post(
                 LLAMA_API_URL,
                 headers={"Content-Type": "application/json", **bc.auth_headers()},
-                json={
-                    "model": TRANSLATION_MODEL_NAME,
-                    "messages": [
-                        {"role": "system", "content": "You are an expert translator of historical fencing texts."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    "temperature": temperature,
-                    # a translated page is never longer than its source; the
-                    # >2500-word oversized guard handles the rare monster
-                    # page. Leaves room in the 8192 window for prompt+source.
-                    "max_tokens": 3000
-                },
+                json=body,
                 timeout=1800
             )
             
