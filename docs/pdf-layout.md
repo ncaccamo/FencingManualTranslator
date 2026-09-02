@@ -227,12 +227,15 @@ sidecars are git-ignored, like the rest of the private corpus.
   surviving sentinel to a bare `TABLE` line, a post-pass snaps it back.
   Step 4 renders `[table — see facing page]` among the prose; step 3
   embeds the source page and drops the sentinel.
-- A folio the reconciler only inferred (`[n]`) produces **no** "Page"
-  line at all in either PDF — front matter and unnumbered plate leaves
-  just get the section rule. Tight-gap-forced folios (incl. a single
-  misread slot between two trusted folios, e.g. Gomard `903`→`303`, and
-  monotonic-chain folios across unnumbered plate leaves) were promoted
-  upstream and *do* show.
+- A folio the reconciler only inferred (`[n]`) — or left blank (`""`) —
+  produces **no** "Page" line at all in either PDF; front matter and
+  unnumbered plate leaves just get the section rule. A run of ≥2 unread
+  leaves between two trusted folios that spans more leaves than the folio
+  gap covers is left blank rather than seesaw-interpolated
+  (`[17][18][19][20][13][14]…` off the nearest anchor). Tight-gap-forced
+  folios (incl. a single misread slot between two trusted folios, e.g.
+  Gomard `903`→`303`, and monotonic-chain folios across unnumbered plate
+  leaves) were promoted upstream and *do* show.
 - **Two-part running head** (`SABRE` / `ATTAQUE ET PARADE`): drawn with
   the first half at the column's left edge and the second flush right.
 - A full-page decorative vignette is **not** embedded as a whole-page

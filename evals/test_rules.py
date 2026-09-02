@@ -21,11 +21,11 @@ from _rules import (
     parse_figures_block, reconcile_page_numbers, _fold_caption_only_body,
     strip_leaked_headmatter,
     extract_source_footnotes, label_margin_notes,
-    _clean_caption, fix_parry_names,
+    _clean_caption, _capitalize_definition_entries, fix_parry_names,
     salvage_leaked_folio_header, dehyphenate_across_pages,
     drop_google_boilerplate, mark_handwritten_inscriptions,
     drop_scan_apparatus, fold_caption_header_into_figure, reconcile_headers,
-    parse_vlm_response,
+    recover_plate_captions, parse_vlm_response,
 )
 
 
@@ -64,16 +64,19 @@ def test_reconcile_tight_gap_promotes():
 
 def test_reconcile_plate_run_stays_bracketed():
     # 16 .. (3 unnumbered leaves) .. 17 : the two folio reads are a valid
-    # monotonic pair and now show; the unnumbered middle stays bracketed
-    # (suppressed by the PDF steps).
+    # monotonic pair and now show. The middle run has more leaves (3) than
+    # the folio gap spans (1) -> unnumbered leaves -> emit blank, don't
+    # seesaw a fabricated folio ([17][18][16]) off the nearest anchor.
     out = reconcile_page_numbers(["16", "", "", "", "17"])
     assert out[0] == "16" and out[-1] == "17"
-    assert all(x.startswith("[") for x in out[1:-1])
+    assert all(x == "" for x in out[1:-1])
 
 
-def test_reconcile_single_plate_leaf_bracketed():
+def test_reconcile_single_unread_leaf_blanked():
+    # 16 and 17 are consecutive folios; the unread leaf between them is an
+    # inserted unnumbered plate/blank -> no folio, not a fabricated "[17]".
     out = reconcile_page_numbers(["16", "", "17"])
-    assert out[1].startswith("[")
+    assert out == ["16", "", "17"]
 
 
 def test_extract_source_footnotes():
@@ -348,10 +351,10 @@ def test_reconcile_promotes_matching_read():
     # a tight EXACT single-slot gap (22 .. 24) -> forced to the real folio.
     assert reconcile_page_numbers(["20", "21", "22", "12", "24"]) \
         == ["20", "21", "22", "23", "24"]
-    # ...but if that slot is a PLATE leaf it carries no folio -> bracketed.
+    # ...but if that slot is a PLATE leaf it carries no folio -> blank.
     assert reconcile_page_numbers(["20", "21", "22", "12", "24"],
                                   is_plate=[0, 0, 0, 1, 0]) \
-        == ["20", "21", "22", "[23]", "24"]
+        == ["20", "21", "22", "", "24"]
 
 
 def test_reconcile_monotonic_chain_across_plates():
@@ -464,6 +467,70 @@ def test_drop_scan_apparatus():
 def test_parse_two_part_header():
     raw = "PAGE_NUMBER: 53\nHEADER: SABRE     ATTACK AND PARRY\nBODY_TEXT:\ntext"
     assert parse_vlm_response(raw)["header"] == "SABRE\tATTACK AND PARRY"
+
+
+def test_reconcile_headers_two_part_root_survives():
+    # SABRE is a running head on many pages; each per-page right half is
+    # unique. Keying the count on the whole "SABRE\tX" string demoted every
+    # plate-page header (batch-2 regression). Key on the LEFT root instead.
+    parsed = (
+        [{"header": "SABRE", "body": "p" + str(i), "figures": []} for i in range(4)]
+        + [{"header": "SABRE\tCORPS A CORPS", "body": "", "figures": []},
+           {"header": "SABRE\tCOUP D'ARRÊT", "body": "", "figures": []},
+           {"header": "DES CONTRES", "body": "one-off", "figures": []}]
+    )
+    reconcile_headers(parsed)
+    assert parsed[4]["header"] == "SABRE\tCORPS A CORPS"   # kept (root repeats)
+    assert parsed[5]["header"] == "SABRE\tCOUP D'ARRÊT"    # kept
+    assert parsed[6]["header"] == "" and parsed[6]["body"].startswith("DES CONTRES")
+
+
+def test_reconcile_page_numbers_blanks_seesaw_run():
+    # 16 .. (5 unnumbered leaves) .. 17 : more leaves than the folio gap
+    # -> blank them, don't fabricate [17][18][19][20][13].
+    out = reconcile_page_numbers(["16", "", "", "", "", "", "17"])
+    assert out[0] == "16" and out[-1] == "17"
+    assert out[1:-1] == ["", "", "", "", ""]
+
+
+def test_capitalize_definition_entries():
+    assert _capitalize_definition_entries(
+        "<i>riposte</i>. — The riposte is the blow after the parry.") \
+        == "<i>Riposte</i>. — The riposte is the blow after the parry."
+    assert _capitalize_definition_entries(
+        "coup d'arrêt. — A stop hit.") == "Coup d'arrêt. — A stop hit."
+    # a long lead-in before ". —" is a sentence, not a headword: leave it
+    src = "he parried and then, after a pause. — well, it happened."
+    assert _capitalize_definition_entries(src) == src
+
+
+def test_clean_caption_strips_model_note():
+    got = _clean_caption(
+        "STOP-THRUST TO THE CHEST. (NOTE: THERE APPEARS TO BE AN ERROR IN "
+        "THE ORIGINAL TEXT, AS THE PHRASE IS AMBIGUOUS.) GIVEN THE CRITICAL "
+        "RULES, THE TRANSLATION SHOULD ADHERE TO THE TEXT, THUS: STOP-THRUST.")
+    assert got == "STOP-THRUST TO THE CHEST."
+
+
+def test_recover_plate_caption_from_fig_line():
+    parsed = [{"page_raw": "24", "header": "", "figures": [],
+               "body": "Fig. 1. — LA GARDE D'ÉPÉE. — Professor Bouché."}]
+    recover_plate_captions(parsed)
+    assert parsed[0]["figures"] and parsed[0]["figures"][0]["kind"] == "plate"
+    assert "LA GARDE" in parsed[0]["figures"][0]["caption"]
+    assert parsed[0]["body"] == ""
+
+
+def test_recover_plate_caption_skips_duplicate_of_neighbour():
+    parsed = [
+        {"page_raw": "42", "header": "", "body": "",
+         "figures": [{"kind": "plate", "caption": "Fig. 1. — LA GARDE D'ÉPÉE. — Professor Bouché."}]},
+        {"page_raw": "24", "header": "", "figures": [],
+         "body": "Fig. 1. — LA GARDE D'ÉPÉE. — Professor Bouché."},
+    ]
+    recover_plate_captions(parsed)
+    assert parsed[1]["figures"] == []          # neighbour already has it
+    assert parsed[1]["body"] != ""
 
 
 def test_phrase_repairs_translated_by():

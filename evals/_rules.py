@@ -84,6 +84,7 @@ fix_subheading_spacing = TX["fix_subheading_spacing"]
 is_toc_page = TX["is_toc_page"]
 label_margin_notes = TX["label_margin_notes"]
 _clean_caption = TX["_clean_caption"]
+_capitalize_definition_entries = TX["_capitalize_definition_entries"]
 fix_parry_names = TX["fix_parry_names"]
 
 # --- ocr-side pure helpers ---

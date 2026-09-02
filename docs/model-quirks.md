@@ -191,6 +191,13 @@ without the English word the body text uses for it. A glossary section
 now goes through the normal term policy like body text; the facing scan
 still carries the original headword.
 
+**Headword case:** a Category-2 term kept lowercase-italic loses the
+capital the source gives it at the start of an entry (`<i>riposte</i>. —
+…` where the book prints "Riposte."). `_capitalize_definition_entries()`
+(2026-09-02) upper-cases the first letter of any line shaped
+`<short headword>. — <definition>`, preserving the `<i>` wrapper; a long
+lead-in before `. —` is treated as a sentence and left alone.
+
 ### 1.2c Running header vs. one-off title — `reconcile_headers()`
 
 **Seen:** all three review books — a part title (`QUATRIÈME PARTIE`), a
@@ -209,6 +216,13 @@ back up. No heading tier, no size/weight/centring — a title in the body
 just renders as a plain line where it falls (deliberate scope limit; a
 real heading hierarchy needs a VLM-prompt change + re-OCR).
 
+Repetition is counted per **running-head root**: a two-part head
+`LEFT⇥RIGHT` (section + per-page topic — Kirchhoffer `SABRE⇥CORPS A
+CORPS`, `ÉPÉE⇥CROISÉ`) keys the count on `LEFT` only. The right half is
+unique to one page; counting the whole string sent every plate-page
+header in a section into the body (batch-2 regression). A bare one-off
+title still keys on the whole line and still demotes.
+
 ### 1.2d Plate caption in `HEADER:`; scanner apparatus in `HEADER:`
 
 * `fold_caption_header_into_figure()` — on a page that carries a figure
@@ -222,6 +236,12 @@ real heading hierarchy needs a VLM-prompt change + re-OCR).
   shelfmark ("NF Z 43-120-14"), a BnF catalogue line ("… / par …",
   "Auteur du texte") in `HEADER:` or a near-empty body is blanked.
   `drop_google_boilerplate()` also covers the Gallica terms-of-use page.
+* `recover_plate_captions()` case (1) — a figure-less page whose short
+  body **opens with** `Planche N.` **or** `Fig. N.` is a plate whose
+  image the VLM missed: synthesise the plate, promote the body to its
+  caption. Skipped when a neighbour ±2 already carries a plate with the
+  same caption (OCR read one leaf twice under different folios — e.g.
+  Kirchhoffer's épée `FIG. I` at both the mis-numbered leaf and folio 42).
 
 ### 1.7 Figure detection — VLM flag + density-profiler geometry
 
@@ -555,6 +575,11 @@ CROISÉ AT THE FLANK". `2_translate.py --captions` re-runs this pass —
 captions **and** running headers — across all books (no body
 re-translate) for iterating.
 
+`_clean_caption()` also strips model commentary that leaks into a
+caption: a `(NOTE: …)` aside (often long, sometimes unclosed) and the
+`GIVEN THE … RULES, … THUS: <restated line>` tail it appends
+(Kirchhoffer Fig. 7 came back with a 400-char translator's note).
+
 ### 2.10 Running headers translated separately
 
 `translate_headers()` collects each **distinct** running-head string from
@@ -570,7 +595,9 @@ scanner apparatus are filtered upstream (1.2c / 1.2d).
 **Two-part running heads** (`SABRE` left, `ATTAQUE ET PARADE` right —
 Kirchhoffer): `parse_vlm_response()` keeps them as `left\tright`;
 `translate_headers()` translates each half separately; steps 3/4 draw the
-halves left- and right-aligned on the header line.
+halves left- and right-aligned on the header line. `reconcile_headers()`
+counts repetition on the **left root** so a `SABRE⇥…` with a per-page
+right half is not mistaken for a one-off (1.2c).
 
 **Case is not preserved by the model** — `ÉPÉE` came back `épée`,
 `LA GARDE` as `The Guard`, `SOCIÉTÉS` as `Societies`, inconsistently

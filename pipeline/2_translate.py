@@ -552,6 +552,26 @@ def fix_subheading_spacing(text: str) -> str:
     return "\n".join(out)
 
 
+_DEF_ENTRY_RE = re.compile(
+    r"(?m)^([ \t]*)(<i>)?([a-zà-ÿ])([\wà-ÿ’'\- ]{0,40}?)(</i>)?([ \t]*\.[ \t]*[—–-][ \t])")
+
+
+def _capitalize_definition_entries(text: str) -> str:
+    """A glossary / definition-list entry headword is capitalised in the
+    source ("Riposte. — ...", "Coup d'arrêt. — ..."). A Category-2 term
+    kept lowercase-italic loses that capital ("<i>riposte</i>. — ...",
+    Kirchhoffer TERMES TECHNIQUES). Restore it: upper-case the first
+    letter of any line shaped "<short headword>. — <definition>",
+    preserving an <i> wrapper."""
+    def _up(m):
+        head = m.group(4) or ""
+        if len(head.split()) > 3:
+            return m.group(0)
+        return (m.group(1) + (m.group(2) or "") + m.group(3).upper()
+                + head + (m.group(5) or "") + m.group(6))
+    return _DEF_ENTRY_RE.sub(_up, text)
+
+
 _CAPTION_JUNK = re.compile(
     r"biblioth[eè]que\s+nationale|british\s+museum|library\s+of\s+congress"
     r"|\b\d{5,}\b|high\s+holborn|\blondres\b|\bimp\.\b|\blith\.\b|\bdel\.\b"
@@ -577,6 +597,14 @@ def _clean_caption(cap: str) -> str:
     cap = re.sub(r"(?i)^\s*" + _SCENE + r"[^.\n]*", "", cap).strip()
     cap = re.sub(r"(?i)\bcorrect(?:ing|ed)?\b[^.:]*\btranslation\b[^.:]*[.:]", "", cap)
     cap = re.sub(r"(?i)\bbased on the (?:given|critical) rules?\b[^.]*\.?", "", cap)
+    # model commentary leaking into a caption: a "(NOTE: ...)" aside (often
+    # long, sometimes unclosed) and the "GIVEN THE ... RULES, ... THUS:
+    # <restated line>" tail it appends (Kirchhoffer Fig. 7).
+    cap = re.sub(r"(?is)\s*[\(\[]\s*note\s*:.*?(?:[\)\]]|$)", "", cap)
+    cap = re.sub(r"(?is)\s*\b(?:given the (?:critical|provided|above) rules?"
+                 r"|there (?:appears|seems) to be an error"
+                 r"|strictly translating the provided text)\b.*$", "", cap)
+    cap = re.sub(r"(?is)\s*,?\s*\bthus\s*:\s*$", "", cap)
     cap = re.sub(r"^\s*[—–\-]\s*", "", cap.strip())
     # a trailing empty-caption placeholder the VLM tacked on ("... (La
     # Garde) none", "... au tac none")
@@ -1270,6 +1298,7 @@ try:
                 # heading) to keep the "entry … NN" structure intact.
                 candidate = enforce_cat3_footnotes(
                     candidate, cat3_seen, footnote=not page_is_toc)
+                candidate = _capitalize_definition_entries(candidate)
                 if not page_is_toc:
                     candidate = retranslate_stray_french_headings(candidate)
                     candidate = fix_subheading_spacing(candidate)

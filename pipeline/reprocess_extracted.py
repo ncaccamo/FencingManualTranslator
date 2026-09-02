@@ -77,7 +77,7 @@ for folder in targets:
     with open(os.path.join(folder, "figures.json"), "w", encoding="utf-8") as fh:
         json.dump(figures_map, fh, ensure_ascii=False, indent=1)
 
-    real = sum(1 for n in nums if not n.startswith("["))
+    real = sum(1 for n in nums if n and not n.startswith("["))
     n_fig = sum(len(v) for v in figures_map.values())
     print(f"✓ {os.path.basename(folder)}: {len(raw_pages)} pages, "
           f"{real} corroborated folios, {len(nums) - real} inferred, "

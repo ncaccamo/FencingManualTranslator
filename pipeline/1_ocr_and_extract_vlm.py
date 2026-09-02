@@ -607,47 +607,74 @@ def reconcile_headers(parsed: list) -> None:
         confirmed running head -> lift that line into HEADER.
 
     Run AFTER fold_caption_header_into_figure() so plate captions have
-    already been routed to the figure, not the body."""
+    already been routed to the figure, not the body.
+
+    Repetition is counted per *running-head root*: a two-part head
+    ``LEFT\tRIGHT`` (section name + per-page topic, e.g.
+    ``SABRE\tCORPS A CORPS``) keys on LEFT only -- the right half is
+    unique to one page and must not fragment the count, or every plate
+    page in a section loses its header (K-batch2 regression). A bare
+    one-off title (``DES CONTRES``, ``FOURTH PART``) still keys on the
+    whole line and still demotes."""
     from collections import Counter
-    counts = Counter(_norm_head(p["header"])
+
+    def _key(h):
+        return _norm_head(h.split("\t", 1)[0] if "\t" in h else h)
+
+    counts = Counter(_key(p["header"])
                      for p in parsed if (p.get("header") or "").strip())
     confirmed = {h for h, c in counts.items() if h and c >= 2}
     for p in parsed:
         head = (p.get("header") or "").strip()
-        if head and _norm_head(head) not in confirmed:
+        if head and _key(head) not in confirmed:
             body = p.get("body") or ""
             p["body"] = f"{head}\n\n{body}".lstrip() if body.strip() else head
             p["header"] = ""
         elif not head:
             body = p.get("body") or ""
             first, _, rest = body.lstrip("\n").partition("\n")
-            if first.strip() and _norm_head(first) in confirmed:
+            if first.strip() and _key(first) in confirmed:
                 p["header"] = first.strip()
                 p["body"] = rest.lstrip("\n")
 
 
 def recover_plate_captions(parsed: list) -> None:
     """Gomard's plate captions run vertically and OCR grabs them
-    unreliably. (1) A page whose body is short and carries an explicit
-    'Planche N.' line but has NO figure flagged -> synthesise a plate and
-    use that line as the caption. (2) A flagged figure with an empty
+    unreliably. (1) A page whose body is short and opens with an explicit
+    'Planche N.' / 'Fig. N.' line but has NO figure flagged -> synthesise
+    a plate and use that line as the caption (unless a neighbour ±2
+    already carries a plate with the same caption -- OCR read the same
+    leaf twice under different folios). (2) A flagged figure with an empty
     caption -> borrow a caption-shaped line from this page's body or a
     neighbour's."""
     def _cap_line(body):
         m = _PLATE_CAPTION_RE.search(body or "")
         return m.group(1).strip() if m else ""
 
+    _MISSED_PLATE_RE = re.compile(
+        r"(?im)^[ \t]*(?:planche\s+[ivxlcdm]+\.|fig(?:ure|\.)?\s+[ivxlcdm\d]+\b)")
+
+    def _neighbour_has_plate_cap(idx, norm_cap):
+        for j in (idx - 2, idx - 1, idx + 1, idx + 2):
+            if 0 <= j < len(parsed):
+                for f in (parsed[j].get("figures") or []):
+                    fc = _norm_head(f.get("caption") or "")
+                    if fc and norm_cap and (fc[:40] in norm_cap or norm_cap[:40] in fc):
+                        return True
+        return False
+
     for idx, p in enumerate(parsed):
         body = p.get("body") or ""
         figs = p.get("figures") or []
         words = body.split()
-        # (1) missed plate: an explicit "Planche N." line on a short page
-        # with no figure flagged -> the whole (short) body is the caption.
-        if not figs and len(words) <= 45 \
-                and re.search(r"(?im)^[ \t]*planche\s+[ivxlcdm]+\.", body):
-            p["figures"] = [{"kind": "plate",
-                             "caption": re.sub(r"\s*\n\s*", " — ", body).strip()}]
-            p["body"] = ""
+        # (1) missed plate: an explicit "Planche N." / "Fig. N." line on a
+        # short page with no figure flagged -> the whole (short) body is
+        # the caption.
+        if not figs and len(words) <= 45 and _MISSED_PLATE_RE.search(body):
+            cap = re.sub(r"\s*\n\s*", " — ", body).strip()
+            if not _neighbour_has_plate_cap(idx, _norm_head(cap)):
+                p["figures"] = [{"kind": "plate", "caption": cap}]
+                p["body"] = ""
             continue
         # (2) flagged figure, empty caption -> look here then at neighbours
         # (widen to +-2: a Gomard fold-out plate's caption is often on the
@@ -747,6 +774,7 @@ def reconcile_page_numbers(page_raws: list, is_plate: list = None) -> list:
     # with an extra UNNUMBERED plate leaf the VLM didn't flag breaks the
     # arithmetic (Q-P too small) and stays bracketed -> suppressed.
     folio = [ints[i] if trusted[i] else None for i in range(n)]
+    blank = [False] * n
     i = 0
     while i < n:
         if trusted[i]:
@@ -767,6 +795,15 @@ def reconcile_page_numbers(page_raws: list, is_plate: list = None) -> list:
                     cur += 1
                     folio[k] = cur
                     trusted[k] = True
+            elif P and Q and len(nonplate) > Q - P - 1:
+                # more non-plate leaves in the run than the folio gap can
+                # hold -> it contains unnumbered leaves (unflagged plates,
+                # blanks) whose folio can't be pinned. Interpolating from
+                # the nearest anchor seesaws a fabricated, self-
+                # contradicting folio onto each ([17][18][19][20][13][14]
+                # [15][16]); emit blank instead.
+                for k in range(lo, hi + 1):
+                    blank[k] = True
 
     anchors = sorted(k for k in range(n) if trusted[k])
     out = []
@@ -775,6 +812,9 @@ def reconcile_page_numbers(page_raws: list, is_plate: list = None) -> list:
             out.append(page_raws[i]
                        if folio[i] is None or _page_to_int(page_raws[i]) == folio[i]
                        else str(folio[i]))                  # printed / forced folio
+            continue
+        if blank[i] or plate[i]:            # inferred plate leaf -> no folio
+            out.append("")
             continue
         j = min(anchors, key=lambda a: abs(a - i))          # nearest trusted sheet
         guess = (folio[j] or 0) + (i - j)                   # 1 sheet == 1 folio
