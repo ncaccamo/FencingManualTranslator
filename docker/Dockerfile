@@ -7,8 +7,8 @@
 # repo's test-build.sh, then re-run  sync_to_product.sh <this-file>.
 # Everything past the END marker is BookTranslator-specific.
 #
-# BUILDSTAGE START v2026.08.26  (ubuntu 24.04 | ROCm 7.2.4 apt | Vulkan
-# LunarG 1.4.357.1 | llama.cpp dual build rocm+vulkan | rocm714 parked)
+# BUILDSTAGE START v2026.09.06  (ubuntu 24.04 | ROCm 7.2.4 apt | Vulkan
+# LunarG 1.4.357.1 | llama.cpp triple build rocm+vulkan+cpu | rocm714 parked)
 # ============================================================
 # [COMMON] Base image + global env.
 FROM ubuntu:24.04
@@ -104,10 +104,10 @@ RUN python3 -m venv /opt/rocm714-venv && \
         "rocm[libraries,devel,device-gfx1201]==7.14.0" \
       || echo "!!! ROCm 7.14 preview pip install failed - non-fatal, disabled anyway" )
 
-# [LLAMA.CPP] Dual build in a single layer: build-rocm (-> *-rocm) then
-# build-vulkan (-> *-vulkan). Splitting this RUN per-backend is the main
-# work of a future real per-backend marker split.
-# ---- llama.cpp: build TWICE (stable ROCm, Vulkan). rocm714 skipped. ----
+# [LLAMA.CPP] Triple build in a single layer: build-rocm (-> *-rocm),
+# build-vulkan (-> *-vulkan), build-cpu (-> *-cpu, portable). Splitting
+# this RUN per-backend is the main work of a future per-backend marker split.
+# ---- llama.cpp: build 3x (stable ROCm, Vulkan, portable CPU). rocm714 skipped. ----
 # Shared libraries (libllama-server-impl.so etc) are copied to backend-
 # specific dirs BEFORE the build tree is deleted - newer llama.cpp links
 # these dynamically, and ROCm/Vulkan builds must not share the same
@@ -141,6 +141,27 @@ RUN git clone --depth 1 https://github.com/ggerganov/llama.cpp /opt/llama.cpp &&
     mkdir -p /usr/local/lib/llama-vulkan && \
     find build-vulkan -name "*.so*" -exec cp {} /usr/local/lib/llama-vulkan/ \; && \
     rm -rf build-vulkan && \
+    \
+    echo ">>> Building portable CPU backend (no GPU code). GGML_CPU_ALL_VARIANTS" && \
+    echo "    + GGML_BACKEND_DL build one dispatch lib per x86-64 feature level and" && \
+    echo "    pick the best at runtime, so an image compiled on this Zen 3 box runs" && \
+    echo "    on any homelab CPU. GGML_NATIVE=OFF keeps -march=native out of it." && \
+    echo "    GGML_BACKEND_DIR bakes in where to dlopen the libggml-cpu-*.so from:" && \
+    echo "    the DL loader only searches the executable dir + cwd, NOT" && \
+    echo "    LD_LIBRARY_PATH, and this layout puts the binary and the libs in" && \
+    echo "    different trees (/usr/local/bin vs /usr/local/lib/llama-cpu)." && \
+    cmake -B build-cpu \
+        -DGGML_HIP=OFF -DGGML_VULKAN=OFF \
+        -DGGML_NATIVE=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON \
+        -DGGML_BACKEND_DIR=/usr/local/lib/llama-cpu \
+        -DLLAMA_CURL=ON -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build build-cpu --config Release -j$(nproc) && \
+    cp build-cpu/bin/llama-server /usr/local/bin/llama-server-cpu && \
+    cp build-cpu/bin/llama-cli /usr/local/bin/llama-cli-cpu && \
+    cp build-cpu/bin/llama-bench /usr/local/bin/llama-bench-cpu && \
+    mkdir -p /usr/local/lib/llama-cpu && \
+    find build-cpu -name "*.so*" -exec cp {} /usr/local/lib/llama-cpu/ \; && \
+    rm -rf build-cpu && \
     \
     cd / && rm -rf /opt/llama.cpp
 
