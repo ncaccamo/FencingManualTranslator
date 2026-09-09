@@ -26,6 +26,12 @@ AMD RX 9070 XT (RDNA4, gfx1201, 16GB VRAM), Ryzen 7 5700X3D (8c/16t),
 in-kernel amdgpu driver. The `FROM ubuntu:24.04` pin is the image's, not
 the host's — a newer host runs the 24.04 container unchanged.
 
+`BACKEND_MODE=remote` (`backend.env`) makes the pipeline host
+GPU-agnostic: inference runs on a `llama-server` / llama-swap on another
+LAN box, so the host needs only x86-64 + Docker (no GPU, no kernel 6.12,
+no ROCm/Vulkan). `scripts/setup.sh --remote` + `docker-compose.override.yml`
+(strips the compose GPU device mounts). See `docs/remote-gpu.md`.
+
 ## Key invariants — do not violate these without a deliberate decision
 - `restart: "no"` everywhere. On-demand system, not a long-running
   service. Don't reintroduce `unless-stopped` — it previously masked a
@@ -46,9 +52,11 @@ the host's — a newer host runs the 24.04 container unchanged.
   needs the same `_llama_server_env()` handling already used in the
   existing scripts.
 - The host needs **no ROCm / Vulkan / Mesa** — just the in-kernel
-  `amdgpu` driver (kernel ≥6.12) + Docker. All GPU userspace is in the
+  `amdgpu` driver (kernel ≥6.12) + Docker (in `local` mode; `remote` mode
+  drops the amdgpu/kernel requirement too). All GPU userspace is in the
   image; nothing reads host `/opt/rocm`. Setup is `scripts/setup.sh`
-  (verify + build, no sudo). Don't reintroduce a host ROCm install step.
+  (`--remote` for a GPU-less host; verify + build, no sudo). Don't
+  reintroduce a host ROCm install step.
 
 ## Where to look
 - `docs/STATUS.md` — current state, prioritized open items, and the
@@ -63,7 +71,8 @@ the host's — a newer host runs the 24.04 container unchanged.
   `vlm_ocr_prompt.txt` or `translation_prompt.txt`.
 - `docs/pdf-layout.md` — how steps 3 & 4 render the PDFs (`_render`
   layout engine, figure placement, paragraph alignment, the knobs).
-- `docs/remote-gpu.md` — `backend.env`, remote-GPU mode, `rocm714`.
+- `docs/remote-gpu.md` — `backend.env`, remote-GPU mode (llama-swap or
+  bare server), GPU-less host setup, `rocm714`.
 - `docs/evaluation-and-tuning.md` — maintainer-only: the `evals/`
   regression harness, gold-reference scoring, model swaps, fine-tuning.
   The operator's books/corpus/baselines are git-ignored (`books/`,

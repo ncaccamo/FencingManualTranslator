@@ -13,6 +13,37 @@ kernel `amdgpu` driver and Docker. Removing a previously-installed host
 
 ---
 
+> **Running in remote mode?** (`BACKEND_MODE=remote` — inference on a
+> separate LAN box; see `docs/remote-gpu.md`.) This host needs **no GPU**.
+> Do only **II.1** (OS), **II.6** (Docker), **II.7** (base utils) — skip
+> II.2–II.5 and II.8 entirely, and the GPU items in the checklist at the
+> bottom. Then `scripts/setup.sh --remote`. II.1's kernel-6.12 note also
+> does not apply. See **II.0** below.
+
+## II.0 — Remote-mode host (no GPU)
+
+A machine that only orchestrates — the container does OCR parsing and PDF
+rendering on CPU and calls a remote `llama-server` over the LAN. It needs
+just:
+
+- **x86-64** Ubuntu 24.04+ (or another recent Debian-family release).
+  Any kernel — the 6.12 RDNA4 requirement is GPU-only.
+- **Docker + the compose plugin** (II.6).
+- **git, curl, wget** (II.7).
+- ~35 GB free for the image, plus room for `books/` and `processed/`.
+
+No AMD GPU, no `/dev/kfd`, no `render`/`video` groups, no ROCm/Vulkan.
+`scripts/setup.sh --remote` skips every GPU check, copies
+`docker-compose.override.yml` (which `!reset`s the compose GPU device
+mounts — without it `docker compose up` fails on `/dev/kfd`), and writes
+a `BACKEND_MODE=remote` `backend.env` skeleton. The image build is
+unchanged — it still compiles the full ROCm+Vulkan stack (~20–30 min),
+which remote mode never uses but the Dockerfile isn't conditional.
+
+The rest of this section (II.1–II.9) is the **local GPU** host.
+
+---
+
 ## II.1 — Operating System
 
 **Ubuntu 24.04 LTS or newer.** Developed and tested on 24.04; the pinned
@@ -170,12 +201,16 @@ and misreports the RX 9070 XT.
 Once II.1–II.7 are done (II.8 is optional):
 ```bash
 cd ~/BookTranslator
-bash scripts/setup.sh
+bash scripts/setup.sh              # local GPU host
+bash scripts/setup.sh --remote    # no-GPU host, inference on a LAN box
 ```
 It verifies the above, writes `.env` + `backend.env`, creates the
 `ai-net` network, builds the image (~20–30 min — compiles llama.cpp
-twice), and brings the container up idle. The first `up` downloads ~13 GB
-of GGUF models into `~/llm_models`.
+twice), and brings the container up idle. On a local GPU host the first
+`up` downloads ~13 GB of GGUF models into `~/llm_models`; `--remote`
+skips that and instead copies `docker-compose.override.yml` and writes a
+`BACKEND_MODE=remote` `backend.env` for you to fill in
+(`docs/remote-gpu.md`).
 
 Then Section III (`MANUAL_SECTION_III_USAGE.md`) covers running books
 through the pipeline.
@@ -183,6 +218,8 @@ through the pipeline.
 ---
 
 ### Quick verification checklist before `scripts/setup.sh`
+
+Local GPU host:
 - [ ] `lsb_release -a` shows Ubuntu 24.04 or newer
 - [ ] `uname -r` shows 6.12 or newer
 - [ ] `lspci | grep -i amd` shows your GPU
@@ -190,4 +227,10 @@ through the pipeline.
 - [ ] `id -nG` includes `render` and `video`
 - [ ] `docker run hello-world` succeeds without `sudo`
 - [ ] `docker compose version` resolves
+- [ ] `git --version`, `curl --version`, `wget --version` all resolve
+
+Remote-mode host (`scripts/setup.sh --remote`) — only:
+- [ ] `lsb_release -a` shows Ubuntu 24.04 or newer, `dpkg --print-architecture` = `amd64`
+- [ ] `docker run hello-world` succeeds without `sudo`
+- [ ] `docker compose version` resolves (v2.24+ for the override's `!reset`)
 - [ ] `git --version`, `curl --version`, `wget --version` all resolve

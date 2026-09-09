@@ -1,0 +1,11 @@
+# The Dockerfile COPYs nothing from the repo (pipeline/ is bind-mounted at
+# runtime), so none of this needs to be in the build context. Without this
+# file `docker compose build` ships the whole tree -- books/, processed/
+# and evals/ can be several GB -- to the daemon for nothing.
+.git
+books
+processed
+evals
+review-notes
+*.log
+__pycache__

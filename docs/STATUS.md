@@ -12,8 +12,10 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
   `gomard_…1845` (386 pp — Google Books scan, 1845 text, printed
   marginalia), `LaMarche_TraitDeLEpee` (337 pp — clean scan, literary
   prose), `…Jacob_Jules_bd6t53440660` (331 pp — Gallica 68 ppi flat
-  JPEG). All **0 dead pages** (1341 pp). Local GPU only
-  (`BACKEND_MODE=local`, Vulkan), no cloud calls.
+  JPEG). All **0 dead pages** (1341 pp). Those runs were
+  `BACKEND_MODE=local` (Vulkan); no cloud calls. `remote` mode (GPU-less
+  pipeline host + LAN `llama-server`/llama-swap) is wired and the
+  orchestrator side is stood up — see open item #4.
 - **OCR:** olmOCR-2-7B-1025 via llama-server on :11435 is the default and
   only path. Tesseract path (`1_ocr_and_extract.py`) is kept for reference
   / a no-VLM fallback, not used.
@@ -34,8 +36,9 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
   (can't tell from page geometry); pure-plate pages waste ~½ a sheet
   (see #6); adjacent captions can run together.
 - **Backend selection:** `backend.env` switches local (`vulkan` | `rocm7` |
-  `rocm714`) vs. remote (LAN llama-server + bearer token). See
-  `docs/remote-gpu.md`.
+  `rocm714`) vs. remote (LAN llama-server/llama-swap + bearer token;
+  GPU-less host via `scripts/setup.sh --remote` + the compose override).
+  See `docs/remote-gpu.md`.
 - **Container:** comes up idle (no auto-started servers); the pipeline
   owns server lifecycle. Runs as the host UID.
 
@@ -86,9 +89,17 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    meta-response leak found + fixed. Jacob Jules (Gallica 68 ppi) → only
    27% corroborated folios (olmOCR can't read the low-res page numbers;
    bracketed sheet ordinals by design), para-alignment 34%.
-4. **Remote mode against a real Windows llama-server** — only stub-tested
-   so far (correct URL, bearer header, no local process). Windows-side
-   steps are in `docs/remote-gpu.md`.
+4. **Remote mode end-to-end** — the resolver / auth / no-local-server
+   plumbing was stub-tested (localhost); the reference deployment now runs
+   it for real: a GPU-less Ubuntu pipeline host (`scripts/setup.sh
+   --remote` + `docker-compose.override.yml`) against a Windows box
+   running llama-swap on :11500 (`bt-ocr` / `bt-translate` keys, so the
+   models swap automatically — `run_full_pipeline.sh` unchanged). As of
+   2026-09-09 the container is up and `backend_config.describe()` reports
+   `remote (auth: yes)`; **a full book through 1→2→3→4 in remote mode is
+   still pending** — the unknowns are step 1's base64 image upload to a
+   remote server and the model-swap cadence under a real run. Setup +
+   both paths (llama-swap / bare server): `docs/remote-gpu.md`.
 5. ~~**User Manual** Sections I and III.~~ DONE — Section I rewritten
    (current models, flowing PDF, footnotes-done, backend selection,
    limitations reconciled with this file); Section III written
@@ -216,7 +227,10 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
   `scripts/monitor_gpu.sh` reads `rocm-smi` from inside the container so a
   ROCm-free host still has GPU monitoring (or use host `nvtop`).
   (Decided 2026-08-27; `setup_inference_backend.sh`, which did a host
-  ROCm install, was retired for `scripts/setup.sh`.)
+  ROCm install, was retired for `scripts/setup.sh`.) In `remote` mode the
+  host needs no GPU at all — `scripts/setup.sh --remote` skips the GPU
+  checks and `docker-compose.override.yml` `!reset`s the compose device
+  mounts.
 
 ## Doc set
 
@@ -232,7 +246,8 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 - `docs/pdf-layout.md` — how steps 3 & 4 render the PDFs: the `_render`
   text engine, figure placement (`figures.json` + profiler), paragraph
   alignment, and every layout knob.
-- `docs/remote-gpu.md` — remote-GPU mode + `rocm714` (both experimental).
+- `docs/remote-gpu.md` — remote-GPU mode (supported; llama-swap or bare
+  server) + GPU-less pipeline-host setup + `rocm714` (still parked).
 - `docker/ROCM714_NOTES.md` — why ROCm 7.14 is parked.
 - `setup/DEV_ENVIRONMENT_SETUP.md` — maintainer dev-box setup (VS Code,
   git, Claude Code); not for end users.

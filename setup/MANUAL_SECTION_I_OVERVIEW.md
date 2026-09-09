@@ -30,12 +30,19 @@ expects:
   translation is AI-generated, the date it was produced, and which models
   did the OCR and the translation.
 
-Everything runs on local hardware. There are no cloud API calls, no
-per-page or per-book cost, and no page image or text ever leaves the
-machine. (An optional mode can send inference to a second GPU box *on your
-own LAN* — still nothing leaves your network. See `docs/remote-gpu.md`.)
+Everything runs on your own hardware. There are no cloud API calls and no
+per-page or per-book cost. Two deployments:
+
+- **Single box with an AMD GPU** — the default. Nothing leaves the
+  machine.
+- **Split** — a GPU-less host runs the pipeline (OCR parsing, PDF
+  rendering) and sends inference to a `llama-server` on another machine
+  *on your own LAN*, bearer-token authed. Still nothing leaves your
+  network. See `docs/remote-gpu.md`.
 
 ## I.2 — Hardware requirements
+
+### Single box (local GPU)
 
 | Component | Notes |
 |---|---|
@@ -44,6 +51,13 @@ own LAN* — still nothing leaves your network. See `docs/remote-gpu.md`.)
 | RAM | 32 GB. The compose file caps the container at 28 GB. |
 | Disk | ~50 GB: ~13 GB for the two GGUF models (in `~/llm_models`), ~20–30 GB for the Docker image, the rest for processed books. 240 GB+ if you later add general-purpose chat/coding models alongside. |
 | OS | Ubuntu 24.04 LTS, kernel ≥ 6.12. See Section II. |
+
+### Split (remote GPU)
+
+| Where | Needs |
+|---|---|
+| Pipeline host | **No GPU.** x86-64 Ubuntu 24.04+, any kernel, Docker. ~35 GB for the image + room for `books/` / `processed/`. RAM: a few GB (PDF rendering only). |
+| GPU box | The 16 GB AMD card, a Vulkan (or ROCm/HIP) `llama.cpp` build, and the GGUF model files. No project checkout, no Docker, no Python. A Windows gaming PC works — Vulkan uses the gaming driver. `docs/remote-gpu.md`. |
 
 The two models load **one at a time**, not together, to fit in 16 GB:
 
@@ -158,10 +172,13 @@ runs:
   `docker compose up -d`, no rebuild. `rocm714` is wired but not yet
   compiled.
 - `BACKEND_MODE=remote` — no local server; both steps call a
-  `llama-server` on another machine on your LAN, with a bearer token. You
-  load the vision model there before step 1 and the text model before
-  step 2. Details in `docs/remote-gpu.md`. This path is implemented but so
-  far only tested against a localhost stub.
+  `llama-server` on another machine on your LAN, with a bearer token. If
+  that box runs **llama-swap** the vision/text models swap automatically
+  by request name (the pipeline sends `VLM_MODEL_NAME` for step 1,
+  `TRANSLATION_MODEL_NAME` for step 2) — no manual step, `run_full_pipeline.sh`
+  works. With a bare `llama-server` you restart it with the other model
+  between step 1 and step 2. `scripts/setup.sh --remote` prepares a
+  GPU-less pipeline host. Details in `docs/remote-gpu.md`.
 
 ## I.6 — Known limitations
 

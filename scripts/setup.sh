@@ -11,10 +11,21 @@
 #   - builds the image (compiles llama.cpp twice: ROCm + Vulkan)
 #   - brings the container up (idle; first up downloads ~13 GB of models)
 #
+#   --remote : this host has NO GPU; inference runs on a separate LAN box
+#              (BACKEND_MODE=remote). Skips every GPU check, drops the
+#              compose GPU wiring via docker-compose.override.yml, and
+#              writes a remote backend.env skeleton. Still builds the
+#              image and brings the container up. Fill REMOTE_HOST /
+#              REMOTE_API_KEY in backend.env afterward -- see
+#              docs/remote-gpu.md.
+#
 # Safe to re-run. Everyday use after this: scripts/startup_docker.sh /
 # scripts/run_full_pipeline.sh / scripts/shutdown_docker.sh.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+REMOTE=0
+if [ "${1:-}" = "--remote" ]; then REMOTE=1; fi
 
 PREREQ="setup/MANUAL_SECTION_II_HOST_PREREQUISITES.md"
 fail=0
@@ -22,7 +33,11 @@ ok()   { printf '  \033[32m ok \033[0m %s\n' "$*"; }
 bad()  { printf '  \033[31mFAIL\033[0m %s\n' "$*"; fail=1; }
 note() { printf '       %s\n' "$*"; }
 
-echo "== 1/5  Host prerequisites =="
+if [ "$REMOTE" -eq 1 ]; then
+  echo "== 1/5  Host prerequisites (remote mode -- no GPU checks) =="
+else
+  echo "== 1/5  Host prerequisites =="
+fi
 
 # The 24.04 pin is the container's; the host just needs Docker + kernel.
 # Accept Ubuntu 24.04+ (tested on 24.04); warn, don't fail, on anything else.
@@ -36,30 +51,34 @@ else
   note "warn: host is '$osid $osver', not Ubuntu -- only Ubuntu 24.04+ is tested; continuing"
 fi
 
-kv=$(uname -r); kmaj=${kv%%.*}; krest=${kv#*.}; kmin=${krest%%.*}
-if [ "${kmaj:-0}" -gt 6 ] || { [ "${kmaj:-0}" -eq 6 ] && [ "${kmin:-0}" -ge 12 ]; }; then
-  ok "kernel $kv (>= 6.12)"
+if [ "$REMOTE" -eq 1 ]; then
+  note "remote mode: skipping kernel / GPU-device / render-video-group checks"
 else
-  bad "kernel $kv is < 6.12 -- RDNA4 needs 6.12+ for the in-kernel amdgpu driver; see $PREREQ section II.2"
-fi
+  kv=$(uname -r); kmaj=${kv%%.*}; krest=${kv#*.}; kmin=${krest%%.*}
+  if [ "${kmaj:-0}" -gt 6 ] || { [ "${kmaj:-0}" -eq 6 ] && [ "${kmin:-0}" -ge 12 ]; }; then
+    ok "kernel $kv (>= 6.12)"
+  else
+    bad "kernel $kv is < 6.12 -- RDNA4 needs 6.12+ for the in-kernel amdgpu driver; see $PREREQ section II.2"
+  fi
 
-if lspci 2>/dev/null | grep -iE 'vga|display|3d' | grep -iqE 'amd|ati|radeon'; then
-  ok "AMD GPU present on PCI bus"
-else
-  note "warn: no AMD GPU seen via lspci -- continuing anyway"
-fi
+  if lspci 2>/dev/null | grep -iE 'vga|display|3d' | grep -iqE 'amd|ati|radeon'; then
+    ok "AMD GPU present on PCI bus"
+  else
+    note "warn: no AMD GPU seen via lspci -- continuing anyway"
+  fi
 
-for d in /dev/kfd /dev/dri/renderD128; do
-  [ -e "$d" ] && ok "$d present" \
-    || bad "$d missing -- amdgpu driver not loaded; see $PREREQ sections II.2 and II.4"
-done
+  for d in /dev/kfd /dev/dri/renderD128; do
+    [ -e "$d" ] && ok "$d present" \
+      || bad "$d missing -- amdgpu driver not loaded; see $PREREQ sections II.2 and II.4"
+  done
 
-miss=""
-for g in render video; do id -nG | tr ' ' '\n' | grep -qx "$g" || miss="$miss$g "; done
-if [ -z "$miss" ]; then
-  ok "in groups: render video"
-else
-  bad "not in group(s): ${miss%% } -- run: sudo usermod -aG render,video \"\$USER\" then log out/in (see $PREREQ section II.5)"
+  miss=""
+  for g in render video; do id -nG | tr ' ' '\n' | grep -qx "$g" || miss="$miss$g "; done
+  if [ -z "$miss" ]; then
+    ok "in groups: render video"
+  else
+    bad "not in group(s): ${miss%% } -- run: sudo usermod -aG render,video \"\$USER\" then log out/in (see $PREREQ section II.5)"
+  fi
 fi
 
 if command -v docker >/dev/null 2>&1; then
@@ -74,7 +93,10 @@ fi
 docker compose version >/dev/null 2>&1 && ok "docker compose plugin" \
   || bad "docker compose plugin missing -- see $PREREQ section II.6"
 
-if [ -d "$HOME/llm_models" ]; then
+if [ "$REMOTE" -eq 1 ]; then
+  mkdir -p "$HOME/llm_models"   # bind-mount target; stays empty in remote mode
+  note "remote mode: no local models needed (~/llm_models stays empty)"
+elif [ -d "$HOME/llm_models" ]; then
   ok "~/llm_models exists"
 else
   mkdir -p "$HOME/llm_models"
@@ -105,9 +127,28 @@ else
 fi
 if [ -f backend.env ]; then
   note "backend.env exists -- left as-is"
+elif [ "$REMOTE" -eq 1 ]; then
+  cat > backend.env <<'EOF'
+BACKEND_MODE=remote
+REMOTE_HOST=
+REMOTE_PORT=11500
+REMOTE_API_KEY=
+VLM_MODEL_NAME=bt-ocr
+TRANSLATION_MODEL_NAME=bt-translate
+EOF
+  ok "backend.env written (BACKEND_MODE=remote -- set REMOTE_HOST / REMOTE_API_KEY)"
 else
   cp backend.env.example backend.env
   ok "backend.env written (BACKEND_MODE=local, LLAMA_BACKEND=vulkan)"
+fi
+
+if [ "$REMOTE" -eq 1 ]; then
+  if [ -f docker-compose.override.yml ]; then
+    note "docker-compose.override.yml exists -- left as-is"
+  else
+    cp docker-compose.override.yml.example docker-compose.override.yml
+    ok "docker-compose.override.yml written (drops the GPU device wiring)"
+  fi
 fi
 
 echo
@@ -132,8 +173,17 @@ echo
 echo "============================================================"
 echo " Setup complete. The container is up and idle."
 echo
-echo " First 'up' downloads ~13 GB of GGUF models into ~/llm_models --"
-echo "   docker compose logs -f translator   to watch."
+if [ "$REMOTE" -eq 1 ]; then
+  echo " Remote mode. No local models. Next:"
+  echo "   1. edit backend.env -> REMOTE_HOST, REMOTE_API_KEY"
+  echo "   2. stand up the GPU box (docs/remote-gpu.md)"
+  echo "   3. docker exec -w /app booktranslator-translator-1 \\"
+  echo "        python3 -c 'import backend_config as b; print(b.describe())'"
+  echo "      -> remote -> http://<host>:11500 (auth: yes)"
+else
+  echo " First 'up' downloads ~13 GB of GGUF models into ~/llm_models --"
+  echo "   docker compose logs -f translator   to watch."
+fi
 echo
 echo " Then, per book:"
 echo "   cp your-book.pdf books/"
