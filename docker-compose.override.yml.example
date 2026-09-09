@@ -1,0 +1,22 @@
+# Compose override for running BookTranslator in REMOTE mode on a host
+# with no AMD GPU (BACKEND_MODE=remote in backend.env -- inference runs on
+# a separate llama-server over the LAN, so this container needs no
+# /dev/kfd and no video/render groups).
+#
+# Use it:
+#   cp docker-compose.override.yml.example docker-compose.override.yml
+# Compose auto-loads docker-compose.override.yml from the project root.
+# The real file is git-ignored (host-specific, like .env / backend.env);
+# a local-GPU host must NOT have it -- it would strip the GPU wiring.
+#
+# Without it, on a GPU-less host `docker compose up -d` fails with:
+#   error gathering device information ... /dev/kfd: no such file or directory
+#
+# `!reset` needs Compose v2.24+ (Jan 2024). On older Compose, instead
+# delete the `devices:` and `group_add:` blocks from docker-compose.yml.
+#
+# See docs/remote-gpu.md for the full remote setup.
+services:
+  translator:
+    devices: !reset []
+    group_add: !reset []

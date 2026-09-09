@@ -24,3 +24,6 @@ __pycache__/
 # Backend selection (may hold REMOTE_API_KEY); .example is tracked
 backend.env
 review-notes/
+
+# Host-specific compose override (remote/GPU-less). .example is tracked.
+docker-compose.override.yml
