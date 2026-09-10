@@ -104,7 +104,10 @@ def _find_matching_mmproj(model_path_str: str) -> str:
     return str(best)
 
 
-if not VLM_MMPROJ_PATH:
+# Only needed to launch a local llama-server. In BACKEND_MODE=remote the
+# GPU box owns the model + projector, /models here is empty (see
+# scripts/setup.sh --remote), and this resolution would exit(1) at import.
+if not VLM_MMPROJ_PATH and not bc.is_remote():
     try:
         VLM_MMPROJ_PATH = _find_matching_mmproj(VLM_MODEL_PATH)
     except FileNotFoundError as e:

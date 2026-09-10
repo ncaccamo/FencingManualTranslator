@@ -28,8 +28,11 @@ fi
 
 echo "[1/4] Starting container..."
 echo "────────────────────────────────────────────────────────"
-docker compose -f "$WORKDIR/docker-compose.yml" down --remove-orphans
-docker compose -f "$WORKDIR/docker-compose.yml" up -d
+# No explicit -f: passing one disables Compose's auto-merge of
+# docker-compose.override.yml, which a GPU-less remote host needs to strip
+# the /dev/kfd device mount (see docs/remote-gpu.md). cd'd to $WORKDIR above.
+docker compose down --remove-orphans
+docker compose up -d
 echo ""
 
 echo "[2/4] VLM OCR + Structure Extraction..."

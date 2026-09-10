@@ -5,10 +5,12 @@ your LAN. The BookTranslator host then needs **no GPU** — it runs the
 OCR-parse and PDF-render work on CPU and calls the remote box over HTTP
 with a bearer token. Nothing leaves your network.
 
-This is a supported topology (it is how the reference deployment runs).
-The one thing to check on a first run is that OCR step 1 — which uploads
-page images as base64 to the remote server — works against your specific
-`llama-server` build; run a `_sample.pdf` first.
+This is a supported topology (it is how the reference deployment runs) and
+is verified end-to-end (Kirchhoffer 16-page `_sample.pdf` through
+1→2→3→4, 2026-09-10) against a Windows llama-swap box. On a first run
+against **your** `llama-server` build, put a `_sample.pdf` through first —
+the one build-specific unknown is whether step 1's base64 page-image
+upload is accepted.
 
 ---
 

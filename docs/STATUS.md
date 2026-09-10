@@ -89,17 +89,20 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    meta-response leak found + fixed. Jacob Jules (Gallica 68 ppi) → only
    27% corroborated folios (olmOCR can't read the low-res page numbers;
    bracketed sheet ordinals by design), para-alignment 34%.
-4. **Remote mode end-to-end** — the resolver / auth / no-local-server
-   plumbing was stub-tested (localhost); the reference deployment now runs
-   it for real: a GPU-less Ubuntu pipeline host (`scripts/setup.sh
+4. ~~**Remote mode end-to-end**~~ VERIFIED 2026-09-10. The reference
+   deployment runs it: a GPU-less Ubuntu pipeline host (`scripts/setup.sh
    --remote` + `docker-compose.override.yml`) against a Windows box
    running llama-swap on :11500 (`bt-ocr` / `bt-translate` keys, so the
-   models swap automatically — `run_full_pipeline.sh` unchanged). As of
-   2026-09-09 the container is up and `backend_config.describe()` reports
-   `remote (auth: yes)`; **a full book through 1→2→3→4 in remote mode is
-   still pending** — the unknowns are step 1's base64 image upload to a
-   remote server and the model-swap cadence under a real run. Setup +
-   both paths (llama-swap / bare server): `docs/remote-gpu.md`.
+   models swap automatically — `run_full_pipeline.sh` unchanged). The
+   Kirchhoffer 16-page `_sample.pdf` went through 1→2→3→4 clean: step 1's
+   base64 page-image upload to the remote server works, and llama-swap
+   swaps vision→text between steps with no manual step. Fixes that landed
+   with the run: step 1 no longer resolves a local `mmproj` in remote mode
+   (would `exit(1)` on the empty `/models`); `run_full_pipeline.sh` dropped
+   its explicit `-f` so the compose override auto-merges;
+   `test_vlm_single_page.py` sends `VLM_MODEL_NAME` so it routes under
+   llama-swap. Setup + both paths (llama-swap / bare server):
+   `docs/remote-gpu.md`.
 5. ~~**User Manual** Sections I and III.~~ DONE — Section I rewritten
    (current models, flowing PDF, footnotes-done, backend selection,
    limitations reconciled with this file); Section III written

@@ -37,7 +37,7 @@ pdf_path = sys.argv[1]
 page_num = int(sys.argv[2]) if len(sys.argv) > 2 else 0
 
 PROMPT_FILE = os.environ.get("VLM_PROMPT_FILE", "/app/vlm_ocr_prompt.txt")
-MAX_DIMENSION = int(os.environ.get("VLM_MAX_DIMENSISN", "1288"))
+MAX_DIMENSION = int(os.environ.get("VLM_MAX_DIMENSION", "1288"))
 PREPROCESS = os.environ.get("VLM_PREPROCESS", "1") != "0"
 
 if not os.path.exists(PROMPT_FILE):
@@ -78,13 +78,17 @@ img.save(buffered, format="JPEG", quality=92, optimize=True)
 img_b64 = base64.b64encode(buffered.getvalue()).decode()
 print(f"Image prepared: {img.width}x{img.height}, {len(buffered.getvalue())/1024:.0f}KB")
 
-print(f"Sending to VLM ({bc.ocr_base_url()})...")
+# Same "model" label the real pipeline sends (1_ocr_and_extract_vlm.py):
+# ignored by a single-model llama-server, the routing key under llama-swap.
+MODEL_NAME = os.environ.get("VLM_MODEL_NAME") or "olmocr2"
+
+print(f"Sending to VLM ({bc.ocr_base_url()}) as model={MODEL_NAME!r}...")
 
 response = requests.post(
     f"{bc.ocr_base_url()}/v1/chat/completions",
     headers={"Content-Type": "application/json", **bc.auth_headers()},
     json={
-        "model": "olmocr2",
+        "model": MODEL_NAME,
         "messages": [
             {
                 "role": "user",
