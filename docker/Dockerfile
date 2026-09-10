@@ -188,7 +188,11 @@ RUN python3 -m pip install --break-system-packages --no-cache-dir \
 
 ENV HIP_VISIBLE_DEVICES=0
 ENV ROCR_VISIBLE_DEVICES=0
-ENV LLAMA_BACKEND=rocm
+# Fallback backend when backend.env leaves LLAMA_BACKEND unset. Must match
+# the documented default (backend.env.example, pipeline/backend_config.py,
+# entrypoint's ":=vulkan") -- the entrypoint's default only fires if this
+# baked value is empty, so an image ENV of "rocm" here would silently win.
+ENV LLAMA_BACKEND=vulkan
 
 RUN mkdir -p /app && chmod 777 /app
 # ~/.cache is a named volume (docker-compose) so the RADV/Vulkan shader
@@ -251,7 +255,7 @@ else
 
   echo "========================================================"
   echo "  Historical Fencing Book Translator"
-  echo "  Translation: Qwen 2.5 7B | Vision: $(basename "$VLM_MODEL" .gguf)"
+  echo "  Translation: $(basename "$TRANSLATION_MODEL" .gguf) | Vision: $(basename "$VLM_MODEL" .gguf)"
   echo "  Inference backend: $LLAMA_BACKEND (llama-$SUFFIX)"
   echo "========================================================"
 
