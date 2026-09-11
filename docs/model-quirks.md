@@ -105,6 +105,22 @@ SUR PRÉPARATIONS.` (folio + running head together), which also empties
   number or header with no companion, using the book's whole header
   vocabulary.
 
+**1.2b-2 (2026-09-11) `clean_vlm_extraction()`'s empty-body fallback also
+leaked header text into a page's *translated* body.** A plate leaf with
+a genuinely empty `BODY_TEXT:` and a multi-word `HEADER:` (common once
+1.2c stopped inventing bracketed folios — a blank folio + a real header
+is now routine) fell through to a fallback meant to strip stray labels:
+`re.sub(r'PAGE_NUMBER:\s*\S+', ...)`. `\s*` also matches the newline
+between `PAGE_NUMBER:` and `HEADER:`, and `\S+` doesn't stop at a colon,
+so it ate `PAGE_NUMBER:` *and* the `HEADER:` label in one bite — leaving
+the header's own text (`FLEURET LES PARADES`) stranded, unlabeled, and
+indistinguishable from real body prose. It then got machine-translated
+("FOIL THE PARRIES") and rendered in place of the real plate caption
+(already sitting correctly in `figures.json`, from 1.2d below) — 40/110
+sheets on one Kirchhoffer plate run alone. Fixed: an empty `BODY_TEXT:`
+(the primary regex's `(.+)` can't match zero characters) now returns `""`
+directly instead of falling through to the label-stripper.
+
 ### 1.3 Accents added to bare display capitals
 
 **Seen:** section headings like `CROISÉ`, `ÉPÉE`, `ÉCOLE`, `ÉPREUVE`.
@@ -167,6 +183,19 @@ when the page isn't prose-dominant (< 3 real paragraphs). Cost: a genuine
 shoulder-note on a 2-paragraph page now stays in the body — judged the
 lesser evil.
 
+*2026-09-11:* the real remaining false-positive source was the page
+*boundary*, not the figure/caption cases above — a page's actual last
+paragraph, cut off mid-sentence by where OCR split the pages, looks
+exactly like a short standalone note. First pass excluded a trailing
+`,`/`;`/`:` (Prévost src 15/17); a corpus scan then found **40/67** tagged
+notes with *no* terminal punctuation at all — mid-word, mid-clause,
+clearly page-boundary cuts, not blacklistable one at a time (Gomard "One
+breaks the distance to disengage from an enemy"). Replaced the blacklist
+with a whitelist: a genuine note is a complete remark, so now **require**
+the paragraph to end in `.`/`!`/`?` (optionally + a closing quote/paren)
+to be eligible at all. Dropped false positives to 0 in the three books
+retranslated against it; 67→26 tagged notes corpus-wide.
+
 ### 1.6b Cross-page word hyphenation
 
 **Seen:** Gomard 1845 — a word split by end-of-page hyphenation in the
@@ -220,8 +249,25 @@ Repetition is counted per **running-head root**: a two-part head
 `LEFT⇥RIGHT` (section + per-page topic — Kirchhoffer `SABRE⇥CORPS A
 CORPS`, `ÉPÉE⇥CROISÉ`) keys the count on `LEFT` only. The right half is
 unique to one page; counting the whole string sent every plate-page
-header in a section into the body (batch-2 regression). A bare one-off
-title still keys on the whole line and still demotes.
+header in a section into the body (batch-2 regression).
+
+*2026-09-11: stopped demoting one-off headers at all.* The repeat-count
+demotion (`< 2 pages → body`) turned out to also catch genuine running
+heads for a section that's only one page long — it can never repeat, by
+definition. Visually confirmed against the actual scan: Kirchhoffer
+`PARTICULARITÉS` (src 13) sits in the *exact* folio+title+rule position
+of every other running head; there's no separate body-level duplicate to
+tell it apart from noise by pattern-matching, either — the body just
+opens directly with the section's prose. A repeat-count filter cannot
+distinguish "real header, one-page section" from "OCR noise"; per review
+feedback, fidelity wins — `reconcile_headers()` now trusts whatever
+`HEADER:` olmOCR-2 reported, full stop. The one known real noise source
+(a plate caption filed in `HEADER:`) is caught separately and earlier, by
+1.2d below, before this function ever sees the page. The **lift**
+direction (promote a confirmed header from a matching body line when
+`HEADER:` is empty) is unaffected — still gated on repetition, since
+that direction is inference from pattern-matching, not a value the model
+directly reported.
 
 ### 1.2d Plate caption in `HEADER:`; scanner apparatus in `HEADER:`
 
@@ -525,7 +571,9 @@ inherited list kept too much in French. Three categories:
   below, plus explicitly `garde`→guard, `engagement`→engagement,
   `parade`→parry, `doublé`→double, `fer`→the blade, `temps`→tempo,
   `temps d'arrêt`→stop-hit, `soie`→tang, `fort`/`faible`→forte/foible,
-  the heading connectives **DE / DES / SUR / PAR / AVEC**.
+  `rompre`→to break ground / to retreat (2026-09-11: was missing from
+  every list, so the model improvised the false cognate "romp"), the
+  heading connectives **DE / DES / SUR / PAR / AVEC**.
 - **Cat 2 — KEEP in French, `<i>…</i>`** (the tight retained set English
   fencing literature itself keeps): `riposte`, `remise`, `reprise`,
   `croisé`, `corps à corps`, `volte`, `sentiment du fer`, the numbered

@@ -517,13 +517,20 @@ def label_margin_notes(text: str, has_fig: bool = False) -> str:
         return text
     last = paras[-1].strip()
     letters = [c for c in last if c.isalpha()]
-    # last[-1:] in ",;:" -- ends mid-sentence (the page boundary cut it off,
-    # continues on the next page), not a standalone note (P-review D).
+    # A genuine printed shoulder-note is a complete remark -- it ends the
+    # sentence. A paragraph the page boundary cut off (continues on the
+    # next page) usually doesn't, and not just on a comma (P-review D) --
+    # a corpus scan after that fix still found 40/67 tagged notes with no
+    # terminal punctuation at all, nearly all clearly mid-sentence
+    # ("One breaks the distance to disengage from an enemy...", cut off).
+    # Require the sentence to actually end, instead of blacklisting a few
+    # specific "clearly continues" characters.
+    ends_sentence = bool(re.search(r'[.!?][)\]"»]*$', last))
     if ("\n" in last or len(last.split()) > 20 or last[:1] in "([{«"
             or re.match(r"\d", last) or re.match(r"[A-Za-zÀ-ÿ]?\d+[°ºo]", last)
             or _FIG_TITLE_RE.match(last)     # a figure caption title, not a note
             or (letters and sum(c.isupper() for c in letters) > 0.7 * len(letters))
-            or last[-1:] in ",;:"):
+            or not ends_sentence):
         return text
     note = "[margin note] " + re.sub(r"\s+", " ", last)
     block = (existing.rstrip() + "\n" if existing.strip() else "") + note

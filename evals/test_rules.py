@@ -139,6 +139,20 @@ def test_label_margin_notes_skips_page_boundary_continuation():
     assert label_margin_notes(txt) == txt
 
 
+def test_label_margin_notes_skips_continuation_with_no_terminal_punctuation():
+    # A comma-ending check alone missed most of these -- a paragraph cut
+    # off mid-word/mid-clause with NO trailing punctuation at all (a
+    # corpus scan found 40/67 tagged notes like this, e.g. Gomard "One
+    # breaks the distance to disengage from an enemy"). A genuine shoulder
+    # note is a complete remark: require the sentence to actually end.
+    txt = ("The main body paragraph goes on for a while about the left hand "
+           "and its uses in a serious affair.\n\n"
+           "A second full paragraph of ordinary prose so the page reads as "
+           "prose-dominant and not just a caption with a stray line.\n\n"
+           "One breaks the distance to disengage from an enemy")
+    assert label_margin_notes(txt) == txt
+
+
 def test_extract_source_footnotes_bare_number_tail():
     state = {}
     txt = ("Body paragraph one about the guard position and how it is held.\n\n"
