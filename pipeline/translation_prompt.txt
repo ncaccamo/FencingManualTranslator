@@ -19,6 +19,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - coup droit → straight thrust   (NOT "straight right"; "droit" here = straight)
    - dérobement → evasion (of the blade)   |   déroulé → glide
    - une-deux → one-two   |   fente → lunge   |   demi-fente → half-lunge   |   coup(s) (bare) → thrust(s) / blow(s)
+   - rompre → to break ground / to retreat   (a footwork term, NOT "romp")
    - assaut → bout   |   tireur → fencer   |   maître (d'armes) → fencing master   |   salle (d'armes) → fencing hall/room
    - "leçon d'assaut" → "bout lesson" (keep the word "lesson" — NOT the same as a bare "assaut")
    - "un assaut d'épée" → "an épée bout"  (plain "assaut", NO "lesson")

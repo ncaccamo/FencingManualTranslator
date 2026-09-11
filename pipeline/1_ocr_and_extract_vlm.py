@@ -596,44 +596,54 @@ def fold_caption_header_into_figure(parsed: list) -> None:
         p["header"] = ""
 
 
-def reconcile_headers(parsed: list) -> None:
-    """The header bar is for a genuine running header -- one repeated at the
-    top of the page across a section. olmOCR-2 also files one-off titles in
-    HEADER: (a part/section title caught at the top of a fresh page, a
-    title-page title, a plate caption) inconsistently, so the same kind of
-    line renders as a running head on one page and body text on the next
-    (P8/P10/K2). Resolve it by the one reliable signal -- repetition:
-
-      * HEADER seen on < 2 pages -> not a running head: prepend it to the
-        body as its own line, clear HEADER.
-      * HEADER empty but the body opens with a line that is exactly a
-        confirmed running head -> lift that line into HEADER.
-
-    Run AFTER fold_caption_header_into_figure() so plate captions have
-    already been routed to the figure, not the body.
-
-    Repetition is counted per *running-head root*: a two-part head
-    ``LEFT\tRIGHT`` (section name + per-page topic, e.g.
-    ``SABRE\tCORPS A CORPS``) keys on LEFT only -- the right half is
-    unique to one page and must not fragment the count, or every plate
-    page in a section loses its header (K-batch2 regression). A bare
-    one-off title (``DES CONTRES``, ``FOURTH PART``) still keys on the
-    whole line and still demotes."""
+def _confirmed_header_keys(parsed: list) -> set:
+    """Running-head roots seen on >= 2 pages, keyed by a two-part head's
+    LEFT half only (see reconcile_headers()). Used only to LIFT a header
+    from a matching body line when HEADER is empty -- that inference stays
+    conservative (only a header seen elsewhere in the book is trusted
+    enough to read off body-text pattern matching)."""
     from collections import Counter
 
     def _key(h):
         return _norm_head(h.split("\t", 1)[0] if "\t" in h else h)
 
-    counts = Counter(_key(p["header"])
-                     for p in parsed if (p.get("header") or "").strip())
-    confirmed = {h for h, c in counts.items() if h and c >= 2}
+    counts = Counter(_key(p["header"]) for p in parsed if (p.get("header") or "").strip())
+    return {h for h, c in counts.items() if h and c >= 2}
+
+
+def reconcile_headers(parsed: list) -> None:
+    """The header bar is for a genuine running header -- one repeated at
+    the top of the page across a section, OR a one-page subsection's own
+    title standing as its running head. Both are real: visual inspection
+    of the scan (K-review-2, ``PARTICULARITÉS`` -- src 13) confirmed a
+    single-occurrence header sits in the *exact* folio + title + rule
+    position of every other running head; it's just that this particular
+    section is one page long, so it can never repeat. A repeat-count
+    threshold can't tell that apart from noise, and review feedback wants
+    fidelity over an engineered "only show headers that repeat" rule.
+    olmOCR-2's one real known failure mode here -- filing a plate's
+    caption line in HEADER: -- is caught earlier and separately, by
+    fold_caption_header_into_figure() (run just before this). So: trust
+    whatever HEADER: this page reported, full stop.
+
+      * HEADER empty but the body opens with a line that is exactly a
+        CONFIRMED (repeated >= 2x) running head -> lift that line into
+        HEADER. This direction stays conservative -- inferring a header
+        from body-text pattern matching is only trusted when that header
+        text is independently confirmed elsewhere in the book.
+
+    Repetition (for the lift above) is counted per *running-head root*: a
+    two-part head ``LEFT\tRIGHT`` (section name + per-page topic, e.g.
+    ``SABRE\tCORPS A CORPS``) keys on LEFT only -- the right half is
+    unique to one page and must not fragment the count, or every plate
+    page in a section loses its header (K-batch2 regression)."""
+    def _key(h):
+        return _norm_head(h.split("\t", 1)[0] if "\t" in h else h)
+
+    confirmed = _confirmed_header_keys(parsed)
     for p in parsed:
         head = (p.get("header") or "").strip()
-        if head and _key(head) not in confirmed:
-            body = p.get("body") or ""
-            p["body"] = f"{head}\n\n{body}".lstrip() if body.strip() else head
-            p["header"] = ""
-        elif not head:
+        if not head:
             body = p.get("body") or ""
             first, _, rest = body.lstrip("\n").partition("\n")
             if first.strip() and _key(first) in confirmed:

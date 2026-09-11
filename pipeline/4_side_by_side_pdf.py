@@ -146,10 +146,15 @@ def render_aligned(page, y_top, tr, size, fracs, src_page, bottom=RIGHT.y1):
 
 def parse_vlm_output(text: str) -> dict:
     result = {"page_num": "", "header": ""}
-    m = re.search(r'PAGE_NUMBER:\s*(.+?)(?:\n|$)', text, re.IGNORECASE)
+    # [ \t]*, not \s* -- \s also matches the newline, so on a genuinely
+    # blank value ("PAGE_NUMBER: \nHEADER: ...", common since blank folios
+    # stopped getting a bracketed [n]) it ate straight through into the
+    # next field's label and captured THAT instead -- rendered onto the
+    # page as a bogus "Page HEADER: <header text>" tag.
+    m = re.search(r'PAGE_NUMBER:[ \t]*(.+?)(?:\n|$)', text, re.IGNORECASE)
     if m:
         result["page_num"] = m.group(1).strip()
-    m = re.search(r'HEADER:\s*(.+?)(?:\n|BODY_TEXT:)', text, re.IGNORECASE | re.DOTALL)
+    m = re.search(r'HEADER:[ \t]*(.+?)(?:\n|BODY_TEXT:)', text, re.IGNORECASE | re.DOTALL)
     if m and m.group(1).strip().lower() != "none":
         result["header"] = m.group(1).strip()
     return result

@@ -68,12 +68,26 @@ def clean_vlm_extraction(text: str) -> str:
     body_match = re.search(r'BODY_TEXT:\s*(.+)', text, re.IGNORECASE | re.DOTALL)
     if body_match:
         return body_match.group(1).strip()
-    
-    # If no BODY_TEXT marker, try to remove common VLM labels
-    cleaned = re.sub(r'PAGE_NUMBER:\s*\S+', '', text, flags=re.IGNORECASE)
-    cleaned = re.sub(r'HEADER:\s*[^\n]+', '', cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r'BODY_TEXT:', '', cleaned, flags=re.IGNORECASE)
-    
+
+    if re.search(r'(?im)^BODY_TEXT:\s*$', text):
+        # The label is there but nothing follows -- a genuinely empty body
+        # (a plate leaf with no prose), not a malformed record. Don't fall
+        # through to the label-stripping heuristic below: it used to strip
+        # "PAGE_NUMBER:\s*\S+" greedily enough to eat the "HEADER:" label
+        # along with it (\S+ doesn't stop at a colon), leaving the header's
+        # own text stranded and unlabeled -- mistaken for body text, sent
+        # through the translator, and rendered in place of the real plate
+        # caption (already captured correctly and separately in
+        # figures.json).
+        return ""
+
+    # No BODY_TEXT marker at all (malformed record) -- strip the known
+    # labels line by line, not with a run-on \s* that can cross into the
+    # next label.
+    cleaned = re.sub(r'(?im)^PAGE_NUMBER:.*$', '', text)
+    cleaned = re.sub(r'(?im)^HEADER:.*$', '', cleaned)
+    cleaned = re.sub(r'(?im)^BODY_TEXT:.*$', '', cleaned)
+
     return cleaned.strip()
 
 FN_MARK = "†"          # dagger, used as the footnote reference mark
@@ -503,10 +517,13 @@ def label_margin_notes(text: str, has_fig: bool = False) -> str:
         return text
     last = paras[-1].strip()
     letters = [c for c in last if c.isalpha()]
+    # last[-1:] in ",;:" -- ends mid-sentence (the page boundary cut it off,
+    # continues on the next page), not a standalone note (P-review D).
     if ("\n" in last or len(last.split()) > 20 or last[:1] in "([{«"
             or re.match(r"\d", last) or re.match(r"[A-Za-zÀ-ÿ]?\d+[°ºo]", last)
             or _FIG_TITLE_RE.match(last)     # a figure caption title, not a note
-            or (letters and sum(c.isupper() for c in letters) > 0.7 * len(letters))):
+            or (letters and sum(c.isupper() for c in letters) > 0.7 * len(letters))
+            or last[-1:] in ",;:"):
         return text
     note = "[margin note] " + re.sub(r"\s+", " ", last)
     block = (existing.rstrip() + "\n" if existing.strip() else "") + note

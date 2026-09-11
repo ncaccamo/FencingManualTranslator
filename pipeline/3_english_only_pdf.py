@@ -163,10 +163,13 @@ def band_for_figure(fig, src_page, body_words=0):
 
 def parse_vlm_output(text: str) -> dict:
     result = {"page_num": "", "header": ""}
-    m = re.search(r'PAGE_NUMBER:\s*(.+?)(?:\n|$)', text, re.IGNORECASE)
+    # [ \t]*, not \s* -- see 4_side_by_side_pdf.py's copy of this function
+    # for why: \s* used to eat through a blank value's newline into the
+    # next field's label and capture that instead.
+    m = re.search(r'PAGE_NUMBER:[ \t]*(.+?)(?:\n|$)', text, re.IGNORECASE)
     if m:
         result["page_num"] = m.group(1).strip()
-    m = re.search(r'HEADER:\s*(.+?)(?:\n|BODY_TEXT:)', text, re.IGNORECASE | re.DOTALL)
+    m = re.search(r'HEADER:[ \t]*(.+?)(?:\n|BODY_TEXT:)', text, re.IGNORECASE | re.DOTALL)
     if m and m.group(1).strip().lower() != "none":
         result["header"] = m.group(1).strip()
     return result

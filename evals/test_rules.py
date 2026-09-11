@@ -25,8 +25,27 @@ from _rules import (
     salvage_leaked_folio_header, dehyphenate_across_pages,
     drop_google_boilerplate, mark_handwritten_inscriptions,
     drop_scan_apparatus, fold_caption_header_into_figure, reconcile_headers,
-    recover_plate_captions, parse_vlm_response,
+    recover_plate_captions, parse_vlm_response, clean_vlm_extraction,
 )
+
+
+def test_clean_vlm_extraction_empty_body_not_leaked():
+    # (P-review A) a plate leaf with a genuinely empty BODY_TEXT and a
+    # multi-word header must come back empty, not the header's own text --
+    # the old fallback's PAGE_NUMBER:\s*\S+ ate the "HEADER:" label along
+    # with it (\S+ doesn't stop at a colon), stranding "FLEURET LES
+    # PARADES" unlabeled and indistinguishable from real body text (it
+    # then got machine-translated and rendered in place of the real plate
+    # caption already sitting in figures.json).
+    page = "PAGE_NUMBER: \nHEADER: FLEURET\tLES PARADES\nBODY_TEXT:"
+    assert clean_vlm_extraction(page) == ""
+
+
+def test_clean_vlm_extraction_normal_body_unaffected():
+    page = ("PAGE_NUMBER: 13\nHEADER: none\nBODY_TEXT:\n"
+             "PARTICULARITÉS\n\nBattement. — Frapper le fer ennemi.")
+    assert clean_vlm_extraction(page) == (
+        "PARTICULARITÉS\n\nBattement. — Frapper le fer ennemi.")
 
 
 def test_salvage_leaked_folio_header():
@@ -105,6 +124,19 @@ def test_label_margin_notes_skipped_on_figure_page():
     assert label_margin_notes(txt, has_fig=True) == txt
     # even without has_fig, a caption-shaped trailing line is not a note
     assert "[margin note]" not in label_margin_notes(txt)
+
+
+def test_label_margin_notes_skips_page_boundary_continuation():
+    # (P-review D) a paragraph the page boundary cut off mid-sentence --
+    # ends on a comma, continues on the next page -- is not a standalone
+    # shoulder note, even though it's short enough to look like one.
+    txt = ("The main body paragraph goes on for a while about the left hand "
+           "and its uses in a serious affair.\n\n"
+           "A second full paragraph of ordinary prose so the page reads as "
+           "prose-dominant and not just a caption with a stray line.\n\n"
+           "To move from the second to the third position: extend the arm, "
+           "the hand in supination,")
+    assert label_margin_notes(txt) == txt
 
 
 def test_extract_source_footnotes_bare_number_tail():
@@ -420,14 +452,21 @@ def test_strip_tail_capped_at_two():
         == "Body.\nESCRIME"
 
 
-def test_reconcile_headers_one_off_to_body():
+def test_reconcile_headers_one_off_is_trusted():
+    # (P-review B) a header seen only once must NOT be demoted -- visual
+    # check against the scan (K-review-2 "PARTICULARITÉS" -- src 13) found
+    # it sitting in the exact folio+title+rule position of every other
+    # running head; it's a real one-page-long section's own running head,
+    # not OCR noise. A repeat-count threshold can't distinguish that from
+    # noise, so stop demoting on count alone -- trust whatever HEADER:
+    # olmOCR-2 reported.
     parsed = [
         {"header": "DES PARADES", "body": "a", "figures": []},
         {"header": "DES PARADES", "body": "b", "figures": []},
         {"header": "QUATRIÈME PARTIE", "body": "c", "figures": []},
     ]
     reconcile_headers(parsed)
-    assert parsed[2]["header"] == "" and parsed[2]["body"].startswith("QUATRIÈME PARTIE")
+    assert parsed[2]["header"] == "QUATRIÈME PARTIE" and parsed[2]["body"] == "c"
     assert parsed[0]["header"] == "DES PARADES"      # repeated -> kept
 
 
@@ -482,7 +521,7 @@ def test_reconcile_headers_two_part_root_survives():
     reconcile_headers(parsed)
     assert parsed[4]["header"] == "SABRE\tCORPS A CORPS"   # kept (root repeats)
     assert parsed[5]["header"] == "SABRE\tCOUP D'ARRÊT"    # kept
-    assert parsed[6]["header"] == "" and parsed[6]["body"].startswith("DES CONTRES")
+    assert parsed[6]["header"] == "DES CONTRES" and parsed[6]["body"] == "one-off"
 
 
 def test_reconcile_page_numbers_blanks_seesaw_run():
