@@ -85,3 +85,5 @@ no ROCm/Vulkan). `scripts/setup.sh --remote` + `docker-compose.override.yml`
 - Ask for my input on decisions you think need it.
 - Make changes freely based on feedback, and commit them unless I say otherwise.
 - Do not push anything to remote until I explicitly say to.
+- Give time estimates where possible for reprocessing steps.
+- Run processes such that you can track completion of steps and move to the next or notify automatically. run_in_background: true or similar.
