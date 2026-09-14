@@ -26,6 +26,7 @@ from _rules import (
     drop_google_boilerplate, mark_handwritten_inscriptions,
     drop_scan_apparatus, fold_caption_header_into_figure, reconcile_headers,
     recover_plate_captions, parse_vlm_response, clean_vlm_extraction,
+    repair_source_ocr_misreads,
 )
 
 
@@ -212,6 +213,37 @@ def test_extract_source_footnotes_continuation_before_own_notes():
     assert block[0].startswith("… explain, since")     # continuation first
     assert block[1].startswith("(1)") and block[2].startswith("(2)")
     assert state["open"] is False
+
+
+def test_extract_source_footnotes_deferred_last_paragraph():
+    # (P-review, Gomard src 220/221) the continuation isn't always the
+    # very next thing OCR reads -- it can be deferred to the FOOT of the
+    # next page, after that page's own unrelated new body text. The real
+    # continuation opened on a kept italic term ("<i>riposte</i>, but…"),
+    # which a bare [:1].islower() check misses ("<" isn't a letter) --
+    # this first attempt at the fix passed with plain-text fixtures but
+    # silently failed on the real translated data.
+    state = {}
+    extract_source_footnotes(
+        "La riposte se fait du tac au tac (1), ou à temps perdu.\n\n"
+        "(1) L'origine de l'expression n'est pas très facile à "
+        "expliquer. Par le premier mot tac on a voulu peindre le choc de la",
+        state)
+    assert state["open"] is True
+
+    out = extract_source_footnotes(
+        "La riposte du tac au tac est celle qui suit immédiatement la "
+        "parade et doit s'exécuter avec la plus grande rapidité.\n\n"
+        "La riposte à temps perdu peut avoir lieu par un coup simple ou "
+        "par un coup composé.\n\n"
+        "<i>riposte</i>, but by the second word \"tac,\" what has been "
+        "intended to depict? It is more probable that it signifies the "
+        "button's strike.",
+        state)
+    assert state["open"] is False
+    body, notes = out.split("___FOOTNOTES___")
+    assert "second word" not in body             # not left as body text
+    assert "… <i>riposte</i>, but by the second word" in notes
 
 
 def test_clean_caption_drops_stamps_and_markdown():
@@ -495,6 +527,104 @@ def test_reconcile_headers_lifts_confirmed_from_body():
     assert not parsed[2]["body"].startswith("DES CONTRES")
 
 
+def test_reconcile_headers_promotes_unconfirmed_section_opener():
+    # (P-review-3) TERMES TECHNIQUES / PARADES ET RIPOSTES / RÈGLEMENTS
+    # style: the model reads HEADER: none on EVERY page of the section
+    # (never confirms it as a header anywhere), but the body still opens
+    # with it as a standalone, short, all-caps line every time. Promote
+    # anyway -- confirmed against the actual scan for two of these.
+    parsed = [
+        {"header": "FLEURET", "body": "x", "figures": []},
+        {"header": "FLEURET", "body": "y", "figures": []},
+        {"header": "",
+         "body": "TERMES TECHNIQUES\n\nCoup droit. — Attaque simple.",
+         "figures": []},
+    ]
+    reconcile_headers(parsed)
+    assert parsed[2]["header"] == "TERMES TECHNIQUES"
+    assert parsed[2]["body"] == "Coup droit. — Attaque simple."
+
+
+def test_reconcile_headers_does_not_promote_glossary_headword():
+    # A mixed-case "Headword. — definition" opening line -- even if it's
+    # the first thing on the page -- is NOT a section title and must not
+    # get promoted (would misfile every glossary entry that happens to
+    # start a page as a running head).
+    parsed = [
+        {"header": "FLEURET", "body": "x", "figures": []},
+        {"header": "FLEURET", "body": "y", "figures": []},
+        {"header": "",
+         "body": "Croisé. — Parade qui consiste à s'emparer du fer.",
+         "figures": []},
+    ]
+    reconcile_headers(parsed)
+    assert parsed[2]["header"] == ""
+
+
+def test_reconcile_headers_reorders_swapped_two_part():
+    # Kirchhoffer "FLEURET / LA MISE EN GARDE" plate run: some leaves read
+    # the two-part head order-swapped and without the tab
+    # ("LA MISE EN GARDE FLEURET" instead of "FLEURET\tLA MISE EN
+    # GARDE"). FLEURET is confirmed (repeats dozens of times) elsewhere
+    # in the book; reorder onto the canonical root-first form.
+    parsed = (
+        [{"header": "FLEURET", "body": "p" + str(i), "figures": []} for i in range(4)]
+        + [{"header": "FLEURET\tLA MISE EN GARDE", "body": "", "figures": []},
+           {"header": "LA MISE EN GARDE FLEURET", "body": "", "figures": []}]
+    )
+    reconcile_headers(parsed)
+    assert parsed[4]["header"] == "FLEURET\tLA MISE EN GARDE"
+    assert parsed[5]["header"] == "FLEURET\tLA MISE EN GARDE"
+
+
+def test_reconcile_headers_reorders_even_when_swap_repeats_identically():
+    # The actual Kirchhoffer bug: "LA MISE EN GARDE FLEURET" is read the
+    # SAME (wrong) way on >=2 leaves, so it satisfies its OWN count>=2
+    # confirmation threshold as an accidental standalone root -- which
+    # used to skip the reorder check entirely (it looked "confirmed").
+    parsed = (
+        [{"header": "FLEURET", "body": "p" + str(i), "figures": []} for i in range(6)]
+        + [{"header": "LA MISE EN GARDE FLEURET", "body": "", "figures": []},
+           {"header": "LA MISE EN GARDE FLEURET", "body": "", "figures": []}]
+    )
+    reconcile_headers(parsed)
+    assert parsed[6]["header"] == "FLEURET\tLA MISE EN GARDE"
+    assert parsed[7]["header"] == "FLEURET\tLA MISE EN GARDE"
+
+
+def test_reconcile_headers_sandwich_interpolation():
+    # A single page with no header at all, and nothing in its body to
+    # lift, sandwiched between two pages that both already carry the
+    # same confirmed header -> inherits it (Kirchhoffer ÉPÉE src 27/30,
+    # Gomard PRÉFACE. src 13 -- an isolated single-page OCR miss inside
+    # an otherwise heavily-confirmed run).
+    parsed = [
+        {"header": "ÉPÉE", "body": "a", "figures": []},
+        {"header": "ÉPÉE", "body": "b", "figures": []},
+        {"header": "", "body": "continues mid-sentence, no title here", "figures": []},
+        {"header": "ÉPÉE", "body": "d", "figures": []},
+    ]
+    reconcile_headers(parsed)
+    assert parsed[2]["header"] == "ÉPÉE"
+
+
+def test_reconcile_headers_sandwich_interpolation_needs_agreement():
+    # Neighbours disagree (one of them is itself a one-off subsection
+    # opener, not the parent section's running head) -> no interpolation.
+    # This is a real residual gap (Kirchhoffer src 30, sandwiched between
+    # a freshly-promoted subsection opener and an unrelated one-off
+    # header) -- documented as NOT fixed by this mechanism.
+    parsed = [
+        {"header": "ÉPÉE", "body": "a0", "figures": []},
+        {"header": "ÉPÉE", "body": "a1", "figures": []},   # ÉPÉE confirmed
+        {"header": "PARADES ET RIPOSTES", "body": "b", "figures": []},
+        {"header": "", "body": "continues mid-sentence, no title here", "figures": []},
+        {"header": "CONTRE LE BRAS TENDU", "body": "d", "figures": []},
+    ]
+    reconcile_headers(parsed)
+    assert parsed[3]["header"] == ""
+
+
 def test_fold_caption_header_into_figure():
     parsed = [{"header": "PARADE DE TIERCE.", "body": "",
                "figures": [{"kind": "plate", "caption": ""}]}]
@@ -584,6 +714,55 @@ def test_recover_plate_caption_skips_duplicate_of_neighbour():
     recover_plate_captions(parsed)
     assert parsed[1]["figures"] == []          # neighbour already has it
     assert parsed[1]["body"] != ""
+
+
+def test_recover_plate_caption_borrows_from_short_neighbour():
+    parsed = [
+        {"page_raw": "", "header": "", "figures": [], "body": "Parade de quarte."},
+        {"page_raw": "", "header": "PARADE DE SECONDE.", "body": "",
+         "figures": [{"kind": "plate", "caption": ""}]},
+    ]
+    recover_plate_captions(parsed)
+    assert parsed[1]["figures"][0]["caption"] == "Parade de quarte."
+
+
+def test_recover_plate_caption_guard_skips_long_prose_neighbour():
+    # (P-review, Prévost pdf 56) a neighbour whose body is a full
+    # paragraph of prose that merely OPENS with a caption-shaped
+    # sub-heading must not donate that line as if it were a plate's own
+    # caption -- it produced "PARADE DE SECONDE — Parade de quarte"
+    # instead of just "Parade de seconde", merging an unrelated parry's
+    # inline sub-heading into this plate's caption. Only a genuinely
+    # short, caption-only neighbour page (previous test) may donate.
+    long_body = (
+        "Parade de quarte. Placer la main à gauche, le pouce en dessus, "
+        "le coude près du corps, la pointe à gauche, à la hauteur des "
+        "yeux et légèrement en dehors de la ligne, en appuyant sur le "
+        "fer de l'adversaire, sans quoi la parade serait incomplète et "
+        "manquerait totalement de sécurité pour le tireur qui l'exécute, "
+        "ce qui serait fort regrettable pour un débutant en escrime.")
+    assert len(long_body.split()) > 40
+    parsed = [
+        {"page_raw": "", "header": "", "figures": [], "body": long_body},
+        {"page_raw": "", "header": "PARADE DE SECONDE.", "body": "",
+         "figures": [{"kind": "plate", "caption": ""}]},
+    ]
+    recover_plate_captions(parsed)
+    assert parsed[1]["figures"][0]["caption"] == ""
+
+
+def test_repair_source_ocr_misreads_consultes_pas_par():
+    # 'PAR' (by) misread as 'PAS' (not) -- Gomard's bibliography running
+    # head, which the translator then faithfully rendered as a false
+    # negation ("NOT consulted by the author"). Case-preserving: the
+    # running head is ALL CAPS, only the one word swaps.
+    parsed = [{"header": "CONSULTÉS PAS L'AUTEUR.", "body": "royale de Paris."}]
+    repair_source_ocr_misreads(parsed)
+    assert parsed[0]["header"] == "CONSULTÉS PAR L'AUTEUR."
+    # a real sentence using "pas" as a negation elsewhere is untouched
+    parsed2 = [{"header": "", "body": "Il ne pare pas l'attaque."}]
+    repair_source_ocr_misreads(parsed2)
+    assert parsed2[0]["body"] == "Il ne pare pas l'attaque."
 
 
 def test_phrase_repairs_translated_by():

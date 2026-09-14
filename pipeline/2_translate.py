@@ -455,10 +455,28 @@ def extract_source_footnotes(text: str, state: dict) -> str:
 
     _NOTE_START = re.compile(r"^\(?(\d{1,2})[.)]\s+\S")
 
-    if (state.get("open") and paras and paras[0][:1].islower()
-            and not _NOTE_START.match(paras[0].strip())):
-        notes.append("… " + re.sub(r"\s+", " ", paras.pop(0)).strip())
-        state["open"] = False
+    def _leads_lowercase(s):
+        # The first actual letter, skipping a leading <i>/<b>-style tag --
+        # a continuation can open on a kept term ("<i>riposte</i>, but…"),
+        # and "<" isn't a letter so a bare [:1].islower() check misses it
+        # (Gomard p220/221 footnote stitch).
+        m = re.match(r"(?:<[^>]+>)*(\S)", s)
+        return bool(m) and m.group(1).islower()
+
+    if state.get("open") and paras:
+        if _leads_lowercase(paras[0]) and not _NOTE_START.match(paras[0].strip()):
+            notes.append("… " + re.sub(r"\s+", " ", paras.pop(0)).strip())
+            state["open"] = False
+        elif (len(paras) > 1 and _leads_lowercase(paras[-1])
+              and not _NOTE_START.match(paras[-1].strip())):
+            # The continuation isn't always the very next thing OCR
+            # reads -- it can be deferred to the FOOT of this page,
+            # after the page's own unrelated new body text (P-review,
+            # Gomard p220/221: footnote (1) on "tac au tac" truncates on
+            # p220, and its remainder lands as the LAST paragraph of
+            # p221, below several paragraphs of p221's own body).
+            notes.append("… " + re.sub(r"\s+", " ", paras.pop()).strip())
+            state["open"] = False
 
     # A bare "1. .. 2. .." run at the FOOT of the page is the book's own
     # footnote block (Prévost sets notes this way, not "(1)"). Guard

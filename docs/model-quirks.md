@@ -269,6 +269,60 @@ direction (promote a confirmed header from a matching body line when
 that direction is inference from pattern-matching, not a value the model
 directly reported.
 
+*2026-09-14, three more gaps in the same mechanism, found on a third
+review pass over the same three books:*
+
+- **Some section-openers never get a real `HEADER:` value at all, ever
+  -- the model consistently writes `HEADER: none` and leaves the title
+  only as the body's own opening line, on every page of that section**
+  (Kirchhoffer `TERMES TECHNIQUES`, `PARADES ET RIPOSTES`,
+  `ROMPRE -- DIVERS`; Gomard `CONSULTÉS PAR L'AUTEUR.`). Since it's never
+  reported as an actual header value anywhere, it can never become
+  "confirmed" for the lift direction either, no matter how many pages
+  exist. Added a second, narrower lift condition: a body-opening line
+  standing alone (its own paragraph), short (<=6 words) and mostly
+  uppercase gets lifted even without prior confirmation. Deliberately
+  excludes an ordinary glossary headword ("Croisé. -- Parade qui
+  consiste...", mixed case, dash-definition on the line) by the case
+  ratio alone.
+- **An isolated single-page OCR miss inside an otherwise heavily-
+  confirmed running-head section** -- neither the header field nor the
+  body carries the title on that one page (Kirchhoffer `ÉPÉE` src 27/30;
+  Gomard `PRÉFACE.` src 13, and a 70-page `INTRODUCTION.` run whose very
+  first page has nothing to recover -- a genuine, unrecoverable gap, left
+  as-is). Added sandwich interpolation: a still-headerless page whose
+  immediate neighbours on both sides already agree on the same confirmed
+  header inherits it, mirroring how `reconcile_page_numbers()` already
+  interpolates folios. Deliberately narrow -- single-page gap only, both
+  neighbours must already agree, so a page next to a freshly-*lifted*
+  one-off section-opener (previous bullet) won't match and stays open
+  (Kirchhoffer src 30, sandwiched between `PARADES ET RIPOSTES` and an
+  unrelated one-off `CONTRE LE BRAS TENDU` -- documented residual, not
+  fixed).
+- **Order-swapped two-part header, tab dropped** (already known-deferred:
+  Kirchhoffer `FLEURET`/`LA MISE EN GARDE` plate run reads
+  `LA MISE EN GARDE FLEURET` on some leaves instead of `FLEURET`+tab+
+  `LA MISE EN GARDE`). `FLEURET` is confirmed dozens of times elsewhere;
+  when a tab-less header's word sequence starts or ends with an
+  already-confirmed root, split there and rebuild the canonical
+  root+tab+remainder form. Gotcha: the swapped form repeated identically
+  on >=2 leaves, so it satisfied its own count>=2 threshold as an
+  accidental standalone root and skipped the reorder check on the first
+  attempt -- the reorder now runs for any tab-less header regardless of
+  whether the swapped text is itself "confirmed".
+
+Both new lift paths depend on the body still carrying the duplicate text
+when `reconcile_headers()` runs -- but `strip_leaked_headmatter()` (runs
+earlier, in `postprocess_parsed_pages()`) strips any body line matching
+*any* known header value as apparatus, which would erase that exact
+evidence first. `known_headmatter()` restricts what counts as "known" to
+CONFIRMED header values only, so a one-off's body duplicate survives long
+enough for `reconcile_headers()` to see it (Gomard `CONSULTÉS PAR
+L'AUTEUR.` on src 21 -- its only other reading, on src 19, is also a
+one-off, so without this restriction the duplicate was stripped and an
+unrelated same-root sandwich interpolation from `LISTE DES OUVRAGES`
+neighbours won instead).
+
 ### 1.2d Plate caption in `HEADER:`; scanner apparatus in `HEADER:`
 
 * `fold_caption_header_into_figure()` — on a page that carries a figure
@@ -288,6 +342,17 @@ directly reported.
   caption. Skipped when a neighbour ±2 already carries a plate with the
   same caption (OCR read one leaf twice under different folios — e.g.
   Kirchhoffer's épée `FIG. I` at both the mis-numbered leaf and folio 42).
+* case (2) — a flagged figure with an empty caption borrows a
+  caption-shaped line (`_PLATE_CAPTION_RE` — `Parade de …`, `Fig. N`, a
+  numbered position, …) from this page or a neighbour ±2. *2026-09-14:*
+  the neighbour search had no length guard, so it could pull a
+  caption-shaped SUB-HEADING off a full page of ordinary prose as if it
+  were that neighbour's whole caption (Prévost: "Parade de quarte."
+  merely opens a paragraph describing that parry on a text page, wrongly
+  borrowed into the NEXT plate's caption — "PARADE DE SECONDE — Parade de
+  quarte" instead of just "Parade de seconde"). A genuine facing-leaf
+  caption IS that leaf's whole (short) body; a neighbour's line is now
+  only eligible when its own body is ≤15 words.
 
 ### 1.7 Figure detection — VLM flag + density-profiler geometry
 
@@ -675,8 +740,22 @@ reader can always tell body from note:
   note → no). A footnote that runs off the bottom of a page (no terminal
   punctuation) sets a cross-page flag; the next page's leading lower-case
   paragraph is taken as its continuation and rendered `… <tail>` in
-  *that* page's block (halves aren't stitched, but each renders as a
-  note, not as body).
+  *that* page's block (halves aren't stitched into one note, but each
+  renders as a note, not as body).
+
+  *2026-09-14, two more gaps found from a real instance (Gomard src
+  220/221, footnote (1) on "tac au tac"):* (a) the continuation isn't
+  always the very next thing OCR reads — it can be deferred to the FOOT
+  of the next page, after that page's own unrelated new body text. Now
+  also checks the next page's LAST paragraph when the first isn't a
+  match. (b) the lower-case check was a bare `[:1].islower()`, which
+  missed a continuation opening on a kept italic term
+  (`<i>riposte</i>, but by the second word…` — `"<"` isn't a letter).
+  Both checks now skip a leading `<i>`/`<b>`-style tag before looking at
+  the actual first letter. The first attempt at (a) passed its unit
+  tests (plain-text fixtures) and still silently failed on the real
+  translated data because of (b) — worth remembering when writing a test
+  fixture for a passage with kept terms in it.
 - `pull_footnotes()` — our `†N` Category-3 markers, deduped once per book.
 
 ## Part 3 — shared / architectural

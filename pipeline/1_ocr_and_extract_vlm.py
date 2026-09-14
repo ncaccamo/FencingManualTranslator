@@ -611,6 +611,26 @@ def _confirmed_header_keys(parsed: list) -> set:
     return {h for h, c in counts.items() if h and c >= 2}
 
 
+def known_headmatter(parsed: list) -> set:
+    """Normalized header VALUES safe to pass to strip_leaked_headmatter()
+    as "known headmatter" -- only those whose root is confirmed (see
+    _confirmed_header_keys()). A one-off header must keep its body
+    duplicate intact until reconcile_headers() has run: stripping it here
+    erases the exact evidence that function's section-opener promotion
+    needs to see (P-review, Gomard "CONSULTÉS PAR L'AUTEUR." on src 21 --
+    its only OTHER appearance, as a real HEADER: value on src 19, is a
+    one-off too, so without this restriction the body duplicate gets
+    stripped as "known headmatter" before it can be promoted, and a
+    same-root sandwich-interpolation from unrelated neighbours wins
+    instead)."""
+    def _key(h):
+        return _norm_head(h.split("\t", 1)[0] if "\t" in h else h)
+
+    confirmed = _confirmed_header_keys(parsed)
+    return {_norm_head(p["header"]) for p in parsed
+            if p.get("header") and _key(p["header"]) in confirmed}
+
+
 def reconcile_headers(parsed: list) -> None:
     """The header bar is for a genuine running header -- one repeated at
     the top of the page across a section, OR a one-page subsection's own
@@ -631,24 +651,113 @@ def reconcile_headers(parsed: list) -> None:
         HEADER. This direction stays conservative -- inferring a header
         from body-text pattern matching is only trusted when that header
         text is independently confirmed elsewhere in the book.
+      * HEADER empty, body opens with a standalone, short, mostly
+        uppercase line that ISN'T confirmed anywhere -> lift it anyway
+        (P-review-3). Some section-openers (Kirchhoffer `TERMES
+        TECHNIQUES`, `PARADES ET RIPOSTES`, `ROMPRE — DIVERS`; Gomard
+        `CONSULTÉS PAR L'AUTEUR.`) are read by the model as `HEADER: none`
+        with the title duplicated only in the body, EVERY time -- so they
+        can never become "confirmed" no matter how many pages of that
+        section exist. Visually these sit in the exact running-head
+        position (confirmed against the scan for two of them already).
+        `_looks_like_section_title()` is deliberately narrow (short,
+        standalone, uppercase-heavy) so it doesn't also promote an
+        ordinary glossary headword ("Croisé. — Parade qui consiste…",
+        mixed case, dash-definition on the same or next line).
+      * HEADER present but has no tab and isn't itself confirmed -> check
+        whether it's an order-swapped two-part header (Kirchhoffer
+        `LA MISE EN GARDE FLEURET` instead of `FLEURET\tLA MISE EN
+        GARDE`): if its word sequence starts or ends with an
+        already-confirmed root, split there and rebuild the canonical
+        `root⇥remainder` form the rest of that run already uses.
+      * A single page with HEADER empty and NOTHING in its body to lift
+        either, sandwiched between two pages that both already carry the
+        identical CONFIRMED header -> inherit it (mirrors
+        reconcile_page_numbers()'s folio interpolation). Deliberately
+        conservative: only a single-page gap, both neighbours must
+        already agree. A gap next to a page whose own header was itself
+        just inferred from a one-off section-opener title (previous
+        bullet) won't match this and stays open -- that needs multi-hop
+        lookback this doesn't attempt.
 
-    Repetition (for the lift above) is counted per *running-head root*: a
-    two-part head ``LEFT\tRIGHT`` (section name + per-page topic, e.g.
-    ``SABRE\tCORPS A CORPS``) keys on LEFT only -- the right half is
-    unique to one page and must not fragment the count, or every plate
-    page in a section loses its header (K-batch2 regression)."""
+    Repetition (for the lift/interpolate above) is counted per *running-
+    head root*: a two-part head ``LEFT\tRIGHT`` (section name + per-page
+    topic, e.g. ``SABRE\tCORPS A CORPS``) keys on LEFT only -- the right
+    half is unique to one page and must not fragment the count, or every
+    plate page in a section loses its header (K-batch2 regression)."""
     def _key(h):
         return _norm_head(h.split("\t", 1)[0] if "\t" in h else h)
 
     confirmed = _confirmed_header_keys(parsed)
+
+    # Canonical display spelling for each confirmed root, taken from
+    # wherever it's already correctly cased elsewhere in the book -- so a
+    # reordered header matches the casing the rest of its section uses,
+    # not whatever casing this one stray instance happened to have.
+    root_display = {}
+    for p in parsed:
+        h = (p.get("header") or "").strip()
+        if not h:
+            continue
+        k = _key(h)
+        if k in confirmed and k not in root_display:
+            root_display[k] = (h.split("\t", 1)[0] if "\t" in h else h).strip()
+
+    def _reorder_swapped_two_part(head):
+        words = head.split()
+        norm_words = _norm_head(head).split()
+        if len(words) != len(norm_words) or len(words) < 2:
+            return None
+        for root_key, display in root_display.items():
+            root_words = root_key.split()
+            n = len(root_words)
+            if not (0 < n < len(words)):
+                continue
+            if norm_words[:n] == root_words:
+                return f"{display}\t{' '.join(words[n:])}"
+            if norm_words[-n:] == root_words:
+                return f"{display}\t{' '.join(words[:-n])}"
+        return None
+
+    def _looks_like_section_title(line: str) -> bool:
+        s = line.strip()
+        words = s.split()
+        letters = [c for c in s if c.isalpha()]
+        return (1 <= len(words) <= 6 and len(letters) >= 3
+                and sum(c.isupper() for c in letters) >= 0.85 * len(letters))
+
     for p in parsed:
         head = (p.get("header") or "").strip()
-        if not head:
-            body = p.get("body") or ""
-            first, _, rest = body.lstrip("\n").partition("\n")
-            if first.strip() and _key(first) in confirmed:
-                p["header"] = first.strip()
-                p["body"] = rest.lstrip("\n")
+        if head:
+            # Try the reorder whenever there's no tab, regardless of
+            # whether the swapped form is itself "confirmed" -- a
+            # consistently-misordered leaf (K-review "LA MISE EN GARDE
+            # FLEURET" read the same way on >=2 plate leaves) satisfies
+            # its OWN count>=2 threshold as an accidental one-word-longer
+            # root, which used to skip this check entirely.
+            if "\t" not in head:
+                reordered = _reorder_swapped_two_part(head)
+                if reordered:
+                    p["header"] = reordered
+            continue
+        body = p.get("body") or ""
+        first, _, rest = body.lstrip("\n").partition("\n")
+        first = first.strip()
+        if first and (_key(first) in confirmed or _looks_like_section_title(first)):
+            p["header"] = first
+            p["body"] = rest.lstrip("\n")
+
+    # Sandwich interpolation: a page still headerless after everything
+    # above, with both immediate neighbours already agreeing on the same
+    # confirmed header, inherits it.
+    n = len(parsed)
+    for i, p in enumerate(parsed):
+        if (p.get("header") or "").strip() or i == 0 or i == n - 1:
+            continue
+        prev_h = (parsed[i - 1].get("header") or "").strip()
+        next_h = (parsed[i + 1].get("header") or "").strip()
+        if prev_h and next_h and _key(prev_h) == _key(next_h) and _key(prev_h) in confirmed:
+            p["header"] = prev_h
 
 
 def recover_plate_captions(parsed: list) -> None:
@@ -695,10 +804,61 @@ def recover_plate_captions(parsed: list) -> None:
         if figs and not any((f.get("caption") or "").strip() for f in figs):
             for j in (idx, idx - 1, idx + 1, idx - 2, idx + 2):
                 if 0 <= j < len(parsed):
-                    cap = _cap_line(parsed[j].get("body"))
+                    nb_body = parsed[j].get("body") or ""
+                    # A genuine caption living on a neighbouring leaf IS
+                    # that leaf's whole (short) body -- not a sub-heading
+                    # merely opening a page of real prose (P-review:
+                    # "Parade de quarte." opens a page whose FULL body
+                    # (33 words: that line + a definition paragraph + the
+                    # next headword) is real prose, not a caption -- still
+                    # wrongly borrowed at a 40-word cutoff, producing
+                    # "PARADE DE SECONDE — Parade de quarte" instead of
+                    # just "Parade de seconde". A real facing-leaf caption
+                    # is just the caption, so this stays tight.
+                    if j != idx and len(nb_body.split()) > 15:
+                        continue
+                    cap = _cap_line(nb_body)
                     if cap:
                         figs[0]["caption"] = cap
                         break
+
+
+def _fix_consultes_pas(m):
+    prefix, pas = m.group(1), m.group(2)
+    if pas.isupper():
+        repl = "PAR"
+    elif pas[:1].isupper():
+        repl = "Par"
+    else:
+        repl = "par"
+    return prefix + repl
+
+
+_OCR_PHRASE_FIXES = [
+    # 'PAR' (by) misread as 'PAS' (not) -- a single-letter OCR confusion
+    # (R/S) that recurs across a book's running head, and which the
+    # translator then faithfully renders as a false negation (Gomard
+    # "CONSULTÉS PAS L'AUTEUR." -> "NOT consulted by the author"). Only
+    # the one word is replaced, case-preserving -- the running head is
+    # often ALL CAPS, and a fixed-case replacement would flatten that.
+    # (Python's re needs a fixed-width lookbehind, so the prefix is a
+    # captured group instead, reattached in the replacement function.)
+    (re.compile(r"(?i)(\bconsult[ée]s?\s+)(pas)(?=\s+l['’]auteur)"), _fix_consultes_pas),
+]
+
+
+def repair_source_ocr_misreads(parsed: list) -> None:
+    """Narrow, evidence-based fixes for a specific recurring OCR misread
+    -- not a general spellchecker. Runs first so the corrected text feeds
+    every downstream pass (header-confirmation counting included)."""
+    for p in parsed:
+        for field in ("header", "body"):
+            val = p.get(field) or ""
+            if not val:
+                continue
+            for pat, repl in _OCR_PHRASE_FIXES:
+                val = pat.sub(repl, val)
+            p[field] = val
 
 
 def postprocess_parsed_pages(parsed: list) -> None:
@@ -706,6 +866,7 @@ def postprocess_parsed_pages(parsed: list) -> None:
     after parse_vlm_response() over the whole book. reconcile_headers() and
     fold_caption_header_into_figure() run separately, AFTER
     _fold_caption_only_body()."""
+    repair_source_ocr_misreads(parsed)
     kh = {_norm_head(p["header"]) for p in parsed if p.get("header")}
     salvage_leaked_folio_header(parsed, kh)
     dehyphenate_across_pages(parsed)
@@ -1146,7 +1307,7 @@ try:
         # translator and printed on the side-by-side PDF.
         parsed = [parse_vlm_response(p) for p in extracted_pages]
         postprocess_parsed_pages(parsed)
-        _known_heads = {_norm_head(p["header"]) for p in parsed if p["header"]}
+        _known_heads = known_headmatter(parsed)
         for p in parsed:
             p["body"] = strip_leaked_headmatter(p["body"], _known_heads)
         _fold_caption_only_body(parsed)

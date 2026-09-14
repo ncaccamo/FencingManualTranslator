@@ -33,6 +33,7 @@ _fold_caption_only_body = _ns["_fold_caption_only_body"]
 postprocess_parsed_pages = _ns["postprocess_parsed_pages"]
 fold_caption_header_into_figure = _ns["fold_caption_header_into_figure"]
 reconcile_headers = _ns["reconcile_headers"]
+known_headmatter = _ns["known_headmatter"]
 
 targets = sys.argv[1:] or [
     d for d in glob.glob("/data/processed/*_translated")
@@ -49,7 +50,7 @@ for folder in targets:
                  _pageio.split_pages(open(raw_path, encoding="utf-8").read())]
     parsed = [parse_vlm_response(p) for p in raw_pages]
     postprocess_parsed_pages(parsed)
-    _kh = {_norm_head(p["header"]) for p in parsed if p["header"]}
+    _kh = known_headmatter(parsed)
     for p in parsed:
         p["body"] = strip_leaked_headmatter(p["body"], _kh)
     _fold_caption_only_body(parsed)
