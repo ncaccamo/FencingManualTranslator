@@ -304,6 +304,15 @@ def parse_figures_block(raw: str) -> list:
             kind = "plate"
         elif kind.startswith("inset") or kind.startswith("inline"):
             kind = "inset"
+        elif figs and _norm_head(line) == _norm_head(figs[-1]["caption"]):
+            # The model repeated this same caption a second time with no
+            # BODY_TEXT: label to route it there (usually because the page
+            # is just a plate + its title, with nothing else to report) --
+            # this repeat is typically a more faithful transcription of the
+            # actual printed case than its own FIGURES: line. Prefer it.
+            if line != figs[-1]["caption"]:
+                figs[-1]["caption"] = line
+            continue
         elif figs and re.match(r"[0-9a-zà-ÿ]", line):
             # A follow-on line starting with a digit or lowercase -- a
             # caption's second line ("2e TEMPS : le dérobement ..."), not

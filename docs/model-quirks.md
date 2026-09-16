@@ -353,6 +353,38 @@ neighbours won instead).
   quarte" instead of just "Parade de seconde"). A genuine facing-leaf
   caption IS that leaf's whole (short) body; a neighbour's line is now
   only eligible when its own body is ≤15 words.
+* *2026-09-16:* `parse_figures_block()` was silently dropping a reliable
+  caption. On a plate-only page (nothing else to report), the model
+  reports the caption twice: once inside `FIGURES:` (its own restatement
+  — case-unreliable, e.g. `Parade de seconde.`) and once repeated in the
+  slot it defaults to when there's no real body text. When the model
+  labels that repeat `BODY_TEXT:`, `_fold_caption_only_body()` already
+  recovers it correctly. When it doesn't (skips straight from `FIGURES:`
+  into the bare repeat, no label), the repeat fell inside the FIGURES:
+  block text and `parse_figures_block()`'s line loop didn't recognise it
+  as anything — not a new `kind |` row, not a lowercase continuation — so
+  it hit the trailing `else: continue` and was discarded, leaving the
+  unreliable FIGURES: version as the caption. Caught after the user
+  visually confirmed the physical book prints these captions in
+  consistent full caps (initial guess — that a clean, consistent
+  per-plate case pattern in the raw OCR meant genuine source variation —
+  was wrong; the pattern was an artifact of which pages happened to get
+  the `BODY_TEXT:` label, not of the printed page). Fixed: a leftover
+  line that normalizes (case/accent/punctuation-insensitive) to the same
+  text as the figure's own caption is now treated as a same-caption
+  repeat and its casing is preferred, instead of being dropped. Hit 8/109
+  Kirchhoffer pages (src 26-33, 54, 88 — one plate run); zero in Gomard
+  or Prévost. Fixed via `reprocess_extracted.py` (parser-only, no re-OCR)
+  + a standalone re-run of `translate_figure_captions()` for just this
+  book's figures (no full retranslate needed — steps 3/4 already pick up
+  the change). Regression tests:
+  `test_figures_block_prefers_unlabeled_caption_repeat_case`,
+  `test_figures_block_unlabeled_repeat_must_match_caption`.
+  **Process note:** `reprocess_extracted.py` overwrites `figures.json` in
+  place from the parser alone, which does NOT carry `caption_en` — back
+  it up before running it on a book that's already been translated, or
+  you'll need a standalone `translate_figure_captions()` pass to refill
+  it (which is what happened here — not a data loss, but avoidable).
 
 ### 1.7 Figure detection — VLM flag + density-profiler geometry
 

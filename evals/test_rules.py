@@ -420,6 +420,26 @@ def test_figures_block_recovers_markdown_image():
     assert any("Schéma A" in f["caption"] for f in parse_figures_block(raw))
 
 
+def test_figures_block_prefers_unlabeled_caption_repeat_case():
+    # olmOCR-2 sometimes skips BODY_TEXT: on a plate-only page and just
+    # repeats the caption a second time, in the case actually printed on
+    # the plate -- more reliable than its own FIGURES: line. Real example:
+    # Kirchhoffer src 27 ("Parade de seconde." in FIGURES:, "PARADE DE
+    # SECONDE." repeated after it with no label -- the book prints it caps).
+    raw = "HEADER: x\nFIGURES:\nplate | Parade de seconde.\n\nPARADE DE SECONDE."
+    assert parse_figures_block(raw) == [
+        {"kind": "plate", "caption": "PARADE DE SECONDE."}]
+
+
+def test_figures_block_unlabeled_repeat_must_match_caption():
+    # A trailing all-caps line that is NOT the same caption (a genuine
+    # second figure or unrelated leaked text) must not be swallowed as a
+    # case-correction -- only an exact normalized match qualifies.
+    raw = "HEADER: x\nFIGURES:\nplate | Parade de seconde.\n\nAUTRE TITRE."
+    figs = parse_figures_block(raw)
+    assert figs[0]["caption"] == "Parade de seconde."
+
+
 def test_reconcile_trusts_run():
     assert reconcile_page_numbers(["20", "21", "22"]) == ["20", "21", "22"]
 
