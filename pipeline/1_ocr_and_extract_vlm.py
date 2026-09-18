@@ -237,10 +237,30 @@ def strip_leaked_headmatter(body: str, known_headers: set) -> str:
 
     A line is apparatus when it is a bare roman/arabic number (<=4 digits,
     optional trailing '.', optional leading superscript letter) or its
-    normalised form matches a header seen elsewhere in this book."""
+    normalised form matches a header seen elsewhere in this book.
+
+    *2026-09-18:* the "known header" match alone missed the catchword
+    case the docstring's own example describes -- "ESCRIME." (Kirchhoffer)
+    is the BOOK's overall title (from the title page), never any specific
+    PAGE's running head, so it's never in `known_headers` and slipped
+    through on every gathering (Kirchhoffer src 17, 33). Widened, but
+    TAIL-ONLY (never the top -- a different risk profile; a leaked folio/
+    header at the top of a page is a known, common shape, while a stray
+    short line at the very start of body is more likely genuine content):
+    a standalone tail line that's very short (<=2 words) and title-shaped
+    (mostly uppercase) is also apparatus, regardless of whether it
+    matches a confirmed page header."""
     def _is_apparatus(s):
         return bool(re.fullmatch(r"[a-z]?[\dIVXLCDM]{1,4}\.?", s, re.I)) \
             or _norm_head(s) in known_headers
+
+    def _is_tail_apparatus(s):
+        if _is_apparatus(s):
+            return True
+        words = s.split()
+        letters = [c for c in s if c.isalpha()]
+        return (1 <= len(words) <= 2 and len(letters) >= 3
+                and sum(c.isupper() for c in letters) >= 0.85 * len(letters))
 
     lines = body.split("\n")
     while lines and (not lines[0].strip() or _is_apparatus(lines[0].strip())):
@@ -251,7 +271,7 @@ def strip_leaked_headmatter(body: str, known_headers: set) -> str:
     for _ in range(2):
         while lines and not lines[-1].strip():
             lines.pop()
-        if len(lines) > 1 and _is_apparatus(lines[-1].strip()):
+        if len(lines) > 1 and _is_tail_apparatus(lines[-1].strip()):
             lines.pop()
         else:
             break
@@ -586,15 +606,29 @@ def fold_caption_header_into_figure(parsed: list) -> None:
     ends up split, and it is a section header on some plates but not
     others. On a page that carries a figure and little/no body, move a
     caption-shaped HEADER into the figure caption and clear HEADER, so the
-    plate page has no running head and the caption renders as one unit."""
+    plate page has no running head and the caption renders as one unit.
+
+    A "Planche N." / "Fig. N." header is never a running head either way
+    -- it reads as a caption, so it belongs in body text (review
+    feedback, 2026-09-18: put plate numbers in body, "it reads like a
+    caption so therefore body text"). When the page has NO flagged figure
+    at all (the VLM missed the illustration -- Gomard "Planche V./VI.":
+    HEADER carries the plate number, body is just a plain description
+    with no FIGURES: block), there's no figure caption to fold it into --
+    prepend it to body instead of leaving it stuck as a header."""
     for p in parsed:
         head = (p.get("header") or "").replace("\t", " — ").strip().rstrip(".")
         figs = p.get("figures") or []
-        if not head or not figs:
+        if not head or not _CAPTION_SHAPE_RE.match(head):
+            continue
+        if not figs:
+            if len((p.get("body") or "").split()) > 40:
+                continue
+            p["body"] = ((p.get("header") or "").strip() + "\n\n"
+                         + (p.get("body") or "")).rstrip()
+            p["header"] = ""
             continue
         if len((p.get("body") or "").split()) > 25:
-            continue
-        if not _CAPTION_SHAPE_RE.match(head):
             continue
         f0 = figs[0]
         cap = (f0.get("caption") or "").strip().rstrip(".")
@@ -793,44 +827,67 @@ def reconcile_headers(parsed: list) -> None:
     # preferring whichever is closer -- capped at a short gap so this
     # can't reach across an unrelated part of the book.
     _MAX_GAP = 4
+    # Snapshot the ORIGINAL confirmed-header positions before this loop
+    # writes anything -- searching from live, in-progress results let one
+    # gap-filled page become a fake anchor for the next, chaining past
+    # _MAX_GAP indefinitely (Gomard: a real "TABLE DES MATIÈRES." at one
+    # spot cascaded across an entire ~54-page run of otherwise-blank
+    # plate leaves -- each was individually <=4 pages from the PREVIOUS
+    # (already wrongly-filled) page, never from a genuine source). All
+    # assignments are collected first and applied together at the end, so
+    # no page's fill can feed another page's search within this pass.
+    _orig_confirmed = []
+    for i, p in enumerate(parsed):
+        h = (p.get("header") or "").strip()
+        k = _key(h)
+        if h and k in confirmed:
+            _orig_confirmed.append((i, k, h.split("\t", 1)[0] if "\t" in h else h))
+    _fills = {}
     for i, p in enumerate(parsed):
         if (p.get("header") or "").strip():
             continue
-        for dist in range(1, _MAX_GAP + 1):
-            found = None
-            for j in (i - dist, i + dist):
-                if not (0 <= j < n):
-                    continue
-                h = (parsed[j].get("header") or "").strip()
-                if h and _key(h) in confirmed:
-                    found = root_display.get(_key(h), h.split("\t", 1)[0] if "\t" in h else h)
-                    break
-            if found:
-                p["header"] = found
-                break
+        best = None
+        best_dist = _MAX_GAP + 1
+        for j, k, disp in _orig_confirmed:
+            d = abs(j - i)
+            if d < best_dist:
+                best_dist = d
+                best = root_display.get(k, disp)
+        if best is not None and best_dist <= _MAX_GAP:
+            _fills[i] = best
+    for i, val in _fills.items():
+        parsed[i]["header"] = val
 
     # A big two-line opening title block, printed within the body area on
     # a section's one opening page (Gomard: "HEADER: LISTE DES OUVRAGES",
     # body opens with "CONSULTÉS PAR L'AUTEUR.") -- not a running head,
-    # confirmed against the scan. The model reads the FIRST line natively
-    # into HEADER: itself here (unlike the promotion case above, which
-    # only ever sees an empty HEADER:), so it's caught separately, and
-    # deliberately LAST: the header value genuinely IS the real running
-    # head on later pages of the same section (ordinary prose there,
-    # confirmed by repetition) -- demoting first would just have the
-    # nearest-confirmed gap fill above put it right back.
+    # confirmed against the scan.
     #
-    # Must NOT fire when the body's first line is a near-duplicate of the
-    # header itself (normalises the same, punctuation aside) -- that's a
-    # DIFFERENT, deliberately-fine book convention (Prévost src 21: the
-    # header carries "DE LA MANIÈRE DE SE RELEVER." and the body repeats
-    # it verbatim before its own subtitle -- "header and a body title
-    # both is fine if that's what the book does", confirmed already).
-    # The Gomard bug is specifically a header and a DIFFERENT second
-    # title line together forming one compound block, not an echo.
+    # *2026-09-18 regression, caught before it shipped further:* this was
+    # first built as a GENERAL rule -- any native header followed by a
+    # second, different title-shaped body line demotes. That's far too
+    # broad: it's structurally IDENTICAL to the extremely common, totally
+    # normal pattern of "book-wide running head, followed by a new
+    # chapter's title starting the body" (Prévost: "THÉORIE PRATIQUE DE
+    # L'ESCRIME." -- confirmed 69x across the whole book -- wrongly
+    # demoted on >=20 pages each time a new chapter opened under it,
+    # since the chapter's own title is ALSO short/standalone/uppercase).
+    # A genuine compound-title-block page and a genuine running-head-plus-
+    # new-chapter page cannot currently be told apart by text shape alone
+    # -- both look the same (native header + a second title-shaped body
+    # line) without visually checking whether the scan actually shows a
+    # small margin header on that specific page. Reverted to a narrow,
+    # explicit list of confirmed real instances instead of a general
+    # shape rule, matching this file's other narrow, evidence-based
+    # repairs (_OCR_PHRASE_FIXES) -- add to this set only after visually
+    # confirming a new instance against the actual scan, the same way
+    # this one was confirmed.
+    _KNOWN_COMPOUND_TITLE_BLOCKS = {
+        _norm_head("LISTE DES OUVRAGES"),
+    }
     for p in parsed:
         head = (p.get("header") or "").strip()
-        if not head or "\t" in head or not _looks_like_section_title(head):
+        if not head or "\t" in head or _key(head) not in _KNOWN_COMPOUND_TITLE_BLOCKS:
             continue
         body = p.get("body") or ""
         b_first, _, _ = body.lstrip("\n").partition("\n")
@@ -915,6 +972,17 @@ def _fix_consultes_pas(m):
     return prefix + repl
 
 
+def _fix_case_preserving(word):
+    def _repl(m):
+        s = m.group(0)
+        if s.isupper():
+            return word.upper()
+        if s[:1].isupper():
+            return word.capitalize()
+        return word
+    return _repl
+
+
 _OCR_PHRASE_FIXES = [
     # 'PAR' (by) misread as 'PAS' (not) -- a single-letter OCR confusion
     # (R/S) that recurs across a book's running head, and which the
@@ -925,6 +993,13 @@ _OCR_PHRASE_FIXES = [
     # (Python's re needs a fixed-width lookbehind, so the prefix is a
     # captured group instead, reattached in the replacement function.)
     (re.compile(r"(?i)(\bconsult[ée]s?\s+)(pas)(?=\s+l['’]auteur)"), _fix_consultes_pas),
+    # 'Planche' (plate) misread as 'Plonche' (A/O confusion) -- not a
+    # real French word, so the translator treats it as one anyway and
+    # renders it "Plunge" (as if related to "plonger", to dive) instead
+    # of "Plate" (Gomard pdf 379: "Plonche XIX." -> "Plunge XIX."). Every
+    # other "Planche N." header in the same book reads and translates
+    # correctly; this is a one-leaf OCR miss, not a systemic misread.
+    (re.compile(r"(?i)\bplonche\b"), _fix_case_preserving("planche")),
 ]
 
 

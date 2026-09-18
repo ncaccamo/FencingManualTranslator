@@ -110,14 +110,20 @@ def test_extract_source_footnotes():
 
 
 def test_label_margin_notes():
+    # A detected margin note is removed from body but NOT rendered
+    # anywhere (2026-09-18: showing only the single best-guess candidate
+    # when a page can carry more than one left the reader unable to tell
+    # which printed note it corresponded to -- simplest honest fix is to
+    # just not claim to reproduce it).
     txt = ("The main body paragraph goes on for a while about the left hand "
            "and its uses in a serious affair.\n\n"
            "A second full paragraph of ordinary prose so the page reads as "
            "prose-dominant and not just a caption with a stray line.\n\n"
            "The lesson must teach in what cases one can use the left hand.")
     out = label_margin_notes(txt)
-    assert "[margin note] The lesson must teach" in out
-    assert "___FOOTNOTES___" in out
+    assert "[margin note]" not in out
+    assert "The lesson must teach" not in out
+    assert "___FOOTNOTES___" not in out
 
 
 def test_label_margin_notes_skipped_on_figure_page():
@@ -182,7 +188,11 @@ def test_label_margin_notes_prefers_note_that_precedes_more_prose():
            "Like Marozzo, his cuts are directed at the shoulder, chest, "
            "flank, and calf; his thrusts prefer the face.")
     out = label_margin_notes(txt)
-    assert "[margin note] He recognizes only three ways of striking." in out
+    # dropped from body, not rendered (2026-09-18) -- but confirms the
+    # RIGHT paragraph was the one identified and removed
+    assert "[margin note]" not in out
+    assert "He recognizes only three ways of striking." not in out
+    assert "Like Marozzo" in out   # the real closing paragraph stays
     assert "Like Marozzo" in out.split("___FOOTNOTES___")[0]   # stays in body
 
 
@@ -355,6 +365,22 @@ def test_match_case_sentence_lowers_shout_keeps_italic():
     # a kept <i> term's own casing intact
     out = match_case("Parade de seconde.", "PARRY OF <i>seconde</i>")
     assert out == "Parry of <i>seconde</i>", out
+
+
+def test_match_case_splits_parenthetical_case_register():
+    # Real Kirchhoffer example (pdf 47): a caption combining an ALL-CAPS
+    # main title with a trailing parenthetical set in ordinary sentence
+    # case in the actual book ("LE CROISÉ AU FLANC." / "(La main de
+    # l'attaquant reste haute.)"). Measuring case over the whole combined
+    # string dilutes the all-caps title's upper_ratio below the 0.8
+    # threshold, so the real all-caps title fell through to a broken
+    # mixed case instead. Each side must be case-matched independently.
+    src = "Fig. 4. — LE CROISÉ AU FLANC. (La main de l'attaquant reste haute.)"
+    dst = "fig. 4. the croisé to the side. (the attacker's hand remains high.)"
+    out = match_case(src, dst)
+    assert "THE CROISÉ TO THE SIDE" in out.upper()
+    assert out.split("(")[0].isupper() or out.split("(")[0].strip().isupper()
+    assert "(The attacker" in out   # parenthetical: own sentence case, capitalized
 
 
 def test_enforce_kept_terms():  # Cat-2 only now
@@ -589,6 +615,29 @@ def test_strip_tail_capped_at_two():
         == "Body.\nESCRIME"
 
 
+def test_strip_tail_catchword_not_a_known_page_header():
+    # Real Kirchhoffer example: "ESCRIME." is the BOOK's own overall
+    # title (from the title page), never any specific page's running
+    # head, so it's never in known_headers and used to slip through --
+    # the docstring's own example case, previously not actually caught.
+    out = strip_leaked_headmatter("Body text continues for a while.\n\nESCRIME.", set())
+    assert out == "Body text continues for a while."
+
+
+def test_strip_tail_catchword_keeps_only_line():
+    # Never strip the only line left, even if it looks catchword-shaped --
+    # a one-line page could be a legitimate short entry.
+    out = strip_leaked_headmatter("ESCRIME.", set())
+    assert out == "ESCRIME."
+
+
+def test_strip_tail_catchword_does_not_eat_real_short_ending():
+    # Guard against being too eager: a normal short sentence at the tail
+    # (lowercase, more than 2 words) must survive.
+    out = strip_leaked_headmatter("Body text continues for a while.\n\nThe end.", set())
+    assert out == "Body text continues for a while.\n\nThe end."
+
+
 def test_reconcile_headers_one_off_is_trusted():
     # (P-review B) a header seen only once must NOT be demoted -- visual
     # check against the scan (K-review-2 "PARTICULARITÉS" -- src 13) found
@@ -635,14 +684,17 @@ def test_reconcile_headers_promotes_unconfirmed_section_opener():
     assert parsed[2]["header"] == "TERMES TECHNIQUES"
 
 
-def test_reconcile_headers_demotes_native_compound_title_block():
-    # Real Gomard example: the model reads "HEADER: LISTE DES OUVRAGES"
-    # NATIVELY (not blank -- so the promotion path above never runs at
-    # all) on the bibliography section's OPENING page, whose body opens
-    # with a second title-shaped line, "CONSULTÉS PAR L'AUTEUR." Visual
-    # check against the scan: this is one big two-line title block
-    # printed within the body area, not a running head -- the section's
-    # genuine small running head (just "LISTE DES OUVRAGES", confirmed by
+def test_reconcile_headers_demotes_known_compound_title_block():
+    # Real Gomard example, one of the few instances in the narrow, named
+    # exception list (_KNOWN_COMPOUND_TITLE_BLOCKS) -- NOT a general
+    # shape rule, after that general version wrongly demoted a genuine
+    # book-wide running head on >=20 Prévost pages (see the test below).
+    # The model reads "HEADER: LISTE DES OUVRAGES" NATIVELY on the
+    # bibliography section's OPENING page, whose body opens with a
+    # second title-shaped line, "CONSULTÉS PAR L'AUTEUR." Visual check
+    # against the scan: this is one big two-line title block printed
+    # within the body area, not a running head -- the section's genuine
+    # small running head (just "LISTE DES OUVRAGES", confirmed by
     # repetition) only starts on the SECOND page, where the body opens
     # with ordinary prose instead of a second title line.
     parsed = [
@@ -655,6 +707,26 @@ def test_reconcile_headers_demotes_native_compound_title_block():
     ]
     reconcile_headers(parsed)
     assert parsed[0]["header"] == ""
+
+
+def test_reconcile_headers_does_not_demote_unlisted_running_head():
+    # Real Prévost regression: a BOOK-WIDE running head ("THÉORIE
+    # PRATIQUE DE L'ESCRIME.", confirmed 69x across the whole book) is
+    # structurally IDENTICAL by text shape to the genuine Gomard bug
+    # above -- native header, followed by a different title-shaped body
+    # line -- every time a new chapter opens under it. The general
+    # version of the demotion (shape alone, no exception list) wrongly
+    # stripped this real running head on >20 pages. Only a name on the
+    # narrow list may be demoted; everything else, no matter how well it
+    # matches the shape, must be left alone.
+    parsed = [
+        {"header": "THÉORIE PRATIQUE DE L'ESCRIME.",
+         "body": "DE LA MANIÈRE DE SE REPLACER\nDANS LA PREMIÈRE POSITION\n\n"
+                  "Jadis on appelait ces mouvements autrement.",
+         "figures": []},
+    ]
+    reconcile_headers(parsed)
+    assert parsed[0]["header"] == "THÉORIE PRATIQUE DE L'ESCRIME."
 
 
 def test_reconcile_headers_keeps_header_when_body_echoes_it():
@@ -784,6 +856,30 @@ def test_reconcile_headers_gap_fill_prefers_nearer_confirmed():
     assert parsed[3]["header"] == "ÉPÉE"
 
 
+def test_reconcile_headers_gap_fill_does_not_cascade():
+    # Real Gomard bug: a genuine confirmed header ("TABLE DES MATIÈRES.")
+    # near a long run of otherwise-blank plate leaves propagated across
+    # the ENTIRE ~54-page run, far past the intended gap cap, because the
+    # search used to look at LIVE (already gap-filled) neighbours -- once
+    # page N got wrongly filled, page N+4 could reach page N as if it
+    # were a genuine anchor, chaining indefinitely. The fix searches from
+    # a fixed snapshot of the ORIGINAL confirmed headers only, so a fill
+    # never feeds another fill. Build a run of 10 blank pages after one
+    # confirmed header -- only the first _MAX_GAP (4) should fill.
+    parsed = (
+        [{"header": "TABLE DES MATIÈRES.", "body": "a0", "figures": []},
+         {"header": "TABLE DES MATIÈRES.", "body": "a1", "figures": []}]  # confirmed
+        + [{"header": "", "body": f"blank{i}", "figures": []} for i in range(10)]
+    )
+    reconcile_headers(parsed)
+    filled = [i for i, p in enumerate(parsed) if (p.get("header") or "").strip()]
+    # indices 0,1 are the originals; only within _MAX_GAP (4) of index 1
+    # should fill (indices 2-5), never marching further down the run
+    assert filled == [0, 1, 2, 3, 4, 5], filled
+    for i in range(6, 12):
+        assert parsed[i]["header"] == "", (i, parsed[i]["header"])
+
+
 def test_fold_caption_header_into_figure():
     parsed = [{"header": "PARADE DE TIERCE.", "body": "",
                "figures": [{"kind": "plate", "caption": ""}]}]
@@ -797,6 +893,21 @@ def test_fold_caption_header_keeps_real_running_head():
                "figures": [{"kind": "inset", "caption": "Fig. 3"}]}]
     fold_caption_header_into_figure(parsed)
     assert parsed[0]["header"] == "DES PARADES"
+
+
+def test_fold_caption_header_into_body_when_no_figure_flagged():
+    # Real Gomard example: the VLM missed flagging the illustration
+    # entirely (no FIGURES: block at all), so the existing fold-into-
+    # caption path (which requires a figure already present) never ran,
+    # leaving "Planche V." stuck as a running head. A plate-number header
+    # reads as a caption either way -- review feedback: put it in body,
+    # not the header bar, regardless of whether a figure got flagged.
+    parsed = [{"header": "Planche V.",
+               "body": "Coup tiré en botte de prime paré par la prime.",
+               "figures": []}]
+    fold_caption_header_into_figure(parsed)
+    assert parsed[0]["header"] == ""
+    assert parsed[0]["body"].startswith("Planche V.\n\nCoup tiré")
 
 
 def test_drop_scan_apparatus():
@@ -922,6 +1033,16 @@ def test_repair_source_ocr_misreads_consultes_pas_par():
     parsed2 = [{"header": "", "body": "Il ne pare pas l'attaque."}]
     repair_source_ocr_misreads(parsed2)
     assert parsed2[0]["body"] == "Il ne pare pas l'attaque."
+
+
+def test_repair_source_ocr_misreads_plonche_planche():
+    # Real Gomard example: "Plonche XIX." (A/O misread) translates as
+    # "Plunge XIX." since it's not a real French word -- the translator
+    # treats it as one anyway. Every other correctly-spelled "Planche N."
+    # header in the same book translates fine; this is a one-leaf miss.
+    parsed = [{"header": "Plonche XIX.", "body": "x"}]
+    repair_source_ocr_misreads(parsed)
+    assert parsed[0]["header"] == "Planche XIX."
 
 
 def test_phrase_repairs_translated_by():

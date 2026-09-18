@@ -137,6 +137,24 @@ sheets on one Kirchhoffer plate run alone. Fixed: an empty `BODY_TEXT:`
 (the primary regex's `(.+)` can't match zero characters) now returns `""`
 directly instead of falling through to the label-stripper.
 
+**1.2b-3 (2026-09-18) the tail-catchword strip's own docstring example
+was never actually caught.** `strip_leaked_headmatter()`'s tail check
+only recognised a bare number OR a line matching a CONFIRMED PAGE header
+(`known_headers`) -- but a printer's signature catchword (a short line
+at the foot of a gathering's first page, matching the BOOK's own overall
+title, not any specific page's running head) is never itself a page
+header, so it was never in that set. Kirchhoffer: "ESCRIME." (from the
+title page, "L'Escrime : fleuret, épée, sabre") sat at the foot of src
+17 and 33, untouched, on every gathering. Widened the TAIL check only
+(never the top -- a different risk profile; a leaked folio/header at the
+START of a page is common and expected, a stray short line there is more
+likely genuine content) to also catch a standalone line that's very
+short (<=2 words) and title-shaped (mostly uppercase), regardless of
+whether it matches a confirmed page header. Regression tests:
+`test_strip_tail_catchword_not_a_known_page_header`,
+`test_strip_tail_catchword_keeps_only_line`,
+`test_strip_tail_catchword_does_not_eat_real_short_ending`.
+
 ### 1.3 Accents added to bare display capitals
 
 **Seen:** section headings like `CROISÉ`, `ÉPÉE`, `ÉCOLE`, `ÉPREUVE`.
@@ -235,6 +253,19 @@ never reaches back to paragraph 1, since a 3-paragraph page's own
 opening paragraph can incidentally satisfy the same shape checks without
 being anywhere near a margin note. Regression test:
 `test_label_margin_notes_prefers_note_that_precedes_more_prose`.
+
+*2026-09-18: this function still only ever finds ONE candidate note per
+page.* Gomard src 32 actually has two margin-note-shaped paragraphs; the
+disambiguation fix above correctly identifies the right one to remove
+from body, but a reader seeing `[margin note] <text>` rendered in the
+notes strip has no way to know it's paired with THIS specific spot in
+the body rather than some other spot -- especially on a page with more
+than one. Rather than build (and then have to trust) a more elaborate
+multi-note detector, changed what happens on a hit: still detect it and
+remove it from body (so it doesn't pollute body prose), but do NOT
+render it anywhere -- no `[margin note]` line, no footnote-strip entry.
+Simplest honest fix: stop claiming to faithfully reproduce something the
+pipeline can only partially, unreliably locate.
 
 ### 1.6b Cross-page word hyphenation
 
@@ -409,6 +440,57 @@ text-only diagnosis got wrong the first time:*
   The Gomard bug is a header plus a DIFFERENT second title line forming
   one block; an echo of the header is not that.
 
+*2026-09-18, two severe regressions in the two mechanisms just above,
+both caught before they shipped further -- both already in a PDF sent to
+the user as "verified" when found, both fixed the same day.*
+
+- **The nearest-confirmed-header gap-fill had no bound relative to the
+  TRUE source.** It searched from LIVE, in-progress results: once page N
+  got (correctly) gap-filled from a genuine confirmed header, page N+4
+  could then treat page N's fresh value as if IT were a genuine anchor,
+  chaining indefinitely. Gomard: a real `TABLE DES MATIÈRES.` header
+  cascaded across an entire ~54-page run of otherwise-blank plate leaves,
+  each individually <=4 pages from the PREVIOUS (already wrongly-filled)
+  page rather than from any genuine source -- reaching all the way to an
+  unrelated `Planche XVI.`/`Plonche XIX.` plate run. Fixed: snapshot the
+  original confirmed-header positions before the loop starts, search only
+  from that fixed snapshot, and apply every fill together at the end --
+  no fill can feed another fill within the same pass. Regression test:
+  `test_reconcile_headers_gap_fill_does_not_cascade`.
+- **The native-header compound-title demotion (just above) was built as
+  a GENERAL shape rule and is structurally indistinguishable from an
+  extremely common, totally normal pattern: a book-wide running head
+  followed by a new chapter's own title starting the body under it.**
+  Prévost: `THÉORIE PRATIQUE DE L'ESCRIME.` -- the book's actual running
+  head, confirmed 69x across the whole book -- was wrongly demoted on
+  20+ pages, once for every chapter that happened to open with a short
+  uppercase title of its own underneath it. A genuine compound-title-
+  block page (Gomard) and a genuine running-head-plus-new-chapter page
+  (Prévost, and very common generally) cannot currently be told apart by
+  text shape alone -- both are "native header + a second, different
+  title-shaped body line" -- without visually checking whether the scan
+  actually shows a small margin header on that specific page. The
+  confirmation-COUNT gap between the two real examples was huge (Gomard
+  "LISTE DES OUVRAGES": 3 native occurrences; Prévost's running head: 69)
+  but that's two data points, not a calibrated threshold, and this bug
+  had already shipped once. Reverted to a narrow, explicit, named set of
+  confirmed real instances (`_KNOWN_COMPOUND_TITLE_BLOCKS`) instead of a
+  general shape rule -- matching this file's other narrow, evidence-based
+  repairs (`_OCR_PHRASE_FIXES` below) -- add to the set only after
+  visually confirming a NEW instance against the actual scan, same as
+  this one was. Regression test:
+  `test_reconcile_headers_does_not_demote_unlisted_running_head`.
+
+  **Process lesson:** a demotion mechanism changes what text is actually
+  IN the body, not just which field displays it -- any page a demotion
+  (or the reverse: a promotion) touches has DIFFERENT source text now,
+  so its ALREADY-SAVED translation is stale and silently missing/wrong
+  content until that one page's body is retranslated (Gomard "LISTE DES
+  OUVRAGES" / "List of Works": the demotion fix correctly added the line
+  back into body, but the old translation predated that change and only
+  ever translated what was in body at the time -- patched as a single
+  targeted line-translation, not a full retranslate, once identified).
+
 ### 1.2d Plate caption in `HEADER:`; scanner apparatus in `HEADER:`
 
 * `fold_caption_header_into_figure()` — on a page that carries a figure
@@ -482,6 +564,30 @@ recognised a line starting with a digit or lowercase letter (`2e TEMPS :
 `else: continue` and was discarded. Fixed by widening the check to also
 accept a leading "(". Regression test:
 `test_figures_block_keeps_parenthetical_continuation`.
+
+*2026-09-18: `fold_caption_header_into_figure()` required a figure to
+already be flagged.* A "Planche N." / "Fig. N." header always reads as a
+caption, never a running head (review feedback: put it in body, "it
+reads like a caption so therefore body text") -- but the fold only ran
+`if figs:`, so a plate the VLM failed to flag at all (Gomard "Planche
+V./VI.": HEADER carries the plate number, body is a plain description
+with no `FIGURES:` block whatsoever) left the header stuck as a running
+head, inconsistent with plates the VLM DID flag (which folded fine).
+Extended: when there's no flagged figure to fold into, prepend the
+header text to body instead and clear HEADER — same "reads as a caption,
+belongs in body" outcome, just without a figure caption to attach it to.
+Regression test:
+`test_fold_caption_header_into_body_when_no_figure_flagged`.
+
+*Also 2026-09-18:* "Planche" (plate) misread as "Plonche" (A/O OCR
+confusion) isn't a real French word, so the translator treats it as one
+anyway and renders it "Plunge" (as if related to "plonger", to dive)
+instead of "Plate" (Gomard pdf 379: "Plonche XIX." → "Plunge XIX.").
+Every other correctly-spelled "Planche N." header in the same book reads
+and translates fine — a one-leaf OCR miss, not a systemic misread.
+Narrow, case-preserving fix added to `_OCR_PHRASE_FIXES` (1.2c), same
+pattern as the "pas"/"par" fix there. Regression test:
+`test_repair_source_ocr_misreads_plonche_planche`.
 
 ### 1.7 Figure detection — VLM flag + density-profiler geometry
 
@@ -836,6 +942,26 @@ caption: a `(NOTE: …)` aside (often long, sometimes unclosed) and the
 `GIVEN THE … RULES, … THUS: <restated line>` tail it appends
 (Kirchhoffer Fig. 7 came back with a 400-char translator's note).
 
+*2026-09-18: `match_case()` breaks on a caption that combines TWO
+different case registers in one string.* A caption can pair an all-caps
+main title with a trailing parenthetical annotation set in ordinary
+sentence case in the actual book (Kirchhoffer pdf 47: "LE CROISÉ AU
+FLANC." all-caps, then "(La main de l'attaquant reste haute.)" in normal
+sentence case — confirmed against the real scan). `match_case()`
+measures case over the WHOLE source string to decide which mode to
+apply; the parenthetical's genuinely-lowercase letters dilute the main
+title's `upper_ratio` below the 0.8 all-caps threshold, so the real
+all-caps title fell through to a broken middle case instead ("the
+croisé To the side"). Root cause is actually the 1.2d fix above (merging
+the parenthetical into the caption text) — before that fix, this
+combined-casing scenario never arose at all, because the parenthetical
+was simply dropped. Fixed IN `match_case()`: split off a trailing
+"(...)" and case-match each side independently, only when BOTH src and
+dst end in one — the main title gets its own (all-caps) mode, the
+parenthetical gets its own (sentence-case, first letter capitalised)
+mode. Regression test:
+`test_match_case_splits_parenthetical_case_register`.
+
 ### 2.10 Running headers translated separately
 
 `translate_headers()` collects each **distinct** running-head string from
@@ -902,6 +1028,40 @@ calls translating the same source text differently. Full fix would mean
 reusing the body's own translation when a header duplicates verbatim
 into it -- not implemented; flagged as a known residual, not silently
 called fixed.
+
+*2026-09-18: a body-level TITLE line (not a `HEADER:` field value) can
+also stay untranslated, for a different reason than either bug above.*
+`retranslate_stray_french_headings()` re-checks a heading-shaped body
+line only when it contains a generic French STOP word (le, de, et…) --
+Prévost src 23's "ROMPRE" stands alone as its own body-level title line
+(the header carries the duplicate, already fine -- see the echo
+exception above) with no stop words in it at all, so the heuristic had
+literally nothing to detect and never even attempted it, even though the
+SAME word translates correctly moments later mid-paragraph on the SAME
+page (sentence context there carries real stop words). Widened: a short
+(<=2 word) all-caps heading is now checked regardless of stop-word
+count, and the acceptance test switched from "strictly less French than
+before" (blind whenever the count starts at 0) to "genuinely different
+from the original AND not itself flagged as still-French".
+
+That retranslate call then surfaced a SEPARATE bug: it came back `TO
+BREAK GROUND / TO RETREAT` -- the model echoing the translation
+prompt's own rule text verbatim, because rule 3 offered BOTH as
+apparently-interchangeable options for "rompre". This also directly
+explains an earlier report: Kirchhoffer's `ROMPRE — DIVERS` header
+translated as `RETREAT — MISCELLANEOUS`, i.e. the model picking the
+second, WRONG option. Per user (fencing-specific correction): "rompre"
+is one deliberate step back; "retreat"/"retraite" is a different,
+more general multi-step withdrawal -- treating them as interchangeable
+is a real terminology error, not just a style choice. Fixed in the
+prompt itself (`translation_prompt.txt`): moved `rompre` out of rule 3
+into rule 3b as a single canonical `to break ground` (dropping "to
+retreat" as an alternative entirely), with an explicit note to keep it
+distinct from "retraite" if both appear, and now gets the `<fn>Fr.
+rompre</fn>` footnote-on-first-use treatment other rule-3b terms get.
+The prompt's own worked examples ("Rompez." → "Break.") already assumed
+this and never matched rule 3's stated two-option text -- the rule text
+was wrong relative to the examples, not the other way round.
 
 ### 2.11 Author's footnotes vs. ours
 

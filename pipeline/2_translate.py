@@ -392,6 +392,25 @@ def match_case(src: str, dst: str) -> str:
     case, EXCEPT under ALL CAPS where the whole line goes up together."""
     if not dst:
         return dst
+
+    # A caption can combine a main title with a trailing parenthetical
+    # annotation set in a DIFFERENT case register (Kirchhoffer: "LE
+    # CROISÉ AU FLANC." all-caps, then "(La main de l'attaquant reste
+    # haute.)" in ordinary sentence case -- confirmed against the real
+    # scan). Measuring case over the whole combined string dilutes an
+    # all-caps main title's upper_ratio below the 0.8 threshold, so the
+    # real all-caps title fell through to a broken middle case instead.
+    # Split off a trailing "(...)" and case-match each side separately,
+    # only when BOTH src and dst end in one -- otherwise fall through to
+    # the single-mode behaviour below unchanged.
+    _PAREN_TAIL = re.compile(r"^(.*?)([ \t]*\([^()]*\))\s*$", re.S)
+    sm = _PAREN_TAIL.match(src)
+    dm = _PAREN_TAIL.match(dst)
+    if sm and dm and sm.group(1).strip() and dm.group(1).strip():
+        main = match_case(sm.group(1), dm.group(1))
+        paren = match_case(sm.group(2).strip(), dm.group(2).strip())
+        return f"{main.rstrip()} {paren}"
+
     letters = [c for c in src if c.isalpha()]
     if not letters:
         return dst
@@ -587,10 +606,18 @@ def label_margin_notes(text: str, has_fig: bool = False) -> str:
         idx = len(paras) - 1
     if idx is None:
         return text
-    note = "[margin note] " + re.sub(r"\s+", " ", paras[idx].strip())
-    block = (existing.rstrip() + "\n" if existing.strip() else "") + note
+    # Detect and remove it from body -- but do NOT render it anywhere.
+    # Review feedback (2026-09-18): a page can carry more than one
+    # margin-note-shaped paragraph (Gomard src 32 originally had two);
+    # this function only ever finds the single best candidate, so
+    # showing just one out of an unknown true count leaves the reader
+    # unable to tell which printed note it corresponds to. Simplest
+    # honest fix: keep it out of the body (still clearly not body prose)
+    # without claiming to faithfully reproduce it.
     rest = "\n\n".join(paras[:idx] + paras[idx + 1:])
-    return f"{rest}\n\n{FN_HEADER}\n{block}"
+    if existing.strip():
+        return f"{rest}\n\n{FN_HEADER}\n{existing.strip()}"
+    return rest
 
 
 def _looks_like_subheading(s: str) -> bool:
@@ -736,7 +763,18 @@ def retranslate_stray_french_headings(text: str) -> str:
             and len(letters) >= 4
             and sum(c.isupper() for c in letters) >= 0.6 * len(letters)
         )
-        if not is_heading or _french_token_count(re.sub(r"</?i>", "", s)) == 0:
+        plain = re.sub(r"</?i>", "", s)
+        # The stop-word count below only has a signal for FUNCTION words
+        # (le, de, et...) -- a heading that's a single content word has
+        # none to detect and was never even attempted (Prévost src 23:
+        # "ROMPRE" standing alone as its own body-level title line stayed
+        # untranslated, even though the same word translates correctly
+        # mid-paragraph on the very same page, where sentence context
+        # carries stop words around it). A short (<=2 word) all-caps
+        # heading is checked regardless of the stop-word count.
+        looks_french = (_french_token_count(plain) > 0
+                        or (is_heading and len(s.split()) <= 2))
+        if not is_heading or not looks_french:
             out.append(line)
             continue
         en = translate_with_llama(f"{PROMPT_TEMPLATE}\n\nText to translate:\n{s}")
@@ -744,7 +782,13 @@ def retranslate_stray_french_headings(text: str) -> str:
         en = re.sub(r"(?m)^\s*#{1,6}\s+", "", en)
         en = re.sub(r"</?i>", "", en).splitlines()[0].strip() if en else ""
         en = apply_always_translate(en)
-        if en and _french_token_count(en) < _french_token_count(s):
+        # For the single-word case the old "strictly less French" gate is
+        # blind (0 < 0 is never true) -- accept a genuinely different,
+        # non-French result instead of requiring the stop-word count to
+        # have dropped.
+        if en and not contains_too_much_non_english(en) \
+                and en.strip().lower() != re.sub(r"</?i>", "", s).strip().lower() \
+                and (_french_token_count(en) < _french_token_count(s) or len(s.split()) <= 2):
             out.append(match_case(s, en))
         else:
             out.append(line)

@@ -19,7 +19,6 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - coup droit → straight thrust   (NOT "straight right"; "droit" here = straight)
    - dérobement → evasion (of the blade)   |   déroulé → glide
    - une-deux → one-two   |   fente → lunge   |   demi-fente → half-lunge   |   coup(s) (bare) → thrust(s) / blow(s)
-   - rompre → to break ground / to retreat   (a footwork term, NOT "romp")
    - assaut → bout   |   tireur → fencer   |   maître (d'armes) → fencing master   |   salle (d'armes) → fencing hall/room
    - "leçon d'assaut" → "bout lesson" (keep the word "lesson" — NOT the same as a bare "assaut")
    - "un assaut d'épée" → "an épée bout"  (plain "assaut", NO "lesson")
@@ -41,6 +40,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - à-propos → sense of timing
    - coup de temps → time-hit
    - appel → stamp of the foot
+   - rompre → to break ground   (a single deliberate step back, NOT "romp" -- and NOT "retreat"/"retraite", a different, more general backward movement; keep the two distinct if both appear)
    - rassemblement / rassembler / rassemblant → gathering (of the feet)   (spell the French EXACTLY: "rassemblant", never "raassemblant")
    Example:  "… and by a bind<fn>Fr. liement</fn> he carried the blade aside."
    In a HEADING (rule 4) translate the term but omit the <fn> tag.
