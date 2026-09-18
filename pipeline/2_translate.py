@@ -8,6 +8,7 @@ import re
 import requests
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 import backend_config as bc
@@ -312,7 +313,11 @@ _KEEP_TERMS = [
     ("volte", []),
     # riposte / remise / reprise: normally kept by the model, but a bare
     # heading ("DE LA RIPOSTE.") gets mangled -- "OF THE RAPIER RAPIER".
-    ("riposte", [r"rapier(?:[- ]?(?:rapier|response|riposte|reply))?", r"riposte response"]),
+    # Isolated-heading translation (no body context, no retry ladder) is
+    # where this shows up -- "PARADES ET RIPOSTES" -> "PARRIES AND
+    # RAPISES" is the same failure with a different garbled spelling.
+    ("riposte", [r"rapier(?:[- ]?(?:rapier|response|riposte|reply))?",
+                 r"riposte response", r"rapises?"]),
     ("remise", []),
     ("reprise", []),
 ]
@@ -347,8 +352,14 @@ def enforce_kept_terms(text: str, src: str = "") -> str:
     text = repair_mangled_terms(text, src)
     for term, wrongs in _KEEP_TERMS:
         for w in wrongs:
+            def _sub_term(m, term=term):
+                # preserve plurality of the garbled match ("RAPISES" ->
+                # "ripostes", not the always-singular "riposte")
+                plural = m.group(0).rstrip().lower().endswith("s") \
+                    and not term.endswith("s")
+                return f"<i>{term}{'s' if plural else ''}</i>"
             text = re.sub(r"(?<!<i>)\b" + w + r"\b(?!</i>)",
-                          f"<i>{term}</i>", text, flags=re.IGNORECASE)
+                          _sub_term, text, flags=re.IGNORECASE)
         # wrap a bare occurrence not already tagged
         text = re.sub(
             r"(?<![\w>])" + term.replace(" ", r"\s+") + r"(?![\w<])",
@@ -533,26 +544,52 @@ def label_margin_notes(text: str, has_fig: bool = False) -> str:
     paras = [p for p in re.split(r"\n\s*\n", body.strip()) if p.strip()]
     if len(paras) < 3:                       # need a prose-dominant page
         return text
-    last = paras[-1].strip()
-    letters = [c for c in last if c.isalpha()]
-    # A genuine printed shoulder-note is a complete remark -- it ends the
-    # sentence. A paragraph the page boundary cut off (continues on the
-    # next page) usually doesn't, and not just on a comma (P-review D) --
-    # a corpus scan after that fix still found 40/67 tagged notes with no
-    # terminal punctuation at all, nearly all clearly mid-sentence
-    # ("One breaks the distance to disengage from an enemy...", cut off).
-    # Require the sentence to actually end, instead of blacklisting a few
-    # specific "clearly continues" characters.
-    ends_sentence = bool(re.search(r'[.!?][)\]"»]*$', last))
-    if ("\n" in last or len(last.split()) > 20 or last[:1] in "([{«"
-            or re.match(r"\d", last) or re.match(r"[A-Za-zÀ-ÿ]?\d+[°ºo]", last)
-            or _FIG_TITLE_RE.match(last)     # a figure caption title, not a note
-            or (letters and sum(c.isupper() for c in letters) > 0.7 * len(letters))
-            or not ends_sentence):
+
+    def _note_shaped(p):
+        s = p.strip()
+        letters = [c for c in s if c.isalpha()]
+        # A genuine printed shoulder-note is a complete remark -- it ends
+        # the sentence. A paragraph the page boundary cut off (continues on
+        # the next page) usually doesn't, and not just on a comma
+        # (P-review D) -- a corpus scan after that fix still found 40/67
+        # tagged notes with no terminal punctuation at all, nearly all
+        # clearly mid-sentence ("One breaks the distance to disengage from
+        # an enemy...", cut off). Require the sentence to actually end,
+        # instead of blacklisting a few specific "clearly continues" chars.
+        ends_sentence = bool(re.search(r'[.!?][)\]"»]*$', s))
+        return not ("\n" in s or len(s.split()) > 20 or s[:1] in "([{«"
+                    or re.match(r"\d", s) or re.match(r"[A-Za-zÀ-ÿ]?\d+[°ºo]", s)
+                    or _FIG_TITLE_RE.match(s)   # a figure caption title, not a note
+                    or (letters and sum(c.isupper() for c in letters) > 0.7 * len(letters))
+                    or not ends_sentence)
+
+    # A shoulder-note doesn't have to be the page's LAST paragraph -- real
+    # body prose can continue after it (Gomard src 32: the genuine note,
+    # "He recognizes only three ways of striking.", sat one paragraph
+    # before the end, immediately followed by a real closing paragraph
+    # that used to get wrongly tagged as the note instead). The two are
+    # shape-IDENTICAL (both short, both end a sentence, neither uppercase-
+    # heavy) -- position alone can't tell them apart. What can: a genuine
+    # printed shoulder-note is a summary that INTRODUCES what follows it
+    # in the main text (it's a marginal "argument", not a conclusion), so
+    # it is essentially never the page's actual last paragraph -- real
+    # prose almost always continues after it on the same page. Check the
+    # second-to-last paragraph FIRST for exactly that reason, and only
+    # fall back to the true last paragraph if that one isn't note-shaped.
+    # Kept narrow (not "anywhere on the page") on purpose: a 3-paragraph
+    # page's own opening paragraph can incidentally satisfy the same
+    # shape checks (short-ish, ends a sentence) without being anywhere
+    # near a margin note, so this must never reach back to paragraph 1.
+    idx = None
+    if len(paras) >= 3 and _note_shaped(paras[-2]):
+        idx = len(paras) - 2
+    elif _note_shaped(paras[-1]):
+        idx = len(paras) - 1
+    if idx is None:
         return text
-    note = "[margin note] " + re.sub(r"\s+", " ", last)
+    note = "[margin note] " + re.sub(r"\s+", " ", paras[idx].strip())
     block = (existing.rstrip() + "\n" if existing.strip() else "") + note
-    rest = "\n\n".join(paras[:-1])
+    rest = "\n\n".join(paras[:idx] + paras[idx + 1:])
     return f"{rest}\n\n{FN_HEADER}\n{block}"
 
 
@@ -800,17 +837,31 @@ def contains_too_much_non_english(text: str) -> bool:
     # language are wrapped in <i>...</i> -- those are correct output, not a
     # translation failure, so drop them before measuring.
     text = re.sub(r"<i>.*?</i>", " ", text, flags=re.DOTALL | re.IGNORECASE)
-    words = re.findall(r"\b\w+\b", text.lower())
-    if not words:
+    words_cased = re.findall(r"\b\w+\b", text)
+    if not words_cased:
         return True
-    non_english_count = sum(1 for w in words if w in NON_ENGLISH_INDICATORS)
+    words = [w.lower() for w in words_cased]
+    # A French article/preposition sitting directly in front of a
+    # Capitalized word is very likely a correctly-untranslated proper name
+    # ("Cte J. de Reverseaux", "Parc des Princes"), not failed prose --
+    # a page that's mostly a list of duel participants' names legitimately
+    # stays almost entirely unchanged and shouldn't count against it
+    # (Kirchhoffer src 38: "DUEL ANDRÉ GAUCHER... TOURNOI DE MONTE-CARLO").
+    non_english_count = sum(
+        1 for i, w in enumerate(words)
+        if w in NON_ENGLISH_INDICATORS
+        and not (i + 1 < len(words_cased) and words_cased[i + 1][:1].isupper()))
     if non_english_count / len(words) > 0.35:
         return True
     # Backstop for a page that stayed mostly French but is short on the
     # stop words above: elision (consonant + apostrophe + vowel, "d'une" /
     # "qu'il" -- English contractions put a consonant after the apostrophe)
-    # and endings that need French-specific letters.
-    fr = len(re.findall(r"\b[cdjlmnqst]['’][aeiouyhàâäéèêëïîôùûü]", text, re.I)) \
+    # and endings that need French-specific letters. An elision straight
+    # into a Capitalized letter ("d'Hurcourt") is the same proper-name
+    # case as above, not genuine untranslated prose.
+    fr = sum(1 for m in re.finditer(
+                r"\b[cdjlmnqst]['’]([aeiouyhàâäéèêëïîôùûü])", text, re.I)
+             if not m.group(1).isupper()) \
         + len(re.findall(r"\w(?:ité|eaux|aient|âtre|euse|eux|oué)\b", text, re.I))
     return fr / len(words) > 0.045
 
@@ -1055,7 +1106,15 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
                 continue
             if fig.get("caption_en") and not force:
                 continue
-            one = ""
+            # Like translate_headers(), a caption is translated in total
+            # isolation with no other quality gate -- a one-off garbled
+            # word ("THRUST" -> "THUST", a duplicated gloss like "GATHERING
+            # THE FEET" OF THE FEET") is unlikely to repeat identically
+            # across independent samples, so collect all 3 and majority-
+            # vote instead of stopping at the first that merely passes the
+            # non-English check.
+            candidates = []
+            fallback = ""
             for attempt in range(3):
                 en = translate_with_llama(
                     f"{PROMPT_TEMPLATE}\n\nText to translate:\n{cap}",
@@ -1068,21 +1127,26 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
                 cand = " ".join(l.strip() for l in en.splitlines() if l.strip())
                 # reject a caption the model just echoed back in French
                 if contains_too_much_non_english(cand):
-                    one = one or cand
+                    fallback = fallback or cand
                     continue
-                one = cand
-                break
-            if one:
-                one = _clean_caption(one)
-                one = enforce_kept_terms(apply_always_translate(one), cap)
-                one = fix_parry_names(one, cap)
+                cand = _clean_caption(cand)
+                cand = enforce_kept_terms(apply_always_translate(cand), cap)
+                cand = fix_parry_names(cand, cap)
                 # captions don't render a footnote block: translate the
                 # Category-3 terms but drop any <fn> marker (backstop's and
                 # a stray one from the model).
-                one = re.sub(r"<fn>.*?</fn>|</?fn>", "", one,
-                             flags=re.DOTALL | re.IGNORECASE)
-                one = enforce_cat3_footnotes(one, set(), footnote=False)
+                cand = re.sub(r"<fn>.*?</fn>|</?fn>", "", cand,
+                              flags=re.DOTALL | re.IGNORECASE)
+                cand = enforce_cat3_footnotes(cand, set(), footnote=False)
+                if cand:
+                    candidates.append(cand)
+            if candidates:
+                counts = Counter(c.lower() for c in candidates)
+                best_norm, _ = counts.most_common(1)[0]
+                one = next(c for c in candidates if c.lower() == best_norm)
                 fig["caption_en"] = match_case(cap, one) or cap
+            elif fallback:
+                fig["caption_en"] = match_case(cap, fallback) or cap
             else:
                 fig["caption_en"] = cap
             n += 1
@@ -1116,16 +1180,34 @@ def translate_headers(folder: str, force: bool = False) -> int:
             if h and h.lower() not in ("none", "n/a", "-"):
                 raw.add(h)
     def _one(h):
-        en = translate_with_llama(f"{PROMPT_TEMPLATE}\n\nText to translate:\n{h}")
-        en = strip_model_preamble((en or "").strip()).strip()
-        en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
-        en = re.sub(r'</?i>', '', en)          # a header is plain text (rule 4)
-        en = enforce_kept_terms(apply_always_translate(en), h)   # snap "RAPIER RAPIER" -> riposte
-        en = enforce_cat3_footnotes(en, set(), footnote=False)
-        en = re.sub(r'</?i>', '', en)          # drop the <i> enforce_kept_terms added
-        en = en.splitlines()[0].strip() if en else ""
-        en = re.sub(r'\s*:\s*$', '', en)       # "CONTRES:" -> "CONTRES" (P8)
-        return match_case(h, en) if en else h
+        # A header/caption gets translated in complete isolation -- no
+        # surrounding page for context -- and, unlike body text, a SINGLE
+        # model call with no quality check at all. A small quantized model
+        # occasionally garbles a short isolated phrase (ROMPRE -> ROMPRER,
+        # "PARADES ET RIPOSTES" -> "PARRIES AND RAPISES") -- a one-off
+        # sampling fluke that's very unlikely to repeat identically across
+        # independent temperature-varied samples. Take 3 and majority-vote
+        # instead of trusting the first.
+        candidates = []
+        for attempt in range(3):
+            en = translate_with_llama(f"{PROMPT_TEMPLATE}\n\nText to translate:\n{h}",
+                                       temperature=0.2 + 0.3 * attempt)
+            en = strip_model_preamble((en or "").strip()).strip()
+            en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
+            en = re.sub(r'</?i>', '', en)          # a header is plain text (rule 4)
+            en = enforce_kept_terms(apply_always_translate(en), h)   # snap "RAPIER RAPIER" -> riposte
+            en = enforce_cat3_footnotes(en, set(), footnote=False)
+            en = re.sub(r'</?i>', '', en)          # drop the <i> enforce_kept_terms added
+            en = en.splitlines()[0].strip() if en else ""
+            en = re.sub(r'\s*:\s*$', '', en)       # "CONTRES:" -> "CONTRES" (P8)
+            if en:
+                candidates.append(en)
+        if not candidates:
+            return h
+        counts = Counter(c.lower() for c in candidates)
+        best_norm, _ = counts.most_common(1)[0]
+        best = next(c for c in candidates if c.lower() == best_norm)
+        return match_case(h, best)
 
     n = 0
     for h in sorted(raw):

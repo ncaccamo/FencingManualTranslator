@@ -81,6 +81,22 @@ legible, so the model guesses.
 - `page_numbers.txt` records the result, one line per page; `[n]` means
   "inferred, not a printed number".
 
+- *2026-09-18:* a plate leaf's OWN engraver's plate number could still
+  get trusted as if it were a real folio, when it happened to match
+  what the surrounding sequence's arithmetic predicted. Gomard pdf 375:
+  the plate reads "Planche XVII." (folio 17), which coincidentally lined
+  up with the real run around it, so `Page XVII` rendered as if genuine.
+  `is_plate[i]` already kept a plate leaf's bogus number from breaking
+  OTHER pages' gap checks, but not from being trusted for ITSELF -- three
+  separate places in `reconcile_page_numbers()` could each independently
+  mark it trusted (the direct-neighbour check, the monotonic-chain
+  endpoints, and the fixed-point interpolation pass); all three now
+  exclude a plate leaf's own read. Falls through to the existing
+  "inferred plate leaf → no folio" path instead (blank), which was
+  already correct behaviour, just unreachable for a leaf whose own bogus
+  number happened to agree with the real sequence. Regression test:
+  `test_reconcile_plate_own_read_never_trusted`.
+
 ### 1.2b Folio / running-header leaked into BODY_TEXT
 
 **Seen:** Joseph-Renaud — a page's translation opened with a stray line
@@ -196,6 +212,30 @@ the paragraph to end in `.`/`!`/`?` (optionally + a closing quote/paren)
 to be eligible at all. Dropped false positives to 0 in the three books
 retranslated against it; 67→26 tagged notes corpus-wide.
 
+*2026-09-18:* the note isn't always the page's actual last paragraph
+either -- real body prose can continue after it. Gomard src 32: the
+genuine note, "He recognizes only three ways of striking.", sits ONE
+paragraph before the end, immediately followed by a real closing
+paragraph ("Like Marozzo, his cuts are directed at the shoulder,
+chest…") that used to get wrongly tagged as the note instead. The two
+are shape-IDENTICAL by every check above (both short, both end a
+sentence, neither uppercase-heavy) -- position was the only thing
+distinguishing them, and the old code only ever checked the true last
+paragraph. Fixed with a principled reordering, not just "check one more
+paragraph back": a genuine printed shoulder-note is a summary that
+INTRODUCES what follows it in the main text (a marginal "argument", not
+a conclusion), so it is essentially never the page's actual last
+paragraph. Check the second-to-last paragraph FIRST for exactly that
+reason, and only fall back to the true last paragraph if that one isn't
+note-shaped. (An earlier attempt just widened the search to "last 2, closest
+first" without this reordering -- it still picked the wrong one on this
+exact real page, since the true-last paragraph is checked before the
+second-to-last and both pass the shape test.) Kept narrow on purpose:
+never reaches back to paragraph 1, since a 3-paragraph page's own
+opening paragraph can incidentally satisfy the same shape checks without
+being anywhere near a margin note. Regression test:
+`test_label_margin_notes_prefers_note_that_precedes_more_prose`.
+
 ### 1.6b Cross-page word hyphenation
 
 **Seen:** Gomard 1845 — a word split by end-of-page hyphenation in the
@@ -297,8 +337,8 @@ review pass over the same three books:*
   neighbours must already agree, so a page next to a freshly-*lifted*
   one-off section-opener (previous bullet) won't match and stays open
   (Kirchhoffer src 30, sandwiched between `PARADES ET RIPOSTES` and an
-  unrelated one-off `CONTRE LE BRAS TENDU` -- documented residual, not
-  fixed).
+  unrelated one-off `CONTRE LE BRAS TENDU` -- residual at the time; fixed
+  2026-09-18, see below).
 - **Order-swapped two-part header, tab dropped** (already known-deferred:
   Kirchhoffer `FLEURET`/`LA MISE EN GARDE` plate run reads
   `LA MISE EN GARDE FLEURET` on some leaves instead of `FLEURET`+tab+
@@ -322,6 +362,52 @@ L'AUTEUR.` on src 21 -- its only other reading, on src 19, is also a
 one-off, so without this restriction the duplicate was stripped and an
 unrelated same-root sandwich interpolation from `LISTE DES OUVRAGES`
 neighbours won instead).
+
+*2026-09-18, two more gaps found reviewing a rebuilt PDF against the
+real scans (not just the OCR text) -- both caught real bugs the earlier
+text-only diagnosis got wrong the first time:*
+
+- **A page genuinely has no header at all in raw OCR, sandwiched between
+  two DIFFERENT one-off (never independently confirmed) headers.**
+  Kirchhoffer src 30: raw OCR literally reports `HEADER: none`, between
+  `PARADES ET RIPOSTES` (src 29, a one-page interlude) and `CONTRE LE
+  BRAS TENDU` (src 31, a different one-page interlude) -- neither
+  neighbour repeats anywhere else in the book, so sandwich interpolation
+  (which requires both neighbours to already agree) correctly declines.
+  First fix attempt was wrong: "carry the preceding header forward"
+  would have wrongly propagated `PARADES ET RIPOSTES` onto src 30.
+  Rendering the actual scan page settled it -- src 30's real running head
+  reverts to the parent section, `ÉPÉE`, which last appeared 2 pages
+  back and is independently confirmed (8 native occurrences). Fixed with
+  a new pass: search outward in both directions (capped at a 4-page gap)
+  for the nearest header that IS independently confirmed (>=2 native
+  occurrences), preferring whichever is closer. Deliberately runs AFTER
+  sandwich interpolation, which is more precise when it applies.
+- **A native (non-empty) `HEADER:` is itself the wrong half of a
+  two-line compound title block, printed within the body area on a
+  section's one opening page, no small running head there at all.**
+  Gomard: `HEADER: LISTE DES OUVRAGES`, body opens with `CONSULTÉS PAR
+  L'AUTEUR.` -- rendering the actual scan showed a LARGE two-line title
+  ("LISTE DES OUVRAGES" / "CONSULTÉS PAR L'AUTEUR.") sitting in the body
+  column, not the margin; the genuine small running head (just "LISTE
+  DES OUVRAGES", confirmed by repetition) only starts on the section's
+  SECOND page. This is a different code path from the empty-`HEADER:`
+  lift above -- the model read the first line natively into `HEADER:`
+  itself, so it never reaches the promotion logic at all. Fixed with a
+  local per-page signal: a native header immediately followed by a
+  SECOND title-shaped body line (short, standalone, uppercase-heavy) is
+  a compound title block -- demote the header back into body, both lines
+  together, as printed. Runs last, after the gap-fill above (ordering
+  matters: demoting first just let the gap-fill put the header right
+  back from the neighbouring confirmed page).
+  **Must NOT fire when the body's first line is a near-duplicate of the
+  header itself** (normalises the same, punctuation aside) -- that's a
+  different, deliberately-fine convention this corpus already relies on
+  (Prévost src 21: header carries `DE LA MANIÈRE DE SE RELEVER.`, body
+  repeats it verbatim before its own subtitle -- "header and a body
+  title both is fine if that's what the book does", confirmed earlier).
+  The Gomard bug is a header plus a DIFFERENT second title line forming
+  one block; an echo of the header is not that.
 
 ### 1.2d Plate caption in `HEADER:`; scanner apparatus in `HEADER:`
 
@@ -385,6 +471,17 @@ neighbours won instead).
   it up before running it on a book that's already been translated, or
   you'll need a standalone `translate_figure_captions()` pass to refill
   it (which is what happened here — not a data loss, but avoidable).
+
+*2026-09-18:* a caption's second line starting with "(" was silently
+dropped. Kirchhoffer pdf 47: `FIGURES: plate | Fig. 4. — LE CROISÉ AU
+FLANC.` followed by `(La main de l'attaquant reste haute.)` on its own
+line with no label -- a parenthetical continuation of the caption, not a
+fresh figure. `parse_figures_block()`'s continuation-line check only
+recognised a line starting with a digit or lowercase letter (`2e TEMPS :
+…`) as a follow-on; a leading "(" fell through to the trailing
+`else: continue` and was discarded. Fixed by widening the check to also
+accept a leading "(". Regression test:
+`test_figures_block_keeps_parenthetical_continuation`.
 
 ### 1.7 Figure detection — VLM flag + density-profiler geometry
 
@@ -659,6 +756,20 @@ text follows]` with the source text. **A page is never dropped** — the
 page count out must equal the page count in, or the side-by-side PDF
 misaligns.
 
+*2026-09-18:* `contains_too_much_non_english()` false-positived on a
+page that's legitimately almost all correctly-untranslated proper names.
+Kirchhoffer src 38 lists duel participants and a tournament name ("DUEL
+ANDRÉ GAUCHER — JOSEPH-RENAUD. … TOURNOI DE MONTE-CARLO.") -- names
+correctly stay unchanged, but the French articles/prepositions embedded
+IN them ("Cte J. **de** Reverseaux", "Parc **des** Princes", "**d'**Hurcourt")
+tripped both the stop-word ratio and the elision backstop, which can't
+tell "a real untranslated French sentence" from "a French preposition
+sitting inside a name". Fixed by exempting a stop-word match immediately
+followed by a Capitalized token (name context), and an elision match
+whose captured letter is itself uppercase (`d'Hurcourt`, not `d'une`).
+A genuine failure (real lowercase French prose) is unaffected -- verified
+against both the false-positive case and a real echoed-French page.
+
 ### 2.8 The translation prompt's term policy, condensed
 
 Revised 2026-08-30 to a **translate-by-default** policy — the earlier
@@ -755,6 +866,42 @@ keep their own casing. Applied in `translate_headers()`,
 `translate_figure_captions()` and `retranslate_stray_french_headings()`.
 Regenerating needs `2_translate.py --captions` (forces both) or deleting
 `headers.json` — an unforced pass skips strings already mapped.
+
+*2026-09-18: headers and captions had no retry/quality gate at all,
+unlike body text.* Both `translate_headers()`'s `_one()` and
+`translate_figure_captions()` called the model exactly once per string,
+with no context beyond the bare phrase and no check on the result --
+body text, by contrast, gets full-page context plus a 3-attempt retry
+ladder with real quality checks. A small quantized model translating a
+short isolated phrase cold occasionally garbles it: `ROMPRE` ->
+`ROMPRER`, `PARADES ET RIPOSTES` -> `PARRIES AND RAPISES`, `THRUST` ->
+`THUST`, a duplicated gloss ("GATHERING THE FEET" OF THE FEET"). Fixed by
+taking 3 independent temperature-varied attempts and majority-voting the
+result (by lowercase-normalized string) instead of trusting the first --
+a one-off sampling fluke is very unlikely to repeat identically 2+ times,
+while the correct rendering usually does.
+
+Majority-vote alone didn't fully fix `RIPOSTES` -> `RAPISES`, though --
+the model made that SAME mistake on all 3 independent attempts, so it's
+a repeatable confusion, not noise. `enforce_kept_terms()` already had a
+known-garble list for "riposte" (comment: "OF THE RAPIER RAPIER", from an
+earlier-seen corruption) but didn't include this spelling, and its
+replacement always forced the singular "riposte" regardless of the
+garbled match's own plurality. Added `rapises?` to the known-garble
+list and made the replacement plural-aware (checks whether the matched
+garble ends in "s").
+
+**Isolated translation also doesn't guarantee AGREEMENT with the body's
+own translation of the same source text**, even when neither is wrong.
+Prévost src 21: header `DE LA MANIÈRE DE SE RELEVER.` and the body's own
+duplicate of that exact phrase translate to two different (both
+legitimate) English renderings, since they're two independent model
+calls with different context. Majority-vote makes a single call more
+internally consistent across retries; it does nothing for two SEPARATE
+calls translating the same source text differently. Full fix would mean
+reusing the body's own translation when a header duplicates verbatim
+into it -- not implemented; flagged as a known residual, not silently
+called fixed.
 
 ### 2.11 Author's footnotes vs. ours
 

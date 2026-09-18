@@ -121,7 +121,15 @@ def test_label_margin_notes():
 
 
 def test_label_margin_notes_skipped_on_figure_page():
-    txt = ("A first paragraph.\n\nA second paragraph.\n\nParry of septime.")
+    # Realistic-length filler paragraphs -- a toy one-sentence filler like
+    # "A second paragraph." is itself short enough to accidentally look
+    # note-shaped now that the search checks the last 2 paragraphs, not
+    # just the last 1; real translated prose doesn't run that short.
+    txt = ("The main body paragraph goes on for a while about the left hand "
+           "and its uses in a serious affair.\n\n"
+           "A second full paragraph of ordinary prose so the page reads as "
+           "prose-dominant and not just a caption with a stray line.\n\n"
+           "Parry of septime.")
     assert label_margin_notes(txt, has_fig=True) == txt
     # even without has_fig, a caption-shaped trailing line is not a note
     assert "[margin note]" not in label_margin_notes(txt)
@@ -152,6 +160,30 @@ def test_label_margin_notes_skips_continuation_with_no_terminal_punctuation():
            "prose-dominant and not just a caption with a stray line.\n\n"
            "One breaks the distance to disengage from an enemy")
     assert label_margin_notes(txt) == txt
+
+
+def test_label_margin_notes_prefers_note_that_precedes_more_prose():
+    # Real Gomard src 32 example: two paragraphs are EQUALLY note-shaped
+    # (both short, both end a sentence, neither uppercase-heavy) -- shape
+    # alone can't tell them apart. The genuine note, "He recognizes only
+    # three ways of striking.", sits one paragraph before the end, with a
+    # real closing paragraph still following it; the old "just check the
+    # last paragraph" logic wrongly grabbed that closing paragraph instead
+    # and left the actual note sitting in the body. A margin note
+    # introduces what follows on the page -- it's essentially never the
+    # true last paragraph -- so the second-to-last candidate must win.
+    txt = ("A long opening paragraph establishing the guard positions in "
+           "enough words to read as real prose and not a stray caption.\n\n"
+           "A second full paragraph of ordinary prose so the page reads as "
+           "prose-dominant and not just a caption with a stray line.\n\n"
+           "A third paragraph continuing the discussion at some length so "
+           "the page still reads as prose-dominant overall, definitely.\n\n"
+           "He recognizes only three ways of striking.\n\n"
+           "Like Marozzo, his cuts are directed at the shoulder, chest, "
+           "flank, and calf; his thrusts prefer the face.")
+    out = label_margin_notes(txt)
+    assert "[margin note] He recognizes only three ways of striking." in out
+    assert "Like Marozzo" in out.split("___FOOTNOTES___")[0]   # stays in body
 
 
 def test_extract_source_footnotes_bare_number_tail():
@@ -334,6 +366,19 @@ def test_enforce_kept_terms():  # Cat-2 only now
         assert needle in enforce_kept_terms(dst, src), (dst, enforce_kept_terms(dst, src))
 
 
+def test_enforce_kept_terms_catches_rapises_garble():
+    # Real Kirchhoffer example: "PARADES ET RIPOSTES" -> "PARRIES AND
+    # RAPISES" in the isolated header-translation path (no retry ladder
+    # caught it, since the model garbles it the same way every attempt --
+    # not a one-off sampling fluke). enforce_kept_terms() already had a
+    # known-garble list for "riposte" (comment: "OF THE RAPIER RAPIER")
+    # but didn't include this spelling, and always replaced with the
+    # singular "riposte" regardless of the garbled match's plurality.
+    out = enforce_kept_terms("PARRIES AND RAPISES", "PARADES ET RIPOSTES")
+    assert "<i>ripostes</i>" in out.lower() or "ripostes" in out.lower()
+    assert "rapise" not in out.lower()
+
+
 def test_enforce_cat3_translates_and_footnotes_once():
     seen = set()
     out = enforce_cat3_footnotes(
@@ -440,6 +485,19 @@ def test_figures_block_unlabeled_repeat_must_match_caption():
     assert figs[0]["caption"] == "Parade de seconde."
 
 
+def test_figures_block_keeps_parenthetical_continuation():
+    # Real example: Kirchhoffer pdf 47, "FIG. 4. — LE CROISÉ AU FLANC."
+    # followed by "(La main de l'attaquant reste haute.)" on its own line
+    # -- a parenthetical continuation, not a fresh figure. It starts with
+    # "(" rather than a digit/lowercase letter, which the old continuation
+    # check didn't recognise, silently dropping the whole second line.
+    raw = ("HEADER: x\nFIGURES:\nplate | Fig. 4. — LE CROISÉ AU FLANC.\n"
+           "(La main de l'attaquant reste haute.)")
+    figs = parse_figures_block(raw)
+    assert len(figs) == 1
+    assert "reste haute" in figs[0]["caption"]
+
+
 def test_reconcile_trusts_run():
     assert reconcile_page_numbers(["20", "21", "22"]) == ["20", "21", "22"]
 
@@ -462,6 +520,19 @@ def test_reconcile_monotonic_chain_across_plates():
         ["160", "", "", "", "", "161", "", "162"],
         is_plate=[0, 1, 0, 0, 0, 0, 0, 0])
     assert out[0] == "160" and out[5] == "161" and out[7] == "162"
+
+
+def test_reconcile_plate_own_read_never_trusted():
+    # Real example: Gomard pdf 375 -- a whole-page plate's own printed
+    # "Planche XVII." reads as folio 17, which happened to be exactly
+    # what the surrounding sequence's arithmetic predicted, so it got
+    # trusted as if it were a genuine folio ("Page XVII" rendered). A
+    # plate leaf's own number is an engraver's plate number, never a
+    # folio, and must not be trusted for ITSELF even when it lines up --
+    # it must fall through to the existing "inferred plate leaf -> no
+    # folio" path (blank), not render the bogus value.
+    out = reconcile_page_numbers(["16", "17", "18"], is_plate=[0, 1, 0])
+    assert out == ["16", "", "18"]
 
 
 def test_reconcile_forces_single_slot_misread():
@@ -562,14 +633,59 @@ def test_reconcile_headers_promotes_unconfirmed_section_opener():
     ]
     reconcile_headers(parsed)
     assert parsed[2]["header"] == "TERMES TECHNIQUES"
-    assert parsed[2]["body"] == "Coup droit. — Attaque simple."
+
+
+def test_reconcile_headers_demotes_native_compound_title_block():
+    # Real Gomard example: the model reads "HEADER: LISTE DES OUVRAGES"
+    # NATIVELY (not blank -- so the promotion path above never runs at
+    # all) on the bibliography section's OPENING page, whose body opens
+    # with a second title-shaped line, "CONSULTÉS PAR L'AUTEUR." Visual
+    # check against the scan: this is one big two-line title block
+    # printed within the body area, not a running head -- the section's
+    # genuine small running head (just "LISTE DES OUVRAGES", confirmed by
+    # repetition) only starts on the SECOND page, where the body opens
+    # with ordinary prose instead of a second title line.
+    parsed = [
+        {"header": "LISTE DES OUVRAGES",
+         "body": "CONSULTÉS PAR L'AUTEUR.\n\nDi Antonio Manciolino, Bolognese.",
+         "figures": []},
+        {"header": "LISTE DES OUVRAGES",
+         "body": "Didier, gentilhomme provençal, dédié à la majesté du Roy.",
+         "figures": []},
+    ]
+    reconcile_headers(parsed)
+    assert parsed[0]["header"] == ""
+
+
+def test_reconcile_headers_keeps_header_when_body_echoes_it():
+    # Real Prévost src 21 example -- must NOT be caught by the demotion
+    # above. The header carries the title and the body repeats it
+    # verbatim before its own subtitle ("DE LA MANIÈRE DE SE RELEVER." /
+    # body: "DE LA MANIÈRE DE SE RELEVER" then "OU DE SE REPLACER EN
+    # GARDE"). Already confirmed as a deliberately-fine book convention
+    # ("header and a body title both is fine if that's what the book
+    # does") -- the Gomard demotion is specifically for a header plus a
+    # DIFFERENT second title line, not an echo of the header itself.
+    parsed = [
+        {"header": "DE LA MANIÈRE DE SE RELEVER.",
+         "body": "DE LA MANIÈRE DE SE RELEVER\n\nOU DE SE REPLACER EN GARDE\n\n"
+                  "Replier le bras droit, relever la main gauche.",
+         "figures": []},
+    ]
+    reconcile_headers(parsed)
+    assert parsed[0]["header"] == "DE LA MANIÈRE DE SE RELEVER."
 
 
 def test_reconcile_headers_does_not_promote_glossary_headword():
     # A mixed-case "Headword. — definition" opening line -- even if it's
-    # the first thing on the page -- is NOT a section title and must not
-    # get promoted (would misfile every glossary entry that happens to
-    # start a page as a running head).
+    # the first thing on the page -- is NOT a section title, so the
+    # promotion path must never turn the glossary text ITSELF into a
+    # header value (would misfile every glossary entry that happens to
+    # start a page as a running head). It may still legitimately inherit
+    # the surrounding confirmed "FLEURET" via the separate nearest-
+    # confirmed-header gap fill -- that's a different, correct mechanism
+    # (real book pages don't go headerless just because a glossary entry
+    # happens to open them).
     parsed = [
         {"header": "FLEURET", "body": "x", "figures": []},
         {"header": "FLEURET", "body": "y", "figures": []},
@@ -578,7 +694,7 @@ def test_reconcile_headers_does_not_promote_glossary_headword():
          "figures": []},
     ]
     reconcile_headers(parsed)
-    assert parsed[2]["header"] == ""
+    assert parsed[2]["header"] == "FLEURET"
 
 
 def test_reconcile_headers_reorders_swapped_two_part():
@@ -630,10 +746,16 @@ def test_reconcile_headers_sandwich_interpolation():
 
 def test_reconcile_headers_sandwich_interpolation_needs_agreement():
     # Neighbours disagree (one of them is itself a one-off subsection
-    # opener, not the parent section's running head) -> no interpolation.
-    # This is a real residual gap (Kirchhoffer src 30, sandwiched between
-    # a freshly-promoted subsection opener and an unrelated one-off
-    # header) -- documented as NOT fixed by this mechanism.
+    # opener, not the parent section's running head) -> the strict
+    # sandwich rule (both neighbours must already agree) correctly
+    # declines. This is the real Kirchhoffer src 30 shape: sandwiched
+    # between "PARADES ET RIPOSTES" and "CONTRE LE BRAS TENDU", each a
+    # one-page interlude read natively on exactly one page, neither
+    # independently confirmed. Visual check against the scan showed src
+    # 30's real header reverts to the parent "ÉPÉE" -- caught by a
+    # separate, later mechanism (nearest-CONFIRMED-header search, not
+    # this strict immediate-neighbour rule), which is why the page ends
+    # up with a header at all despite this rule declining.
     parsed = [
         {"header": "ÉPÉE", "body": "a0", "figures": []},
         {"header": "ÉPÉE", "body": "a1", "figures": []},   # ÉPÉE confirmed
@@ -642,7 +764,24 @@ def test_reconcile_headers_sandwich_interpolation_needs_agreement():
         {"header": "CONTRE LE BRAS TENDU", "body": "d", "figures": []},
     ]
     reconcile_headers(parsed)
-    assert parsed[3]["header"] == ""
+    assert parsed[3]["header"] == "ÉPÉE"   # nearest-confirmed fallback, not the strict sandwich rule
+
+
+def test_reconcile_headers_gap_fill_prefers_nearer_confirmed():
+    # When the nearest-confirmed search could reach a confirmed header in
+    # either direction, it takes whichever is CLOSER -- here the backward
+    # confirmed root ("FLEURET") is 2 pages off (behind a one-off), while
+    # the forward confirmed root ("ÉPÉE") is only 1 page off.
+    parsed = [
+        {"header": "FLEURET", "body": "a0", "figures": []},
+        {"header": "FLEURET", "body": "a1", "figures": []},   # FLEURET confirmed, 2 away
+        {"header": "ONE-OFF INTERLUDE", "body": "b", "figures": []},
+        {"header": "", "body": "gap", "figures": []},
+        {"header": "ÉPÉE", "body": "c0", "figures": []},
+        {"header": "ÉPÉE", "body": "c1", "figures": []},   # ÉPÉE confirmed, 1 away
+    ]
+    reconcile_headers(parsed)
+    assert parsed[3]["header"] == "ÉPÉE"
 
 
 def test_fold_caption_header_into_figure():

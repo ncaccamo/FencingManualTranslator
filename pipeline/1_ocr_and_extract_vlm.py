@@ -313,10 +313,11 @@ def parse_figures_block(raw: str) -> list:
             if line != figs[-1]["caption"]:
                 figs[-1]["caption"] = line
             continue
-        elif figs and re.match(r"[0-9a-zà-ÿ]", line):
-            # A follow-on line starting with a digit or lowercase -- a
-            # caption's second line ("2e TEMPS : le dérobement ..."), not
-            # a fresh title ("FIG. 5. —", "PRISE DE FER ..."). Append it.
+        elif figs and re.match(r"[0-9a-zà-ÿ(]", line):
+            # A follow-on line starting with a digit, lowercase, or an
+            # open paren -- a caption's second line ("2e TEMPS : le
+            # dérobement ...", "(La main de l'attaquant reste haute.)"),
+            # not a fresh title ("FIG. 5. —", "PRISE DE FER ..."). Append it.
             if line.lower() not in figs[-1]["caption"].lower():
                 figs[-1]["caption"] = (figs[-1]["caption"] + " " + line).strip()
             continue
@@ -752,7 +753,20 @@ def reconcile_headers(parsed: list) -> None:
         body = p.get("body") or ""
         first, _, rest = body.lstrip("\n").partition("\n")
         first = first.strip()
-        if first and (_key(first) in confirmed or _looks_like_section_title(first)):
+        second, _, _ = rest.lstrip("\n").partition("\n")
+        second = second.strip()
+        # A big two-line opening title (Gomard: "LISTE DES OUVRAGES" /
+        # "CONSULTÉS PAR L'AUTEUR.") is NOT a running head -- visual check
+        # against the scan showed it's a body-level title block on the
+        # section's one opening page, with no small margin header at all;
+        # the genuine small running head (just "LISTE DES OUVRAGES") only
+        # starts on the section's SECOND page, which the model reads on
+        # its own. A single title-shaped line immediately followed by
+        # ANOTHER title-shaped line means "compound title block, leave it
+        # all in body" -- a genuine section-opener is followed by ordinary
+        # prose, not a second title line.
+        if first and (_key(first) in confirmed or _looks_like_section_title(first)) \
+                and not (second and _looks_like_section_title(second)):
             p["header"] = first
             p["body"] = rest.lstrip("\n")
 
@@ -767,6 +781,64 @@ def reconcile_headers(parsed: list) -> None:
         next_h = (parsed[i + 1].get("header") or "").strip()
         if prev_h and next_h and _key(prev_h) == _key(next_h) and _key(prev_h) in confirmed:
             p["header"] = prev_h
+
+    # A page still headerless after everything above, flanked by one-page
+    # interludes that were never themselves independently confirmed
+    # (Kirchhoffer src 30: sits between "PARADES ET RIPOSTES" and "CONTRE
+    # LE BRAS TENDU", each read natively on exactly one page -- neither
+    # neighbour is trustworthy). The scan confirmed src 30's real running
+    # head reverts to the parent section ("ÉPÉE"), reached by looking
+    # further out. Inherit the nearest header that IS independently
+    # confirmed (>=2x), searching outward in both directions and
+    # preferring whichever is closer -- capped at a short gap so this
+    # can't reach across an unrelated part of the book.
+    _MAX_GAP = 4
+    for i, p in enumerate(parsed):
+        if (p.get("header") or "").strip():
+            continue
+        for dist in range(1, _MAX_GAP + 1):
+            found = None
+            for j in (i - dist, i + dist):
+                if not (0 <= j < n):
+                    continue
+                h = (parsed[j].get("header") or "").strip()
+                if h and _key(h) in confirmed:
+                    found = root_display.get(_key(h), h.split("\t", 1)[0] if "\t" in h else h)
+                    break
+            if found:
+                p["header"] = found
+                break
+
+    # A big two-line opening title block, printed within the body area on
+    # a section's one opening page (Gomard: "HEADER: LISTE DES OUVRAGES",
+    # body opens with "CONSULTÉS PAR L'AUTEUR.") -- not a running head,
+    # confirmed against the scan. The model reads the FIRST line natively
+    # into HEADER: itself here (unlike the promotion case above, which
+    # only ever sees an empty HEADER:), so it's caught separately, and
+    # deliberately LAST: the header value genuinely IS the real running
+    # head on later pages of the same section (ordinary prose there,
+    # confirmed by repetition) -- demoting first would just have the
+    # nearest-confirmed gap fill above put it right back.
+    #
+    # Must NOT fire when the body's first line is a near-duplicate of the
+    # header itself (normalises the same, punctuation aside) -- that's a
+    # DIFFERENT, deliberately-fine book convention (Prévost src 21: the
+    # header carries "DE LA MANIÈRE DE SE RELEVER." and the body repeats
+    # it verbatim before its own subtitle -- "header and a body title
+    # both is fine if that's what the book does", confirmed already).
+    # The Gomard bug is specifically a header and a DIFFERENT second
+    # title line together forming one compound block, not an echo.
+    for p in parsed:
+        head = (p.get("header") or "").strip()
+        if not head or "\t" in head or not _looks_like_section_title(head):
+            continue
+        body = p.get("body") or ""
+        b_first, _, _ = body.lstrip("\n").partition("\n")
+        b_first = b_first.strip()
+        if (b_first and _looks_like_section_title(b_first)
+                and _key(b_first) != _key(head)):
+            p["body"] = head + "\n\n" + body
+            p["header"] = ""
 
 
 def recover_plate_captions(parsed: list) -> None:
@@ -915,7 +987,14 @@ def reconcile_page_numbers(page_raws: list, is_plate: list = None) -> list:
 
     trusted = [False] * n
     for i, v in enumerate(ints):
-        if v is None or v <= 0:
+        # A plate leaf's own "read" is its engraver's plate number
+        # (Gomard: "Planche XVII" -> 17), not a printed folio -- never
+        # trust it for itself, even when it happens to land where the
+        # surrounding sequence's arithmetic would predict a real folio.
+        # `plate[i]` already keeps it from breaking OTHER pages' gap
+        # checks; this closes the matching gap where the plate leaf's own
+        # bogus number could get trusted directly.
+        if v is None or v <= 0 or plate[i]:
             continue
         for d in (1, 2, 3):
             lo_ok = (i - d >= 0 and ints[i - d] == v - d
@@ -928,7 +1007,8 @@ def reconcile_page_numbers(page_raws: list, is_plate: list = None) -> list:
 
     # Monotonic-chain: consecutive folio reads with only unnumbered leaves
     # between them, folio rising by at least 1 and at most the sheet gap.
-    reads = [i for i in range(n) if ints[i] and ints[i] > 0]
+    # Neither endpoint may itself be a plate leaf, for the same reason.
+    reads = [i for i in range(n) if ints[i] and ints[i] > 0 and not plate[i]]
     for a, b in zip(reads, reads[1:]):
         if (all(ints[k] is None or plate[k] for k in range(a + 1, b))
                 and 1 <= ints[b] - ints[a] <= (b - a)):
@@ -942,7 +1022,7 @@ def reconcile_page_numbers(page_raws: list, is_plate: list = None) -> list:
     while changed:
         changed = False
         for i in range(n):
-            if trusted[i] or ints[i] is None or ints[i] <= 0:
+            if trusted[i] or ints[i] is None or ints[i] <= 0 or plate[i]:
                 continue
             j = min(anchors, key=lambda a: abs(a - i))
             if ints[i] == ints[j] + (i - j):
