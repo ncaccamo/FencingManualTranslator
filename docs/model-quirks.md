@@ -491,6 +491,44 @@ the user as "verified" when found, both fixed the same day.*
   ever translated what was in body at the time -- patched as a single
   targeted line-translation, not a full retranslate, once identified).
 
+**Recurred the same day** on the ESCRIME catchword strip (1.2b) --
+same lesson, same fix pattern (single targeted patch on the affected
+page's already-saved translation, not a full retranslate).
+
+*2026-09-18, two more real gaps in the same neighbourhood, found on the
+NEXT review pass after the two regressions above:*
+
+- **A genuinely blank, unprinted leaf could still inherit a header** from
+  either sandwich interpolation or the nearest-confirmed gap fill.
+  Prévost: several leaves before "PREMIÈRE PARTIE" begins are blank in
+  the actual scan -- no header, no body text, no figure, nothing at all
+  printed but faint digitisation specks (confirmed by rendering the
+  actual page) -- yet kept inheriting a neighbouring section's running
+  head. Unlike a plate page (no body text, but IS a real printed page
+  that typically still carries the running head), a truly blank leaf has
+  nothing printed on it, including no header. Added a shared
+  `_is_blank_leaf()` check (no figure AND no real body text) and
+  excluded it from both mechanisms. First attempt at the check missed
+  the real cases entirely: `BODY_TEXT: none` is parsed into the LITERAL
+  STRING "none" at this stage, not cleaned to an empty string until
+  later in the pipeline -- a blank check looking only for "" found
+  nothing to exclude. Fixed to also treat the literal sentinel as blank.
+  Regression tests: `test_reconcile_headers_skips_genuinely_blank_leaf`,
+  `test_reconcile_headers_skips_blank_leaf_with_literal_none_body`.
+- **A part-division title ("<Ordinal> PARTIE") reported natively in
+  HEADER: instead of BODY_TEXT:, inconsistent with every other instance
+  in the same book.** Prévost has 6 part titles; 5 are natively in
+  BODY_TEXT (confirmed by direct comparison) and this book's own
+  convention is titles-as-body-text throughout (no tiering) -- but
+  "TROISIÈME PARTIE" specifically landed in HEADER: on its one page,
+  model noise rather than a genuine different printing convention for
+  that one part. Narrow, closed-set shape match (a specific list of
+  French ordinals + "partie", not a general "short uppercase line"
+  rule) demotes it unconditionally -- regardless of what follows, unlike
+  the compound-title-block rule above which requires a second
+  title-shaped body line. Regression test:
+  `test_reconcile_headers_demotes_part_title_from_header`.
+
 ### 1.2d Plate caption in `HEADER:`; scanner apparatus in `HEADER:`
 
 * `fold_caption_header_into_figure()` — on a page that carries a figure
@@ -962,6 +1000,34 @@ parenthetical gets its own (sentence-case, first letter capitalised)
 mode. Regression test:
 `test_match_case_splits_parenthetical_case_register`.
 
+**2026-09-18 (same day, found on the next real page checked):** the
+identical problem recurs with a DIFFERENT separator — a trailing
+"— <clause>" annotation instead of parens (Kirchhoffer's "PRISE DE FER
+SUR LE BRAS TENDU." plate run, 3 captions: "FIG. N. — [ALL-CAPS TITLE].
+— [genuinely lower-case clause, confirmed identical across all 3
+plates]"). Same fix, same guard: only split at the LAST em-dash when the
+trailing segment actually STARTS lower-case (letter OR digit, to catch
+ordinals like "1er"/"3rd") — a caption using "—" only to join two
+SAME-case segments must stay whole. Recurses, so more than one trailing
+clause peels off one at a time. Regression tests:
+`test_match_case_splits_dash_tail_case_register`,
+`test_match_case_dash_tail_requires_lowercase_start`.
+
+That surfaced a small side artifact: the sentence-case recaser forces a
+capital onto the first LETTER it finds, which for a clause starting
+with an ordinal ("3rd tempo…") lands mid-token ("3Rd"). Fixed: only
+capitalise a genuine word-initial letter (not preceded by a digit or
+another letter). Regression test:
+`test_match_case_sentence_skips_ordinal_mid_token_capital`.
+
+Of the 3 captions in that run, 2 came out fully fixed; the third still
+came back lowercase — one of the 3 majority-vote samples apparently
+phrased the trailing clause without the em-dash separator the split
+depends on, so it fell through to the old single-mode behaviour on that
+attempt. A residual of the underlying model-sampling variance, not a
+further code bug — left as a known small gap rather than over-fit the
+regex to one more example.
+
 ### 2.10 Running headers translated separately
 
 `translate_headers()` collects each **distinct** running-head string from
@@ -1062,6 +1128,30 @@ rompre</fn>` footnote-on-first-use treatment other rule-3b terms get.
 The prompt's own worked examples ("Rompez." → "Break.") already assumed
 this and never matched rule 3's stated two-option text -- the rule text
 was wrong relative to the examples, not the other way round.
+
+### 2.11a A structural division title dropped entirely, not mistranslated
+
+**Seen:** Prévost -- "PREMIÈRE/DEUXIÈME/QUATRIÈME/CINQUIÈME/SIXIÈME
+PARTIE" as the body's own first line, on every single occurrence in the
+book (5/5 confirmed), while the very next title line on the SAME page
+translates fine.
+
+**Failure:** unlike every other bug in this file, the model doesn't
+mistranslate or garble this line -- it omits it from the output
+entirely, as if a "Part" division marker were a structural label rather
+than body content to translate. `retranslate_stray_french_headings()`
+(2.10/2.11) can't help here: it re-checks a heading-shaped line that's
+STILL PRESENT but still in French; there's nothing in the output to
+re-check when the line is simply gone.
+
+**Mitigation:** `restore_dropped_part_title()` -- narrow, evidence-based
+(like `_OCR_PHRASE_FIXES` in step 1): if the source's first body line is
+exactly `<French ordinal> PARTIE` and the translated candidate's own
+first line doesn't already contain "part", translate just that line
+(a small closed-set FR->EN ordinal map, not a live model call needed)
+and prepend it. Six French books' worth of "part" vocabulary covered
+(première..dixième); extend the map if a book uses a different
+division word ("livre", "section", …) with the same drop pattern.
 
 ### 2.11 Author's footnotes vs. ours
 

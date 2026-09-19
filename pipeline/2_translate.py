@@ -411,6 +411,26 @@ def match_case(src: str, dst: str) -> str:
         paren = match_case(sm.group(2).strip(), dm.group(2).strip())
         return f"{main.rstrip()} {paren}"
 
+    # Same combined-case-register problem, different separator: a main
+    # title followed by a trailing "-- <clause>" annotation ALSO set in
+    # ordinary lower case in print (Kirchhoffer "PRISE DE FER SUR LE
+    # BRAS TENDU. -- 1er TEMPS : feinte de liement de seconde." -- the
+    # title is genuinely all-caps, the "1er TEMPS : ..." clause genuinely
+    # lower case, confirmed by the same pattern repeating identically
+    # across 3 plates in one run). Only split at the LAST em-dash when
+    # the trailing segment actually STARTS lower-case (letter or digit,
+    # for ordinals like "1er"/"3rd") -- a caption that only uses "--" to
+    # separate two SAME-case segments ("FIG. 4. -- LE CROISÉ AU FLANC.",
+    # both all-caps) must stay whole. Recurses, so a caption with more
+    # than one such trailing clause peels them off one at a time.
+    _DASH_TAIL = re.compile(r"^(.*\S)[ \t]*[—-][ \t]+([a-zà-ÿ0-9].*)$", re.S)
+    sm2 = _DASH_TAIL.match(src)
+    dm2 = _DASH_TAIL.match(dst)
+    if sm2 and dm2:
+        main = match_case(sm2.group(1), dm2.group(1))
+        tail = match_case(sm2.group(2), dm2.group(2))
+        return f"{main.rstrip()} — {tail}"
+
     letters = [c for c in src if c.isalpha()]
     if not letters:
         return dst
@@ -446,7 +466,12 @@ def match_case(src: str, dst: str) -> str:
                    lambda m: m.group(0) if (m.group(0).upper() in src_acronyms
                                             and len(m.group(0)) >= 2)
                    else m.group(0).lower(), s)
-        return re.sub(r"[A-Za-zÀ-ÿ]", lambda m: m.group(0).upper(), s, count=1)
+        # Capitalise the first GENUINE word-initial letter, not just the
+        # first letter found -- a clause starting with an ordinal ("3rd
+        # tempo...", "3e TEMPS...") has its first letter mid-token ("r"
+        # in "3rd"), and force-capitalising that produced a broken "3Rd".
+        return re.sub(r"(?<![\dA-Za-zÀ-ÿ])[A-Za-zÀ-ÿ]",
+                      lambda m: m.group(0).upper(), s, count=1)
     return _recase(dst, _sent)
 
 
@@ -746,6 +771,47 @@ def _french_token_count(line: str) -> int:
     n = sum(1 for w in toks if w in FRENCH_WORDS)
     n += len(re.findall(r"\b[cdjlmnqst]['’][aeiouyhàâäéèêëïîôùûü]", line, re.I))
     return n
+
+
+_PART_ORDINALS_EN = {
+    "première": "First", "premiere": "First",
+    "deuxième": "Second", "deuxieme": "Second", "seconde": "Second",
+    "troisième": "Third", "troisieme": "Third",
+    "quatrième": "Fourth", "quatrieme": "Fourth",
+    "cinquième": "Fifth", "cinquieme": "Fifth",
+    "sixième": "Sixth", "sixieme": "Sixth",
+    "septième": "Seventh", "septieme": "Seventh",
+    "huitième": "Eighth", "huitieme": "Eighth",
+    "neuvième": "Ninth", "neuvieme": "Ninth",
+    "dixième": "Tenth", "dixieme": "Tenth",
+}
+
+_PART_TITLE_RE = re.compile(
+    r"(?im)^\s*(" + "|".join(_PART_ORDINALS_EN) + r")\s+partie\s*$")
+
+
+def restore_dropped_part_title(candidate: str, source: str) -> str:
+    """A "<Ordinal> PARTIE" division title as the body's own first line
+    (Prévost: PREMIÈRE/DEUXIÈME/QUATRIÈME/CINQUIÈME/SIXIÈME PARTIE, each
+    confirmed dropped from the translated output on every single
+    occurrence in the book -- 5/5 -- while the very next title line on
+    the same page translates fine) gets silently omitted by the
+    translation model, treating it like a structural marker rather than
+    body text to translate. Narrow, evidence-based fix (like
+    _OCR_PHRASE_FIXES in step 1): if the source's first line is exactly
+    this shape and the candidate's own first line doesn't already
+    contain "part", prepend the correct translation instead of trying to
+    re-run the whole page."""
+    m = _PART_TITLE_RE.match((source or "").lstrip("\n").split("\n", 1)[0])
+    if not m:
+        return candidate
+    first_out = (candidate or "").lstrip("\n").split("\n", 1)[0]
+    if re.search(r"(?i)\bpart\b", first_out):
+        return candidate
+    ordinal_en = _PART_ORDINALS_EN[m.group(1).lower()]
+    title = m.group(0).strip()
+    en_title = match_case(title, f"{ordinal_en} Part")
+    return f"{en_title}\n\n{(candidate or '').lstrip(chr(10))}"
 
 
 def retranslate_stray_french_headings(text: str) -> str:
@@ -1469,6 +1535,7 @@ try:
                 candidate = _capitalize_definition_entries(candidate)
                 if not page_is_toc:
                     candidate = retranslate_stray_french_headings(candidate)
+                    candidate = restore_dropped_part_title(candidate, clean_text)
                     candidate = fix_subheading_spacing(candidate)
 
                 # "This isn't fencing text" / "Please provide the text..." --

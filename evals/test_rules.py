@@ -26,7 +26,7 @@ from _rules import (
     drop_google_boilerplate, mark_handwritten_inscriptions,
     drop_scan_apparatus, fold_caption_header_into_figure, reconcile_headers,
     recover_plate_captions, parse_vlm_response, clean_vlm_extraction,
-    repair_source_ocr_misreads,
+    repair_source_ocr_misreads, restore_dropped_part_title,
 )
 
 
@@ -383,6 +383,70 @@ def test_match_case_splits_parenthetical_case_register():
     assert "(The attacker" in out   # parenthetical: own sentence case, capitalized
 
 
+def test_match_case_splits_dash_tail_case_register():
+    # Real Kirchhoffer example (pdf 58): the same combined-case-register
+    # problem as the parenthetical case, but with a trailing "-- <clause>"
+    # annotation instead of parens -- "PRISE DE FER SUR LE BRAS TENDU."
+    # (all-caps title) then "-- 3e TEMPS : coup droit au corps." (genuine
+    # lower case in print, confirmed by the same pattern repeating
+    # identically across 3 plates in the same run: Fig. 5/6/7).
+    src = "FIG. 7. — PRISE DE FER SUR LE BRAS TENDU. — 3e TEMPS : coup droit au corps."
+    dst = "fig. 7. — taking the blade on the extended arm. — 3rd tempo: straight thrust to the body."
+    out = match_case(src, dst)
+    assert "TAKING THE BLADE ON THE EXTENDED ARM" in out.upper()
+    assert "TAKING THE BLADE ON THE EXTENDED ARM." in out   # main title: all-caps
+    assert "3rd" in out and "3RD" not in out.upper().replace("3RD TEMPO".upper(), "")  # not "3Rd"/mid-token cap
+    assert "straight thrust to the body" in out.lower()   # tail: own lower case
+
+
+def test_match_case_dash_tail_requires_lowercase_start():
+    # A caption that only uses "--" to separate two SAME-case segments
+    # must stay whole -- must NOT split just because there's a dash.
+    src = "FIG. 4. — LE CROISÉ AU FLANC."
+    dst = "fig. 4. the croisé to the side."
+    out = match_case(src, dst)
+    assert out == out.upper()   # whole thing uppercased together, no split
+
+
+def test_match_case_sentence_skips_ordinal_mid_token_capital():
+    # A sentence-case clause starting with an ordinal ("3rd tempo...")
+    # must not capitalise the first LETTER found (mid-token, "r" in
+    # "3rd", producing a broken "3Rd") -- only a genuine word-initial
+    # letter.
+    out = match_case("3e temps.", "3rd tempo.")
+    assert "3Rd" not in out
+    assert out.startswith("3rd")
+
+
+def test_restore_dropped_part_title():
+    # Real Prévost example: "PREMIÈRE PARTIE" / "DEUXIÈME PARTIE" / etc
+    # as the body's own first line gets silently dropped by the
+    # translation model on EVERY occurrence in the book (5/5 confirmed:
+    # Première, Deuxième, Quatrième, Cinquième, Sixième), while the very
+    # next title line on the same page translates fine.
+    source = "PREMIÈRE PARTIE\n\nDE LA MANIÈRE\nDE TENIR LE FLEURET OU L'ÉPÉE"
+    candidate = "ON THE WAY\nTO HOLD THE FOIL OR THE ÉPÉE"
+    out = restore_dropped_part_title(candidate, source)
+    assert out.startswith("FIRST PART\n\n") or out.startswith("First Part\n\n")
+    assert "ON THE WAY" in out
+
+
+def test_restore_dropped_part_title_noop_when_already_present():
+    # Must not double up when the candidate already has the part title.
+    source = "DEUXIÈME PARTIE\n\nLIGNES"
+    candidate = "SECOND PART\n\nLINES"
+    out = restore_dropped_part_title(candidate, source)
+    assert out == candidate
+
+
+def test_restore_dropped_part_title_noop_on_other_pages():
+    # Must not fire when the source's first line isn't a part title at all.
+    source = "Le doigté est la faculté de conduire sa pointe."
+    candidate = "Finger control is the ability to direct one's point."
+    out = restore_dropped_part_title(candidate, source)
+    assert out == candidate
+
+
 def test_enforce_kept_terms():  # Cat-2 only now
     for dst, src, needle in [
         ("a body-to-body was forbidden", "un corps à corps", "<i>corps à corps</i>"),
@@ -649,10 +713,10 @@ def test_reconcile_headers_one_off_is_trusted():
     parsed = [
         {"header": "DES PARADES", "body": "a", "figures": []},
         {"header": "DES PARADES", "body": "b", "figures": []},
-        {"header": "QUATRIÈME PARTIE", "body": "c", "figures": []},
+        {"header": "PARTICULARITÉS", "body": "c", "figures": []},
     ]
     reconcile_headers(parsed)
-    assert parsed[2]["header"] == "QUATRIÈME PARTIE" and parsed[2]["body"] == "c"
+    assert parsed[2]["header"] == "PARTICULARITÉS" and parsed[2]["body"] == "c"
     assert parsed[0]["header"] == "DES PARADES"      # repeated -> kept
 
 
@@ -746,6 +810,26 @@ def test_reconcile_headers_keeps_header_when_body_echoes_it():
     ]
     reconcile_headers(parsed)
     assert parsed[0]["header"] == "DE LA MANIÈRE DE SE RELEVER."
+
+
+def test_reconcile_headers_demotes_part_title_from_header():
+    # Real Prévost example: "TROISIÈME PARTIE" is the ONE part-division
+    # title (out of six in the book) the model natively classified into
+    # HEADER: instead of BODY_TEXT: like every other occurrence
+    # (PREMIÈRE/DEUXIÈME/QUATRIÈME/CINQUIÈME/SIXIÈME PARTIE, all five
+    # natively in body). A part title is body text in this book,
+    # regardless of what follows it -- unconditional demotion, unlike
+    # the compound-title-block rule above (which requires a second
+    # title-shaped body line).
+    parsed = [
+        {"header": "TROISIÈME PARTIE",
+         "body": "DES DIFFÉRENTES MANIÈRES\nDE TROMPER LES PARADES SIMPLES\n\n"
+                  "Étant engagé en quarte.",
+         "figures": []},
+    ]
+    reconcile_headers(parsed)
+    assert parsed[0]["header"] == ""
+    assert parsed[0]["body"].startswith("TROISIÈME PARTIE\n\nDES DIFFÉRENTES")
 
 
 def test_reconcile_headers_does_not_promote_glossary_headword():
@@ -878,6 +962,43 @@ def test_reconcile_headers_gap_fill_does_not_cascade():
     assert filled == [0, 1, 2, 3, 4, 5], filled
     for i in range(6, 12):
         assert parsed[i]["header"] == "", (i, parsed[i]["header"])
+
+
+def test_reconcile_headers_skips_genuinely_blank_leaf():
+    # Real Prévost example: several leaves before "PREMIÈRE PARTIE"
+    # begins are genuinely blank in the scan -- no header, no body text,
+    # no figure, just faint digitisation specks (confirmed by rendering
+    # the actual page). Unlike a plate page (no body text, but IS a real
+    # printed page that typically still carries the running head), a
+    # truly blank leaf has nothing printed on it at all -- neither
+    # sandwich interpolation nor the nearest-confirmed gap fill should
+    # ever assign it a header.
+    parsed = [
+        {"header": "ÉPÉE", "body": "a0", "figures": []},
+        {"header": "ÉPÉE", "body": "a1", "figures": []},   # confirmed
+        {"header": "", "body": "", "figures": []},          # genuinely blank leaf
+        {"header": "ÉPÉE", "body": "c0", "figures": []},
+        {"header": "ÉPÉE", "body": "c1", "figures": []},
+    ]
+    reconcile_headers(parsed)
+    assert parsed[2]["header"] == ""
+
+
+def test_reconcile_headers_skips_blank_leaf_with_literal_none_body():
+    # The real Prévost bug: body isn't an empty string at this stage, it's
+    # the literal raw VLM sentinel "none" (from "BODY_TEXT: none"),
+    # un-cleaned until later in the pipeline -- a blank check looking
+    # only for an empty string missed it entirely, and the page still
+    # got a header assigned.
+    parsed = [
+        {"header": "ÉPÉE", "body": "a0", "figures": []},
+        {"header": "ÉPÉE", "body": "a1", "figures": []},   # confirmed
+        {"header": "", "body": "none", "figures": []},      # genuinely blank leaf
+        {"header": "ÉPÉE", "body": "c0", "figures": []},
+        {"header": "ÉPÉE", "body": "c1", "figures": []},
+    ]
+    reconcile_headers(parsed)
+    assert parsed[2]["header"] == ""
 
 
 def test_fold_caption_header_into_figure():

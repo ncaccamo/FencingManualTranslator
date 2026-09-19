@@ -86,6 +86,7 @@ label_margin_notes = TX["label_margin_notes"]
 _clean_caption = TX["_clean_caption"]
 _capitalize_definition_entries = TX["_capitalize_definition_entries"]
 fix_parry_names = TX["fix_parry_names"]
+restore_dropped_part_title = TX["restore_dropped_part_title"]
 
 # --- ocr-side pure helpers ---
 parse_vlm_response = OCR["parse_vlm_response"]

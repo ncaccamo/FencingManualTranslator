@@ -804,12 +804,24 @@ def reconcile_headers(parsed: list) -> None:
             p["header"] = first
             p["body"] = rest.lstrip("\n")
 
+    # A leaf with NEITHER a figure NOR any real body text is genuinely
+    # blank -- nothing at all is printed on it (Prévost: several such
+    # leaves before "PREMIÈRE PARTIE" begins, confirmed against the
+    # actual scan -- just faint digitisation specks, no header, no text,
+    # no plate). Unlike a plate page (no body text, but IS a real printed
+    # page that typically still carries the section's running head), a
+    # truly blank leaf has nothing printed on it at all, including no
+    # header -- neither mechanism below should ever assign one to it.
+    def _is_blank_leaf(p):
+        b = (p.get("body") or "").strip()
+        return (not b or b.lower() == "none") and not p.get("figures")
+
     # Sandwich interpolation: a page still headerless after everything
     # above, with both immediate neighbours already agreeing on the same
     # confirmed header, inherits it.
     n = len(parsed)
     for i, p in enumerate(parsed):
-        if (p.get("header") or "").strip() or i == 0 or i == n - 1:
+        if (p.get("header") or "").strip() or i == 0 or i == n - 1 or _is_blank_leaf(p):
             continue
         prev_h = (parsed[i - 1].get("header") or "").strip()
         next_h = (parsed[i + 1].get("header") or "").strip()
@@ -844,7 +856,7 @@ def reconcile_headers(parsed: list) -> None:
             _orig_confirmed.append((i, k, h.split("\t", 1)[0] if "\t" in h else h))
     _fills = {}
     for i, p in enumerate(parsed):
-        if (p.get("header") or "").strip():
+        if (p.get("header") or "").strip() or _is_blank_leaf(p):
             continue
         best = None
         best_dist = _MAX_GAP + 1
@@ -895,6 +907,27 @@ def reconcile_headers(parsed: list) -> None:
         if (b_first and _looks_like_section_title(b_first)
                 and _key(b_first) != _key(head)):
             p["body"] = head + "\n\n" + body
+            p["header"] = ""
+
+    # A "<Ordinal> PARTIE" division title reported natively in HEADER: is
+    # a genuine part title, same class of thing as the other five in this
+    # book -- but on THIS one page the model happened to classify it into
+    # HEADER: instead of BODY_TEXT: like every other occurrence (Prévost:
+    # "TROISIÈME PARTIE" -- vs. PREMIÈRE/DEUXIÈME/QUATRIÈME/CINQUIÈME/
+    # SIXIÈME PARTIE, all five natively in BODY_TEXT). Narrow, closed-set
+    # shape match (a specific set of French ordinals + "partie", not a
+    # general "short uppercase line" rule) -- evidenced 5-to-1 within the
+    # same book, not a guess. Demote unconditionally: a part title is
+    # body text here regardless of what follows it, per the standing
+    # "titles render as plain body text, no tiering" preference.
+    _PART_TITLE_HEADER_RE = re.compile(
+        r"(?i)^(premi[eè]re|deuxi[eè]me|seconde|troisi[eè]me|quatri[eè]me|"
+        r"cinqui[eè]me|sixi[eè]me|septi[eè]me|huiti[eè]me|neuvi[eè]me|"
+        r"dixi[eè]me)\s+partie\.?\s*$")
+    for p in parsed:
+        head = (p.get("header") or "").strip()
+        if head and "\t" not in head and _PART_TITLE_HEADER_RE.match(head):
+            p["body"] = head + "\n\n" + (p.get("body") or "")
             p["header"] = ""
 
 
