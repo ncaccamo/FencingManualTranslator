@@ -338,13 +338,15 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
     if _only and book not in _only:
         continue
 
-    if not os.path.exists(f"{folder}/translation.txt"):
+    int_dir = f"{folder}/intermediate"
+
+    if not os.path.exists(f"{int_dir}/translation.txt"):
         print(f"⊘ Skip (no translation): {book}")
         continue
 
-    with open(f"{folder}/translation.txt", "r", encoding="utf-8") as f:
+    with open(f"{int_dir}/translation.txt", "r", encoding="utf-8") as f:
         translations = [p.strip() for p in _pageio.split_pages(f.read())]
-    with open(f"{folder}/extracted.txt", "r", encoding="utf-8") as f:
+    with open(f"{int_dir}/extracted.txt", "r", encoding="utf-8") as f:
         extractions = [p.strip() for p in _pageio.split_pages(f.read())]
 
     # VLM-flagged figures (kind / vertical extent / translated caption),
@@ -352,18 +354,18 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
     # for figures; when absent (a book OCR'd before this existed) fall back
     # to per-page density profiling.
     fig_map = {}
-    if os.path.exists(f"{folder}/figures.json"):
-        with open(f"{folder}/figures.json", encoding="utf-8") as f:
+    if os.path.exists(f"{int_dir}/figures.json"):
+        with open(f"{int_dir}/figures.json", encoding="utf-8") as f:
             fig_map = json.load(f)
-    use_vlm_figs = bool(fig_map) or os.path.exists(f"{folder}/figures.json")
+    use_vlm_figs = bool(fig_map) or os.path.exists(f"{int_dir}/figures.json")
 
     header_map = {}
-    if os.path.exists(f"{folder}/headers.json"):
-        with open(f"{folder}/headers.json", encoding="utf-8") as f:
+    if os.path.exists(f"{int_dir}/headers.json"):
+        with open(f"{int_dir}/headers.json", encoding="utf-8") as f:
             header_map = json.load(f)
 
     src_doc = None
-    ocr_pdf = next((os.path.join(folder, f) for f in os.listdir(folder)
+    ocr_pdf = next((os.path.join(int_dir, f) for f in os.listdir(int_dir)
                     if f.endswith(".pdf") and "OCR" in f), None)
     if ocr_pdf:
         src_doc = fitz.open(ocr_pdf)

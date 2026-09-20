@@ -37,11 +37,12 @@ known_headmatter = _ns["known_headmatter"]
 
 targets = sys.argv[1:] or [
     d for d in glob.glob("/data/processed/*_translated")
-    if os.path.isfile(os.path.join(d, "raw_ocr.txt"))
+    if os.path.isfile(os.path.join(d, "intermediate", "raw_ocr.txt"))
 ]
 
 for folder in targets:
-    raw_path = os.path.join(folder, "raw_ocr.txt")
+    int_dir = os.path.join(folder, "intermediate")
+    raw_path = os.path.join(int_dir, "raw_ocr.txt")
     if not os.path.isfile(raw_path):
         print(f"skip (no raw_ocr.txt): {folder}")
         continue
@@ -71,11 +72,11 @@ for folder in targets:
     figures_map = {str(i): p["figures"]
                    for i, p in enumerate(parsed) if p.get("figures")}
 
-    with open(os.path.join(folder, "extracted.txt"), "w", encoding="utf-8") as fh:
+    with open(os.path.join(int_dir, "extracted.txt"), "w", encoding="utf-8") as fh:
         fh.write(_pageio.join_pages(canonical))
-    with open(os.path.join(folder, "page_numbers.txt"), "w", encoding="utf-8") as fh:
+    with open(os.path.join(int_dir, "page_numbers.txt"), "w", encoding="utf-8") as fh:
         fh.write("\n".join(nums))
-    with open(os.path.join(folder, "figures.json"), "w", encoding="utf-8") as fh:
+    with open(os.path.join(int_dir, "figures.json"), "w", encoding="utf-8") as fh:
         json.dump(figures_map, fh, ensure_ascii=False, indent=1)
 
     real = sum(1 for n in nums if n and not n.startswith("["))

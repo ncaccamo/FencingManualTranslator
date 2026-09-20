@@ -89,7 +89,7 @@ def check_book(book: str, quiet: bool) -> tuple[bool, str]:
     changed_any = False
     for name in ("translation.txt", "extracted.txt", "page_numbers.txt",
                  "figures.json", "headers.json"):
-        bf, cf = base / name, cur / name
+        bf, cf = base / name, cur / "intermediate" / name
         if not bf.is_file():
             continue
         if not cf.is_file():

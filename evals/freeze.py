@@ -70,7 +70,7 @@ def main() -> None:
 
     frozen = {}
     for name in ARTIFACTS:
-        f = src / name
+        f = src / "intermediate" / name
         if f.is_file():
             shutil.copy2(f, dst / name)
             frozen[name] = _sha(f)

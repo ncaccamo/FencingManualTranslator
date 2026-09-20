@@ -1200,7 +1200,7 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
     same term policy as body text. Skips captions already done unless
     `force`. Returns the number translated."""
     import json as _json
-    fig_path = f"{folder}/figures.json"
+    fig_path = f"{folder}/intermediate/figures.json"
     if not os.path.exists(fig_path):
         return 0
     with open(fig_path, encoding="utf-8") as fh:
@@ -1274,10 +1274,10 @@ def translate_headers(folder: str, force: bool = False) -> int:
     reader needs to know what section they're in. Translated once per
     distinct string, through the full prompt (rule 4: headings)."""
     import json as _json
-    ex_path = f"{folder}/extracted.txt"
+    ex_path = f"{folder}/intermediate/extracted.txt"
     if not os.path.exists(ex_path):
         return 0
-    hp = f"{folder}/headers.json"
+    hp = f"{folder}/intermediate/headers.json"
     hmap = {}
     if os.path.exists(hp) and not force:
         with open(hp, encoding="utf-8") as fh:
@@ -1364,8 +1364,8 @@ if len(sys.argv) > 1 and sys.argv[1] == "--captions":
 
 try:
     for folder in glob.glob("/data/processed/*_translated"):
-        src = f"{folder}/extracted.txt"
-        dst = f"{folder}/translation.txt"
+        src = f"{folder}/intermediate/extracted.txt"
+        dst = f"{folder}/intermediate/translation.txt"
         
         if not os.path.exists(src):
             continue

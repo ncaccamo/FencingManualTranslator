@@ -54,10 +54,16 @@ def plan_pair(old: str, new: str) -> None:
         if PROCESSED.is_dir() else []
     for d in ([live] if live.is_dir() else []) + sorted(baks):
         new_dir = PROCESSED / _sub_stem(d.name, old, new)
-        # PDFs inside embed the book name (stem minus _translated)
+        # PDFs inside embed the book name (stem minus _translated): the two
+        # finished outputs in the root, plus the intermediate OCR PDF.
         for f in d.iterdir():
             if f.name.startswith(old) and f.suffix == ".pdf":
                 _mv(f, d / _sub_stem(f.name, old, new))
+        int_dir = d / "intermediate"
+        if int_dir.is_dir():
+            for f in int_dir.iterdir():
+                if f.name.startswith(old) and f.suffix == ".pdf":
+                    _mv(f, int_dir / _sub_stem(f.name, old, new))
         _mv(d, new_dir)
 
     # eval baseline

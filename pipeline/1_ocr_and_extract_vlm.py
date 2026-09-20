@@ -1429,11 +1429,12 @@ try:
     for src_path in input_pdfs:
         stem = Path(src_path).stem
         work_dir = f"/data/processed/{stem}_translated"
-        os.makedirs(work_dir, exist_ok=True)
+        int_dir = f"{work_dir}/intermediate"
+        os.makedirs(int_dir, exist_ok=True)
 
         print(f"Processing: {stem}")
 
-        ocr_pdf_path = f"{work_dir}/{stem}_OCR.pdf"
+        ocr_pdf_path = f"{int_dir}/{stem}_OCR.pdf"
         shutil.copy2(src_path, ocr_pdf_path)
         print(f"✓ Original PDF copied as OCR PDF")
 
@@ -1494,7 +1495,7 @@ try:
         # parsing -- same contract as the Tesseract path's raw_ocr.txt: the
         # ground truth to fall back on if the parsing/reconciliation below
         # turns out to have dropped or altered something.
-        with open(f"{work_dir}/raw_ocr.txt", "w", encoding="utf-8") as f:
+        with open(f"{int_dir}/raw_ocr.txt", "w", encoding="utf-8") as f:
             f.write(_pageio.join_pages(extracted_pages))
 
         # Split olmOCR-2's PAGE_NUMBER/HEADER/BODY_TEXT scaffold into fields
@@ -1526,7 +1527,7 @@ try:
                 f"BODY_TEXT:\n{fields['body']}"
             )
 
-        with open(f"{work_dir}/extracted.txt", "w", encoding="utf-8") as f:
+        with open(f"{int_dir}/extracted.txt", "w", encoding="utf-8") as f:
             f.write(_pageio.join_pages(canonical_pages))
 
         # Per-page figure metadata for the English-only PDF (kind / vertical
@@ -1534,14 +1535,14 @@ try:
         # into this file by 2_translate.py. Keyed by 0-based page index.
         figures_map = {str(i): fields["figures"]
                        for i, fields in enumerate(parsed) if fields.get("figures")}
-        with open(f"{work_dir}/figures.json", "w", encoding="utf-8") as f:
+        with open(f"{int_dir}/figures.json", "w", encoding="utf-8") as f:
             json.dump(figures_map, f, ensure_ascii=False, indent=1)
         n_fig = sum(len(v) for v in figures_map.values())
         print(f"  {n_fig} figure(s) flagged across {len(figures_map)} page(s)")
 
         # Parity with the Tesseract path: one reconciled page number per
         # line, '[n]' where it had to be inferred rather than read.
-        with open(f"{work_dir}/page_numbers.txt", "w", encoding="utf-8") as f:
+        with open(f"{int_dir}/page_numbers.txt", "w", encoding="utf-8") as f:
             f.write("\n".join(reconciled_nums))
 
         if error_count > 0:

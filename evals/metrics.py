@@ -25,6 +25,10 @@ def _pages(path: Path) -> list[str]:
 
 def book_metrics(folder: str | Path) -> dict:
     folder = Path(folder)
+    # A live processed/<book>_translated/ dir keeps these under
+    # intermediate/; a frozen evals/baselines/<book>/ dir keeps them flat.
+    if (folder / "intermediate").is_dir():
+        folder = folder / "intermediate"
     tr = _pages(folder / "translation.txt")
     ex = _pages(folder / "extracted.txt")
     pn = [l.strip() for l in
