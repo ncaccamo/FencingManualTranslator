@@ -28,6 +28,8 @@ parse_vlm_response = _ns["parse_vlm_response"]
 reconcile_page_numbers = _ns["reconcile_page_numbers"]
 collapse_runs = _ns["collapse_runs"]
 strip_leaked_headmatter = _ns["strip_leaked_headmatter"]
+leaked_top_header = _ns["leaked_top_header"]
+is_plate_leaf = _ns["is_plate_leaf"]
 _norm_head = _ns["_norm_head"]
 _fold_caption_only_body = _ns["_fold_caption_only_body"]
 postprocess_parsed_pages = _ns["postprocess_parsed_pages"]
@@ -53,11 +55,16 @@ for folder in targets:
     postprocess_parsed_pages(parsed)
     _kh = known_headmatter(parsed)
     for p in parsed:
+        if not (p.get("header") or "").strip():
+            promoted = leaked_top_header(p["body"], _kh)
+            if promoted:
+                p["header"] = promoted
         p["body"] = strip_leaked_headmatter(p["body"], _kh)
     _fold_caption_only_body(parsed)
     fold_caption_header_into_figure(parsed)
     reconcile_headers(parsed)
     _is_plate = [any(f.get("kind") == "plate" for f in (p.get("figures") or []))
+                 or is_plate_leaf(p.get("body"))
                  for p in parsed]
     nums = reconcile_page_numbers([p["page_raw"] for p in parsed], _is_plate)
 

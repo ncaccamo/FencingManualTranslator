@@ -87,3 +87,4 @@ no ROCm/Vulkan). `scripts/setup.sh --remote` + `docker-compose.override.yml`
 - Do not push anything to remote until I explicitly say to.
 - Give time estimates where possible for reprocessing steps.
 - Run processes such that you can track completion of steps and move to the next or notify automatically. run_in_background: true or similar.
+- Given the nature of this project and the multiple different formats of source books, be very careful with changes that could introduce regression. We don't want to be playing whack-a-mole by fixing an issue in the current book that breaks good behavior in one we worked on earlier.

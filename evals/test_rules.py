@@ -20,6 +20,7 @@ from _rules import (
     match_boundary_punctuation, deshout, _phrase_repairs,
     parse_figures_block, reconcile_page_numbers, _fold_caption_only_body,
     strip_leaked_headmatter,
+    leaked_top_header, is_plate_leaf,
     extract_source_footnotes, label_margin_notes,
     _clean_caption, _capitalize_definition_entries, fix_parry_names,
     salvage_leaked_folio_header, dehyphenate_across_pages,
@@ -314,6 +315,11 @@ def test_always_translate():
         ("leçon d'assaut", "bout lesson"),
         ("la fente", "la lunge"),          # sub does the term, not the article
         ("FENTE", "LUNGE"),
+        # Gomard "LISTE OF WORKS" bug: bare "LISTE" survived untranslated
+        # on this isolated header even though it translates fine as part
+        # of the two-part header "LISTE DES OUVRAGES\tCONSULTÉS."
+        ("LISTE OF WORKS", "LIST OF WORKS"),
+        ("Liste des ouvrages", "List des ouvrages"),
     ]:
         assert apply_always_translate(src) == want, (src, apply_always_translate(src))
 
@@ -399,6 +405,21 @@ def test_match_case_splits_dash_tail_case_register():
     assert "straight thrust to the body" in out.lower()   # tail: own lower case
 
 
+def test_match_case_dash_tail_accepts_spelled_out_ordinal():
+    # Real Kirchhoffer bug: Fig. 5 in the SAME plate run as the test
+    # above translates "1er" as the spelled-out "FIRST" (still visually
+    # part of the caps run) instead of a digit form like "2nd"/"3rd" --
+    # the dash-tail split's lowercase-or-digit requirement silently
+    # stopped firing on this ONE plate, leaving the whole caption
+    # (wrongly) diluted to lower case throughout.
+    src = "FIG. 5. — PRISE DE FER SUR LE BRAS TENDU. — 1er TEMPS : feinte de liement de seconde."
+    dst = "FIG. 5. — TAKING THE BLADE ON THE EXTENDED ARM. — FIRST TEMPO: feinted bind to seconde."
+    out = match_case(src, dst)
+    assert "TAKING THE BLADE ON THE EXTENDED ARM." in out   # main title: all-caps
+    assert "feinted bind to seconde" in out.lower()          # tail: own lower case
+    assert "FEINTED BIND" not in out                         # not dragged into caps
+
+
 def test_match_case_dash_tail_requires_lowercase_start():
     # A caption that only uses "--" to separate two SAME-case segments
     # must stay whole -- must NOT split just because there's a dash.
@@ -467,6 +488,22 @@ def test_enforce_kept_terms_catches_rapises_garble():
     out = enforce_kept_terms("PARRIES AND RAPISES", "PARADES ET RIPOSTES")
     assert "<i>ripostes</i>" in out.lower() or "ripostes" in out.lower()
     assert "rapise" not in out.lower()
+
+
+def test_enforce_kept_terms_matches_surrounding_case():
+    # Real Prévost bug: "DE LA RIPOSTE" (Part Four's own body-level,
+    # all-caps title line) translated to "OF THE riposte" -- the kept
+    # term was ALWAYS forced lowercase, even inside an otherwise all-caps
+    # title, which was never the intent (that forcing was only meant to
+    # fix the garbled-word substitution, not override the term's actual
+    # case everywhere). Match the case of whatever prompted the wrap,
+    # same convention as apply_always_translate.
+    assert enforce_kept_terms("OF THE RIPOSTE") == "OF THE <i>RIPOSTE</i>"
+    # Ordinary mid-sentence usage is unaffected -- still lowercase.
+    assert enforce_kept_terms("a riposte follows") == "a <i>riposte</i> follows"
+    # The garbled-word repair path also now preserves case.
+    out = enforce_kept_terms("PARRIES AND RAPISES", "PARADES ET RIPOSTES")
+    assert "<i>RIPOSTES</i>" in out
 
 
 def test_enforce_cat3_translates_and_footnotes_once():
@@ -625,6 +662,51 @@ def test_reconcile_plate_own_read_never_trusted():
     assert out == ["16", "", "18"]
 
 
+def test_is_plate_leaf_detects_unflagged_planche_body():
+    # Real Gomard bug: "Planche XIV."/"Planche XV." plates where the VLM
+    # never emitted a FIGURES: block at all (no figure kind == "plate" to
+    # signal it), so the figures-only is_plate computation missed them --
+    # the plate's own roman numeral ("XV") then got trusted as a genuine
+    # folio and rendered as "Page XV". Body-content detection catches
+    # what figures.json alone can't.
+    assert is_plate_leaf("Planche XV.\n\nCoup touché en botte de septime renversée.")
+    assert is_plate_leaf("PLANCHE 7.\nSome caption.")
+
+
+def test_is_plate_leaf_ignores_ordinary_body_caption():
+    # Narrower than _CAPTION_SHAPE_RE on purpose -- "Parade de sixte..."
+    # legitimately opens an ordinary text page's body too; only a leaf
+    # that IS a numbered plate ("Planche N.") should be excluded from
+    # folio trust.
+    assert not is_plate_leaf("Parade de sixte sur une attaque de quarte.")
+    assert not is_plate_leaf("")
+
+
+def test_reconcile_plate_leaf_unflagged_by_figures_still_excluded():
+    # End-to-end: the exact Gomard idx366/368 shape -- two consecutive
+    # plate leaves whose own PAGE_NUMBER reads their plate numeral (14,
+    # 15) and whose figures list is empty (VLM never flagged them), each
+    # separated by a genuinely blank/unnumbered leaf. Without the body-
+    # content fallback, is_plate stays False for both and 14/15 get
+    # trusted as real folios.
+    parsed = [
+        {"page_raw": "", "body": "", "figures": []},
+        {"page_raw": "", "body": "Planche XIII.\nCaption.",
+         "figures": [{"kind": "plate", "caption": "Planche XIII"}]},
+        {"page_raw": "", "body": "", "figures": []},
+        {"page_raw": "XIV", "body": "Planche XIV.\nCoup touché.", "figures": []},
+        {"page_raw": "", "body": "", "figures": []},
+        {"page_raw": "XV", "body": "Planche XV.\nCoup touché.", "figures": []},
+    ]
+    is_plate = [any(f.get("kind") == "plate" for f in (p.get("figures") or []))
+                or is_plate_leaf(p.get("body")) for p in parsed]
+    assert is_plate == [False, True, False, True, False, True]
+    out = reconcile_page_numbers([p["page_raw"] for p in parsed], is_plate)
+    # whatever it renders, it must never be the plate's own bogus roman
+    # numeral read as if it were a genuine folio ("Page XIV" / "Page XV")
+    assert out[3] not in ("XIV", "14") and out[5] not in ("XV", "15")
+
+
 def test_reconcile_forces_single_slot_misread():
     # Gomard: ...301, 302, [903 misread], 304, 305... -> 302 and 304 are
     # trusted off their neighbours, so the exact single-slot gap forces 303.
@@ -674,6 +756,27 @@ def test_strip_leaked_folio_top():
         == "Real body text here."
 
 
+def test_strip_top_keeps_compound_title_block():
+    # Real Gomard bug: HEADER natively "DE L'EMPLOI DE LA MAIN GAUCHE.",
+    # body opens with the SAME line followed by "COMME MOYEN DE PARADE ET
+    # D'OPOSITION." -- together they're ONE two-line printed title ("On
+    # the Use of the Left Hand as a Means of Parry and Opposition"), not
+    # a stray duplicate. Stripping line 1 as "known headmatter" silently
+    # dropped "on the use of the left hand" from the only place the full
+    # title was legible (the header bar renders separately, on its own).
+    body = "DE L'EMPLOI DE LA MAIN GAUCHE\nCOMME MOYEN DE PARADE ET D'OPOSITION.\n\nL'emploi de la main gauche remonte aux premiers temps."
+    out = strip_leaked_headmatter(body, {"de l'emploi de la main gauche"})
+    assert out.startswith("DE L'EMPLOI DE LA MAIN GAUCHE\nCOMME MOYEN DE PARADE ET D'OPOSITION.")
+
+
+def test_strip_top_still_strips_plain_duplicate():
+    # The ordinary case must still work: a known-header duplicate NOT
+    # followed by a second title-shaped line is still noise and strips.
+    out = strip_leaked_headmatter(
+        "INTRODUCTION.\n\nOrdinary prose follows, not a title.", {"introduction"})
+    assert out == "Ordinary prose follows, not a title."
+
+
 def test_strip_tail_capped_at_two():
     assert strip_leaked_headmatter("Body.\nESCRIME\nESCRIME\n5", {"escrime"}) \
         == "Body.\nESCRIME"
@@ -700,6 +803,32 @@ def test_strip_tail_catchword_does_not_eat_real_short_ending():
     # (lowercase, more than 2 words) must survive.
     out = strip_leaked_headmatter("Body text continues for a while.\n\nThe end.", set())
     assert out == "Body text continues for a while.\n\nThe end."
+
+
+def test_leaked_top_header_returns_known_match():
+    # Gomard "TABLE DES MATIÈRES." index: a malformed VLM response with no
+    # HEADER: field at all puts the running head as body's own first line.
+    # Caller must catch this BEFORE strip_leaked_headmatter deletes it --
+    # once gone, reconcile_headers()'s later _MAX_GAP-capped gap-fill can
+    # miss a page that's one hop past the nearest confirmed anchor (src
+    # 334, distance 5 from the nearest confirmed src 329).
+    body = "TABLE DES MATIÈRES.\n\nQuelle doit être sa véritable dénomination...... 296"
+    assert leaked_top_header(body, {"table des matieres"}) == "TABLE DES MATIÈRES."
+
+
+def test_leaked_top_header_ignores_bare_number():
+    # A leaked folio number must never be promoted into HEADER -- only
+    # strip_leaked_headmatter's genuine-known-header branch, never its
+    # bare-apparatus-number branch.
+    assert leaked_top_header("25\nReal body text.", {"escrime"}) == ""
+
+
+def test_leaked_top_header_ignores_unconfirmed_line():
+    # A first line that isn't in known_headers (not a confirmed running
+    # head) must not be promoted -- that's reconcile_headers()'s own,
+    # more cautious "looks like a section title" job, not this one's.
+    body = "SOME RANDOM CAPS LINE\n\nOrdinary prose follows."
+    assert leaked_top_header(body, {"table des matieres"}) == ""
 
 
 def test_reconcile_headers_one_off_is_trusted():
@@ -832,6 +961,31 @@ def test_reconcile_headers_demotes_part_title_from_header():
     assert parsed[0]["body"].startswith("TROISIÈME PARTIE\n\nDES DIFFÉRENTES")
 
 
+def test_reconcile_headers_strips_leaked_folio_glued_to_header():
+    # Real Gomard bug: a malformed-VLM-response page (no scaffold at all)
+    # whose body opens with "26: INTRODUCTION." -- the leaked printed
+    # folio glued straight onto the header text with a colon, no space.
+    # The whole line is title-shaped (letters-only uppercase ratio
+    # ignores the digits/colon) so it gets lifted as one unit, folio
+    # prefix and all. Only strips when what's left is itself confirmed.
+    parsed = (
+        [{"header": "INTRODUCTION.", "body": "p" + str(i), "figures": []}
+         for i in range(3)]
+        + [{"header": "26: INTRODUCTION.", "body": "prose.", "figures": []}]
+    )
+    reconcile_headers(parsed)
+    assert parsed[3]["header"] == "INTRODUCTION."
+
+
+def test_reconcile_headers_leaked_folio_strip_requires_confirmed_remainder():
+    # Must not fire on an ordinary heading that happens to start with a
+    # number for some unrelated reason -- only when what's left IS a
+    # confirmed header.
+    parsed = [{"header": "3 MUSKETEERS RETURN", "body": "prose.", "figures": []}]
+    reconcile_headers(parsed)
+    assert parsed[0]["header"] == "3 MUSKETEERS RETURN"
+
+
 def test_reconcile_headers_does_not_promote_glossary_headword():
     # A mixed-case "Headword. — definition" opening line -- even if it's
     # the first thing on the page -- is NOT a section title, so the
@@ -882,6 +1036,67 @@ def test_reconcile_headers_reorders_even_when_swap_repeats_identically():
     reconcile_headers(parsed)
     assert parsed[6]["header"] == "FLEURET\tLA MISE EN GARDE"
     assert parsed[7]["header"] == "FLEURET\tLA MISE EN GARDE"
+
+
+def test_reconcile_headers_swap_reorder_skips_bare_title_leaf():
+    # Real Prévost bug: a half-title page's own body-less HEADER is the
+    # book's OWN title, "L'Escrime et le Duel" -- coincidentally ending
+    # in "le Duel", which the book's UNRELATED later duel chapter uses as
+    # its own confirmed running head ("LE DUEL."). The old reorder check
+    # had no way to tell that apart from a genuine swapped running head
+    # (Kirchhoffer FLEURET, above) and produced a nonsense reversed split
+    # ("LE DUEL." / "L'Escrime et"). The leftover chunk here isn't
+    # header-shaped (lowercase "et", apostrophe-elided "L'Escrime") --
+    # reject the reorder, and since there's no body under it either and
+    # the whole phrase isn't itself confirmed, it's a title-only leaf:
+    # route it to body untouched instead of leaving it as a header. The
+    # confirmed "LE DUEL." run sits far away (a later chapter, well
+    # outside _MAX_GAP) -- as it does in the real book -- so the later
+    # gap-fill pass can't re-inherit it back onto the title leaf.
+    parsed = (
+        [{"header": "L'Escrime et le Duel", "body": "", "figures": []}]
+        + [{"header": "", "body": "front matter " + str(i), "figures": []}
+           for i in range(10)]
+        + [{"header": "LE DUEL.", "body": "p" + str(i), "figures": []} for i in range(3)]
+    )
+    reconcile_headers(parsed)
+    assert parsed[0]["header"] == ""
+    assert parsed[0]["body"] == "L'Escrime et le Duel"
+
+
+def test_reconcile_headers_clears_gap_filled_header_on_split_title_page():
+    # Real Prévost bug: the book's own confirmed running head appears
+    # split across the top TWO lines of body on its opening page ("page
+    # [1]" -- native HEADER: none), followed by the chapter's own title
+    # on a third line. Gap-fill (from the confirmed neighbour just after
+    # it) fills the header anyway, producing a small running-head bar
+    # duplicating the book's own grand opening title. Only the two split
+    # lines TOGETHER reconstruct the confirmed root -- clear the header.
+    # Body uses a curly apostrophe, the confirmed header a straight one
+    # (both real, page-to-page OCR variance) -- must still match.
+    parsed = (
+        [{"header": "", "body": "THÉORIE PRATIQUE\nDE L’ESCRIME\n\nL'HISTOIRE DE L'ESCRIME\n\nprose.",
+          "figures": []}]
+        + [{"header": "THÉORIE PRATIQUE DE L'ESCRIME.", "body": "p" + str(i), "figures": []}
+           for i in range(3)]
+    )
+    reconcile_headers(parsed)
+    assert parsed[0]["header"] == ""
+    assert parsed[0]["body"].startswith("THÉORIE PRATIQUE\nDE L’ESCRIME")
+
+
+def test_reconcile_headers_split_title_guard_ignores_ordinary_chapter_opener():
+    # Must NOT fire on the extremely common ordinary case: a real running
+    # head plus a genuinely different, unrelated two-line chapter title
+    # -- only an EXACT reconstruction of the confirmed root triggers it.
+    parsed = (
+        [{"header": "THÉORIE PRATIQUE DE L'ESCRIME.",
+          "body": "DE LA RIPOSTE\nET DE LA CONTRE-RIPOSTE\n\nprose.", "figures": []}]
+        + [{"header": "THÉORIE PRATIQUE DE L'ESCRIME.", "body": "p" + str(i), "figures": []}
+           for i in range(3)]
+    )
+    reconcile_headers(parsed)
+    assert parsed[0]["header"] == "THÉORIE PRATIQUE DE L'ESCRIME."
 
 
 def test_reconcile_headers_sandwich_interpolation():

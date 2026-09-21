@@ -222,6 +222,14 @@ def pull_footnotes(text: str, source_text: str = "", seen: set = None):
 # Only unambiguous ones -- these have no other meaning in this corpus.
 # Longest first so "fleurettiste" wins before "fleuret".
 _ALWAYS_TRANSLATE = [
+    # "LISTE DES OUVRAGES" -> "LISTE OF WORKS" (Gomard bibliography section
+    # header): "DES OUVRAGES" translates fine but bare "LISTE" survives
+    # untranslated on this specific isolated header string, even though
+    # the SAME word translates correctly as part of the two-part header
+    # "LISTE DES OUVRAGES\tCONSULTÉS." -- a one-off model quirk on the
+    # shorter isolated string, consistent enough across sampling that
+    # majority-vote alone doesn't catch it.
+    (r"listes", "lists"), (r"liste", "list"),
     (r"fleurettistes", "foil fencers"), (r"fleurettiste", "foil fencer"),
     (r"fleurets", "foils"), (r"fleuret", "foil"),
     # "contre-" as a compound prefix = "counter-", not "against-"
@@ -341,12 +349,25 @@ def repair_mangled_terms(dst: str, src: str) -> str:
     return dst
 
 
+def _match_term_case(term: str, sample: str) -> str:
+    # Same convention as apply_always_translate's own case-preserving
+    # substitution: match the case of whatever text prompted this
+    # insertion, rather than always forcing one fixed case. A technical
+    # term of art normally sits lowercase-italic mid-sentence, but when
+    # it lands inside an all-caps body-level title line (Prévost "DE LA
+    # RIPOSTE" opening Part Four) it should read as part of that title,
+    # not switch to lowercase against the rest of the caps -- there was
+    # never an intent to force lowercase in EVERY context, only to fix
+    # the garbled-word substitution this originally guarded.
+    return term.upper() if sample.isupper() \
+        else term.capitalize() if sample[:1].isupper() else term
+
+
 def enforce_kept_terms(text: str, src: str = "") -> str:
     """Make sure a Category-2 term is present and italicised: repair a
     known mistranslation, then wrap any bare occurrence in <i>...</i>
-    (skipping what is already inside a tag). The term is lower-cased -- a
-    technical term of art is set italic-lower even inside an all-caps
-    caption."""
+    (skipping what is already inside a tag), matching the case of
+    whatever prompted the wrap."""
     if not text:
         return text
     text = repair_mangled_terms(text, src)
@@ -355,18 +376,22 @@ def enforce_kept_terms(text: str, src: str = "") -> str:
             def _sub_term(m, term=term):
                 # preserve plurality of the garbled match ("RAPISES" ->
                 # "ripostes", not the always-singular "riposte")
-                plural = m.group(0).rstrip().lower().endswith("s") \
-                    and not term.endswith("s")
-                return f"<i>{term}{'s' if plural else ''}</i>"
+                g = m.group(0)
+                plural = g.rstrip().lower().endswith("s") and not term.endswith("s")
+                disp = term + ("s" if plural else "")
+                return f"<i>{_match_term_case(disp, g)}</i>"
             text = re.sub(r"(?<!<i>)\b" + w + r"\b(?!</i>)",
                           _sub_term, text, flags=re.IGNORECASE)
         # wrap a bare occurrence not already tagged
         text = re.sub(
             r"(?<![\w>])" + term.replace(" ", r"\s+") + r"(?![\w<])",
-            lambda m: f"<i>{term}</i>", text, flags=re.IGNORECASE)
-        # collapse any accidental double-wrap
-        text = re.sub(f"<i>\\s*<i>{re.escape(term)}</i>\\s*</i>",
-                      f"<i>{term}</i>", text, flags=re.IGNORECASE)
+            lambda m: f"<i>{_match_term_case(term, m.group(0))}</i>",
+            text, flags=re.IGNORECASE)
+        # collapse any accidental double-wrap, keeping whichever case is
+        # already inside it rather than reinserting the lower-cased term
+        text = re.sub(
+            rf"<i>\s*<i>({re.escape(term)})</i>\s*</i>",
+            lambda m: f"<i>{m.group(1)}</i>", text, flags=re.IGNORECASE)
     return text
 
 
@@ -423,7 +448,20 @@ def match_case(src: str, dst: str) -> str:
     # separate two SAME-case segments ("FIG. 4. -- LE CROISÉ AU FLANC.",
     # both all-caps) must stay whole. Recurses, so a caption with more
     # than one such trailing clause peels them off one at a time.
-    _DASH_TAIL = re.compile(r"^(.*\S)[ \t]*[—-][ \t]+([a-zà-ÿ0-9].*)$", re.S)
+    #
+    # *2026-09-20:* "1er" doesn't have as natural a digit-form as "2e"/
+    # "3e" (no bare "1st" the model reaches for as readily), so on this
+    # exact caption's FIRST plate the model spelled it "FIRST TEMPO"
+    # instead of "1st Tempo" -- still visually part of the caps run, so
+    # the tail no longer starts lower-case/digit and the split silently
+    # stopped firing (Fig. 6/7 in the SAME plate run use "2nd"/"3rd" and
+    # split fine; only Fig. 5's "1er" hit this). Also accept a spelled-
+    # out ordinal word as a tail-start, case-insensitively -- it's the
+    # same "this is really the lower-case-register clause" signal as a
+    # bare digit, just spelled differently.
+    _ORDINAL_WORD = r"(?i:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\b"
+    _DASH_TAIL = re.compile(
+        rf"^(.*\S)[ \t]*[—-][ \t]+([a-zà-ÿ0-9].*|{_ORDINAL_WORD}.*)$", re.S)
     sm2 = _DASH_TAIL.match(src)
     dm2 = _DASH_TAIL.match(dst)
     if sm2 and dm2:

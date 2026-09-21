@@ -97,6 +97,39 @@ legible, so the model guesses.
   number happened to agree with the real sequence. Regression test:
   `test_reconcile_plate_own_read_never_trusted`.
 
+- *2026-09-20:* the SAME plate-own-number bug, second instance -- two
+  Gomard plates ("Planche XIV."/"Planche XV.") the VLM never flagged
+  with a `FIGURES:` entry at all (no figure, no caption block -- body
+  just opens directly with the plate line) fell through all three
+  `is_plate[i]`-gated exclusions above, since that signal was keyed
+  entirely on `figures.json`. `is_plate_leaf()` (1.2e) adds a
+  body-content fallback so a plate is recognised as one even when the
+  VLM's own figure detection missed it.
+
+- *2026-09-20, known unresolved gap (worked around by hand, not fixed in
+  code):* two ADJACENT pages can each independently misread the SAME
+  digit position the SAME way (Gomard: real folios 298/299, both OCR'd
+  with a 9→0 confusion to "208"/"209") and end up MUTUALLY self-
+  consistent -- 209 − 208 = 1 satisfies "rises by exactly one across one
+  sheet," which is exactly what a genuine correct pair looks like, so
+  BOTH the direct-neighbour check (`d=1`) and the monotonic-chain check
+  trust the pair off each other, never consulting the wider context (a
+  real anchor just one page later, 300, that would immediately reveal
+  the contradiction). A cross-check against nearby anchors was
+  prototyped and reverted: the trap already happens in the FIRST
+  (direct-neighbour) pass, so by the time any later pass runs its own
+  "did a real anchor already vouch for this" snapshot, the poisoned
+  pair is already in it, and widening the fix to reach back before that
+  pass touches the most heavily-relied-on, most heavily-tested part of
+  this function for one confirmed instance -- not worth the regression
+  risk this late without a second real example to design against.
+  Patched directly instead: `extracted.txt` and `page_numbers.txt` for
+  the two affected Gomard pages were hand-corrected to 298/299. **This
+  survives until the next `reprocess_extracted.py` run on this book**,
+  which will regenerate both from `raw_ocr.txt` and silently reintroduce
+  208/209 -- the algorithm itself is unchanged. If this pattern turns up
+  in another book, that's the signal to actually fix the general case.
+
 ### 1.2b Folio / running-header leaked into BODY_TEXT
 
 **Seen:** Joseph-Renaud — a page's translation opened with a stray line
@@ -627,6 +660,100 @@ Narrow, case-preserving fix added to `_OCR_PHRASE_FIXES` (1.2c), same
 pattern as the "pas"/"par" fix there. Regression test:
 `test_repair_source_ocr_misreads_plonche_planche`.
 
+### 1.2e Header/body reconciliation, round 7 — five more real gaps
+
+A single review pass on Gomard/Prévost/Kirchhoffer surfaced five more
+distinct header/body edge cases, all found by tracing the *actual*
+`raw_ocr.txt` → `extracted.txt` transformation for a flagged page rather
+than guessing, and each fixed narrowly with its own regression test:
+
+* **`leaked_top_header()`** — `strip_leaked_headmatter()`'s TOP match
+  intentionally strips a CONFIRMED header's body duplicate (see
+  `known_headmatter()`'s own docstring), trusting `reconcile_headers()`'s
+  later `_MAX_GAP=4`-capped gap-fill to restore it into `HEADER:`. That
+  cap is a distance from the nearest OTHER confirmed page — a run of
+  several consecutive *malformed*-VLM-response pages (no `HEADER:`
+  field at all, just raw text starting with the running head — Gomard's
+  "TABLE DES MATIÈRES." back-of-book index, src 334) can put one page
+  just outside it, and by then the text has already been deleted from
+  body with nothing left to infer from. `leaked_top_header()` promotes
+  the match into `HEADER:` on the spot, using THIS page's own evidence,
+  before `strip_leaked_headmatter` gets a chance to discard it — strictly
+  narrower than the gap-fill (no cross-page inference at all).
+* **`strip_leaked_headmatter()`'s top-strip now checks what follows** —
+  a KNOWN header's body duplicate is *usually* noise, but not when the
+  very next line is ALSO a standalone title-shaped line with no blank
+  line between them: that's a genuine two-line compound title printed on
+  the page (Gomard "DE L'EMPLOI DE LA MAIN GAUCHE" / "COMME MOYEN DE
+  PARADE ET D'OPOSITION." — together one title, "On the Use of the Left
+  Hand as a Means of Parry and Opposition"; confirmed on 3 separate
+  section-openers this pass). Stripping line 1 alone silently dropped
+  half the title from the only place it was legible (the HEADER bar
+  renders it separately, in isolation). The check is deliberately
+  adjacency-sensitive: `"LE DUEL\n\nAVANT-PROPOS"` (blank line between)
+  is the extremely common, unrelated "running head, then a new section's
+  own title starts below it" pattern and must NOT trigger this — only
+  `"LINE1\nLINE2"` with no blank line between reads as one continuous
+  printed title block.
+* **`is_plate_leaf()`** — the `reconcile_page_numbers()` plate-exclusion
+  guard (1.2, "a plate's own printed number must never be trusted as a
+  folio for itself") was keyed entirely on `figures.json`'s flagged
+  `kind == "plate"` rows. A plate the VLM never emitted a `FIGURES:`
+  block for at all — body just opens directly with `"Planche N."`, no
+  header, no figure (Gomard "Planche XIV."/"Planche XV.") — fell
+  through that net: its own `PAGE_NUMBER: XIV` read straight through as
+  a trusted folio and rendered "Page XV" on a plate leaf. Added a
+  body-content fallback (`^planche\s+[ivxlcdm\d]+\b` on body's first
+  line) alongside the figures-based check. Deliberately narrower than
+  `_CAPTION_SHAPE_RE` (1.2d) — that regex also matches ordinary in-body
+  description lines ("Parade de sixte...") that legitimately open a
+  normal text page too; only the "Planche N." branch specifically means
+  "this whole leaf IS a plate."
+* **`_reorder_swapped_two_part()` now requires the leftover to be
+  header-shaped too** — this Kirchhoffer fix (below) reorders a
+  no-tab, order-swapped two-part header ("LA MISE EN GARDE FLEURET"
+  instead of "FLEURET\tLA MISE EN GARDE") onto its confirmed root. It had
+  no check on the *other* half: a title-page leaf whose own one-off title
+  happens to END in words that are ALSO an unrelated confirmed running
+  head elsewhere in the book (Prévost: half-title page reads "L'Escrime
+  et le Duel" — the book's own title — which coincidentally ends "le
+  Duel", the later duel chapter's confirmed running head) satisfied the
+  same match and produced a nonsense reversed split ("LE DUEL." /
+  "L'Escrime et"). Now also requires the non-root leftover to look
+  header-shaped (`_looks_like_section_title` — short, mostly-uppercase);
+  "L'Escrime et" (lowercase "et", apostrophe-elided "L'Escrime") fails
+  that and the reorder is skipped. When the reorder ALSO fails and the
+  page has no body at all and the whole phrase isn't independently
+  confirmed either, it's not a running head in the first place — it's a
+  title-only leaf (a half-title page), and the header text is routed
+  into body instead of staying wedged in the small margin-header bar.
+* **Gap-filled header on a split-line confirmed title** — same root
+  cause as `leaked_top_header()`, opposite direction: Prévost's own
+  book-wide running head ("THÉORIE PRATIQUE DE L'ESCRIME.") appears
+  split across the top TWO lines of body on the book's actual opening
+  page (`"THÉORIE PRATIQUE"` / `"DE L'ESCRIME"`, native `HEADER: none`),
+  followed by the chapter's own title on a third line. The two-line
+  shape correctly blocks the ordinary "lift" promotion (compound-title
+  guard, 1.2c), but `_MAX_GAP` gap-fill then fills the header anyway
+  from a confirmed neighbour a few pages later — reproducing the book's
+  own grand opening title as a small running-head bar above itself.
+  Added a check, run last (after gap-fill): when body's own first TWO
+  lines, joined, exactly reconstruct an independently-confirmed header
+  root, clear whatever header ended up there (however it got there) —
+  this is the book's title page, not a place for its own running head.
+  Needed an apostrophe fold (`’` vs `'` — the SAME phrase's two
+  occurrences used different Unicode apostrophes) since `_norm_head()`
+  doesn't normalise that; folded locally rather than widening
+  `_norm_head()` for every caller.
+
+Regression tests: `test_leaked_top_header_returns_known_match` (+2
+guard tests), `test_strip_top_keeps_compound_title_block` /
+`test_strip_top_still_strips_plain_duplicate`,
+`test_is_plate_leaf_detects_unflagged_planche_body` (+2),
+`test_reconcile_headers_swap_reorder_skips_bare_title_leaf`,
+`test_reconcile_headers_clears_gap_filled_header_on_split_title_page` /
+`..._ignores_ordinary_chapter_opener`.
+
 ### 1.7 Figure detection — VLM flag + density-profiler geometry
 
 The pixel-only `find_figure_band()` (row ink-density, tuned for framed
@@ -868,6 +995,39 @@ Cat-3 term, emit **no** marker) and skip
 `retranslate_stray_french_headings` / `fix_subheading_spacing` (every
 entry looks like a heading). Cat-1 / Cat-2 rules run unchanged, so the
 entries still translate consistently with the body.
+
+### 2.5b Two more residue/casing gaps, round 7
+
+* **`_ALWAYS_TRANSLATE`: "LISTE"** — Gomard's bibliography section header
+  "LISTE DES OUVRAGES" ("List of Works") translated to "LISTE OF WORKS":
+  "DES OUVRAGES" → "OF WORKS" translated fine, but bare "LISTE" survived
+  untranslated on this specific isolated header string — even though the
+  SAME word translates correctly as part of the book's other two-part
+  header for the same section, "LISTE DES OUVRAGES\tCONSULTÉS." → "LIST
+  OF WORKS\tCONSULTED.". A one-off model quirk on the shorter isolated
+  string, consistent enough across the header path's majority-vote retry
+  (2.10) that voting alone didn't catch it — same class of bug as the
+  "riposte"/"rassemblant" entries already in this list, fixed the same
+  way: added to `_ALWAYS_TRANSLATE`.
+* **`enforce_kept_terms()` forced every Category-2 term to lower-case,
+  unconditionally** — including inside an all-caps context, e.g. a
+  body-level title line: Prévost's Part Four opens with the all-caps
+  body line "DE LA RIPOSTE" (immediately under the "QUATRIÈME PARTIE"
+  division title, 2.11a), which rendered "OF THE riposte" — capitalised
+  everywhere else in the line, lower-case-italic only on the kept term.
+  This was never an intended universal rule; it was a side effect of the
+  garbled-word repair this function's `_KEEP_TERMS` list exists for
+  ("RAPIER RAPIER" → riposte, "RAPISES" → ripostes) always emitting the
+  literal lower-case string from the list, discarding whatever case
+  prompted the substitution. Fixed with the same case-matching
+  convention already used by `apply_always_translate`'s own substitution
+  (`_match_term_case()`: match the case of the text being replaced —
+  all-caps in, all-caps out; Capitalized in, Capitalized out; otherwise
+  lower). Mid-sentence usage ("a riposte follows…") is unaffected — only
+  changes when the surrounding context is itself shouting.
+
+Regression tests: `test_always_translate` (LISTE case added),
+`test_enforce_kept_terms_matches_surrounding_case`.
 
 ### 2.6 Literary prose defeats the translation model
 

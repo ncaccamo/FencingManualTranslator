@@ -225,6 +225,37 @@ def _norm_head(s: str) -> str:
     return re.sub(r"\s+", " ", s.lower()).strip(" .-")
 
 
+def _looks_like_section_title(line: str) -> bool:
+    s = line.strip()
+    words = s.split()
+    letters = [c for c in s if c.isalpha()]
+    return (1 <= len(words) <= 6 and len(letters) >= 3
+            and sum(c.isupper() for c in letters) >= 0.85 * len(letters))
+
+
+def leaked_top_header(body: str, known_headers: set) -> str:
+    """If body's first line is a genuine KNOWN running head (not a bare
+    apparatus number -- see strip_leaked_headmatter), return it so the
+    caller can promote it into the page's own HEADER field before
+    stripping destroys the evidence.
+
+    Needed because strip_leaked_headmatter's TOP match intentionally
+    also strips a CONFIRMED (repeated) header's body duplicate -- see
+    known_headmatter()'s docstring -- trusting reconcile_headers()'s
+    later _MAX_GAP-capped gap-fill to restore it. That cap is a distance
+    from the nearest OTHER confirmed page; a run of several consecutive
+    malformed-VLM pages (no HEADER: field at all, just raw text starting
+    with the running head -- Gomard's "TABLE DES MATIÈRES." index, src
+    334) can put one page just outside it, and by then the text has
+    already been deleted from body with nothing left to infer from. This
+    promotes on the spot, using this page's OWN evidence, before that
+    happens -- strictly narrower than the gap-fill (no cross-page
+    inference at all) so it carries none of that mechanism's risk."""
+    first, _, _ = body.lstrip("\n").partition("\n")
+    first = first.strip()
+    return first if first and _norm_head(first) in known_headers else ""
+
+
 def strip_leaked_headmatter(body: str, known_headers: set) -> str:
     """Peel bookbinding apparatus off BODY_TEXT.
 
@@ -250,9 +281,11 @@ def strip_leaked_headmatter(body: str, known_headers: set) -> str:
     a standalone tail line that's very short (<=2 words) and title-shaped
     (mostly uppercase) is also apparatus, regardless of whether it
     matches a confirmed page header."""
+    def _is_bare_number(s):
+        return bool(re.fullmatch(r"[a-z]?[\dIVXLCDM]{1,4}\.?", s, re.I))
+
     def _is_apparatus(s):
-        return bool(re.fullmatch(r"[a-z]?[\dIVXLCDM]{1,4}\.?", s, re.I)) \
-            or _norm_head(s) in known_headers
+        return _is_bare_number(s) or _norm_head(s) in known_headers
 
     def _is_tail_apparatus(s):
         if _is_apparatus(s):
@@ -263,8 +296,32 @@ def strip_leaked_headmatter(body: str, known_headers: set) -> str:
                 and sum(c.isupper() for c in letters) >= 0.85 * len(letters))
 
     lines = body.split("\n")
-    while lines and (not lines[0].strip() or _is_apparatus(lines[0].strip())):
-        lines.pop(0)
+    while lines:
+        top = lines[0].strip()
+        if not top:
+            lines.pop(0)
+            continue
+        if _is_bare_number(top):
+            lines.pop(0)
+            continue
+        if _norm_head(top) in known_headers:
+            # A KNOWN header's body duplicate is normally noise (the VLM
+            # re-reading the running head into body) -- but if what
+            # follows is ALSO a standalone title-shaped line, this is a
+            # genuine two-line compound title block printed on the
+            # section's opening page (Gomard "DE L'EMPLOI DE LA MAIN
+            # GAUCHE" / "COMME MOYEN DE PARADE ET D'OPPOSITION." -- the
+            # header carries only the first half; stripping it here
+            # would silently drop "on the use of the left hand" from the
+            # only place the full title is legible). Same precedent as
+            # Prévost's confirmed "header and a body title both is fine
+            # if that's what the book does" -- keep both lines.
+            nxt = lines[1].strip() if len(lines) > 1 else ""
+            if nxt and _looks_like_section_title(nxt):
+                break
+            lines.pop(0)
+            continue
+        break
     # Tail: a signature is at most catchword + number, so strip at most 2
     # apparatus lines, and never strip the last line if it is the only
     # content left (a one-line page could be a legitimate short entry).
@@ -562,6 +619,25 @@ _CAPTION_SHAPE_RE = re.compile(
     r"|.*\bposition,?\s+ou\b"
     r").*$")
 
+_PLATE_LEAF_RE = re.compile(r"(?i)^\s*planche\s+[ivxlcdm\d]+\b")
+
+
+def is_plate_leaf(body: str) -> bool:
+    """True when body's own first line is a "Planche <numeral>" plate
+    label -- reused by reconcile_page_numbers()'s is_plate exclusion so a
+    plate the VLM never flagged with a FIGURES: block (no figure entry
+    at all -- Gomard "Planche XIV./XV.": body opens directly with the
+    plate line, HEADER empty, no figure) still gets its own engraver's
+    plate number excluded from folio trust, same as an explicitly-
+    flagged plate. Narrower than _CAPTION_SHAPE_RE on purpose: that regex
+    also matches ordinary in-body caption/description lines ("Parade de
+    sixte...", "Coup tiré...") that legitimately open a normal text
+    page's body too -- only the "Planche N." branch specifically means
+    "this whole leaf IS a plate."""
+    first, _, _ = (body or "").strip().partition("\n")
+    return bool(_PLATE_LEAF_RE.match(first.strip()))
+
+
 _SCAN_APPARATUS_RE = re.compile(
     r"insufficient\s+contrast|contraste\s+insuffisant|mire\s+de\s+|test\s+chart"
     r"|résolution\s+insuffisante|texte\s+détérior|reliure\s+défectueuse"
@@ -757,18 +833,11 @@ def reconcile_headers(parsed: list) -> None:
             n = len(root_words)
             if not (0 < n < len(words)):
                 continue
-            if norm_words[:n] == root_words:
+            if norm_words[:n] == root_words and _looks_like_section_title(" ".join(words[n:])):
                 return f"{display}\t{' '.join(words[n:])}"
-            if norm_words[-n:] == root_words:
+            if norm_words[-n:] == root_words and _looks_like_section_title(" ".join(words[:-n])):
                 return f"{display}\t{' '.join(words[:-n])}"
         return None
-
-    def _looks_like_section_title(line: str) -> bool:
-        s = line.strip()
-        words = s.split()
-        letters = [c for c in s if c.isalpha()]
-        return (1 <= len(words) <= 6 and len(letters) >= 3
-                and sum(c.isupper() for c in letters) >= 0.85 * len(letters))
 
     for p in parsed:
         head = (p.get("header") or "").strip()
@@ -783,6 +852,25 @@ def reconcile_headers(parsed: list) -> None:
                 reordered = _reorder_swapped_two_part(head)
                 if reordered:
                     p["header"] = reordered
+                elif not (p.get("body") or "").strip() and _key(head) not in confirmed:
+                    # No reorder matched (the whole phrase isn't itself a
+                    # confirmed running head either), and there's no body
+                    # beneath it -- this isn't a running head at all, it's
+                    # a title-only leaf (a half-title page: no folio, no
+                    # prose, the VLM just filed the whole printed title
+                    # into HEADER: since that's the most heading-shaped
+                    # text on the page). Prévost: "L'Escrime et le Duel"
+                    # is the book's OWN title on its half-title page --
+                    # rendering it as a running head squeezes it into the
+                    # small margin-header bar instead of a proper title;
+                    # it belongs in body. A genuine running head always
+                    # sits above real body prose, so this guard can't
+                    # touch one (see _reorder_swapped_two_part's own
+                    # title-shape check for why a genuine swapped plate
+                    # header, e.g. Kirchhoffer FLEURET, still reorders
+                    # successfully above and never reaches this branch).
+                    p["body"] = head
+                    p["header"] = ""
             continue
         body = p.get("body") or ""
         first, _, rest = body.lstrip("\n").partition("\n")
@@ -909,6 +997,40 @@ def reconcile_headers(parsed: list) -> None:
             p["body"] = head + "\n\n" + body
             p["header"] = ""
 
+    # The book's own confirmed running head, split across TWO lines at
+    # the very top of body instead of appearing as one line (Prévost src
+    # 18, page [1] -- the book's actual opening page: body starts
+    # "THÉORIE PRATIQUE" / "DE L'ESCRIME" on their own two lines, then a
+    # blank line, then the chapter's own title "L'HISTOIRE DE L'ESCRIME"
+    # -- native HEADER: none, so this page's header only exists here
+    # because gap-fill inherited it from a neighbour). This is the
+    # book's grand opening title, not a small margin running head; a
+    # header bar here is visually wrong regardless of how it got filled.
+    # Only fires when the two lines JOINED exactly reconstruct an
+    # independently-confirmed header root -- so it can't misfire on an
+    # ordinary two-line chapter title that merely happens to sit under a
+    # real running head (that's the extremely common pattern the
+    # regression above already guards against).
+    def _apos_fold(s):
+        # OCR renders the same elided article as either a straight or a
+        # curly apostrophe on different pages (Prévost: header "L'ESCRIME"
+        # vs. body "L’ESCRIME") -- _norm_head() doesn't fold that, and this
+        # check needs an exact reconstruction, so fold it locally rather
+        # than widen _norm_head()'s own normalisation for every caller.
+        return s.replace("’", "'")
+
+    for p in parsed:
+        head = (p.get("header") or "").strip()
+        if not head or "\t" in head:
+            continue
+        body = p.get("body") or ""
+        b1, _, brest = body.lstrip("\n").partition("\n")
+        b2, _, _ = brest.lstrip("\n").partition("\n")
+        b1, b2 = b1.strip(), b2.strip()
+        if (b1 and b2 and _looks_like_section_title(b1) and _looks_like_section_title(b2)
+                and _apos_fold(_key(f"{b1} {b2}")) == _apos_fold(_key(head))):
+            p["header"] = ""
+
     # A "<Ordinal> PARTIE" division title reported natively in HEADER: is
     # a genuine part title, same class of thing as the other five in this
     # book -- but on THIS one page the model happened to classify it into
@@ -929,6 +1051,25 @@ def reconcile_headers(parsed: list) -> None:
         if head and "\t" not in head and _PART_TITLE_HEADER_RE.match(head):
             p["body"] = head + "\n\n" + (p.get("body") or "")
             p["header"] = ""
+
+    # A leaked printed folio glued straight onto the header text, no
+    # separator but a colon/period (Gomard "26: INTRODUCTION.", "62:
+    # INTRODUCTION:") -- a malformed-VLM-response page (no scaffold at
+    # all) whose body's first line is "<folio>: <header>", which then
+    # reads as one title-shaped unit and gets lifted/promoted whole,
+    # folio prefix and all. Runs last, after every other header-setting
+    # step, so it catches the leak regardless of how the header got set.
+    # Only strips when what's left IS itself a confirmed header -- so it
+    # can't misfire on an ordinary heading that happens to start with a
+    # number for some other reason.
+    _LEAKED_NUM_PREFIX_RE = re.compile(r"^\s*\d{1,4}\s*[:.]?\s+(?=\S)")
+    for p in parsed:
+        head = (p.get("header") or "").strip()
+        if not head or "\t" in head:
+            continue
+        stripped = _LEAKED_NUM_PREFIX_RE.sub("", head).strip()
+        if stripped != head and _key(stripped) in confirmed:
+            p["header"] = stripped
 
 
 def recover_plate_captions(parsed: list) -> None:
@@ -1507,11 +1648,16 @@ try:
         postprocess_parsed_pages(parsed)
         _known_heads = known_headmatter(parsed)
         for p in parsed:
+            if not (p.get("header") or "").strip():
+                promoted = leaked_top_header(p["body"], _known_heads)
+                if promoted:
+                    p["header"] = promoted
             p["body"] = strip_leaked_headmatter(p["body"], _known_heads)
         _fold_caption_only_body(parsed)
         fold_caption_header_into_figure(parsed)
         reconcile_headers(parsed)
         _is_plate = [any(f.get("kind") == "plate" for f in (p.get("figures") or []))
+                     or is_plate_leaf(p.get("body"))
                      for p in parsed]
         reconciled_nums = reconcile_page_numbers(
             [p["page_raw"] for p in parsed], _is_plate)
