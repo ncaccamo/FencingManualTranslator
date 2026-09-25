@@ -8,7 +8,7 @@ Schema (backend.env, loaded into the container via compose `env_file:`):
     LLAMA_BACKEND=vulkan|rocm7|rocm714     # which prebuilt llama.cpp to run
 
     # remote:
-    REMOTE_HOST=<lan-ip>                   # e.g. the Windows GPU box
+    REMOTE_HOST=<lan-ip>                   # e.g. the Windows GPU system
     REMOTE_PORT=11500
     REMOTE_API_KEY=<shared-secret>         # matches llama-server --api-key
 
@@ -17,7 +17,7 @@ local  -> OCR   http://localhost:11435   (vision model)
           the two run as separate llama-server processes, no auth.
 remote -> both point at http://REMOTE_HOST:REMOTE_PORT with an
           `Authorization: Bearer` header. Only ONE model is loaded on the
-          remote box at a time, so load the vision model before the OCR
+          remote system at a time, so load the vision model before the OCR
           step and the text model before the translate step (same
           on-demand pattern as everything else here).
 

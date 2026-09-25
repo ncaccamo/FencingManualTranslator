@@ -24,7 +24,8 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 - **PDFs:** English-only (flowing column, figures in reading order) and
   side-by-side (scan left / translation right, paragraph-aligned where the
   scan has a text layer). Both preserve `<i>` italics, indentation,
-  drill/brace layout via `pipeline/_render.py`.
+  drill/brace layout via `pipeline/_render.py`. Side-by-side is the one
+  under active review; English-only is deferred (Open items #6).
 - **Figures (English-only):** the VLM flags each page as `plate` / `inset`
   and reads its caption (`figures.json` from step 1, caption translated by
   step 2 with the full prompt). Step 3 embeds a plate whole (cropped to
@@ -124,7 +125,7 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    bracketed sheet ordinals by design), para-alignment 34%.
 4. ~~**Remote mode end-to-end**~~ VERIFIED 2026-09-10. The reference
    deployment runs it: a GPU-less Ubuntu pipeline host (`scripts/setup.sh
-   --remote` + `docker-compose.override.yml`) against a Windows box
+   --remote` + `docker-compose.override.yml`) against a Windows system
    running llama-swap on :11500 (`bt-ocr` / `bt-translate` keys, so the
    models swap automatically — `run_full_pipeline.sh` unchanged). The
    Kirchhoffer 16-page `_sample.pdf` went through 1→2→3→4 clean: step 1's
@@ -143,7 +144,14 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    rules, iteration loops, `reprocess_extracted.py`, helper-script table,
    troubleshooting). Keep in sync as behaviour changes. Section II is
    current.
-6. **English-only PDF** figure packing — `section_label(compact=True)` on
+6. **English-only PDF — DEFERRED (2026-09-25).** Review has been
+   side-by-side only since batch 2; English-only had too many formatting
+   issues to work both in parallel, so side-by-side was prioritized. The
+   operator intends to return to it — expect a backlog of unreviewed
+   layout problems, not a verified output. When it resumes, consider
+   decoupling the English-only renderer (`3_`) from code shared with
+   side-by-side (`4_` / `_render.py`) so fixes to one stop regressing the
+   other; not scoped yet. Earlier work: figure packing — `section_label(compact=True)` on
    figure-only pages (2026-09-01) drops the label chrome so a run of
    small/landscape plates packs two to a sheet when they genuinely fit.
    Portrait plates hit the `FIGURE_MAX_H` (82% column) cap and still get
@@ -180,6 +188,27 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    all-caps heuristic that moves the blank line to *before* a run-in
    sub-heading; the hierarchy feature will space headings from a real
    signal instead).
+
+10. **Heading detection at the source — prompt test** (next, agreed
+    2026-09-25). Add a `TITLE:` field (centred title in the text block) to
+    `vlm_ocr_prompt.txt`, separate from `HEADER:` (running head in the top
+    margin), and run it on ~20 already-diagnosed pages (Gomard idx 38 /
+    155 / 161 / 336, Prévost 50 / 124 / 130, Jacob 217, …) — a few minutes
+    of GPU. If olmOCR-2 fills it reliably it would resolve the ambiguity in
+    model-quirks §1.2f (Gomard src 23 INTRODUCTION) and could replace much
+    of the header/title heuristics; if not, stay with narrow fixes.
+11. **Reprocess hazards** (batch 2, pass 8). `reprocess_extracted.py`
+    rewrites `figures.json` without step 2's `caption_en` / cleaned
+    `caption`: restore from the previous file or re-run captions. And
+    Gomard's `headers.json` (coup/botte wording) and Prévost's (*contres*
+    wording) now hold hand-set entries, so `2_translate.py --captions`
+    (a forced refill) would overwrite them. Also, step 2 retranslates a
+    whole book if `extracted.txt` is newer than `translation.txt`, so
+    `touch` translation.txt after a reprocess + direct patch.
+12. **Spinnewyn idx 56 / 100** (not under review): a plate leaf's real
+    running head ("LE RASSEMBLEMENT", "LE LIEMENT") is demoted to body by
+    `reconcile_headers()`'s half-title rule (header present, no body, not
+    confirmed). Latent until Spinnewyn is next reprocessed.
 
 ## Not yet tested
 
@@ -298,7 +327,7 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 - `docs/remote-gpu.md` — remote-GPU mode (supported; llama-swap or bare
   server) + GPU-less pipeline-host setup + `rocm714` (still parked).
 - `docker/ROCM714_NOTES.md` — why ROCm 7.14 is parked.
-- `setup/DEV_ENVIRONMENT_SETUP.md` — maintainer dev-box setup (VS Code,
+- `setup/DEV_ENVIRONMENT_SETUP.md` — maintainer development-system setup (VS Code,
   git, Claude Code); not for end users.
 - Retired 2026-08-27: `HANDOFF.md` (→ git log), `MANIFEST.md` (job done),
   `docs/design-backend-selection.md` (→ `docs/remote-gpu.md`),

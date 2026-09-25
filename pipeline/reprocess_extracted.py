@@ -55,11 +55,12 @@ for folder in targets:
     postprocess_parsed_pages(parsed)
     _kh = known_headmatter(parsed)
     for p in parsed:
+        own = (p.get("header") or "").strip()   # the VLM's own, pre-promotion
         if not (p.get("header") or "").strip():
             promoted = leaked_top_header(p["body"], _kh)
             if promoted:
                 p["header"] = promoted
-        p["body"] = strip_leaked_headmatter(p["body"], _kh)
+        p["body"] = strip_leaked_headmatter(p["body"], _kh, own)
     _fold_caption_only_body(parsed)
     fold_caption_header_into_figure(parsed)
     reconcile_headers(parsed)

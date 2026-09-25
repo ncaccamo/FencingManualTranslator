@@ -363,6 +363,37 @@ def _match_term_case(term: str, sample: str) -> str:
         else term.capitalize() if sample[:1].isupper() else term
 
 
+def fix_known_garbles(text: str, src: str = "") -> str:
+    """Deterministic repairs for REPEATABLE model mistakes -- ones that
+    survive the 3-sample majority vote because the model makes them the
+    same way every time (Gomard, batch-2 pass 8):
+      * "THUST" for "thrust" -- in headers AND body, 13 lines + 4 headers.
+        Also "SIMPLE THROUGHS" (pdf 174 retranslation). Neither is an
+        English word, so safe to fix anywhere.
+      * "THRUST/HIT" -- the prompt glossary's old "botte -> thrust/hit"
+        copied verbatim. botte -> hit (coup -> thrust; Gomard pdf 158
+        defines the two as distinct).
+      * "plank(s)" for planche(s) -- the carpentry sense; in these books a
+        planche is always an illustration plate. Only when the source
+        actually has "planche", so a genuine plank elsewhere survives."""
+    if not text:
+        return text
+
+    def _case(m, word):
+        g = m.group(0)
+        plural = g.lower().endswith("s")
+        w = word + ("s" if plural else "")
+        return w.upper() if g.isupper() else w.capitalize() if g[:1].isupper() else w
+    text = re.sub(r"\bthusts?\b", lambda m: _case(m, "thrust"), text, flags=re.I)
+    text = re.sub(r"\bthroughs\b", lambda m: _case(m, "thrust"), text, flags=re.I)
+    text = re.sub(r"\bthrusts?\s*/\s*hits?\b",
+                  lambda m: _case(re.search(r"hits?$", m.group(0), re.I), "hit"),
+                  text, flags=re.I)
+    if src and re.search(r"\bplanches?\b", src, re.I):
+        text = re.sub(r"\bplanks?\b", lambda m: _case(m, "plate"), text, flags=re.I)
+    return text
+
+
 def enforce_kept_terms(text: str, src: str = "") -> str:
     """Make sure a Category-2 term is present and italicised: repair a
     known mistranslation, then wrap any bare occurrence in <i>...</i>
@@ -371,6 +402,7 @@ def enforce_kept_terms(text: str, src: str = "") -> str:
     if not text:
         return text
     text = repair_mangled_terms(text, src)
+    text = fix_known_garbles(text, src)
     for term, wrongs in _KEEP_TERMS:
         for w in wrongs:
             def _sub_term(m, term=term):
@@ -1376,6 +1408,67 @@ def translate_headers(folder: str, force: bool = False) -> int:
     return n
 
 
+
+def _norm_title(s: str) -> str:
+    return re.sub(r"\s+", " ", _strip_accents(s).lower()).strip(" .-:")
+
+
+def _is_title_line(line: str, src_title: str) -> bool:
+    """Is a translation's first line the rendering of the source's title
+    (vs. the first prose sentence, when the title never got translated)?"""
+    t = re.sub(r"</?i>", "", line).strip()
+    return bool(t) and len(t) < 120 \
+        and len(t.split()) <= 2 * len(src_title.split()) + 4 \
+        and not re.search(r"[.!?;:]\s+\S", t)
+
+
+def harmonize_titles_with_headers(folder: str) -> int:
+    """When a page prints the same text as its running head AND as a body
+    title (Gomard/Prévost chapter openers), make the body title read
+    exactly like the header's translation. The two were translated
+    independently and diverge ("OF THE COUNTER-RIPOSTE" in the bar, "ON
+    THE COUNTER-RIPOSTE" in the body -- Prévost src 21 and others). If
+    the translation has no title line at all (the body title was restored
+    to extracted.txt after the page was translated), insert it. No model
+    call. Returns the number of pages changed."""
+    import json as _json
+    I = f"{folder}/intermediate"
+    ex_p, tr_p, hp = f"{I}/extracted.txt", f"{I}/translation.txt", f"{I}/headers.json"
+    if not all(os.path.exists(x) for x in (ex_p, tr_p, hp)):
+        return 0
+    ex = _pageio.split_pages(open(ex_p, encoding="utf-8").read())
+    tr = _pageio.split_pages(open(tr_p, encoding="utf-8").read())
+    hmap = _json.load(open(hp, encoding="utf-8"))
+    n = 0
+    for i in range(min(len(ex), len(tr))):
+        m = re.search(r"(?im)^[ \t]*HEADER[ \t]*:[ \t]*(.+?)[ \t]*$", ex[i])
+        h = m.group(1).strip() if m else ""
+        if not h or "\t" in h or h.lower() == "none" or not hmap.get(h):
+            continue
+        body = clean_vlm_extraction(ex[i])
+        src_title = next((l.strip() for l in body.split("\n") if l.strip()), "")
+        if _norm_title(src_title) != _norm_title(h):
+            continue
+        t = tr[i]
+        if t.strip().startswith("[") or not t.strip():     # empty / flagged page
+            continue
+        en = enforce_kept_terms(hmap[h], h)
+        lines = t.split("\n")
+        k = next(j for j, l in enumerate(lines) if l.strip())
+        if lines[k].strip() == en:
+            continue
+        if _is_title_line(lines[k], src_title):
+            lines[k] = en
+        else:
+            lines[k:k] = [en, ""]
+        tr[i] = "\n".join(lines)
+        n += 1
+    if n:
+        with open(tr_p, "w", encoding="utf-8") as fh:
+            fh.write(_pageio.join_pages(tr))
+        print(f"  harmonized {n} body title(s) with their running head")
+    return n
+
 print("\n" + "="*60)
 print("STEP 2: AI TRANSLATION")
 print("="*60)
@@ -1394,6 +1487,7 @@ if len(sys.argv) > 1 and sys.argv[1] == "--captions":
             print(f"captions/headers: {Path(folder).name}")
             translate_figure_captions(folder, force=True)
             translate_headers(folder, force=True)
+            harmonize_titles_with_headers(folder)
     finally:
         if translation_proc is not REMOTE_SERVER and translation_proc:
             translation_proc.terminate()
@@ -1665,6 +1759,7 @@ try:
 
         translate_figure_captions(folder)
         translate_headers(folder)
+        harmonize_titles_with_headers(folder)
 
         print(f"\n✓ Translation complete: {Path(folder).name}\n")
 

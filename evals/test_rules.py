@@ -28,6 +28,7 @@ from _rules import (
     drop_scan_apparatus, fold_caption_header_into_figure, reconcile_headers,
     recover_plate_captions, parse_vlm_response, clean_vlm_extraction,
     repair_source_ocr_misreads, restore_dropped_part_title,
+    fix_known_garbles, harmonize_titles_with_headers,
 )
 
 
@@ -662,6 +663,17 @@ def test_reconcile_plate_own_read_never_trusted():
     assert out == ["16", "", "18"]
 
 
+def test_reconcile_chain_rejects_bracketed_outlier():
+    # Real Kirchhoffer bug (src idx 11-19, pdf 18): p.8, an "8*" plate the
+    # VLM didn't flag, two flagged plates around an unnumbered INSET plate
+    # it read as "10", then a real p.9. The monotonic chain paired 8 -> 10
+    # across one plate leaf and trusted both, rendering "Page 10" on a
+    # leaf with no folio. 8 -> 9 around it brackets the 10 out as bogus.
+    out = reconcile_page_numbers(["6", "7", "8", "8", "12", "10", "12", "9", "10"],
+                                 is_plate=[0, 0, 0, 0, 1, 0, 1, 0, 0])
+    assert out == ["6", "7", "8", "", "", "", "", "9", "10"]
+
+
 def test_is_plate_leaf_detects_unflagged_planche_body():
     # Real Gomard bug: "Planche XIV."/"Planche XV." plates where the VLM
     # never emitted a FIGURES: block at all (no figure kind == "plate" to
@@ -769,6 +781,19 @@ def test_strip_top_keeps_compound_title_block():
     assert out.startswith("DE L'EMPLOI DE LA MAIN GAUCHE\nCOMME MOYEN DE PARADE ET D'OPOSITION.")
 
 
+def test_strip_keeps_title_vlm_also_reported_as_header():
+    # Real Gomard bug (pdf 158 / 164, ~30 more chapter openers): the page
+    # prints a small running head AND a large centred title with the same
+    # text (scan-confirmed). The VLM reported both; the body copy was
+    # stripped as a "leaked header". When the page's OWN HEADER: matches,
+    # the body line is the printed title -- keep it.
+    body = "DU COUP ET DE LA BOTTE.\n\nLe coup est l'ensemble des mouvements."
+    kh = {"du coup et de la botte"}
+    assert strip_leaked_headmatter(body, kh, "DU COUP ET DE LA BOTTE.") == body
+    # no own header (a real leak into body) -> still stripped
+    assert strip_leaked_headmatter(body, kh).startswith("Le coup")
+
+
 def test_strip_top_still_strips_plain_duplicate():
     # The ordinary case must still work: a known-header duplicate NOT
     # followed by a second title-shaped line is still noise and strips.
@@ -847,6 +872,39 @@ def test_reconcile_headers_one_off_is_trusted():
     reconcile_headers(parsed)
     assert parsed[2]["header"] == "PARTICULARITÉS" and parsed[2]["body"] == "c"
     assert parsed[0]["header"] == "DES PARADES"      # repeated -> kept
+
+
+def test_reconcile_headers_no_fill_on_compound_title_opener():
+    # Real Prévost bug (pdf 132): a part-opener leaf ("QUATRIÈME PARTIE" /
+    # "DE LA RIPOSTE") prints no running head -- scan-confirmed. The lift
+    # step already recognised the two-line title block and left it in
+    # body, but the gap-fill then copied the neighbours' running head onto
+    # it. Same on Gomard pdf 339 ("TABLEAU EXPLICATIF" / "DES PLANCHES.").
+    H = "THÉORIE PRATIQUE DE L'ESCRIME."
+    parsed = [
+        {"header": H, "body": "a", "figures": []},
+        {"header": H, "body": "b", "figures": []},
+        {"header": "", "body": "QUATRIÈME PARTIE\n\nDE LA RIPOSTE\n\nOn nomme riposte le coup.",
+         "figures": []},
+        {"header": H, "body": "c", "figures": []},
+    ]
+    reconcile_headers(parsed)
+    assert parsed[2]["header"] == ""
+    assert parsed[2]["body"].startswith("QUATRIÈME PARTIE")
+
+
+def test_reconcile_headers_no_fill_on_demoted_title_leaf():
+    # Real Prévost bug (pdf 14): the half-title "L'Escrime et le Duel" is
+    # correctly demoted from HEADER into body, then the gap-fill gave the
+    # leaf a neighbouring half-title's "BIBLIOTHEQUE DU SPORT" header.
+    B = "BIBLIOTHEQUE DU SPORT"
+    parsed = [
+        {"header": B, "body": "x", "figures": []},
+        {"header": B, "body": "y", "figures": []},
+        {"header": "L'Escrime et le Duel", "body": "", "figures": []},
+    ]
+    reconcile_headers(parsed)
+    assert parsed[2]["header"] == "" and parsed[2]["body"] == "L'Escrime et le Duel"
 
 
 def test_reconcile_headers_lifts_confirmed_from_body():
@@ -1387,6 +1445,55 @@ def test_phrase_repairs_translated_by():
     # a real sentence is untouched
     assert _phrase_repairs("Translated by hand, the manuscript survives.") \
         == "Translated by hand, the manuscript survives."
+
+
+def test_fix_known_garbles_thust_slash_plank():
+    # Real Gomard bugs (batch-2 pass 8): repeatable model misspelling
+    # "THUST" (headers and body), the glossary's "thrust/hit" copied
+    # verbatim, and planche -> "plank" (carpentry) instead of plate.
+    assert fix_known_garbles("CHOICE OF THE THUST") == "CHOICE OF THE THRUST"
+    assert fix_known_garbles("simple thusts drawn") == "simple thrusts drawn"
+    assert fix_known_garbles("FOR SIMPLE THROUGHS DRAWN") == "FOR SIMPLE THRUSTS DRAWN"
+    assert fix_known_garbles("OF THE THRUST AND THE THRUST/HIT.") \
+        == "OF THE THRUST AND THE HIT."
+    assert fix_known_garbles("PLANKS.\n\nPLANK I.", "DES PLANCHES.\n\nPLANCHE Ier.") \
+        == "PLATES.\n\nPLATE I."
+    # no "planche" in the source -> a real plank is left alone
+    assert fix_known_garbles("a plank of oak", "une planche") != "a plank of oak"
+    assert fix_known_garbles("a plank of oak", "une poutre") == "a plank of oak"
+    # "thrust" itself untouched
+    assert fix_known_garbles("the straight thrust") == "the straight thrust"
+
+
+def test_harmonize_body_title_with_header():
+    # Real Prévost bug (src 21 + "OF/ON THE COUNTER-RIPOSTE"): header and
+    # body title translated independently, different wording. And Gomard
+    # pdf 158/164: a body title restored to extracted.txt after the page
+    # was translated -> translation has no title line; insert it.
+    import json, tempfile, os
+    SEP = "\n\x1e\n"
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(f"{d}/intermediate")
+        ex = ["PAGE_NUMBER: 21\nHEADER: DE LA MANIÈRE DE SE RELEVER.\nBODY_TEXT:\n"
+              "DE LA MANIÈRE DE SE RELEVER.\n\nReplier le bras droit.",
+              "PAGE_NUMBER: 140\nHEADER: DU COUP ET DE LA BOTTE.\nBODY_TEXT:\n"
+              "DU COUP ET DE LA BOTTE.\n\nLe coup est l'ensemble des mouvements.",
+              "PAGE_NUMBER: 141\nHEADER: DU COUP ET DE LA BOTTE.\nBODY_TEXT:\n"
+              "Suite du texte."]
+        tr = ["METHOD OF STANDING UP.\n\nFold the right arm.",
+              "The thrust is the set of movements of the attack. It is long.",
+              "Continuation of the text."]
+        open(f"{d}/intermediate/extracted.txt", "w").write(SEP.join(ex))
+        open(f"{d}/intermediate/translation.txt", "w").write(SEP.join(tr))
+        json.dump({"DE LA MANIÈRE DE SE RELEVER.": "ON THE WAY OF RISING TO ONE'S FEET.",
+                   "DU COUP ET DE LA BOTTE.": "OF THE THRUST AND THE HIT."},
+                  open(f"{d}/intermediate/headers.json", "w"))
+        assert harmonize_titles_with_headers(d) == 2
+        out = open(f"{d}/intermediate/translation.txt").read().split("\x1e")
+        assert out[0].strip().startswith("ON THE WAY OF RISING TO ONE'S FEET.\n\nFold")
+        assert out[1].strip().startswith("OF THE THRUST AND THE HIT.\n\nThe thrust is")
+        assert out[2].strip() == "Continuation of the text."      # no body title -> untouched
+        assert harmonize_titles_with_headers(d) == 0             # idempotent
 
 
 def test_boundary_strips_trailing_hyphen():

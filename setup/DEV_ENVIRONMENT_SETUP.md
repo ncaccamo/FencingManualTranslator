@@ -82,7 +82,7 @@ exiting/re-entering a chat session.
 ### Known limitation: VS Code extension + Remote-SSH
 
 If ever developing this project from a *different* machine over
-Remote-SSH (rather than sitting at this box directly): the Claude Code
+Remote-SSH (rather than sitting at this system directly): the Claude Code
 VS Code extension currently has a bug where it uses local paths instead
 of the remote machine's paths, and doesn't work correctly. Workaround:
 use VS Code + Remote-SSH for the *editor*, but run the Claude Code CLI

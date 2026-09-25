@@ -105,7 +105,7 @@ def _find_matching_mmproj(model_path_str: str) -> str:
 
 
 # Only needed to launch a local llama-server. In BACKEND_MODE=remote the
-# GPU box owns the model + projector, /models here is empty (see
+# GPU system owns the model + projector, /models here is empty (see
 # scripts/setup.sh --remote), and this resolution would exit(1) at import.
 if not VLM_MMPROJ_PATH and not bc.is_remote():
     try:
@@ -256,7 +256,7 @@ def leaked_top_header(body: str, known_headers: set) -> str:
     return first if first and _norm_head(first) in known_headers else ""
 
 
-def strip_leaked_headmatter(body: str, known_headers: set) -> str:
+def strip_leaked_headmatter(body: str, known_headers: set, own_header: str = "") -> str:
     """Peel bookbinding apparatus off BODY_TEXT.
 
     TOP: the VLM sometimes drops the running header and/or the printed
@@ -304,6 +304,17 @@ def strip_leaked_headmatter(body: str, known_headers: set) -> str:
         if _is_bare_number(top):
             lines.pop(0)
             continue
+        if own_header and any(_norm_head(top) == _norm_head(h)
+                              for h in own_header.split("\t") if h.strip()):
+            # The VLM itself reported this text as the page's running head
+            # AND transcribed it again as the first body line -- it saw it
+            # printed twice. Gomard's chapter openers print a small running
+            # head AND a large centred title below it (src 140 "DU COUP ET
+            # DE LA BOTTE.", src 146 "DES COUPS SIMPLES.", ~40 more; same on
+            # Prévost/Spinnewyn openers -- checked against the scans). A
+            # true leak is the running head read INTO body with HEADER:
+            # empty, which is the case below. Keep the title.
+            break
         if _norm_head(top) in known_headers:
             # A KNOWN header's body duplicate is normally noise (the VLM
             # re-reading the running head into body) -- but if what
@@ -871,6 +882,7 @@ def reconcile_headers(parsed: list) -> None:
                     # successfully above and never reaches this branch).
                     p["body"] = head
                     p["header"] = ""
+                    p["_title_leaf"] = True
             continue
         body = p.get("body") or ""
         first, _, rest = body.lstrip("\n").partition("\n")
@@ -891,6 +903,12 @@ def reconcile_headers(parsed: list) -> None:
                 and not (second and _looks_like_section_title(second)):
             p["header"] = first
             p["body"] = rest.lstrip("\n")
+        elif first and second and _looks_like_section_title(first) \
+                and _looks_like_section_title(second):
+            # the compound title block itself -- this page is a section
+            # opener with no running head; the fills below must not
+            # invent one for it.
+            p["_title_leaf"] = True
 
     # A leaf with NEITHER a figure NOR any real body text is genuinely
     # blank -- nothing at all is printed on it (Prévost: several such
@@ -902,7 +920,8 @@ def reconcile_headers(parsed: list) -> None:
     # header -- neither mechanism below should ever assign one to it.
     def _is_blank_leaf(p):
         b = (p.get("body") or "").strip()
-        return (not b or b.lower() == "none") and not p.get("figures")
+        return ((not b or b.lower() == "none") and not p.get("figures")) \
+            or p.get("_title_leaf")
 
     # Sandwich interpolation: a page still headerless after everything
     # above, with both immediate neighbours already agreeing on the same
@@ -1258,7 +1277,24 @@ def reconcile_page_numbers(page_raws: list, is_plate: list = None) -> list:
     # between them, folio rising by at least 1 and at most the sheet gap.
     # Neither endpoint may itself be a plate leaf, for the same reason.
     reads = [i for i in range(n) if ints[i] and ints[i] > 0 and not plate[i]]
+
+    def _chain_ok(a, b):
+        return (all(ints[k] is None or plate[k] or k in reads for k in range(a + 1, b))
+                and 1 <= ints[b] - ints[a] <= (b - a))
+
+    # A read that the reads on EITHER side of it bracket consistently
+    # without it -- but which itself falls outside that bracket -- is an
+    # invented folio, not a chain link (Kirchhoffer src idx 16: "8*" plate,
+    # unflagged plate, an unnumbered inset plate the VLM read as "10",
+    # plate, then a real "9" -- 8 -> 10 across one leaf looked like a
+    # normal rise, but 8 -> 9 around it says the 10 is bogus).
+    outlier = set()
+    for p_, x, q in zip(reads, reads[1:], reads[2:]):
+        if _chain_ok(p_, q) and (ints[x] > ints[q] or ints[x] < ints[p_]):
+            outlier.add(x)
     for a, b in zip(reads, reads[1:]):
+        if a in outlier or b in outlier:
+            continue
         if (all(ints[k] is None or plate[k] for k in range(a + 1, b))
                 and 1 <= ints[b] - ints[a] <= (b - a)):
             trusted[a] = trusted[b] = True
@@ -1648,11 +1684,12 @@ try:
         postprocess_parsed_pages(parsed)
         _known_heads = known_headmatter(parsed)
         for p in parsed:
+            own = (p.get("header") or "").strip()   # the VLM's own, pre-promotion
             if not (p.get("header") or "").strip():
                 promoted = leaked_top_header(p["body"], _known_heads)
                 if promoted:
                     p["header"] = promoted
-            p["body"] = strip_leaked_headmatter(p["body"], _known_heads)
+            p["body"] = strip_leaked_headmatter(p["body"], _known_heads, own)
         _fold_caption_only_body(parsed)
         fold_caption_header_into_figure(parsed)
         reconcile_headers(parsed)

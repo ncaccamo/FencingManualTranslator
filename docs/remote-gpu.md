@@ -2,12 +2,12 @@
 
 `BACKEND_MODE=remote` moves all model inference to a separate machine on
 your LAN. The BookTranslator host then needs **no GPU** — it runs the
-OCR-parse and PDF-render work on CPU and calls the remote box over HTTP
+OCR-parse and PDF-render work on CPU and calls the remote system over HTTP
 with a bearer token. Nothing leaves your network.
 
 This is a supported topology (it is how the reference deployment runs) and
 is verified end-to-end (Kirchhoffer 16-page `_sample.pdf` through
-1→2→3→4, 2026-09-10) against a Windows llama-swap box. On a first run
+1→2→3→4, 2026-09-10) against a Windows llama-swap system. On a first run
 against **your** `llama-server` build, put a `_sample.pdf` through first —
 the one build-specific unknown is whether step 1's base64 page-image
 upload is accepted.
@@ -20,11 +20,11 @@ Copy `backend.env.example` and set:
 
 ```
 BACKEND_MODE=remote
-REMOTE_HOST=192.168.1.50        # the GPU box's LAN address (give it a DHCP reservation)
+REMOTE_HOST=192.168.1.50        # the GPU system's LAN address (give it a DHCP reservation)
 REMOTE_PORT=11500
 REMOTE_API_KEY=<shared-secret>  # must match the server's --api-key
 
-# route each step to the right model on the remote box (see §3)
+# route each step to the right model on the remote system (see §3)
 VLM_MODEL_NAME=bt-ocr
 TRANSLATION_MODEL_NAME=bt-translate
 ```
@@ -44,7 +44,7 @@ docker exec -w /app booktranslator-translator-1 \
 # remote -> http://192.168.1.50:11500 (auth: yes)
 ```
 
-## 2. The GPU box
+## 2. The GPU system
 
 Nothing from this project runs there — just a `llama-server` (Vulkan build
 uses the gaming GPU driver; no ROCm needed on Windows). Two ways to run it:
@@ -104,7 +104,7 @@ single name the server reports.
 
 ### Either way
 
-- Give the box a static IP / DHCP reservation so `REMOTE_HOST` stays valid.
+- Give the system a static IP / DHCP reservation so `REMOTE_HOST` stays valid.
 - Firewall: allow inbound TCP on the port, scoped to the BookTranslator
   host's IP.
 - The OCR step needs the vision model **and** its `mmproj` projector GGUF.
@@ -112,7 +112,7 @@ single name the server reports.
   `llama-server` leaves `/health` open, so this is fine; if your server
   rejects unauthenticated `/health` you'll get a spurious "server down".
 
-A full turnkey setup for a Windows box — install scripts, llama-swap
+A full turnkey setup for a Windows system — install scripts, llama-swap
 config, firewall, a generated key, autostart — is maintained separately
 (the reference deployment keeps it in its infra repo under `gpu-host/`).
 

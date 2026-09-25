@@ -28,10 +28,10 @@ steps it checks). After that, `startup_docker.sh` / `run_full_pipeline.sh`
 
 **Remote GPU:** on a GPU-less host, `bash scripts/setup.sh --remote`
 instead, then fill `REMOTE_HOST` / `REMOTE_API_KEY` in `backend.env` and
-stand up the GPU box (`docs/remote-gpu.md`). Day-to-day is the same —
-with llama-swap on the GPU box, `run_full_pipeline.sh` works unchanged;
+stand up the GPU system (`docs/remote-gpu.md`). Day-to-day is the same —
+with llama-swap on the GPU system, `run_full_pipeline.sh` works unchanged;
 `monitor_gpu.sh` and the local server-log tips below don't apply (watch
-the GPU box's console instead).
+the GPU system's console instead).
 
 When it finishes, the two PDFs are in
 `processed/My Fencing Book (1875)_translated/`.
@@ -199,12 +199,12 @@ LLAMA_BACKEND=rocm7        # or: vulkan (default)
 ~10 seconds. `rocm714` is wired but not built and will fail fast with a
 pointer to `BackendBuildstage`.
 
-For `BACKEND_MODE=remote` (inference on another GPU box on your LAN), see
+For `BACKEND_MODE=remote` (inference on another GPU system on your LAN), see
 `docs/remote-gpu.md`. Set `REMOTE_HOST` / `REMOTE_PORT` / `REMOTE_API_KEY`
 (and `VLM_MODEL_NAME` / `TRANSLATION_MODEL_NAME`) in `backend.env`. If the
-GPU box runs **llama-swap**, it swaps the vision and text models
+GPU system runs **llama-swap**, it swaps the vision and text models
 automatically by request name — nothing manual between steps, and
-`run_full_pipeline.sh` works. With a bare `llama-server` on that box you
+`run_full_pipeline.sh` works. With a bare `llama-server` on that system you
 restart it with the other model between step 1 and step 2 (run the steps
 individually). A GPU-less pipeline host is prepared by
 `scripts/setup.sh --remote`.
@@ -319,7 +319,7 @@ docker exec -w /app booktranslator-translator-1 \
   It must have `BACKEND_MODE=remote`; then `docker compose up -d` to
   recreate the container (env changes need a recreate, not `restart`).
 - **`(auth: NO KEY)`** — `REMOTE_API_KEY` is empty in `backend.env`.
-- **Step exits "server not reachable"** — the GPU box's `llama-server` /
+- **Step exits "server not reachable"** — the GPU system's `llama-server` /
   llama-swap isn't up, the firewall isn't open to this host, or
   `REMOTE_HOST` is stale. Test: `curl -sS http://$REMOTE_HOST:$REMOTE_PORT/v1/models`.
 - **`404` / "model not found" from the remote** — the `"model"` the
@@ -331,7 +331,7 @@ docker exec -w /app booktranslator-translator-1 \
   missing the `mmproj` projector, or (rarely) its `llama-server` build
   chokes on the base64 image upload. Confirm with a `_sample.pdf` first.
 - There is **no local server log** in remote mode — watch the
-  `llama-server` / llama-swap console on the GPU box.
+  `llama-server` / llama-swap console on the GPU system.
 
 ## III.11 — Ending a session
 

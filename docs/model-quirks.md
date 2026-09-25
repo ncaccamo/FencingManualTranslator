@@ -754,6 +754,41 @@ guard tests), `test_strip_top_keeps_compound_title_block` /
 `test_reconcile_headers_clears_gap_filled_header_on_split_title_page` /
 `..._ignores_ordinary_chapter_opener`.
 
+### 1.2f Round 8 (batch-2 pass 8) — three more, each scan-verified
+
+**Bracketed outlier in the monotonic chain (`reconcile_page_numbers`).**
+Kirchhoffer src idx 13-18: p.8, an "8*" extra plate leaf, two flagged
+plates around an unnumbered *inset* plate the VLM read as "10", then a
+real p.9. The chain paired 8 → 10 across one leaf (rise ≤ sheet gap) and
+trusted both, printing "Page 10" on a leaf with no folio. Guard: a read
+whose neighbouring reads bracket each other consistently while it falls
+outside that bracket is not a chain link. Dry-run across all 6 books
+changed only Kirchhoffer idx 14 / 16 (both now blank).
+
+**Gap-fill onto title-only leaves (`reconcile_headers`).** The function
+already recognised a compound title block ("QUATRIÈME PARTIE" / "DE LA
+RIPOSTE") and a demoted half-title as "no running head here", then its own
+sandwich / `_MAX_GAP` fills gave the page a neighbour's head anyway
+(Prévost pdf 14, 132; Gomard pdf 339). Such pages are now marked
+`_title_leaf` and skipped by both fills. 28 pages changed across 4 books,
+all scan-checked; 26 correct, 2 Spinnewyn plate leaves (56/100) were
+already wrong via an older demotion (real running head "LE RASSEMBLEMENT"
+demoted to body) — logged in STATUS, not reprocessed.
+
+**Title stripped as a "leaked header" (`strip_leaked_headmatter`).** Gomard
+chapter openers print a small running head AND a centred title with the
+same text (scan-verified on 7). olmOCR-2 reports both — HEADER: and body
+line 1 — and the body copy was stripped as a leak. Now kept when the
+page's OWN pre-promotion HEADER matches (`own_header` arg). A real leak
+is the head read into body with HEADER empty; that path is unchanged.
+
+**Not solvable from text (open):** a title-only opener whose title the VLM
+files as body with `HEADER: none` (Gomard src 23 INTRODUCTION) is
+text-identical to a page whose real running head was misfiled into body
+with `HEADER: none` (Prévost idx 50 / 124 — scan shows a real head). A
+printed folio doesn't separate them either. Next step: test a `TITLE:`
+field in `vlm_ocr_prompt.txt` on ~20 already-diagnosed pages (STATUS).
+
 ### 1.7 Figure detection — VLM flag + density-profiler geometry
 
 The pixel-only `find_figure_band()` (row ink-density, tuned for framed
@@ -1288,6 +1323,35 @@ rompre</fn>` footnote-on-first-use treatment other rule-3b terms get.
 The prompt's own worked examples ("Rompez." → "Break.") already assumed
 this and never matched rule 3's stated two-option text -- the rule text
 was wrong relative to the examples, not the other way round.
+
+### 2.10b Repeatable garbles, coup/botte, header ↔ body-title wording (pass 8)
+
+**Repeatable garbles** survive the header/caption majority vote because
+the model makes them identically every time, and they appear in body text
+too: `THUST` (13 Gomard lines + 4 headers), `THROUGHS` (pdf 174 retry),
+`THRUST/HIT` (the glossary's slash copied verbatim), `PLANK(S)` for
+*planche* (carpentry sense). `fix_known_garbles()` (called from
+`enforce_kept_terms()`, so body, headers and captions all get it) repairs
+them case-preservingly; plank → plate only when the source says *planche*.
+
+**coup vs botte** (user decision, 2026-09-25): Gomard pdf 158 defines them
+as distinct — the coup is the action, the botte where/how it lands. The
+glossary mapped both to "thrust" ("simple thrusts could end with two
+different thrusts"). Now coup → thrust, botte → hit in the prompt. Existing
+translations were not regenerated; Gomard's headers were hand-set.
+
+**Header vs body title wording.** Header and body are translated
+independently, so a page that prints the same title in both got two
+renderings (Prévost "OF/ON THE COUNTER-RIPOSTE", src 21). The fix is
+`harmonize_titles_with_headers()`, which runs after `translate_headers()`.
+When body line 1 of the source equals the page's header, the
+translation's first line becomes the header's translation. If that line
+isn't a title (the body title was restored after the page was
+translated), the header's translation is inserted instead. This needs
+no model call. The header translation must be good, because it's what
+gets propagated: Prévost's `DES CONTRES.` → "PARRIES AGAINST" had to be
+corrected in headers.json first. Mid-page section titles are out of
+scope (only line 1 is compared); two were hand-patched.
 
 ### 2.11a A structural division title dropped entirely, not mistranslated
 

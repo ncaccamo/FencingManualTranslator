@@ -28,7 +28,7 @@ the host's — a newer host runs the 24.04 container unchanged.
 
 `BACKEND_MODE=remote` (`backend.env`) makes the pipeline host
 GPU-agnostic: inference runs on a `llama-server` / llama-swap on another
-LAN box, so the host needs only x86-64 + Docker (no GPU, no kernel 6.12,
+LAN system, so the host needs only x86-64 + Docker (no GPU, no kernel 6.12,
 no ROCm/Vulkan). `scripts/setup.sh --remote` + `docker-compose.override.yml`
 (strips the compose GPU device mounts). See `docs/remote-gpu.md`.
 
@@ -83,8 +83,19 @@ no ROCm/Vulkan). `scripts/setup.sh --remote` + `docker-compose.override.yml`
 
 ## Workflow notes
 - Ask for my input on decisions you think need it.
-- Make changes freely based on feedback, and commit them unless I say otherwise.
-- Do not push anything to remote until I explicitly say to.
+- Make changes freely based on feedback.
+- Do not commit or push anything to remote until I explicitly say to.
 - Give time estimates where possible for reprocessing steps.
 - Run processes such that you can track completion of steps and move to the next or notify automatically. run_in_background: true or similar.
 - Given the nature of this project and the multiple different formats of source books, be very careful with changes that could introduce regression. We don't want to be playing whack-a-mole by fixing an issue in the current book that breaks good behavior in one we worked on earlier.
+- Diagnose every flagged-page bug from that page's real data, never
+  from a similar-looking earlier bug: dump its `raw_ocr.txt` text,
+  `extracted.txt` fields, and rendered PDF page (scratchpad script in
+  the container) before changing code, and re-check the same page after.
+  Run `python3 evals/test_rules.py` after every change — one frozen test
+  per past fix; a failure means a different book regressed. With only
+  one confirmed instance, prefer a narrow fix or a direct data patch
+  over widening a shared function (e.g. `reconcile_headers()`,
+  `reconcile_page_numbers()`); a second real example is the bar for
+  generalizing. Broad unverified fixes caused every regression in the
+  batch-2 review cycle.

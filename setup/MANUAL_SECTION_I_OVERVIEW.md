@@ -33,7 +33,7 @@ expects:
 Everything runs on your own hardware. There are no cloud API calls and no
 per-page or per-book cost. Two deployments:
 
-- **Single box with an AMD GPU** — the default. Nothing leaves the
+- **Single system with an AMD GPU** — the default. Nothing leaves the
   machine.
 - **Split** — a GPU-less host runs the pipeline (OCR parsing, PDF
   rendering) and sends inference to a `llama-server` on another machine
@@ -42,7 +42,7 @@ per-page or per-book cost. Two deployments:
 
 ## I.2 — Hardware requirements
 
-### Single box (local GPU)
+### Single system (local GPU)
 
 | Component | Notes |
 |---|---|
@@ -57,7 +57,7 @@ per-page or per-book cost. Two deployments:
 | Where | Needs |
 |---|---|
 | Pipeline host | **No GPU.** x86-64 Ubuntu 24.04+, any kernel, Docker. ~35 GB for the image + room for `books/` / `processed/`. RAM: a few GB (PDF rendering only). |
-| GPU box | The 16 GB AMD card, a Vulkan (or ROCm/HIP) `llama.cpp` build, and the GGUF model files. No project checkout, no Docker, no Python. A Windows gaming PC works — Vulkan uses the gaming driver. `docs/remote-gpu.md`. |
+| GPU system | The 16 GB AMD card, a Vulkan (or ROCm/HIP) `llama.cpp` build, and the GGUF model files. No project checkout, no Docker, no Python. A Windows gaming PC works — Vulkan uses the gaming driver. `docs/remote-gpu.md`. |
 
 The two models load **one at a time**, not together, to fit in 16 GB:
 
@@ -176,7 +176,7 @@ runs:
   compiled.
 - `BACKEND_MODE=remote` — no local server; both steps call a
   `llama-server` on another machine on your LAN, with a bearer token. If
-  that box runs **llama-swap** the vision/text models swap automatically
+  that system runs **llama-swap** the vision/text models swap automatically
   by request name (the pipeline sends `VLM_MODEL_NAME` for step 1,
   `TRANSLATION_MODEL_NAME` for step 2) — no manual step, `run_full_pipeline.sh`
   works. With a bare `llama-server` you restart it with the other model

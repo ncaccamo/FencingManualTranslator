@@ -14,7 +14,7 @@ kernel `amdgpu` driver and Docker. Removing a previously-installed host
 ---
 
 > **Running in remote mode?** (`BACKEND_MODE=remote` — inference on a
-> separate LAN box; see `docs/remote-gpu.md`.) This host needs **no GPU**.
+> separate LAN system; see `docs/remote-gpu.md`.) This host needs **no GPU**.
 > Do only **II.1** (OS), **II.6** (Docker), **II.7** (base utils) — skip
 > II.2–II.5 and II.8 entirely, and the GPU items in the checklist at the
 > bottom. Then `scripts/setup.sh --remote`. II.1's kernel-6.12 note also
@@ -202,7 +202,7 @@ Once II.1–II.7 are done (II.8 is optional):
 ```bash
 cd ~/BookTranslator
 bash scripts/setup.sh              # local GPU host
-bash scripts/setup.sh --remote    # no-GPU host, inference on a LAN box
+bash scripts/setup.sh --remote    # no-GPU host, inference on a LAN system
 ```
 It verifies the above, writes `.env` + `backend.env`, creates the
 `ai-net` network, builds the image (~20–30 min — compiles llama.cpp

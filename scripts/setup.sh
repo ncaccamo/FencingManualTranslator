@@ -11,7 +11,7 @@
 #   - builds the image (compiles llama.cpp twice: ROCm + Vulkan)
 #   - brings the container up (idle; first up downloads ~13 GB of models)
 #
-#   --remote : this host has NO GPU; inference runs on a separate LAN box
+#   --remote : this host has NO GPU; inference runs on a separate LAN system
 #              (BACKEND_MODE=remote). Skips every GPU check, drops the
 #              compose GPU wiring via docker-compose.override.yml, and
 #              writes a remote backend.env skeleton. Still builds the
@@ -176,7 +176,7 @@ echo
 if [ "$REMOTE" -eq 1 ]; then
   echo " Remote mode. No local models. Next:"
   echo "   1. edit backend.env -> REMOTE_HOST, REMOTE_API_KEY"
-  echo "   2. stand up the GPU box (docs/remote-gpu.md)"
+  echo "   2. stand up the GPU system (docs/remote-gpu.md)"
   echo "   3. docker exec -w /app booktranslator-translator-1 \\"
   echo "        python3 -c 'import backend_config as b; print(b.describe())'"
   echo "      -> remote -> http://<host>:11500 (auth: yes)"
