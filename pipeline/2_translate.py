@@ -1498,6 +1498,31 @@ def apply_book_overrides(folder: str) -> None:
     if ov["headers"] or ov["fix"]:
         print(f"  overrides applied: {len(ov['headers'])} header(s), {len(ov['fix'])} fix(es)")
 
+# Per-page staleness. translated_from.json holds, for each page, a
+# fingerprint of the source text its translation was made from -- body
+# text only (headers and page numbers are translated separately). A run on
+# an already-translated book retranslates just the pages whose fingerprint
+# no longer matches, instead of the old "extracted.txt is newer than
+# translation.txt -> redo the whole book" rule, which cost a full GPU run
+# after any reprocess and needed a manual `touch` to avoid.
+def page_fingerprint(page_text: str) -> str:
+    import hashlib
+    body = re.sub(r"\s+", " ", clean_vlm_extraction(page_text) if page_text.strip() else "").strip()
+    return hashlib.sha1(body.encode("utf-8")).hexdigest()[:16]
+
+
+def load_fingerprints(folder: str):
+    import json as _json
+    p = f"{folder}/intermediate/translated_from.json"
+    return _json.load(open(p, encoding="utf-8"))["pages"] if os.path.exists(p) else None
+
+
+def save_fingerprints(folder: str, fps: list) -> None:
+    import json as _json
+    with open(f"{folder}/intermediate/translated_from.json", "w", encoding="utf-8") as fh:
+        _json.dump({"version": 1, "pages": fps}, fh, indent=0)
+
+
 def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
     """Translate one extracted.txt page record -> its translation.txt entry.
     Never raises and never returns nothing: a failed page comes back as a
@@ -1817,6 +1842,10 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
         fh.write(_pageio.join_pages(tr))
     with open(done_p, "w", encoding="utf-8") as fh:
         _json.dump(done, fh, indent=1, sort_keys=True)
+    fps = load_fingerprints(folder) or [page_fingerprint(p) for p in ex]
+    for s_ in targets:
+        fps[s_ - 1] = page_fingerprint(ex[s_ - 1])
+    save_fingerprints(folder, fps)
     translate_figure_captions(folder)      # only captions not yet translated
     translate_headers(folder)              # only header strings not yet translated
     harmonize_titles_with_headers(folder)
@@ -1841,12 +1870,30 @@ try:
         if not os.path.exists(src):
             continue
         
-        if os.path.exists(dst) and os.path.getmtime(dst) > os.path.getmtime(src):
-            print(f"⊘ Skip (up to date): {Path(folder).name}\n")
-            continue
-
         with open(src, "r", encoding="utf-8") as f:
-            pages = [p.strip() for p in _pageio.split_pages(f.read()) if p.strip()]
+            pages = [p.strip() for p in _pageio.split_pages(f.read())]
+        cur_fp = [page_fingerprint(p) for p in pages]
+
+        if os.path.exists(dst):
+            n_tr = len(_pageio.split_pages(open(dst, encoding="utf-8").read()))
+            stored = load_fingerprints(folder)
+            if stored is None and n_tr == len(pages):
+                # translated before fingerprints existed: take the current
+                # source as the baseline (the translation is assumed to match it)
+                save_fingerprints(folder, cur_fp)
+                print(f"⊘ {Path(folder).name}: recorded source fingerprints (baseline)\n")
+                continue
+            if stored is not None and len(stored) == len(pages) == n_tr:
+                changed = [k + 1 for k, (a, b) in enumerate(zip(stored, cur_fp)) if a != b]
+                if not changed:
+                    print(f"⊘ Skip (up to date): {Path(folder).name}\n")
+                    continue
+                print(f"{Path(folder).name}: {len(changed)} page(s) changed since translation")
+                retranslate_pages(Path(folder).name[:-len("_translated")],
+                                  ",".join(map(str, changed)))
+                continue
+            print(f"{Path(folder).name}: page count changed ({n_tr} translated, "
+                  f"{len(pages)} extracted) -- translating the whole book")
         PROMPT_TEMPLATE = BASE_PROMPT + _overrides.terms_addendum(
             _overrides.load(Path(folder).name.replace("_translated", "")))
 
@@ -1864,6 +1911,7 @@ try:
 
         with open(dst, "w", encoding="utf-8") as f:
             f.write(_pageio.join_pages(translated_pages))
+        save_fingerprints(folder, cur_fp)
 
         translate_figure_captions(folder)
         translate_headers(folder)

@@ -59,11 +59,6 @@ def main(stems):
             continue
         ov = _overrides.load(stem)
         n = apply_page_overrides(folder, ov)
-        # extracted.txt is now newer than translation.txt -- keep 2_translate.py
-        # from treating the whole book as stale and retranslating it.
-        tp = f"{folder}/intermediate/translation.txt"
-        if n and os.path.exists(tp):
-            os.utime(tp)
         # a header override naming a French head with no English yet
         hp = f"{folder}/intermediate/headers.json"
         hmap = json.load(open(hp, encoding="utf-8")) if os.path.exists(hp) else {}

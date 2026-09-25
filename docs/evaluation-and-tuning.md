@@ -120,8 +120,8 @@ docker exec -e TRANSLATION_MODEL_PATH=/models/<new>.gguf \
 
 Save the incumbent's `intermediate/translation.txt` /
 `intermediate/figures.json` / `intermediate/headers.json` as `*.7b` first;
-`touch intermediate/extracted.txt` for the book(s) you want re-translated
-(step 2 skips up-to-date books). Compare with `check.py` metrics + a
+then delete `intermediate/translation.txt` for the book(s) you want
+re-translated (step 2 otherwise only redoes pages whose source changed). Compare with `check.py` metrics + a
 manual read of the known-hard pages. Make it the default only by editing
 `docker-compose.yml`.
 

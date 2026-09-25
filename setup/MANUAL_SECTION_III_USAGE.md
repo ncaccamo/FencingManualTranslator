@@ -59,7 +59,7 @@ Each step decides for itself which books to act on:
 | Step | Acts on a book when… | To force a re-run |
 |---|---|---|
 | 1 — OCR | `processed/<stem>_translated/` does **not** exist yet | `rm -rf processed/<stem>_translated/` (loses everything), or see III.5 to re-parse without re-OCR |
-| 2 — translate | `intermediate/translation.txt` is missing or older than `intermediate/extracted.txt` | `rm processed/<stem>_translated/intermediate/translation.txt`, or `touch` its `intermediate/extracted.txt` |
+| 2 — translate | `intermediate/translation.txt` is missing (whole book); otherwise only the pages whose body text changed since they were translated (fingerprints in `intermediate/translated_from.json`) | whole book: `rm processed/<stem>_translated/intermediate/translation.txt`; chosen pages: `2_translate.py --pages <stem> 12,40-42` (III.5b) |
 | 3 — English-only PDF | `intermediate/translation.txt` exists | just re-run it — it overwrites |
 | 4 — side-by-side PDF | `intermediate/translation.txt` and `intermediate/<stem>_OCR.pdf` exist | just re-run it — it overwrites |
 
@@ -257,10 +257,10 @@ Put them all in `books/` and run the pipeline once. Each step walks every
 PDF / every `*_translated` folder that it hasn't already handled, so a
 second book added later doesn't disturb the first.
 
-To translate one book while leaving others untouched, use the
-missing/older rule from III.2 — e.g. `touch` the other books'
-`intermediate/extracted.txt` files so step 2 sees their
-`intermediate/translation.txt` as current and skips them.
+Step 2 leaves already-translated books alone unless their source text
+changed. It retranslates only the changed pages, and skips a book with
+none (III.2), so adding or reprocessing one book never costs GPU time on
+the others.
 
 ## III.7 — Long runs: watching progress
 

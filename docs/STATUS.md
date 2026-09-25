@@ -223,11 +223,10 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
     individually (`2_translate.py --pages <stem> [12,40-42]`, or
     `retranslate = true`), replacing batch 2's ad-hoc single-page scripts.
     `reprocess_extracted.py` now keeps step 2's translated captions for
-    figures whose caption didn't change. **Still open:** step 2
-    retranslates a whole book when `extracted.txt` is newer than
-    `translation.txt`, so `touch` translation.txt after a reprocess that
-    didn't change body text (`apply_overrides.py` does this itself). The
-    real fix is per-page staleness (the `--pages` fingerprint is a start).
+    figures whose caption didn't change. *Resolved 2026-09-25:* step 2 no
+    longer uses the "extracted.txt newer than translation.txt → whole book"
+    rule. It fingerprints each page's source (`translated_from.json`) and
+    retranslates only pages whose body text changed, so no more `touch`.
 12. **Spinnewyn idx 56 / 100** (not under review): a plate leaf's real
     running head ("LE RASSEMBLEMENT", "LE LIEMENT") is demoted to body by
     `reconcile_headers()`'s half-title rule (header present, no body, not
