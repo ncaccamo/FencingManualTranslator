@@ -138,6 +138,119 @@ Then re-run steps 2→4. This does **not** re-apply the OCR *prompt* —
 changing `vlm_ocr_prompt.txt` genuinely needs the vision model, which
 means `rm -rf` the book's folder and re-running step 1.
 
+## III.5a — The review report: which pages to check
+
+Every full run ends with a **review report** per book,
+`processed/<stem>_translated/<stem> — Review Report.md`. It lists the pages
+the pipeline itself has reason to doubt, by side-by-side **pdf page**
+(plus scan page and printed page number), each with the reason. No model is
+involved, so it runs in seconds, and you can rerun it any time:
+
+```bash
+docker exec booktranslator-translator-1 python3 /app/quality_report.py <stem>   # or --all
+```
+
+Rebuild the PDFs first, since pdf page numbers are read from the built
+side-by-side PDF. What it checks:
+
+- **Translation:** pages step 2 flagged low-confidence or couldn't
+  translate, paragraphs left in French, English much shorter than the French
+  (something dropped), model chatter, and a plate's "Planche N." label
+  missing from the English.
+- **Wording:** misspellings the model is known to make (THUST, THROUGHS) and
+  renderings against the glossary ("THROWS" for *coup*, "romp" for *rompre*,
+  "plank" for *planche*). This covers running heads too.
+- **Page numbers:** a shown number that goes backwards or jumps further than
+  the scans allow. Both pages involved are listed.
+- **Terminology to settle:** a book-wide section, not per page. One French
+  phrase rendered several ways across the book (e.g. *coups composés* as
+  "blows" on some pages and "thrusts" on others). Choose one, put it under
+  `[terms]` (III.5b), and retranslate the other pages with `--pages`.
+- **Notes:** things worth a glance but often fine. For example, a paragraph
+  moved to the notes as a margin note, which is a heuristic and is sometimes wrong.
+
+Not covered yet: layout decisions (a running head on a title-only page, a
+title the OCR never transcribed). Those need the layout detector
+(`docs/STATUS.md` item 10).
+
+The review loop: read the report → look at those pages → record decisions
+in the overrides file (III.5b) → `apply_overrides.py` and/or
+`2_translate.py --pages` → rebuild the PDFs → rerun the report.
+
+## III.5b — Recording your review decisions: the overrides file
+
+When a review finds something the pipeline got wrong and can't fix
+automatically — a misread page number, a header that shouldn't be there,
+wording you want changed — record the decision in
+`books/<stem>.overrides.toml`, **not** by editing files under
+`processed/`. Those files are regenerated (III.5, step 2) and a hand edit
+there is silently lost; the overrides file is re-applied on every run.
+
+Pages are **scan pages**: the page number of the source scan PDF, starting
+at 1. (The side-by-side PDF's numbering shifts when a page overflows onto a
+continuation sheet, so it can't key a durable decision.)
+
+```toml
+[headers]                        # running head (French, as extracted) -> English
+"DES COUPS SIMPLES." = "OF SIMPLE THRUSTS."
+
+[terms]                          # book-specific glossary, added to the translation prompt
+"contre-opposé" = "opposing counter"
+
+[pages.314]                      # scan page 314
+page_number = "298"              # folio to show ("" = none)
+header = ""                      # French running head ("" = none)
+note = "free text"
+
+[[fix]]                          # edit to the English, re-applied after every translation
+scan = 314
+prepend = "OF DISARMING."        # skipped if the page already starts with it
+[[fix]]
+scan = 153
+find = "ON THE COUNTER-<i>RIPOSTE</i>"
+replace = "OF THE COUNTER-<i>RIPOSTE</i>"
+```
+
+Apply it to a book's existing outputs (no model, seconds), then rebuild
+the PDFs:
+
+```bash
+docker exec booktranslator-translator-1 python3 /app/apply_overrides.py <stem>
+docker exec -e PDF_ONLY=<stem> booktranslator-translator-1 python3 /app/4_side_by_side_pdf.py
+```
+
+Step 1, `reprocess_extracted.py` and step 2 apply the same file themselves.
+A malformed file or a typo'd key stops the run with a message naming it,
+rather than silently ignoring a decision. A `find` that no longer matches
+(the page was retranslated since) is reported, not an error.
+
+### Retranslating individual pages
+
+To redo a few pages without retranslating the book (a changed source page,
+a bad translation, a new `[terms]` entry), name the scan pages:
+
+```bash
+docker exec booktranslator-translator-1 python3 /app/2_translate.py --pages <stem> 12,40-42
+```
+
+or mark them in the overrides file and run without a list:
+
+```toml
+[pages.40]
+retranslate = true
+```
+```bash
+docker exec booktranslator-translator-1 python3 /app/2_translate.py --pages <stem>
+```
+
+Marked pages are done once per version of their source text
+(`intermediate/retranslated.json` keeps a fingerprint), so the flag can stay
+in the file: rerunning costs nothing until that page's extracted text
+changes. Only the named pages change. Footnote first-use is worked out from
+the rest of the book, and the header/title harmonization and your overrides
+are re-applied afterwards. Rebuild the PDFs as above. GPU cost is about 10–30
+seconds per page.
+
 ## III.6 — Processing several books at once
 
 Put them all in `books/` and run the pipeline once. Each step walks every

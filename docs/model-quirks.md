@@ -130,6 +130,22 @@ legible, so the model guesses.
   208/209 -- the algorithm itself is unchanged. If this pattern turns up
   in another book, that's the signal to actually fix the general case.
 
+**2026-09-25 — false agreement between adjacent pages, fixed in general.**
+Two misreads that differ by exactly 1 vouch for each other in the checks
+above. Three real cases, all found by the review report (not by reading):
+Gomard scans 314-315 (298/299 read `208/209`, blurred 9), Prévost 262-263
+(198/199 in old-style figures read `108/109`), Spinnewyn 170-171 (a blank and a
+title page with no folio, given `10/11`). A short run (≤ 3) of trusted pages
+is now untrusted when the trusted pages on either side agree with each
+other across the gap (exactly, allowing for plates) and the run doesn't fit.
+The existing tight-gap promotion then supplies the forced values. A genuine
+renumbering (roman → arabic) can't trigger it. Same pass: a folio repeated
+by the next trusted page is dropped from the later page (Kirchhoffer scan 65, a plate
+read `38` after the real p. 38), **unless the two pages carry the same
+text**, i.e. the source scanned one leaf twice (Jacob scans 201-202, both
+p. 155), which is kept. Dry-run across all 6 books changed exactly these
+cases. The Gomard 298/299 hand patch is retired.
+
 ### 1.2b Folio / running-header leaked into BODY_TEXT
 
 **Seen:** Joseph-Renaud — a page's translation opened with a stray line
@@ -1334,11 +1350,21 @@ too: `THUST` (13 Gomard lines + 4 headers), `THROUGHS` (pdf 174 retry),
 `enforce_kept_terms()`, so body, headers and captions all get it) repairs
 them case-preservingly; plank → plate only when the source says *planche*.
 
-**coup vs botte** (user decision, 2026-09-25): Gomard pdf 158 defines them
-as distinct — the coup is the action, the botte where/how it lands. The
-glossary mapped both to "thrust" ("simple thrusts could end with two
-different thrusts"). Now coup → thrust, botte → hit in the prompt. Existing
-translations were not regenerated; Gomard's headers were hand-set.
+**coup vs botte** (user decision, 2026-09-25, revised the same day): Gomard
+defines them himself (pdf 158 / scan 156): *le coup est l'ensemble des
+mouvements de l'attaque… la botte est la figure de l'attaque à sa
+terminaison* (the line it finishes in and the hand position). So the
+**coup → blow** (the whole action), **botte → thrust** (its terminal
+delivery). This matches the model's own majority rendering, and
+period sources on Gomard say the same. A first attempt (coup → thrust,
+botte → hit) got it backwards and was reverted. Named techniques keep their
+own names: coup droit → straight thrust, coup de temps → time-hit, coup
+d'arrêt → stop-thrust. The prompt carries the rule, Gomard's overrides
+file carries it as [terms] plus the header wording, and the 33 pages the
+review report showed as inconsistent were retranslated with `--pages`.
+Limit: a bare *coup* rendered "thrust" elsewhere can't be told apart
+automatically from the legitimate "straight thrust"; only a full
+retranslation would guarantee it.
 
 **Header vs body title wording.** Header and body are translated
 independently, so a page that prints the same title in both got two

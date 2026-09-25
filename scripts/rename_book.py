@@ -5,7 +5,7 @@
     scripts/rename_book.py --map renames.tsv [--dry-run]     # one "old<TAB>new" per line
 
 Moves, for each pair:
-  books/<stem>.pdf  and  books/<stem>.{crop,lang,meta.json}
+  books/<stem>.pdf  and  books/<stem>.{crop,lang,rotate,meta.json,overrides.toml}
   processed/<stem>_translated/            (+ the 3 output PDFs inside, whose
   processed/<stem>_translated.bak-*/       names embed the old stem)
   evals/baselines/<stem>/                 (+ rewrites book/source in MANIFEST.json)
@@ -43,7 +43,7 @@ def _sub_stem(name: str, old: str, new: str) -> str:
 
 def plan_pair(old: str, new: str) -> None:
     # books/ pdf + sidecars
-    for ext in (".pdf", ".crop", ".lang", ".meta.json"):
+    for ext in (".pdf", ".crop", ".lang", ".rotate", ".meta.json", ".overrides.toml"):
         _mv(BOOKS / f"{old}{ext}", BOOKS / f"{new}{ext}")
 
     # processed dirs: the live one and any dated backups. NB: don't glob --

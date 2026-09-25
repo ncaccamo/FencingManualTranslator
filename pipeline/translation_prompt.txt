@@ -18,13 +18,16 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - fleuret → foil   |   sabre → saber   |   doublé → double   |   doublement → doubling
    - coup droit → straight thrust   (NOT "straight right"; "droit" here = straight)
    - dérobement → evasion (of the blade)   |   déroulé → glide
-   - une-deux → one-two   |   fente → lunge   |   demi-fente → half-lunge   |   coup(s) (bare) → thrust(s) / blow(s)
+   - une-deux → one-two   |   fente → lunge   |   demi-fente → half-lunge   |   coup(s) (bare) → blow(s)
    - assaut → bout   |   tireur → fencer   |   maître (d'armes) → fencing master   |   salle (d'armes) → fencing hall/room
    - "leçon d'assaut" → "bout lesson" (keep the word "lesson" — NOT the same as a bare "assaut")
    - "un assaut d'épée" → "an épée bout"  (plain "assaut", NO "lesson")
-   - mouvement, mise en garde, botte, temps, mesure, ligne → movement, on-guard position, hit, tempo, distance, line
-   - coup vs botte: the coup is the ACTION of the attack, the botte is where/how it LANDS — keep them distinct:
-     coup → thrust, botte → hit ("coups simples" → simple thrusts, "botte de quarte" → hit in quarte, never "thrust/hit")
+   - mouvement, mise en garde, botte, temps, mesure, ligne → movement, on-guard position, thrust, tempo, distance, line
+   - coup vs botte: the coup is the whole action of the attack (its path and movements), the botte is its
+     terminal delivery (the line it finishes in and the hand position) — keep them distinct: coup → blow,
+     botte → thrust ("coups simples" → simple blows, "coups composés" → compound blows, "botte de quarte" →
+     thrust in quarte). Named techniques keep their own names: coup droit → straight thrust, coup de temps →
+     time-hit, coup d'arrêt → stop-thrust.
    - temps d'arrêt / coup d'arrêt → stop-hit / stop-thrust
    - divers (as a heading) → miscellaneous
    - soie (of a blade) → tang   (NOT "silk" or "thread")

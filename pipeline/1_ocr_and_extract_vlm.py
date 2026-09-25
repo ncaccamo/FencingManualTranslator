@@ -52,6 +52,7 @@ import sys
 
 import backend_config as bc
 import _pageio
+import _overrides
 
 VLM_MODEL_PATH = os.environ.get("VLM_MODEL_PATH", "/models/allenai_olmOCR-2-7B-1025-Q6_K.gguf")
 VLM_MMPROJ_PATH = os.environ.get("VLM_MMPROJ_PATH", "")
@@ -1225,7 +1226,8 @@ def postprocess_parsed_pages(parsed: list) -> None:
     recover_plate_captions(parsed)
 
 
-def reconcile_page_numbers(page_raws: list, is_plate: list = None) -> list:
+def reconcile_page_numbers(page_raws: list, is_plate: list = None,
+                           bodies: list = None) -> list:
     """olmOCR-2 reliably reads a real printed folio, but it will also invent
     a plausible-looking number from a stray mark -- an engraver's plate
     number inside an illustration, a library accession stamp -- or silently
@@ -1314,6 +1316,59 @@ def reconcile_page_numbers(page_raws: list, is_plate: list = None) -> list:
                 trusted[i] = True
                 anchors = sorted(anchors + [i])
                 changed = True
+
+    # Mutually-corroborating misreads: two adjacent pages that misread the
+    # same digit the same way (Gomard 298/299 -> "208/209", Prévost 198/199
+    # in old-style figures -> "108/109") differ by exactly 1, so each
+    # vouches for the other above. The pages OUTSIDE the run expose them:
+    # the nearest trusted pages on either side agree with each other across
+    # the gap exactly (allowing for plate leaves), and the run doesn't fit
+    # that line. Untrust such a run (<= 3 pages); the tight-gap promotion
+    # below then fills in the forced folios. A genuine change of numbering
+    # (roman front matter -> arabic 1) can't trigger this: its outer pages
+    # don't agree across the gap.
+    # A folio can't repeat: when two pages that are trusted in sequence
+    # carry the SAME number, the later one is a leaf the VLM gave its
+    # neighbour's number (Kirchhoffer scan 65: an unflagged plate read "38"
+    # right after the real p. 38 -- the monotonic chain had paired it with
+    # the p. 39 two sheets on). Untrusted, it falls to the unnumbered-leaf
+    # handling below.
+    # Unless the two pages carry the same text: a digitisation that scanned
+    # one leaf twice (Jacob scans 201-202, both p. 155) is faithfully two
+    # sheets showing the same folio.
+    def _same_text(a, b):
+        if not bodies:
+            return False
+        norm = lambda t: re.sub(r"\W+", "", (t or "").lower())[:300]
+        return bool(norm(bodies[a])) and norm(bodies[a]) == norm(bodies[b])
+
+    _prev = None
+    for i in range(n):
+        if trusted[i]:
+            if _prev is not None and ints[i] == ints[_prev] and not _same_text(i, _prev):
+                trusted[i] = False
+                continue
+            _prev = i
+
+    _MAX_RUN = 3
+    tr_idx = [i for i in range(n) if trusted[i]]
+    k = 0
+    while k < len(tr_idx):
+        # a maximal run of consecutive trusted pages continuing one sequence
+        e = k
+        while (e + 1 < len(tr_idx) and tr_idx[e + 1] == tr_idx[e] + 1
+               and ints[tr_idx[e + 1]] == ints[tr_idx[e]] + 1):
+            e += 1
+        if e - k + 1 <= _MAX_RUN and k > 0 and e + 1 < len(tr_idx):
+            p, q = tr_idx[k - 1], tr_idx[e + 1]
+            between = [j for j in range(p + 1, q) if not plate[j]]
+            if ints[q] - ints[p] == len(between) + 1:
+                expect = {j: ints[p] + 1 + between.index(j) for j in between}
+                run = tr_idx[k:e + 1]
+                if any(ints[j] != expect.get(j) for j in run):
+                    for j in run:
+                        trusted[j] = False
+        k = e + 1
 
     # Tight-gap promotion: a run of non-trusted pages bracketed by two
     # trusted folios P .. Q, where Q - P == (non-plate slots in the run) + 1,
@@ -1697,7 +1752,11 @@ try:
                      or is_plate_leaf(p.get("body"))
                      for p in parsed]
         reconciled_nums = reconcile_page_numbers(
-            [p["page_raw"] for p in parsed], _is_plate)
+            [p["page_raw"] for p in parsed], _is_plate, [p.get("body") for p in parsed])
+        # the reviewer's per-book decisions (books/<stem>.overrides.toml)
+        # always win over the automatic reconciliation above
+        reconciled_nums = _overrides.apply_extraction(
+            parsed, reconciled_nums, _overrides.load(stem))
 
         canonical_pages = []
         for raw, fields, pnum in zip(extracted_pages, parsed, reconciled_nums):

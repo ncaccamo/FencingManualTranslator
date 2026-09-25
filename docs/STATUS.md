@@ -197,18 +197,56 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
     of GPU. If olmOCR-2 fills it reliably it would resolve the ambiguity in
     model-quirks §1.2f (Gomard src 23 INTRODUCTION) and could replace much
     of the header/title heuristics; if not, stay with narrow fixes.
-11. **Reprocess hazards** (batch 2, pass 8). `reprocess_extracted.py`
-    rewrites `figures.json` without step 2's `caption_en` / cleaned
-    `caption`: restore from the previous file or re-run captions. And
-    Gomard's `headers.json` (coup/botte wording) and Prévost's (*contres*
-    wording) now hold hand-set entries, so `2_translate.py --captions`
-    (a forced refill) would overwrite them. Also, step 2 retranslates a
-    whole book if `extracted.txt` is newer than `translation.txt`, so
-    `touch` translation.txt after a reprocess + direct patch.
+    **Result (2026-09-25, 25 pages, 2 prompt variants):** v1 got 20/25
+    right, and about 24/25 with a previous-page running-head check. Its one
+    failure mode: a running head on a continuation page reported as TITLE
+    with HEADER empty. The stricter v2 only moved the errors around.
+    Not adopted. **A layout-detection model did better:** Docling's
+    `docling-layout-heron` (Apache-2.0, DocLayNet classes page_header /
+    title / section_header; CPU, about 0.4 s/page) scored 23/25, including all
+    of v1's failures. It needs no re-OCR, since it reads the existing scans.
+    Next: run it on all pages of the 6 books and hand-check where it
+    disagrees with current extracted.txt headers. Details:
+    review-notes/TITLE_PROMPT_TEST.md.
+    **Full-corpus run (1,673 pages):** combined with olmOCR's HEADER
+    signal, per-book calibration and a disagreement flag, the detector
+    disagreed with current output on 117 pages (6 in Gomard). Where checked on
+    the scans the current output was wrong in nearly every case. 24/24 random
+    agreed pages were correct. 6% of pages were flagged. Also: the published
+    LaMarche/Jacob/Spinnewyn outputs lack running heads on ~280 pages because
+    they predate this cycle's code (fixable by a no-GPU reprocess).
+11. **Reprocess hazards** (batch 2, pass 8). *Partly resolved
+    2026-09-25:* review decisions now live in `books/<stem>.overrides.toml`
+    (manual III.5b) and are re-applied by step 1, reprocess, step 2 (incl.
+    `--captions`) and `apply_overrides.py`, so hand-set header wording and
+    the Gomard 298/299 patch no longer revert. Pages can be retranslated
+    individually (`2_translate.py --pages <stem> [12,40-42]`, or
+    `retranslate = true`), replacing batch 2's ad-hoc single-page scripts.
+    `reprocess_extracted.py` now keeps step 2's translated captions for
+    figures whose caption didn't change. **Still open:** step 2
+    retranslates a whole book when `extracted.txt` is newer than
+    `translation.txt`, so `touch` translation.txt after a reprocess that
+    didn't change body text (`apply_overrides.py` does this itself). The
+    real fix is per-page staleness (the `--pages` fingerprint is a start).
 12. **Spinnewyn idx 56 / 100** (not under review): a plate leaf's real
     running head ("LE RASSEMBLEMENT", "LE LIEMENT") is demoted to body by
     `reconcile_headers()`'s half-title rule (header present, no body, not
     confirmed). Latent until Spinnewyn is next reprocessed.
+13. **Local end state: review loop** (2026-09-25, roadmap in memory /
+    this list). Done: per-book overrides file + `apply_overrides.py`
+    (manual III.5b), page retranslation `2_translate.py --pages`, review
+    report `quality_report.py` run at the end of `run_full_pipeline.sh`
+    (III.5a). Report sizes on current outputs: Gomard 8, Kirchhoffer 2,
+    Prévost 4, Jacob 6, LaMarche 9, Spinnewyn 5 pages. It caught every
+    translation-side issue in the batch-2 pass-7 review when run on the
+    pre-pass-8 files, but none of the layout ones. Next: the layout detector
+    (item 10) as a report signal, then a local translation-review pass.
+    Gomard coup/botte settled (coup → blow, botte → thrust; model-quirks
+    §2.10b); after retranslating the 33 inconsistent pages and 2 recorded
+    fixes, Gomard's and Kirchhoffer's reports are empty, Prévost's has 1 page.
+    The report surfaced the adjacent-pages folio misread in Prévost
+    and Spinnewyn, which led to the general `reconcile_page_numbers()`
+    fix (model-quirks §1.2).
 
 ## Not yet tested
 
@@ -270,17 +308,12 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
   numbers, stamps) and normalizes roman numerals.
   `reconcile_page_numbers()` only trusts a folio corroborated by ≥2
   consecutive pages; everything else is a bracketed sheet ordinal `[n]`.
-  Never emits ≤ 0. **Known gap, not fixed (2026-09-20):** two adjacent
-  pages that each misread the same digit position the same way (e.g. a
-  9→0 confusion on both) look mutually self-consistent to both the
-  direct-neighbour check and the monotonic-chain check — the "rises by
-  exactly one across one sheet" signal that normally means "these two
-  corroborate each other" can't tell a shared systematic misread from a
-  genuine correct pair without consulting a wider anchor the local check
-  doesn't see. One confirmed instance (Gomard) was patched by hand rather
-  than fixed in the algorithm — a real fix needs a second example to
-  design against without risking the most heavily-tested function in
-  step 1. Full writeup: `docs/model-quirks.md` §1.2.
+  Never emits ≤ 0. **Adjacent-pages false agreement, fixed 2026-09-25:**
+  two misreads that differ by exactly 1 (Gomard 298/299 → 208/209,
+  Prévost 198/199 → 108/109, Spinnewyn invented 10/11) no longer vouch for
+  each other when the pages around them agree; a repeated folio on a
+  different-text page is dropped (a duplicate scan keeps it). Writeup:
+  `docs/model-quirks.md` §1.2.
 - **olmOCR-2 falls into repetition loops** on some table-of-contents
   (dot-leaders) and ornament (`* * *`) pages — thousands of tokens of one
   pattern, which then overflows the translation model's context. Mitigated

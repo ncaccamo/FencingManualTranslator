@@ -68,11 +68,16 @@ docker exec -e PIPELINE_VERSION booktranslator-translator-1 python3 /app/3_engli
 docker exec -e PIPELINE_VERSION booktranslator-translator-1 python3 /app/4_side_by_side_pdf.py
 echo ""
 
+echo "Review reports (pages worth checking, by pdf page)..."
+echo "────────────────────────────────────────────────────────"
+docker exec booktranslator-translator-1 python3 /app/quality_report.py --all
+echo ""
+
 echo "╔═══════════════════════════════════════════════════════╗"
 echo "║                  PIPELINE COMPLETE                    ║"
 echo "╚═══════════════════════════════════════════════════════╝"
 echo ""
-echo "Your PDFs are in: ~/BookTranslator/processed/"
+echo "Your PDFs and review reports are in: ~/BookTranslator/processed/"
 echo ""
 
 if ls "$WORKDIR/processed"/*_translated 2>/dev/null | grep -q .; then

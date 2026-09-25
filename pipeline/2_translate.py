@@ -13,6 +13,7 @@ from pathlib import Path
 
 import backend_config as bc
 import _pageio
+import _overrides
 
 PROMPT_FILE = "/app/translation_prompt.txt"
 TRANSLATION_MODEL = os.environ.get("TRANSLATION_MODEL_PATH", "/models/Qwen2.5-14B-Instruct-Q4_K_M.gguf")
@@ -41,6 +42,7 @@ if not os.path.exists(PROMPT_FILE):
 
 with open(PROMPT_FILE, "r", encoding="utf-8") as f:
     PROMPT_TEMPLATE = f.read().strip()
+BASE_PROMPT = PROMPT_TEMPLATE   # + each book's [terms] from its overrides file
 
 FRENCH_WORDS = {
     "le", "la", "les", "un", "une", "des", "du", "de", "d", "et", "est", "sont", "était", "étaient",
@@ -371,8 +373,8 @@ def fix_known_garbles(text: str, src: str = "") -> str:
         Also "SIMPLE THROUGHS" (pdf 174 retranslation). Neither is an
         English word, so safe to fix anywhere.
       * "THRUST/HIT" -- the prompt glossary's old "botte -> thrust/hit"
-        copied verbatim. botte -> hit (coup -> thrust; Gomard pdf 158
-        defines the two as distinct).
+        copied verbatim. botte -> thrust (coup -> blow: Gomard pdf 158
+        defines the coup as the whole action, the botte as its finish).
       * "plank(s)" for planche(s) -- the carpentry sense; in these books a
         planche is always an illustration plate. Only when the source
         actually has "planche", so a genuine plank elsewhere survives."""
@@ -387,7 +389,7 @@ def fix_known_garbles(text: str, src: str = "") -> str:
     text = re.sub(r"\bthusts?\b", lambda m: _case(m, "thrust"), text, flags=re.I)
     text = re.sub(r"\bthroughs\b", lambda m: _case(m, "thrust"), text, flags=re.I)
     text = re.sub(r"\bthrusts?\s*/\s*hits?\b",
-                  lambda m: _case(re.search(r"hits?$", m.group(0), re.I), "hit"),
+                  lambda m: _case(re.search(r"thrusts?", m.group(0), re.I), "thrust"),
                   text, flags=re.I)
     if src and re.search(r"\bplanches?\b", src, re.I):
         text = re.sub(r"\bplanks?\b", lambda m: _case(m, "plate"), text, flags=re.I)
@@ -1469,6 +1471,270 @@ def harmonize_titles_with_headers(folder: str) -> int:
         print(f"  harmonized {n} body title(s) with their running head")
     return n
 
+
+def apply_book_overrides(folder: str) -> None:
+    """Re-apply the reviewer's decisions (books/<stem>.overrides.toml) to
+    headers.json and translation.txt. Runs after every translation pass,
+    so regenerating either file can never lose a decision."""
+    import json as _json
+    stem = Path(folder).name.replace("_translated", "")
+    ov = _overrides.load(stem)
+    I = f"{folder}/intermediate"
+    hp, tp = f"{I}/headers.json", f"{I}/translation.txt"
+    if ov["headers"] and os.path.exists(hp):
+        hmap = _json.load(open(hp, encoding="utf-8"))
+        if _overrides.apply_headers(hmap, ov):
+            with open(hp, "w", encoding="utf-8") as fh:
+                _json.dump(hmap, fh, ensure_ascii=False, indent=1)
+    if ov["fix"] and os.path.exists(tp):
+        tr = _pageio.split_pages(open(tp, encoding="utf-8").read())
+        applied, missing = _overrides.apply_fixes(tr, ov)
+        if applied:
+            with open(tp, "w", encoding="utf-8") as fh:
+                fh.write(_pageio.join_pages(tr))
+        if missing:
+            print(f"  ⚠ overrides: [[fix]] text not found on scan page(s) {missing} "
+                  f"-- obsolete after a retranslation? Review {_overrides.path_for(stem)}")
+    if ov["headers"] or ov["fix"]:
+        print(f"  overrides applied: {len(ov['headers'])} header(s), {len(ov['fix'])} fix(es)")
+
+def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
+    """Translate one extracted.txt page record -> its translation.txt entry.
+    Never raises and never returns nothing: a failed page comes back as a
+    flagged fallback. `i` / `n` are 1-based position / page count (progress
+    output only). `st` is the book-wide state that has to persist across
+    pages: fn_seen (dedupe <fn> notes), cat3_seen (Category-3 terms already
+    footnoted), fn_state (the book's own footnote continuing onto the next
+    page). Used by the whole-book loop and by `--pages` retranslation."""
+    fn_seen, cat3_seen, fn_state = st["fn_seen"], st["cat3_seen"], st["fn_state"]
+    if not page_text.strip() or "VLM Error" in page_text:
+        print(f"  Page {i}/{n} — empty / OCR error, passed through")
+        return page_text
+
+    # Clean VLM structured output before translation
+    clean_text = clean_vlm_extraction(page_text)
+    page_has_fig = (bool(re.search(r"(?im)^\s*FIGURES\s*:", page_text))
+                    and not re.search(r"(?im)^\s*FIGURES\s*:\s*none\s*$",
+                                      page_text))
+
+    if not clean_text.strip():
+        print(f"  Page {i}/{n} — no body text, skipped")
+        return "[Empty page]"
+
+    # A step-1 marker page ("[handwritten inscription — see original]")
+    # -- pass it through verbatim, never translate it.
+    if re.fullmatch(r"\[[^\[\]\n]+\]", clean_text.strip()):
+        print(f"  Page {i}/{n} — marker page, passthrough")
+        return clean_text.strip()
+
+    page_is_toc = is_toc_page(clean_text)
+
+    # A scoring / poule table: replace each <table>..</table> with a
+    # [[TABLE]] sentinel; steps 3 & 4 embed the scan for it. A page
+    # that is nothing but table(s) (+ maybe a heading) skips the
+    # model's attempt to linearise the grid.
+    page_had_table = bool(re.search(r"<table\b", clean_text, re.I))
+    if page_had_table:
+        clean_text = re.sub(r"<table\b.*?</table\s*>", "\n[[TABLE]]\n",
+                            clean_text, flags=re.I | re.S)
+        # a table the OCR truncated (page cut off mid-grid) has no
+        # closing tag -- collapse the dangling <table ...> to end.
+        clean_text = re.sub(r"<table\b.*\Z", "\n[[TABLE]]\n",
+                            clean_text, flags=re.I | re.S)
+        clean_text = re.sub(r"(?:\[\[TABLE\]\]\s*){2,}", "[[TABLE]]\n",
+                            clean_text)
+        clean_text = re.sub(r"\n{3,}", "\n\n", clean_text).strip()
+        residue = re.sub(r"\[\[TABLE\]\]", "", clean_text).strip()
+        res_paras = [p for p in re.split(r"\n\s*\n", residue) if p.strip()]
+        if not any(len(p.split()) > 12 for p in res_paras):
+            # table(s) + at most a short heading/caption: translate
+            # just the heading text, keep one sentinel, drop the grid.
+            cap = ""
+            if residue:
+                raw = translate_with_llama(
+                    f"{PROMPT_TEMPLATE}\n\nText to translate:\n{residue}")
+                cap = re.sub(r'(?m)^\s*#{1,6}\s+', '',
+                             strip_model_preamble((raw or residue).strip())).strip()
+                cap = apply_always_translate(cap)
+            out = f"{cap}\n\n[[TABLE]]" if cap else "[[TABLE]]"
+            print(f"  Page {i}/{n} — table page, grid skipped")
+            return out
+
+    # A near-blank page (stray mark, bare page number, single word)
+    # isn't worth a model call -- the model just replies "Please
+    # provide the text you would like to translate", which then
+    # leaks into translation.txt as the page's content.
+    if is_near_blank(clean_text):
+        print(f"  Page {i}/{n} — near-blank ({clean_text.split()[:4]}), skipped")
+        return "[Empty page]"
+
+    src_words = len(clean_text.split())
+
+    # A page whose OCR ran away (dot-leader / ornament repetition
+    # loop) overflows the translation model's context and burns 3
+    # dead API calls. Cap it: translate the first ~2500 words, keep
+    # the rest verbatim, flag it.
+    if src_words > 2500:
+        head = " ".join(clean_text.split()[:2500])
+        cand = translate_with_llama(
+            f"{PROMPT_TEMPLATE}\n\nText to translate:\n{head}")
+        cand = cand or "[translation unavailable]"
+        print(f"  Page {i}/{n} — oversized OCR ({src_words} w), "
+              f"translated head only")
+        return (f"[oversized OCR page — likely a repetition artifact; "
+                f"first part translated, remainder omitted]\n\n{cand}"[:6000])
+    best_candidate = None   # best rejected attempt, for the fallback
+    for attempt in range(3):
+        print(f"  Page {i}/{n} (try {attempt + 1})", end="", flush=True)
+
+        # After a first failure, raise the temperature and add a
+        # blunt instruction -- the 7B sometimes gets stuck echoing
+        # the French source verbatim, and a hotter sample + the
+        # extra line breaks it out.
+        if attempt == 0:
+            full_prompt = f"{PROMPT_TEMPLATE}\n\nText to translate:\n{clean_text}"
+            temp = 0.3
+        else:
+            full_prompt = (f"{PROMPT_TEMPLATE}\n\nTranslate the following into "
+                           f"fluent English. Do NOT repeat any of it in the "
+                           f"original language. Match the capitalisation of the "
+                           f"source; do NOT write the text in all capitals."
+                           f"\n\nText to translate:\n{clean_text}")
+            temp = 0.3 + 0.25 * attempt
+        candidate = translate_with_llama(full_prompt, temperature=temp)
+
+        if not candidate:
+            print(" → failed")
+            continue
+
+        # The model sometimes emits Markdown despite the prompt. A
+        # lone "---" thematic break used to collide with the page
+        # separator used everywhere downstream (178 pages -> 179,
+        # every later page misaligned). Strip all of it; <i>...</i>
+        # is the only markup the pipeline expects. A decorative
+        # section-break ornament (dinkus / row of asterisks) is
+        # dropped to a blank line -- rendering it as "* * *" was
+        # hit-or-miss and looked wrong (Gomard p255).
+        candidate = re.sub(r'(?m)^[ \t]*(?:-{3,}|\*(?:[ \t]*\*)+|•(?:[ \t]*•)+)[ \t]*$',
+                           '', candidate)
+        candidate = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', candidate)
+        candidate = re.sub(r'\*\*([^*\n]+)\*\*', r'\1', candidate)   # **bold**
+        candidate = re.sub(r'(?m)^\s{0,3}#{1,6}\s+', '', candidate)  # # heading
+        # a whole body line that is a hallucinated figure
+        # description ("Image of a hand holding a sword ...")
+        candidate = re.sub(
+            r"(?im)^[ \t]*(?:an?\s+)?(?:image|photo(?:graph)?|drawing|"
+            r"illustration|picture|sketch|depiction)\s+(?:of|showing|"
+            r"depicting)\b[^\n]*$", "", candidate)
+        # normalise the table sentinel: the model turns "[[TABLE]]"
+        # into "[ TABLE ]", "[TABLE]" or a bare "TABLE" line.
+        if page_had_table:
+            candidate = re.sub(r"(?im)^[ \t]*\[*[ \t]*TABLE[ \t]*\]*[ \t]*$",
+                               "[[TABLE]]", candidate)
+            candidate = re.sub(r"(?:\[\[TABLE\]\][ \t]*\n?){2,}",
+                               "[[TABLE]]\n", candidate)
+        else:
+            candidate = re.sub(r"(?im)^\s*\[+\s*TABLE[^\]\n]*\]+\s*$",
+                               "[[TABLE]]", candidate)
+        candidate = apply_always_translate(candidate)
+        candidate = enforce_kept_terms(candidate, clean_text)
+        # on a ToC page: translate the Cat-3 terms but emit NO
+        # footnote marker (a contents line must not carry one, and
+        # it would burn the once-per-book note), and skip the
+        # heading re-translate pass (every entry looks like a
+        # heading) to keep the "entry … NN" structure intact.
+        candidate = enforce_cat3_footnotes(
+            candidate, cat3_seen, footnote=not page_is_toc)
+        candidate = _capitalize_definition_entries(candidate)
+        if not page_is_toc:
+            candidate = retranslate_stray_french_headings(candidate)
+            candidate = restore_dropped_part_title(candidate, clean_text)
+            candidate = fix_subheading_spacing(candidate)
+
+        # "This isn't fencing text" / "Please provide the text..." --
+        # the model had nothing real to translate. Not a fallback
+        # candidate; try again, then fall through to [Empty page].
+        if looks_like_refusal(candidate):
+            print(" → refusal / echo")
+            time.sleep(4)
+            continue
+
+        # "Here is the translation:" / "Sure:" / "Note: ..." preambles.
+        candidate = strip_model_preamble(candidate)
+        if not candidate:
+            print(" → preamble only")
+            time.sleep(4)
+            continue
+
+        if has_wrong_script(candidate):
+            # Never keep this one, even as a fallback -- CJK/Cyrillic
+            # in the output is the model breaking down.
+            print(" → garbled (non-Latin script)")
+            time.sleep(8)
+            continue
+
+        best_candidate = best_candidate or candidate
+
+        if contains_too_much_non_english(candidate):
+            print(" → not English")
+            time.sleep(8)
+            continue
+
+        # Qwen rendered the whole page in capitals (source wasn't).
+        # Retry for a clean one; deshout() is the fallback repair.
+        if _shout_ratio(candidate) > 0.85 and _shout_ratio(clean_text) < 0.6:
+            print(" → all caps")
+            time.sleep(6)
+            continue
+
+        # Length sanity check -- but only for pages with enough source
+        # text for the ratio to mean anything. Plate captions, drill
+        # lists and dimension callouts are legitimately terse and were
+        # being rejected as "too short".
+        if src_words >= 25 and len(candidate.split()) < 0.5 * src_words:
+            print(" → too short")
+            time.sleep(8)
+            continue
+
+        candidate = match_boundary_punctuation(candidate, clean_text)
+        candidate, n_fn = pull_footnotes(candidate, clean_text, fn_seen)
+        candidate = extract_source_footnotes(candidate, fn_state)
+        candidate = label_margin_notes(candidate, has_fig=page_has_fig)
+        print(f" ✓{'  (%d fn)' % n_fn if n_fn else ''}")
+        return candidate
+
+    # Every attempt failed. Never drop a page: keep the best non-garbled
+    # attempt (flagged for review), or fall back to the original text so
+    # the page still appears in the output for a human to fix.
+    if best_candidate and _shout_ratio(best_candidate) > 0.85 \
+            and _shout_ratio(clean_text) < 0.6 \
+            and not contains_too_much_non_english(best_candidate) \
+            and not (src_words >= 25
+                     and len(best_candidate.split()) < 0.5 * src_words):
+        # The only thing wrong was the all-caps shout: repair the
+        # case and keep it as a normal page, no review banner.
+        fixed, n_fn = pull_footnotes(deshout(best_candidate, clean_text),
+                                     clean_text, fn_seen)
+        print(" ✓ (deshouted)")
+        return fixed
+    elif best_candidate:
+        print(" ⚠ kept (low confidence)")
+        body = deshout(best_candidate, clean_text) \
+            if _shout_ratio(best_candidate) > 0.85 else best_candidate
+        return f"[low-confidence translation — review]\n{body}"
+    elif src_words < 15:
+        # Every attempt was a refusal/preamble and there was
+        # barely any source text -- it's an effectively blank
+        # page, not a translation failure worth surfacing.
+        print(" ✗ refusals only on a near-blank page — [Empty page]")
+        return "[Empty page]"
+    else:
+        print(" ✗ no usable output — kept original text")
+        return f"[translation unavailable — original text follows]\n{clean_text}"
+
+
+
+
 print("\n" + "="*60)
 print("STEP 2: AI TRANSLATION")
 print("="*60)
@@ -1485,13 +1751,86 @@ if len(sys.argv) > 1 and sys.argv[1] == "--captions":
     try:
         for folder in glob.glob("/data/processed/*_translated"):
             print(f"captions/headers: {Path(folder).name}")
+            PROMPT_TEMPLATE = BASE_PROMPT + _overrides.terms_addendum(
+                _overrides.load(Path(folder).name.replace("_translated", "")))
             translate_figure_captions(folder, force=True)
             translate_headers(folder, force=True)
             harmonize_titles_with_headers(folder)
+            apply_book_overrides(folder)
     finally:
         if translation_proc is not REMOTE_SERVER and translation_proc:
             translation_proc.terminate()
     print("\n✓ Caption pass complete\n")
+    sys.exit(0)
+
+
+def retranslate_pages(stem: str, spec: str = "") -> None:
+    """`2_translate.py --pages <stem> [12,40-42]`: retranslate just those
+    SCAN pages of an already-translated book, in place. With no page list,
+    takes the pages marked `retranslate = true` in the book's overrides
+    file -- each only once per version of its source text (a fingerprint
+    is kept in intermediate/retranslated.json), so rerunning costs nothing
+    until that page's extracted text changes. The rest of translation.txt
+    is untouched; header/title harmonization and the overrides file are
+    re-applied afterwards, as after a full run."""
+    import hashlib
+    import json as _json
+    global PROMPT_TEMPLATE
+    folder = f"/data/processed/{stem}_translated"
+    I = f"{folder}/intermediate"
+    ex = _pageio.split_pages(open(f"{I}/extracted.txt", encoding="utf-8").read())
+    tp = f"{I}/translation.txt"
+    tr = _pageio.split_pages(open(tp, encoding="utf-8").read())
+    if len(ex) != len(tr):
+        sys.exit(f"✗ {stem}: extracted.txt has {len(ex)} pages, translation.txt "
+                 f"{len(tr)} -- out of step; a full translation is needed")
+    ov = _overrides.load(stem)
+    PROMPT_TEMPLATE = BASE_PROMPT + _overrides.terms_addendum(ov)
+    done_p = f"{I}/retranslated.json"
+    done = _json.load(open(done_p)) if os.path.exists(done_p) else {}
+    fp = lambda t: hashlib.sha1(t.strip().encode("utf-8")).hexdigest()[:16]
+    if spec:
+        targets = _overrides.parse_page_spec(spec)
+    else:
+        targets = [s for s in _overrides.retranslate_pages(ov)
+                   if done.get(str(s)) != fp(ex[s - 1])]
+    bad = [s for s in targets if not 1 <= s <= len(ex)]
+    if bad:
+        sys.exit(f"✗ {stem}: scan page(s) {bad} outside 1..{len(ex)}")
+    if not targets:
+        print(f"⊘ {stem}: nothing to retranslate")
+        return
+    # book-wide footnote state from every page NOT being redone, so a
+    # redone page neither repeats a note nor loses its own first-use one
+    st = {"fn_seen": set(), "cat3_seen": set(), "fn_state": {}}
+    for k, t in enumerate(tr, 1):
+        if k in targets:
+            continue
+        for ref in re.findall(r"(?m)^†\d+ French: (.+?)\s*$", t):
+            st["cat3_seen"].add(ref.strip().lower())
+            st["fn_seen"].add(_strip_accents(ref.strip().lower()))
+    print(f"Retranslating {stem}: scan page(s) {targets}")
+    for s_ in targets:
+        tr[s_ - 1] = translate_page(ex[s_ - 1].strip(), s_, len(ex), st)
+        done[str(s_)] = fp(ex[s_ - 1])
+    with open(tp, "w", encoding="utf-8") as fh:
+        fh.write(_pageio.join_pages(tr))
+    with open(done_p, "w", encoding="utf-8") as fh:
+        _json.dump(done, fh, indent=1, sort_keys=True)
+    translate_figure_captions(folder)      # only captions not yet translated
+    translate_headers(folder)              # only header strings not yet translated
+    harmonize_titles_with_headers(folder)
+    apply_book_overrides(folder)
+    print(f"\n✓ {len(targets)} page(s) retranslated -- rebuild the PDFs:\n"
+          f"  PDF_ONLY={stem} python3 /app/4_side_by_side_pdf.py")
+
+
+if len(sys.argv) > 2 and sys.argv[1] == "--pages":
+    try:
+        retranslate_pages(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else "")
+    finally:
+        if translation_proc is not REMOTE_SERVER and translation_proc:
+            translation_proc.terminate()
     sys.exit(0)
 
 try:
@@ -1508,6 +1847,8 @@ try:
 
         with open(src, "r", encoding="utf-8") as f:
             pages = [p.strip() for p in _pageio.split_pages(f.read()) if p.strip()]
+        PROMPT_TEMPLATE = BASE_PROMPT + _overrides.terms_addendum(
+            _overrides.load(Path(folder).name.replace("_translated", "")))
 
         print(f"Translating: {Path(folder).name}")
         print(f"Pages: {len(pages)}\n")
@@ -1516,243 +1857,10 @@ try:
         fn_seen = set()     # dedupe <fn> note text across the book
         cat3_seen = set()   # footnote each Category-3 term once per book
         fn_state = {}       # cross-page state for the book's own footnotes
+        _st = {"fn_seen": fn_seen, "cat3_seen": cat3_seen, "fn_state": fn_state}
 
         for i, page_text in enumerate(pages, 1):
-            if not page_text.strip() or "VLM Error" in page_text:
-                print(f"  Page {i}/{len(pages)} — empty / OCR error, passed through")
-                translated_pages.append(page_text)
-                continue
-
-            # Clean VLM structured output before translation
-            clean_text = clean_vlm_extraction(page_text)
-            page_has_fig = (bool(re.search(r"(?im)^\s*FIGURES\s*:", page_text))
-                            and not re.search(r"(?im)^\s*FIGURES\s*:\s*none\s*$",
-                                              page_text))
-
-            if not clean_text.strip():
-                print(f"  Page {i}/{len(pages)} — no body text, skipped")
-                translated_pages.append("[Empty page]")
-                continue
-
-            # A step-1 marker page ("[handwritten inscription — see original]")
-            # -- pass it through verbatim, never translate it.
-            if re.fullmatch(r"\[[^\[\]\n]+\]", clean_text.strip()):
-                translated_pages.append(clean_text.strip())
-                print(f"  Page {i}/{len(pages)} — marker page, passthrough")
-                continue
-
-            page_is_toc = is_toc_page(clean_text)
-
-            # A scoring / poule table: replace each <table>..</table> with a
-            # [[TABLE]] sentinel; steps 3 & 4 embed the scan for it. A page
-            # that is nothing but table(s) (+ maybe a heading) skips the
-            # model's attempt to linearise the grid.
-            page_had_table = bool(re.search(r"<table\b", clean_text, re.I))
-            if page_had_table:
-                clean_text = re.sub(r"<table\b.*?</table\s*>", "\n[[TABLE]]\n",
-                                    clean_text, flags=re.I | re.S)
-                # a table the OCR truncated (page cut off mid-grid) has no
-                # closing tag -- collapse the dangling <table ...> to end.
-                clean_text = re.sub(r"<table\b.*\Z", "\n[[TABLE]]\n",
-                                    clean_text, flags=re.I | re.S)
-                clean_text = re.sub(r"(?:\[\[TABLE\]\]\s*){2,}", "[[TABLE]]\n",
-                                    clean_text)
-                clean_text = re.sub(r"\n{3,}", "\n\n", clean_text).strip()
-                residue = re.sub(r"\[\[TABLE\]\]", "", clean_text).strip()
-                res_paras = [p for p in re.split(r"\n\s*\n", residue) if p.strip()]
-                if not any(len(p.split()) > 12 for p in res_paras):
-                    # table(s) + at most a short heading/caption: translate
-                    # just the heading text, keep one sentinel, drop the grid.
-                    cap = ""
-                    if residue:
-                        raw = translate_with_llama(
-                            f"{PROMPT_TEMPLATE}\n\nText to translate:\n{residue}")
-                        cap = re.sub(r'(?m)^\s*#{1,6}\s+', '',
-                                     strip_model_preamble((raw or residue).strip())).strip()
-                        cap = apply_always_translate(cap)
-                    out = f"{cap}\n\n[[TABLE]]" if cap else "[[TABLE]]"
-                    translated_pages.append(out)
-                    print(f"  Page {i}/{len(pages)} — table page, grid skipped")
-                    continue
-
-            # A near-blank page (stray mark, bare page number, single word)
-            # isn't worth a model call -- the model just replies "Please
-            # provide the text you would like to translate", which then
-            # leaks into translation.txt as the page's content.
-            if is_near_blank(clean_text):
-                print(f"  Page {i}/{len(pages)} — near-blank ({clean_text.split()[:4]}), skipped")
-                translated_pages.append("[Empty page]")
-                continue
-
-            src_words = len(clean_text.split())
-
-            # A page whose OCR ran away (dot-leader / ornament repetition
-            # loop) overflows the translation model's context and burns 3
-            # dead API calls. Cap it: translate the first ~2500 words, keep
-            # the rest verbatim, flag it.
-            if src_words > 2500:
-                head = " ".join(clean_text.split()[:2500])
-                cand = translate_with_llama(
-                    f"{PROMPT_TEMPLATE}\n\nText to translate:\n{head}")
-                cand = cand or "[translation unavailable]"
-                print(f"  Page {i}/{len(pages)} — oversized OCR ({src_words} w), "
-                      f"translated head only")
-                translated_pages.append(
-                    f"[oversized OCR page — likely a repetition artifact; "
-                    f"first part translated, remainder omitted]\n\n{cand}"[:6000])
-                continue
-            success = False
-            best_candidate = None   # best rejected attempt, for the fallback
-            for attempt in range(3):
-                print(f"  Page {i}/{len(pages)} (try {attempt + 1})", end="", flush=True)
-
-                # After a first failure, raise the temperature and add a
-                # blunt instruction -- the 7B sometimes gets stuck echoing
-                # the French source verbatim, and a hotter sample + the
-                # extra line breaks it out.
-                if attempt == 0:
-                    full_prompt = f"{PROMPT_TEMPLATE}\n\nText to translate:\n{clean_text}"
-                    temp = 0.3
-                else:
-                    full_prompt = (f"{PROMPT_TEMPLATE}\n\nTranslate the following into "
-                                   f"fluent English. Do NOT repeat any of it in the "
-                                   f"original language. Match the capitalisation of the "
-                                   f"source; do NOT write the text in all capitals."
-                                   f"\n\nText to translate:\n{clean_text}")
-                    temp = 0.3 + 0.25 * attempt
-                candidate = translate_with_llama(full_prompt, temperature=temp)
-
-                if not candidate:
-                    print(" → failed")
-                    continue
-
-                # The model sometimes emits Markdown despite the prompt. A
-                # lone "---" thematic break used to collide with the page
-                # separator used everywhere downstream (178 pages -> 179,
-                # every later page misaligned). Strip all of it; <i>...</i>
-                # is the only markup the pipeline expects. A decorative
-                # section-break ornament (dinkus / row of asterisks) is
-                # dropped to a blank line -- rendering it as "* * *" was
-                # hit-or-miss and looked wrong (Gomard p255).
-                candidate = re.sub(r'(?m)^[ \t]*(?:-{3,}|\*(?:[ \t]*\*)+|•(?:[ \t]*•)+)[ \t]*$',
-                                   '', candidate)
-                candidate = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', candidate)
-                candidate = re.sub(r'\*\*([^*\n]+)\*\*', r'\1', candidate)   # **bold**
-                candidate = re.sub(r'(?m)^\s{0,3}#{1,6}\s+', '', candidate)  # # heading
-                # a whole body line that is a hallucinated figure
-                # description ("Image of a hand holding a sword ...")
-                candidate = re.sub(
-                    r"(?im)^[ \t]*(?:an?\s+)?(?:image|photo(?:graph)?|drawing|"
-                    r"illustration|picture|sketch|depiction)\s+(?:of|showing|"
-                    r"depicting)\b[^\n]*$", "", candidate)
-                # normalise the table sentinel: the model turns "[[TABLE]]"
-                # into "[ TABLE ]", "[TABLE]" or a bare "TABLE" line.
-                if page_had_table:
-                    candidate = re.sub(r"(?im)^[ \t]*\[*[ \t]*TABLE[ \t]*\]*[ \t]*$",
-                                       "[[TABLE]]", candidate)
-                    candidate = re.sub(r"(?:\[\[TABLE\]\][ \t]*\n?){2,}",
-                                       "[[TABLE]]\n", candidate)
-                else:
-                    candidate = re.sub(r"(?im)^\s*\[+\s*TABLE[^\]\n]*\]+\s*$",
-                                       "[[TABLE]]", candidate)
-                candidate = apply_always_translate(candidate)
-                candidate = enforce_kept_terms(candidate, clean_text)
-                # on a ToC page: translate the Cat-3 terms but emit NO
-                # footnote marker (a contents line must not carry one, and
-                # it would burn the once-per-book note), and skip the
-                # heading re-translate pass (every entry looks like a
-                # heading) to keep the "entry … NN" structure intact.
-                candidate = enforce_cat3_footnotes(
-                    candidate, cat3_seen, footnote=not page_is_toc)
-                candidate = _capitalize_definition_entries(candidate)
-                if not page_is_toc:
-                    candidate = retranslate_stray_french_headings(candidate)
-                    candidate = restore_dropped_part_title(candidate, clean_text)
-                    candidate = fix_subheading_spacing(candidate)
-
-                # "This isn't fencing text" / "Please provide the text..." --
-                # the model had nothing real to translate. Not a fallback
-                # candidate; try again, then fall through to [Empty page].
-                if looks_like_refusal(candidate):
-                    print(" → refusal / echo")
-                    time.sleep(4)
-                    continue
-
-                # "Here is the translation:" / "Sure:" / "Note: ..." preambles.
-                candidate = strip_model_preamble(candidate)
-                if not candidate:
-                    print(" → preamble only")
-                    time.sleep(4)
-                    continue
-
-                if has_wrong_script(candidate):
-                    # Never keep this one, even as a fallback -- CJK/Cyrillic
-                    # in the output is the model breaking down.
-                    print(" → garbled (non-Latin script)")
-                    time.sleep(8)
-                    continue
-
-                best_candidate = best_candidate or candidate
-
-                if contains_too_much_non_english(candidate):
-                    print(" → not English")
-                    time.sleep(8)
-                    continue
-
-                # Qwen rendered the whole page in capitals (source wasn't).
-                # Retry for a clean one; deshout() is the fallback repair.
-                if _shout_ratio(candidate) > 0.85 and _shout_ratio(clean_text) < 0.6:
-                    print(" → all caps")
-                    time.sleep(6)
-                    continue
-
-                # Length sanity check -- but only for pages with enough source
-                # text for the ratio to mean anything. Plate captions, drill
-                # lists and dimension callouts are legitimately terse and were
-                # being rejected as "too short".
-                if src_words >= 25 and len(candidate.split()) < 0.5 * src_words:
-                    print(" → too short")
-                    time.sleep(8)
-                    continue
-
-                candidate = match_boundary_punctuation(candidate, clean_text)
-                candidate, n_fn = pull_footnotes(candidate, clean_text, fn_seen)
-                candidate = extract_source_footnotes(candidate, fn_state)
-                candidate = label_margin_notes(candidate, has_fig=page_has_fig)
-                translated_pages.append(candidate)
-                success = True
-                print(f" ✓{'  (%d fn)' % n_fn if n_fn else ''}")
-                break
-
-            if not success:
-                # Never drop a page. Keep the best non-garbled attempt
-                # (flagged for review), or fall back to the original text so
-                # the page still appears in the output for a human to fix.
-                if best_candidate and _shout_ratio(best_candidate) > 0.85 \
-                        and _shout_ratio(clean_text) < 0.6 \
-                        and not contains_too_much_non_english(best_candidate) \
-                        and not (src_words >= 25
-                                 and len(best_candidate.split()) < 0.5 * src_words):
-                    # The only thing wrong was the all-caps shout: repair the
-                    # case and keep it as a normal page, no review banner.
-                    fixed, n_fn = pull_footnotes(deshout(best_candidate, clean_text),
-                                                 clean_text, fn_seen)
-                    translated_pages.append(fixed)
-                    print(" ✓ (deshouted)")
-                elif best_candidate:
-                    print(" ⚠ kept (low confidence)")
-                    body = deshout(best_candidate, clean_text) \
-                        if _shout_ratio(best_candidate) > 0.85 else best_candidate
-                    translated_pages.append(f"[low-confidence translation — review]\n{body}")
-                elif src_words < 15:
-                    # Every attempt was a refusal/preamble and there was
-                    # barely any source text -- it's an effectively blank
-                    # page, not a translation failure worth surfacing.
-                    print(" ✗ refusals only on a near-blank page — [Empty page]")
-                    translated_pages.append("[Empty page]")
-                else:
-                    print(" ✗ no usable output — kept original text")
-                    translated_pages.append(f"[translation unavailable — original text follows]\n{clean_text}")
+            translated_pages.append(translate_page(page_text, i, len(pages), _st))
 
         with open(dst, "w", encoding="utf-8") as f:
             f.write(_pageio.join_pages(translated_pages))
@@ -1760,6 +1868,7 @@ try:
         translate_figure_captions(folder)
         translate_headers(folder)
         harmonize_titles_with_headers(folder)
+        apply_book_overrides(folder)
 
         print(f"\n✓ Translation complete: {Path(folder).name}\n")
 

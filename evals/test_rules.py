@@ -674,6 +674,46 @@ def test_reconcile_chain_rejects_bracketed_outlier():
     assert out == ["6", "7", "8", "", "", "", "", "9", "10"]
 
 
+def test_reconcile_rejects_mutually_corroborating_misreads():
+    # Three real cases where two adjacent pages' reads differ by exactly 1,
+    # so each vouched for the other, while the pages outside them agree
+    # with each other and contradict the pair:
+    #   Gomard scans 314-315: 298/299 read "208/209" (9->0, blurred print)
+    #   Prévost scans 262-263: 198/199 in old-style figures read "108/109"
+    #   Spinnewyn scans 170-171: a blank + a title page, no folio printed,
+    #   the VLM invented "10/11"
+    assert reconcile_page_numbers(["295", "296", "297", "208", "209", "300", "301"]) \
+        == ["295", "296", "297", "298", "299", "300", "301"]
+    assert reconcile_page_numbers(["196", "197", "108", "109", "200", "201"]) \
+        == ["196", "197", "198", "199", "200", "201"]
+    assert reconcile_page_numbers(["138", "139", "10", "11", "142", "143"]) \
+        == ["138", "139", "140", "141", "142", "143"]
+
+
+def test_reconcile_repeated_folio():
+    # Kirchhoffer scans 64-66: p. 38, an unflagged plate the VLM also read
+    # "38", a flagged plate, then p. 39. A folio can't repeat -> the plate's
+    # copy is dropped. But Jacob scans 201-202 are ONE leaf scanned twice
+    # (same text, both p. 155): that repeat is faithful and stays.
+    out = reconcile_page_numbers(["36", "37", "38", "38", "", "39", "40"],
+                                 is_plate=[0, 0, 0, 0, 1, 0, 0],
+                                 bodies=["a", "b", "text of p38", "plate", "", "c", "d"])
+    assert out == ["36", "37", "38", "", "", "39", "40"]
+    out = reconcile_page_numbers(["153", "154", "155", "155", "156", "157"],
+                                 bodies=["a", "b", "terrain et plus d'élan", "terrain et plus d'élan", "c", "d"])
+    assert out == ["153", "154", "155", "155", "156", "157"]
+
+
+def test_reconcile_keeps_genuine_renumbering():
+    # A real change of numbering (roman front matter -> arabic 1, a second
+    # volume restarting) must survive: its outer pages don't agree across
+    # the gap, so nothing is "exposed".
+    assert reconcile_page_numbers(["xii", "xiii", "", "1", "2", "3"]) \
+        == ["xii", "xiii", "", "1", "2", "3"]
+    assert reconcile_page_numbers(["98", "99", "100", "1", "2", "3", "4"]) \
+        == ["98", "99", "100", "1", "2", "3", "4"]
+
+
 def test_is_plate_leaf_detects_unflagged_planche_body():
     # Real Gomard bug: "Planche XIV."/"Planche XV." plates where the VLM
     # never emitted a FIGURES: block at all (no figure kind == "plate" to
@@ -1454,8 +1494,8 @@ def test_fix_known_garbles_thust_slash_plank():
     assert fix_known_garbles("CHOICE OF THE THUST") == "CHOICE OF THE THRUST"
     assert fix_known_garbles("simple thusts drawn") == "simple thrusts drawn"
     assert fix_known_garbles("FOR SIMPLE THROUGHS DRAWN") == "FOR SIMPLE THRUSTS DRAWN"
-    assert fix_known_garbles("OF THE THRUST AND THE THRUST/HIT.") \
-        == "OF THE THRUST AND THE HIT."
+    assert fix_known_garbles("OF THE BLOW AND THE THRUST/HIT.") \
+        == "OF THE BLOW AND THE THRUST."
     assert fix_known_garbles("PLANKS.\n\nPLANK I.", "DES PLANCHES.\n\nPLANCHE Ier.") \
         == "PLATES.\n\nPLATE I."
     # no "planche" in the source -> a real plank is left alone
@@ -1494,6 +1534,71 @@ def test_harmonize_body_title_with_header():
         assert out[1].strip().startswith("OF THE THRUST AND THE HIT.\n\nThe thrust is")
         assert out[2].strip() == "Continuation of the text."      # no body title -> untouched
         assert harmonize_titles_with_headers(d) == 0             # idempotent
+
+
+def _load_overrides_module():
+    import importlib
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
+    return importlib.import_module("_overrides")
+
+
+def test_overrides_fix_prepend_is_idempotent_and_case_insensitive():
+    # A decision recorded once must apply cleanly on every run: re-applying
+    # never duplicates, and a retranslation that already produced the line
+    # in another case ("PLATE V") counts as present.
+    ov = _load_overrides_module()
+    o = {"headers": {}, "terms": {}, "pages": {}, "fix": [{"scan": 1, "prepend": "Plate V."}]}
+    tr = ["Thrust made in a lunge.", "x"]
+    assert ov.apply_fixes(tr, o) == (1, [])
+    assert tr[0] == "Plate V.\n\nThrust made in a lunge."
+    assert ov.apply_fixes(tr, o) == (0, [])                 # idempotent
+    tr2 = ["PLATE V\n\nThrust made in a lunge.", "x"]
+    assert ov.apply_fixes(tr2, o) == (0, []) and tr2[0].startswith("PLATE V\n")
+
+
+def test_overrides_fix_find_reports_obsolete():
+    ov = _load_overrides_module()
+    o = {"headers": {}, "terms": {}, "pages": {},
+         "fix": [{"scan": 1, "find": "ON THE REMISE", "replace": "OF THE REMISE"},
+                 {"scan": 2, "find": "gone", "replace": "new"}]}
+    tr = ["title ON THE REMISE", "retranslated text"]
+    applied, missing = ov.apply_fixes(tr, o)
+    assert (applied, missing) == (1, [2]) and tr[0] == "title OF THE REMISE"
+    assert ov.apply_fixes(tr, o) == (0, [2])                # already applied: silent
+
+
+def test_overrides_extraction_wins_and_validation():
+    # Gomard scan 314/315: two adjacent 9->0 misreads the reconciler can't
+    # catch -- the recorded decision must win over reconciliation.
+    import tempfile, os
+    ov = _load_overrides_module()
+    with tempfile.TemporaryDirectory() as d:
+        open(f"{d}/b.overrides.toml", "w").write(
+            '[pages.2]\npage_number = "298"\nheader = ""\n')
+        o = ov.load("b", d)
+        parsed = [{"header": "A"}, {"header": "DU DESARMEMENT."}]
+        nums = ov.apply_extraction(parsed, ["207", "208"], o)
+        assert nums == ["207", "298"] and parsed[1]["header"] == ""
+        open(f"{d}/c.overrides.toml", "w").write('[pages.3]\npagenumber = "1"\n')
+        try:
+            ov.load("c", d); assert False, "typo key must be rejected"
+        except ov.OverridesError:
+            pass
+        try:
+            ov.apply_extraction([{}], ["1"], ov.load("b", d)); assert False, "past end"
+        except ov.OverridesError:
+            pass
+    assert ov.load("missing", "/nonexistent")["pages"] == {}
+
+
+def test_overrides_parse_page_spec():
+    ov = _load_overrides_module()
+    assert ov.parse_page_spec("12,40-42, 12") == [12, 40, 41, 42]
+    for bad in ("12-", "a", "42-40"):
+        try:
+            ov.parse_page_spec(bad); assert False, bad
+        except ov.OverridesError:
+            pass
 
 
 def test_boundary_strips_trailing_hyphen():

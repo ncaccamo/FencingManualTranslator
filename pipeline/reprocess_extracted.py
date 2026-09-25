@@ -12,10 +12,12 @@ Usage:
 """
 import glob
 import json
+import re
 import os
 import sys
 
 import _pageio
+import _overrides
 
 # reuse the real logic, without running that module's main block
 import importlib.util
@@ -67,7 +69,11 @@ for folder in targets:
     _is_plate = [any(f.get("kind") == "plate" for f in (p.get("figures") or []))
                  or is_plate_leaf(p.get("body"))
                  for p in parsed]
-    nums = reconcile_page_numbers([p["page_raw"] for p in parsed], _is_plate)
+    nums = reconcile_page_numbers([p["page_raw"] for p in parsed], _is_plate,
+                                  [p.get("body") for p in parsed])
+    # the reviewer's per-book decisions always win (see _overrides.py)
+    nums = _overrides.apply_extraction(
+        parsed, nums, _overrides.load(os.path.basename(folder).replace("_translated", "")))
 
     canonical = []
     for raw, f, n in zip(raw_pages, parsed, nums):
@@ -84,6 +90,23 @@ for folder in targets:
         fh.write(_pageio.join_pages(canonical))
     with open(os.path.join(int_dir, "page_numbers.txt"), "w", encoding="utf-8") as fh:
         fh.write("\n".join(nums))
+    # Keep step 2's work: it cleans each caption and adds its translation
+    # (caption_en) in place. A figure whose caption is unchanged by this
+    # reprocess keeps both; without this every translated caption was lost.
+    _fp = os.path.join(int_dir, "figures.json")
+    _old = json.load(open(_fp, encoding="utf-8")) if os.path.exists(_fp) else {}
+    _words = lambda c: set(re.findall(r"\w+", (c or "").lower()))
+    for k, figs in figures_map.items():
+        olds = _old.get(k) or []
+        for j, f in enumerate(figs):
+            o = olds[j] if j < len(olds) else None
+            # step 2 only ever REMOVES from a caption (a description in
+            # parentheses, a library stamp) -- so the cleaned caption's words
+            # are a subset of the raw one's when it's the same caption
+            if o and o.get("kind") == f.get("kind") and _words(o.get("caption")) <= _words(f.get("caption")):
+                f["caption"] = o.get("caption", "")
+                if o.get("caption_en"):
+                    f["caption_en"] = o["caption_en"]
     with open(os.path.join(int_dir, "figures.json"), "w", encoding="utf-8") as fh:
         json.dump(figures_map, fh, ensure_ascii=False, indent=1)
 

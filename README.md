@@ -37,6 +37,11 @@ what it isn't sure of so you can check it against the facing scan.
 prompt also carries Italian and German term lists, but no Italian or German
 book has been run.
 
+**Review report:** each run also writes `<book> — Review Report.md` next to
+the PDFs, a short list of the pages worth checking (by pdf page number) and
+why, plus book-wide terminology choices to settle. Your decisions go in a
+per-book overrides file that every later run re-applies (manual III.5a–b).
+
 **What the output flags:** `[low-confidence translation — review]` or
 `[translation unavailable — original text follows]` on a page the model
 struggled with; `†` footnotes for kept French terms; `[margin note]` for
@@ -114,6 +119,7 @@ Optional files next to a source PDF in `books/`, matching its stem:
 
 | File | Effect |
 |---|---|
+| `<stem>.overrides.toml` | your review decisions — page numbers, headers, header wording, book terms, fixes to the English; re-applied on every run (manual III.5b) |
 | `<stem>.meta.json` | title / author / year / publisher / rights for the cover page (generate with `scripts/make_book_meta.py`) |
 | `<stem>.crop` | `left,top,right,bottom` fractions trimmed from each page before OCR |
 | `<stem>.rotate` | rotate sideways-scanned plates in the PDFs: `cw`, `ccw` or `180`, optionally prefixed `plates:` (default) or `all:` |
