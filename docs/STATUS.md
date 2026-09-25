@@ -205,9 +205,12 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
     `docling-layout-heron` (Apache-2.0, DocLayNet classes page_header /
     title / section_header; CPU, about 0.4 s/page) scored 23/25, including all
     of v1's failures. It needs no re-OCR, since it reads the existing scans.
-    Next: run it on all pages of the 6 books and hand-check where it
-    disagrees with current extracted.txt headers. Details:
-    review-notes/TITLE_PROMPT_TEST.md.
+    **Stage 1 landed (2026-09-25):** in the image (CPU torch 2.14.0 +
+    transformers 5.17.0, model pinned at rev 8f39ad3c), step 1 writes
+    `intermediate/layout.json`, `layout_scan.py` backfills, and the review
+    report flags running-head disagreements. Output isn't changed yet.
+    **Stage 2 (next):** let it decide running heads in reconcile_headers(),
+    after the flags have been reviewed.
     **Full-corpus run (1,673 pages):** combined with olmOCR's HEADER
     signal, per-book calibration and a disagreement flag, the detector
     disagreed with current output on 117 pages (6 in Gomard). Where checked on
@@ -227,6 +230,13 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
     longer uses the "extracted.txt newer than translation.txt → whole book"
     rule. It fingerprints each page's source (`translated_from.json`) and
     retranslates only pages whose body text changed, so no more `touch`.
+11b. **Jacob / LaMarche / Spinnewyn outputs are stale — deferred (2026-09-25).**
+    They predate this cycle's code: ~280 pages lack running heads, and none
+    of the page-number/header/title fixes have reached them. A reprocess
+    would change the body text of 258 pages (Jacob 150, LaMarche 62,
+    Spinnewyn 46), which step 2 would then retranslate (~60-75 min GPU).
+    Deferred until each book comes up for review, ideally after the layout
+    detector lands so one reprocess brings both.
 12. **Spinnewyn idx 56 / 100** (not under review): a plate leaf's real
     running head ("LE RASSEMBLEMENT", "LE LIEMENT") is demoted to body by
     `reconcile_headers()`'s half-title rule (header present, no body, not

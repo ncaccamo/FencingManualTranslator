@@ -1792,6 +1792,17 @@ try:
         else:
             print(f"✓ Extraction complete (all {total_pages} pages successful): {stem}\n")
 
+        # Page-layout detection (CPU) for the review report's running-head
+        # checks -- never allowed to fail the OCR run; layout_scan.py can
+        # fill it in later.
+        try:
+            import _layout
+            print("Layout detection (CPU)...")
+            _layout.scan_book(work_dir, ocr_pdf_path)
+        except Exception as e:
+            print(f"⚠ layout detection skipped ({type(e).__name__}: {e}) -- "
+                  f"run layout_scan.py {stem} later\n")
+
 finally:
     if vlm_proc is REMOTE_SERVER:
         print("[remote] leaving the remote VLM/OCR server as-is\n")

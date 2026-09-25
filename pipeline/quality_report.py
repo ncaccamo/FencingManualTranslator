@@ -20,6 +20,7 @@ import re
 import sys
 from collections import Counter, defaultdict
 
+import _layout
 import _overrides
 import _pageio
 
@@ -90,6 +91,61 @@ def _words(s: str) -> int:
     return len(re.findall(r"[^\W\d_]+", re.sub(r"</?i>", "", s)))
 
 
+def translation_issues(src: str, t: str) -> list:
+    """The per-page checks on a translation: [(level, kind, detail)].
+    `src` is the page's French body, `t` its translation.txt entry. Shared
+    by the review report and the translation model selection test
+    (evals/translation_model_test.py)."""
+    out = []
+    body = _body(t)
+    if t.lstrip().startswith("[low-confidence translation"):
+        out.append((CHECK, "translation", "flagged low-confidence by step 2's quality gate"))
+    if t.lstrip().startswith("[translation unavailable"):
+        out.append((CHECK, "translation", "no usable translation -- the French is shown instead"))
+    if t.lstrip().startswith("[oversized OCR page"):
+        out.append((CHECK, "ocr", "OCR ran away (repetition); only the start was translated"))
+    if META.search(body):
+        out.append((CHECK, "translation", f"model chatter in the text: "
+            f"{META.search(body).group(0)!r}"))
+    m = re.search(GARBLES, body, re.I)
+    if m:
+        out.append((CHECK, "wording", f"misspelling the model is known for: {m.group(0)!r}"))
+    for fr, wrong, rule in TERM_RULES:
+        if re.search(fr, src, re.I):
+            w = re.search(wrong, re.sub(r"<i>.*?</i>", "", body), re.I)
+            if w:
+                out.append((CHECK, "wording", f"{w.group(0)!r} against the glossary ({rule})"))
+    # leftover French: a whole paragraph the model didn't translate
+    for para in re.split(r"\n\s*\n", body):
+        if _words(para) >= 8 and still_french(para):
+            out.append((CHECK, "translation", "paragraph left (mostly) in French: "
+                f"{para.strip()[:60]!r}"))
+            break
+    # length: an omission or a runaway, on pages with enough text to judge
+    # whole page incl. the footnote block: the author's own footnotes
+    # move there, so body-only would read as an omission
+    # tables are left to the scan, images are placeholders: not text
+    sw = _words(re.sub(r"(?is)<table\b.*?(?:</table\s*>|\Z)|!\[[^\]]*\]\([^)]*\)", " ", src))
+    tw = _words(re.sub(r"(?m)^\[[^\]\n]*\]\s*$|^___FOOTNOTES___$|\[margin note\]", "", t))
+    if sw >= 40 and not t.lstrip().startswith("["):
+        r = tw / sw
+        if r < 0.7:
+            out.append((CHECK, "translation", f"English is {r:.0%} the length of the "
+                f"French ({tw} vs {sw} words) -- something may be missing"))
+        elif r > 1.8:
+            out.append((NOTE, "translation", f"English is {r:.0%} the length of the "
+                f"French ({tw} vs {sw} words) -- repetition or additions?"))
+    lab = re.match(r"\s*(?:planche|pl\.|fig\.?|figure)\s+([IVXLC\d]+)\b", src, re.I)
+    if lab and not t.lstrip().startswith("[") and not re.match(
+            r"\s*(?:<i>)?(?:plate|pl\.|fig\.?|figure)\s+" + lab.group(1) + r"\b", t, re.I):
+        out.append((CHECK, "translation", f"the page's label {lab.group(0).strip()!r} "
+            "is missing from the English"))
+    if "[margin note]" in t:
+        out.append((NOTE, "layout", "a paragraph was moved to the notes as a margin note "
+            "(heuristic) -- confirm it is one"))
+    return out
+
+
 def page_map(folder: str, n: int) -> dict:
     """scan page -> side-by-side pdf page, read off the built PDF (a page
     that overflows adds a '(cont.)' sheet, shifting everything after it)."""
@@ -136,51 +192,8 @@ def check_book(folder: str) -> list:
         body = _body(t)
         if "VLM Error" in e:
             add(s, CHECK, "ocr", "the OCR model failed on this page")
-        if t.lstrip().startswith("[low-confidence translation"):
-            add(s, CHECK, "translation", "flagged low-confidence by step 2's quality gate")
-        if t.lstrip().startswith("[translation unavailable"):
-            add(s, CHECK, "translation", "no usable translation -- the French is shown instead")
-        if t.lstrip().startswith("[oversized OCR page"):
-            add(s, CHECK, "ocr", "OCR ran away (repetition); only the start was translated")
-        if META.search(body):
-            add(s, CHECK, "translation", f"model chatter in the text: "
-                f"{META.search(body).group(0)!r}")
-        m = re.search(GARBLES, body, re.I)
-        if m:
-            add(s, CHECK, "wording", f"misspelling the model is known for: {m.group(0)!r}")
-        for fr, wrong, rule in TERM_RULES:
-            if re.search(fr, src, re.I):
-                w = re.search(wrong, re.sub(r"<i>.*?</i>", "", body), re.I)
-                if w:
-                    add(s, CHECK, "wording", f"{w.group(0)!r} against the glossary ({rule})")
-        # leftover French: a whole paragraph the model didn't translate
-        for para in re.split(r"\n\s*\n", body):
-            if _words(para) >= 8 and still_french(para):
-                add(s, CHECK, "translation", "paragraph left (mostly) in French: "
-                    f"{para.strip()[:60]!r}")
-                break
-        # length: an omission or a runaway, on pages with enough text to judge
-        # whole page incl. the footnote block: the author's own footnotes
-        # move there, so body-only would read as an omission
-        # tables are left to the scan, images are placeholders: not text
-        sw = _words(re.sub(r"(?is)<table\b.*?(?:</table\s*>|\Z)|!\[[^\]]*\]\([^)]*\)", " ", src))
-        tw = _words(re.sub(r"(?m)^\[[^\]\n]*\]\s*$|^___FOOTNOTES___$|\[margin note\]", "", t))
-        if sw >= 40 and not t.lstrip().startswith("["):
-            r = tw / sw
-            if r < 0.7:
-                add(s, CHECK, "translation", f"English is {r:.0%} the length of the "
-                    f"French ({tw} vs {sw} words) -- something may be missing")
-            elif r > 1.8:
-                add(s, NOTE, "translation", f"English is {r:.0%} the length of the "
-                    f"French ({tw} vs {sw} words) -- repetition or additions?")
-        lab = re.match(r"\s*(?:planche|pl\.|fig\.?|figure)\s+([IVXLC\d]+)\b", src, re.I)
-        if lab and not t.lstrip().startswith("[") and not re.match(
-                r"\s*(?:<i>)?(?:plate|pl\.|fig\.?|figure)\s+" + lab.group(1) + r"\b", t, re.I):
-            add(s, CHECK, "translation", f"the page's label {lab.group(0).strip()!r} "
-                "is missing from the English")
-        if "[margin note]" in t:
-            add(s, NOTE, "layout", "a paragraph was moved to the notes as a margin note "
-                "(heuristic) -- confirm it is one")
+        for level, kind, detail in translation_issues(src, t):
+            add(s, level, kind, detail)
         if i and src.strip() and len(src) > 80:
             prev = clean_vlm_extraction(ex[i - 1]) if ex[i - 1].strip() else ""
             norm = lambda x: re.sub(r"\W+", "", x.lower())[:300]
@@ -204,6 +217,28 @@ def check_book(folder: str) -> list:
         if len(seen) > 1:
             issues.append({"scan": 0, "level": "TERMS", "kind": name,
                            "detail": {k: sorted(set(v)) for k, v in seen.items()}})
+
+    # running heads vs. the layout detector (intermediate/layout.json)
+    lay = _layout.load(folder)
+    if lay and os.path.exists(f"{I}/raw_ocr.txt"):
+        raw = _pageio.split_pages(open(f"{I}/raw_ocr.txt", encoding="utf-8").read())
+        pages = [lay["pages"].get(str(i), {"boxes": []}) for i in range(len(ex))]
+        band = _layout.header_band(pages)
+        for i, e in enumerate(ex):
+            m = re.search(r"(?im)^[ \t]*HEADER[ \t]*:[ \t]*(.*)$", raw[i]) if i < len(raw) else None
+            v = (m.group(1).strip().strip("[]") if m else "").lower()
+            vlm_h = bool(v) and v not in ("none", "n/a", "-")
+            printed, unsure, why = _layout.running_head(pages[i], band, vlm_h)
+            h = (re.search(r"(?m)^HEADER: (.*)$", e) or [None, ""])[1].strip()
+            shown = bool(h) and h.lower() != "none"
+            if unsure:
+                add(i + 1, NOTE, "layout", "the layout detector and the OCR disagree on "
+                    "whether this page has a running head")
+            elif printed and not shown:
+                add(i + 1, CHECK, "layout", "the page prints a running head, but none is shown")
+            elif shown and not printed:
+                add(i + 1, CHECK, "layout", f"running head {h.replace(chr(9), ' / ')!r} is "
+                    "shown, but the page prints none (title page, plate, or opener?)")
 
     # page numbers: a shown folio must rise, and by no more than the sheets
     last = None

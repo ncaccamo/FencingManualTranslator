@@ -1601,6 +1601,40 @@ def test_overrides_parse_page_spec():
             pass
 
 
+def _layout_mod():
+    import importlib
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
+    return importlib.import_module("_layout")
+
+
+def test_layout_running_head_decisions():
+    # Box shapes from real pages (label, score, [x0, y0, x1, y1] fractions).
+    L = _layout_mod()
+    band = (0.087, 0.114, 0.031)                       # Gomard's running-head position
+    head = {"boxes": [["page_header", 0.91, [0.09, 0.090, 0.74, 0.100]],
+                      ["text", 0.98, [0.08, 0.12, 0.74, 0.90]]]}
+    assert L.running_head(head, band, vlm_header=True)[:2] == (True, False)
+    # Gomard scan 271: the detector merged the running head into the first
+    # paragraph box, which starts at the running-head position; olmOCR saw it.
+    merged = {"boxes": [["text", 0.98, [0.08, 0.092, 0.74, 0.302]]]}
+    assert L.running_head(merged, band, vlm_header=True)[:2] == (True, False)
+    # Gomard scan 349: a sideways plate caption -- tall and narrow, not a head
+    rotated = {"boxes": [["picture", 0.94, [0.12, 0.164, 0.86, 0.766]],
+                         ["page_header", 0.55, [0.89, 0.191, 0.92, 0.741]]]}
+    assert L.running_head(rotated, band, vlm_header=False)[:2] == (False, False)
+    # Gomard scan 39, INTRODUCTION: title only, text starts well below the band
+    opener = {"boxes": [["section_header", 0.85, [0.35, 0.21, 0.65, 0.23]],
+                        ["text", 0.98, [0.08, 0.35, 0.74, 0.90]]]}
+    assert L.running_head(opener, band, vlm_header=False)[:2] == (False, False)
+    # the OCR claims a head the geometry doesn't show -> unsure, flagged
+    assert L.running_head(opener, band, vlm_header=True)[:2] == (False, True)
+    # band from confident heads; too few -> None
+    pages = [head] * 12
+    b = L.header_band(pages)
+    assert b and b[0] < 0.095 < b[1]
+    assert L.header_band([head] * 3) is None
+
+
 def test_boundary_strips_trailing_hyphen():
     assert match_boundary_punctuation("the move was per-", "le mouvement fut par-") \
         == "the move was per"

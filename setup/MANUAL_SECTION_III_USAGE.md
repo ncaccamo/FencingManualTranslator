@@ -169,9 +169,16 @@ side-by-side PDF. What it checks:
 - **Notes:** things worth a glance but often fine. For example, a paragraph
   moved to the notes as a margin note, which is a heuristic and is sometimes wrong.
 
-Not covered yet: layout decisions (a running head on a title-only page, a
-title the OCR never transcribed). Those need the layout detector
-(`docs/STATUS.md` item 10).
+- **Layout:** a running head shown on a page that prints none (title page,
+  plate, chapter opener), or one missing from a page that prints one. This
+  comes from a page-layout detection model (`pipeline/_layout.py`, CPU only)
+  that step 1 runs on every page into `intermediate/layout.json`. For a book
+  OCR'd before it existed, run
+  `docker exec booktranslator-translator-1 python3 /app/layout_scan.py <stem>`
+  (about 0.5 s per page). Pages where the detector and the OCR disagree are
+  listed as notes.
+
+Not covered yet: a title the OCR never transcribed (Gomard pdf 316).
 
 The review loop: read the report → look at those pages → record decisions
 in the overrides file (III.5b) → `apply_overrides.py` and/or

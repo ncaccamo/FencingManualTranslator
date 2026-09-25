@@ -186,6 +186,21 @@ RUN python3 -m pip install --break-system-packages --no-cache-dir \
     ocrmypdf pdf2image pillow tqdm pymupdf requests \
     && rm -rf /root/.cache/pip
 
+# Page-layout detector (pipeline/_layout.py): tells a running head from a
+# title / first text line, which olmOCR-2 can't do reliably. CPU-only
+# PyTorch (no GPU needed or used), versions pinned to what was evaluated
+# on the full corpus (2026-09-25). The model is baked in at a pinned
+# revision so the pipeline never downloads anything at run time.
+RUN python3 -m pip install --break-system-packages --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu torch==2.14.0 \
+    && python3 -m pip install --break-system-packages --no-cache-dir \
+        transformers==5.17.0 huggingface_hub \
+    && python3 -c "from huggingface_hub import snapshot_download; \
+snapshot_download('docling-project/docling-layout-heron', \
+revision='8f39ad3c0b4c58e9c2d2c84a38465abf757272d8', \
+local_dir='/opt/layout/docling-layout-heron')" \
+    && rm -rf /root/.cache
+
 ENV HIP_VISIBLE_DEVICES=0
 ENV ROCR_VISIBLE_DEVICES=0
 # Fallback backend when backend.env leaves LLAMA_BACKEND unset. Must match

@@ -44,6 +44,28 @@ _DEFAULT_ORIG_RIGHTS = "The original work is in the public domain."
 _VENDOR_PREFIXES = ("allenai_", "bartowski_", "TheBloke_", "Qwen_")
 
 
+def _translation_models(book):
+    """Which model(s) translated this book, from step 2's per-page record
+    (intermediate/translated_from.json): "gemma4 (320 pages), Qwen2.5-… (12
+    pages)". The default key names the configured model file."""
+    import json
+    from collections import Counter
+    default = _model_label("TRANSLATION_MODEL_PATH") or "Qwen2.5-14B-Instruct-Q4_K_M"
+    p = f"/data/processed/{book}_translated/intermediate/translated_from.json"
+    try:
+        models = json.load(open(p, encoding="utf-8")).get("models") or []
+    except (OSError, ValueError):
+        models = []
+    if not models:
+        return default
+    label = lambda m: default if m in ("", "bt-translate") or m == os.environ.get(
+        "MODEL_NAME") else m
+    counts = Counter(label(m) for m in models).most_common()
+    if len(counts) == 1:
+        return counts[0][0]
+    return ", ".join(f"{m} ({n} pages)" for m, n in counts)
+
+
 def _model_label(env_var):
     """Basename of the model file, minus '.gguf' and a vendor prefix. The
     quantization tag is kept -- it's part of the provenance (Q6_K OCR,
@@ -141,8 +163,7 @@ def render(doc, stem, *, page_w, page_h, margin):
     block("OCR model: "
           + (_model_label("VLM_MODEL_PATH") or "olmOCR-2-7B-1025-Q6_K"),
           9, gap_after=3)
-    block("Translation model: "
-          + (_model_label("TRANSLATION_MODEL_PATH") or "Qwen2.5-14B-Instruct-Q4_K_M"),
+    block("Translation model: " + _translation_models(book),
           9, gap_after=3)
 
     ver = _pipeline_version()

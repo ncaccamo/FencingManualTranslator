@@ -1254,7 +1254,14 @@ def translate_with_llama(prompt: str, temperature: float = 0.3) -> str:
             if response.status_code == 200:
                 result = response.json()
                 if "choices" in result and len(result["choices"]) > 0:
-                    return result["choices"][0]["message"]["content"].strip()
+                    # A reasoning model (Qwen3.x, Gemma 4) run with thinking
+                    # left on puts its reasoning in a separate field (ignored
+                    # here) or inline as <think>...</think> -- never let that
+                    # reach a translation.
+                    text = result["choices"][0]["message"].get("content") or ""
+                    text = re.sub(r"(?is)<think>.*?</think>", "", text)
+                    text = re.sub(r"(?is)^.*?</think>", "", text)   # opening tag cut off
+                    return text.strip()
             
             if attempt < 2:
                 time.sleep(5)
@@ -1517,10 +1524,20 @@ def load_fingerprints(folder: str):
     return _json.load(open(p, encoding="utf-8"))["pages"] if os.path.exists(p) else None
 
 
-def save_fingerprints(folder: str, fps: list) -> None:
+def save_fingerprints(folder: str, fps: list, translated: list = None) -> None:
+    """Also records which translation model produced each page (`models`,
+    the name sent to the server -- a llama-swap key in remote mode). Pages
+    listed in `translated` (1-based) get the current model; the rest keep
+    what was recorded before. The cover page summarises it."""
     import json as _json
-    with open(f"{folder}/intermediate/translated_from.json", "w", encoding="utf-8") as fh:
-        _json.dump({"version": 1, "pages": fps}, fh, indent=0)
+    p = f"{folder}/intermediate/translated_from.json"
+    old = _json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    models = old.get("models") or [TRANSLATION_MODEL_NAME] * len(fps)
+    models = (models + [TRANSLATION_MODEL_NAME] * len(fps))[:len(fps)]
+    for k in (translated if translated is not None else range(1, len(fps) + 1)):
+        models[k - 1] = TRANSLATION_MODEL_NAME
+    with open(p, "w", encoding="utf-8") as fh:
+        _json.dump({"version": 1, "pages": fps, "models": models}, fh, indent=0)
 
 
 def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
@@ -1845,7 +1862,7 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
     fps = load_fingerprints(folder) or [page_fingerprint(p) for p in ex]
     for s_ in targets:
         fps[s_ - 1] = page_fingerprint(ex[s_ - 1])
-    save_fingerprints(folder, fps)
+    save_fingerprints(folder, fps, translated=targets)
     translate_figure_captions(folder)      # only captions not yet translated
     translate_headers(folder)              # only header strings not yet translated
     harmonize_titles_with_headers(folder)
@@ -1880,7 +1897,7 @@ try:
             if stored is None and n_tr == len(pages):
                 # translated before fingerprints existed: take the current
                 # source as the baseline (the translation is assumed to match it)
-                save_fingerprints(folder, cur_fp)
+                save_fingerprints(folder, cur_fp, translated=[])
                 print(f"⊘ {Path(folder).name}: recorded source fingerprints (baseline)\n")
                 continue
             if stored is not None and len(stored) == len(pages) == n_tr:
