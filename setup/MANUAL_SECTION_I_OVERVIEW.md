@@ -87,13 +87,16 @@ between books.
 ## I.4 — The pipeline
 
 Each book goes through four scripts in `pipeline/`, in order. All outputs
-land in `processed/<book>_translated/`.
+land in `processed/<book>_translated/` — the two finished PDFs (steps 3
+and 4) sit in that folder's root, and everything intermediate (steps 1
+and 2's outputs) lives in an `intermediate/` subfolder underneath it, so
+the root stays uncluttered.
 
 ### Step 1 — `1_ocr_and_extract_vlm.py`  (vision model, port 11435)
 
 Renders every page of the source PDF at 300 DPI, downscales to a fixed
 1288 px on the long edge, and sends each image to the vision model. Writes
-three files:
+three files into `intermediate/`:
 
 - **`raw_ocr.txt`** — the model's untouched responses, one per page,
   separated by `\n---\n`. Written *before* any parsing or cleanup, always.
@@ -109,15 +112,15 @@ three files:
   the line is a bracketed sheet ordinal like `[12]`. It never emits a
   number ≤ 0.
 
-It also copies the source PDF into the folder as `<book>_OCR.pdf` for the
-side-by-side step to draw from.
+It also copies the source PDF into `intermediate/` as `<book>_OCR.pdf` for
+the side-by-side step to draw from.
 
 ### Step 2 — `2_translate.py`  (translation model, port 11434)
 
-Reads `extracted.txt`, strips the structural labels, and translates each
-page's body with `translation_prompt.txt`. Writes **`translation.txt`**
-(pages separated by `\n---\n`, so it stays aligned with `extracted.txt`
-page-for-page).
+Reads `intermediate/extracted.txt`, strips the structural labels, and
+translates each page's body with `translation_prompt.txt`. Writes
+**`intermediate/translation.txt`** (pages separated by `\n---\n`, so it
+stays aligned with `extracted.txt` page-for-page).
 
 - Technical terms are preserved and wrapped in `<i>…</i>`; headings and
   captions are translated in full.

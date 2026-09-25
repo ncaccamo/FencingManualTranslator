@@ -242,7 +242,7 @@ sidecars are git-ignored, like the rest of the private corpus.
   "Figure N" in the English-only PDF when the page also has 40+ words of
   translated prose — the text wins, the vignette is dropped.
 
-## Sidecar files (all in `processed/<book>_translated/`)
+## Sidecar files (all in `processed/<book>_translated/intermediate/`)
 
 | File | Written by | Used by | Contents |
 |---|---|---|---|

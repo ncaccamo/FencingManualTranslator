@@ -59,14 +59,14 @@ Each step decides for itself which books to act on:
 | Step | Acts on a book when… | To force a re-run |
 |---|---|---|
 | 1 — OCR | `processed/<stem>_translated/` does **not** exist yet | `rm -rf processed/<stem>_translated/` (loses everything), or see III.5 to re-parse without re-OCR |
-| 2 — translate | `translation.txt` is missing or older than `extracted.txt` | `rm processed/<stem>_translated/translation.txt`, or `touch` its `extracted.txt` |
-| 3 — English-only PDF | `translation.txt` exists | just re-run it — it overwrites |
-| 4 — side-by-side PDF | `translation.txt` and `<stem>_OCR.pdf` exist | just re-run it — it overwrites |
+| 2 — translate | `intermediate/translation.txt` is missing or older than `intermediate/extracted.txt` | `rm processed/<stem>_translated/intermediate/translation.txt`, or `touch` its `intermediate/extracted.txt` |
+| 3 — English-only PDF | `intermediate/translation.txt` exists | just re-run it — it overwrites |
+| 4 — side-by-side PDF | `intermediate/translation.txt` and `intermediate/<stem>_OCR.pdf` exist | just re-run it — it overwrites |
 
 So the normal iteration loops are:
 
 - **Tune the translation** — edit `pipeline/translation_prompt.txt` or
-  the term rules in `pipeline/translation_prompt.txt`, `rm translation.txt`, re-run steps
+  the term rules in `pipeline/translation_prompt.txt`, `rm intermediate/translation.txt`, re-run steps
   2, 3, 4.
 - **Tune a PDF's layout** — edit `pipeline/3_…` or `pipeline/4_…`, re-run
   just that step. `pipeline/` is mounted read-only into the container at
@@ -96,13 +96,18 @@ Drop a sidecar file next to the PDF in `books/`, named with the same stem:
 
 ## III.4 — What lands in `processed/<stem>_translated/`
 
+Only the two finished PDFs sit in the book's own folder root. Everything
+else — the raw OCR, the parsed scaffold, the reconciled page numbers, the
+translation, and the verbatim OCR-source PDF step 4 draws its left column
+from — lives in an `intermediate/` subfolder, so the root stays clean.
+
 | File | From step | What it is |
 |---|---|---|
-| `<stem>_OCR.pdf` | 1 | Verbatim copy of the source, for step 4 to draw the left column from |
-| `raw_ocr.txt` | 1 | The vision model's untouched per-page responses. The recovery point — never deleted by any step |
-| `extracted.txt` | 1 | Canonical `PAGE_NUMBER / HEADER / BODY_TEXT` scaffold per page |
-| `page_numbers.txt` | 1 | One reconciled folio per line; `[n]` = inferred sheet ordinal, not a printed number |
-| `translation.txt` | 2 | English, one page per `\n---\n` block, aligned with `extracted.txt` |
+| `intermediate/<stem>_OCR.pdf` | 1 | Verbatim copy of the source, for step 4 to draw the left column from |
+| `intermediate/raw_ocr.txt` | 1 | The vision model's untouched per-page responses. The recovery point — never deleted by any step |
+| `intermediate/extracted.txt` | 1 | Canonical `PAGE_NUMBER / HEADER / BODY_TEXT` scaffold per page |
+| `intermediate/page_numbers.txt` | 1 | One reconciled folio per line; `[n]` = inferred sheet ordinal, not a printed number |
+| `intermediate/translation.txt` | 2 | English, one page per `\n---\n` block, aligned with `extracted.txt` |
 | `… — English Only (Portrait).pdf` | 3 | Reading copy |
 | `… — Side by Side (Landscape).pdf` | 4 | Comparison copy |
 
@@ -113,11 +118,12 @@ run `sudo chown -R "$(id -u):$(id -g)" processed/` once —
 
 ## III.5 — Re-parsing OCR without re-running the vision model
 
-`raw_ocr.txt` holds the model's raw output. The page-number reconciliation
-and the repetition-loop cleanup that produce `extracted.txt` and
-`page_numbers.txt` run *on that file*. If you improve that logic — or just
-want the latest cleanup applied to a book OCR'd before it existed — rebuild
-the two derived files without paying for OCR again:
+`intermediate/raw_ocr.txt` holds the model's raw output. The page-number
+reconciliation and the repetition-loop cleanup that produce
+`intermediate/extracted.txt` and `intermediate/page_numbers.txt` run *on
+that file*. If you improve that logic — or just want the latest cleanup
+applied to a book OCR'd before it existed — rebuild the two derived files
+without paying for OCR again:
 
 ```bash
 # every book that has a raw_ocr.txt:
@@ -140,8 +146,8 @@ second book added later doesn't disturb the first.
 
 To translate one book while leaving others untouched, use the
 missing/older rule from III.2 — e.g. `touch` the other books'
-`extracted.txt` files so step 2 sees their `translation.txt` as current
-and skips them.
+`intermediate/extracted.txt` files so step 2 sees their
+`intermediate/translation.txt` as current and skips them.
 
 ## III.7 — Long runs: watching progress
 
@@ -228,7 +234,7 @@ docker exec booktranslator-translator-1 tail -50 /tmp/vlm_server.log
 ### `[VLM Error: …]` on some pages in `extracted.txt`
 
 ```bash
-grep -n "VLM Error" processed/<stem>_translated/extracted.txt
+grep -n "VLM Error" processed/<stem>_translated/intermediate/extracted.txt
 ```
 
 Step 1 already retries a failed page up to 3 times, restarting the server
@@ -242,9 +248,10 @@ the page count stays correct.
 
 Step 2 never drops a page. These markers mean 3 attempts failed the
 wrong-script / too-much-non-English / too-short checks. Usually the OCR
-for that page is garbled — look at the same page in `extracted.txt`. If
-OCR is clean and it's a translation miss, adjust `translation_prompt.txt`,
-`rm translation.txt`, re-run step 2.
+for that page is garbled — look at the same page in
+`intermediate/extracted.txt`. If OCR is clean and it's a translation
+miss, adjust `translation_prompt.txt`, `rm intermediate/translation.txt`,
+re-run step 2.
 
 ### A page reads `[Empty page]`
 
@@ -253,8 +260,8 @@ was just a stray mark or a bare page number — step 2 detects near-blank
 input and doesn't call the model (which would otherwise reply *"Please
 provide the text you would like to translate"* and leak that into the
 output). If you see `[Empty page]` where there was real text, the OCR for
-that page failed — check `extracted.txt`, and re-OCR with a `.crop` if a
-scanner border is the cause.
+that page failed — check `intermediate/extracted.txt`, and re-OCR with a
+`.crop` if a scanner border is the cause.
 
 The full catalogue of model failure modes and why each guard exists:
 [`docs/model-quirks.md`](../docs/model-quirks.md).
@@ -265,8 +272,8 @@ The `\n---\n` page separator is content-fragile — a stray Markdown `---`
 from the translation model once split one page into two, shifting every
 later page against its source. Step 2 now rewrites `^---+$` → `* * *` and
 `translation_prompt.txt` forbids Markdown, so this should be fixed; if you
-see it, check `translation.txt` for a lone `---` line and delete it, then
-re-run steps 3-4.
+see it, check `intermediate/translation.txt` for a lone `---` line and
+delete it, then re-run steps 3-4.
 
 ### Translation step never starts / server timeout
 
@@ -276,8 +283,8 @@ docker compose restart && sleep 20
 docker exec booktranslator-translator-1 python3 /app/2_translate.py
 ```
 
-Step 2 resumes — it skips books whose `translation.txt` is already current
-and picks up where it stopped.
+Step 2 resumes — it skips books whose `intermediate/translation.txt` is
+already current and picks up where it stopped.
 
 ### Container won't start
 

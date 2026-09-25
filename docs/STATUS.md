@@ -5,7 +5,7 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 
 ---
 
-## Current state (2026-08-27)
+## Current state (2026-09-25)
 
 - **Runs end-to-end.** Five full books through 1→2→3→4:
   `Joseph-Renaud_Lescrime` (109 pp), `Spinnewyn` (178 pp),
@@ -41,6 +41,39 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
   See `docs/remote-gpu.md`.
 - **Container:** comes up idle (no auto-started servers); the pipeline
   owns server lifecycle. Runs as the host UID.
+- **`processed/<book>_translated/` layout (2026-09-20):** only the two
+  finished PDFs sit in a book's own folder root now; everything
+  intermediate (`raw_ocr.txt`, `extracted.txt`, `page_numbers.txt`,
+  `translation.txt`, `figures.json`, `headers.json`, the copied
+  `<stem>_OCR.pdf`) lives in an `intermediate/` subfolder underneath.
+  Every pipeline script, `reprocess_extracted.py`, `evals/freeze.py` /
+  `check.py` / `metrics.py`, and `scripts/rename_book.py` already know
+  about this — `evals/baselines/<stem>/` (the frozen, committed
+  snapshots) deliberately stays flat, no `intermediate/` subfolder, since
+  that's a separate, single-purpose archive, not a live book folder.
+- **Regression net (`evals/test_rules.py`):** grew from a handful of
+  cases to **118 frozen input→output tests** for the deterministic
+  helpers in both pipeline scripts, one per bug ever fixed. `python3
+  evals/test_rules.py` (no pytest needed) — run it after touching either
+  script; a failure means a fix broke an earlier, already-confirmed
+  behaviour on a *different* book. This is the actual mechanism behind
+  the CLAUDE.md regression-caution note below.
+- **Batch-2 review cycle (2026-09, ongoing):** an intensive multi-pass
+  review of `reconcile_headers()` / `reconcile_page_numbers()` /
+  `strip_leaked_headmatter()` / header-and-caption translation
+  (`match_case()`, `enforce_kept_terms()`) against real problem pages in
+  3 books under active review (Kirchhoffer, Gomard 1845, Prévost-Jollivet
+  1891) — 7 passes so far, each landing as its own commit
+  (`git log --grep "review batch-2"`). Every fix in this cycle follows
+  the same discipline: reproduce against the real page (raw OCR text +
+  rendered PDF, never assumption), add a narrow evidence-based fix with
+  its own regression test, re-verify against real data, then reprocess +
+  retranslate the affected pages only (never a needless full-book GPU
+  pass) and rebuild the PDFs. `docs/model-quirks.md` has the full
+  technical writeup of every failure mode found this way; the operator's
+  own `review-notes/` (gitignored) tracks the live per-book checklist and
+  its resolved history. This is genuinely still finding new, narrow edge
+  cases each pass — treat it as ongoing, not close to done.
 
 ## Open items (roughly prioritized)
 
@@ -199,15 +232,26 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
   `LD_LIBRARY_PATH`.** Any new `Popen` starting a llama-server needs the
   `_llama_server_env()` handling already in `1_`/`2_` (restores
   `/usr/local/lib/llama-<backend>/`).
-- **Raw intermediates are always kept** (`raw_ocr.txt`, `extracted.txt`,
-  `translation.txt`) so you can iterate on a prompt without re-running the
-  previous stage. `pipeline/reprocess_extracted.py` re-applies the
-  parse/reconcile logic to a saved `raw_ocr.txt` without re-OCR.
+- **Raw intermediates are always kept** (`intermediate/raw_ocr.txt`,
+  `intermediate/extracted.txt`, `intermediate/translation.txt`) so you
+  can iterate on a prompt without re-running the previous stage.
+  `pipeline/reprocess_extracted.py` re-applies the parse/reconcile logic
+  to a saved `raw_ocr.txt` without re-OCR.
 - **olmOCR-2 fabricates page numbers** from stray marks (engraving plate
   numbers, stamps) and normalizes roman numerals.
   `reconcile_page_numbers()` only trusts a folio corroborated by ≥2
   consecutive pages; everything else is a bracketed sheet ordinal `[n]`.
-  Never emits ≤ 0.
+  Never emits ≤ 0. **Known gap, not fixed (2026-09-20):** two adjacent
+  pages that each misread the same digit position the same way (e.g. a
+  9→0 confusion on both) look mutually self-consistent to both the
+  direct-neighbour check and the monotonic-chain check — the "rises by
+  exactly one across one sheet" signal that normally means "these two
+  corroborate each other" can't tell a shared systematic misread from a
+  genuine correct pair without consulting a wider anchor the local check
+  doesn't see. One confirmed instance (Gomard) was patched by hand rather
+  than fixed in the algorithm — a real fix needs a second example to
+  design against without risking the most heavily-tested function in
+  step 1. Full writeup: `docs/model-quirks.md` §1.2.
 - **olmOCR-2 falls into repetition loops** on some table-of-contents
   (dot-leaders) and ornament (`* * *`) pages — thousands of tokens of one
   pattern, which then overflows the translation model's context. Mitigated
@@ -241,7 +285,9 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 - `docs/STATUS.md` (this) — current state, open items, decisions.
 - `CLAUDE.md` — AI-agent orientation + hard invariants.
 - `setup/MANUAL_SECTION_I/II/III` — operator manual: overview / host
-  setup / day-to-day operation. All three current as of 2026-08-27.
+  setup / day-to-day operation. Sections I and III updated 2026-09-25 for
+  the `intermediate/` subfolder reorg; Section II still current as of
+  2026-08-27.
 - `docs/model-quirks.md` — field guide to every OCR / translation model
   failure mode + the prompt/code mitigation. The "why" behind
   `vlm_ocr_prompt.txt` / `translation_prompt.txt` and the `2_translate.py`

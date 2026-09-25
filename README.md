@@ -13,12 +13,14 @@ Tuned for an AMD RX 9070 XT (RDNA4, 16 GB) + Ryzen 7 5700X3D on Ubuntu
 ## Pipeline
 
 Each book runs through four scripts in `pipeline/`, writing to
-`processed/<book>_translated/`:
+`processed/<book>_translated/`. The two finished PDFs land in that folder's
+root; everything else (raw OCR, the parsed scaffold, page numbers, the
+translation) lives in an `intermediate/` subfolder so the root stays clean:
 
 | Step | Script | Does | Output |
 |---|---|---|---|
-| 1 | `1_ocr_and_extract_vlm.py` | page image → structured text (olmOCR-2-7B on :11435) | `raw_ocr.txt`, `extracted.txt`, `page_numbers.txt` |
-| 2 | `2_translate.py` | extracted text → English (Qwen2.5-14B-Instruct on :11434) | `translation.txt` |
+| 1 | `1_ocr_and_extract_vlm.py` | page image → structured text (olmOCR-2-7B on :11435) | `intermediate/raw_ocr.txt`, `intermediate/extracted.txt`, `intermediate/page_numbers.txt` |
+| 2 | `2_translate.py` | extracted text → English (Qwen2.5-14B-Instruct on :11434) | `intermediate/translation.txt` |
 | 3 | `3_english_only_pdf.py` | flowing English reading copy, figures inline | `… — English Only (Portrait).pdf` |
 | 4 | `4_side_by_side_pdf.py` | scan left / translation right, paragraph-aligned | `… — Side by Side (Landscape).pdf` |
 

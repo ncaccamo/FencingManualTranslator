@@ -21,7 +21,7 @@ signed off. The harness is that net.
 | tool | what |
 |---|---|
 | `evals/test_rules.py` | frozen input→output cases for the deterministic helpers (`apply_always_translate`, `match_case`, `reconcile_page_numbers`, `parse_figures_block`, `enforce_kept_terms`, …). One per bug ever fixed. Run with or without pytest. **Must stay green.** |
-| `evals/freeze.py <stem>` | snapshot a book's accepted `translation.txt` / `extracted.txt` / `figures.json` / `headers.json` / `page_numbers.txt` into `evals/baselines/<stem>/` + a `MANIFEST.json` (git commit, timestamp). |
+| `evals/freeze.py <stem>` | snapshot a book's accepted `translation.txt` / `extracted.txt` / `figures.json` / `headers.json` / `page_numbers.txt` (read from `processed/<stem>_translated/intermediate/`) into `evals/baselines/<stem>/` + a `MANIFEST.json` (git commit, timestamp). The baseline copy itself stays flat, no `intermediate/` subfolder — only the live `processed/` side has one. |
 | `evals/check.py [stem] [--quiet]` | diff current pipeline output vs every baseline — pages changed (with unified diff), folio labels changed, figure rows changed, headers changed — plus a baseline→current **metrics** table. Exit ≠ 0 on any change. Writes `evals/reports/<ts>.md`. |
 | `evals/metrics.py` | per-book health counts (French-residue pages, all-caps pages, untrusted folios, figure rows, italic spans, footnote markers). No model calls. |
 | `evals/_rules.py` | loads the pure helpers out of the two pipeline scripts without running their `main` (they aren't importable). Breaks loudly if those files are restructured. |
@@ -118,11 +118,12 @@ docker exec -e TRANSLATION_MODEL_PATH=/models/<new>.gguf \
   booktranslator-translator-1 python3 /app/2_translate.py     # then steps 3-4
 ```
 
-Save the incumbent's `translation.txt` / `figures.json` / `headers.json`
-as `*.7b` first; `touch extracted.txt` for the book(s) you want
-re-translated (step 2 skips up-to-date books). Compare with `check.py`
-metrics + a manual read of the known-hard pages. Make it the default only
-by editing `docker-compose.yml`.
+Save the incumbent's `intermediate/translation.txt` /
+`intermediate/figures.json` / `intermediate/headers.json` as `*.7b` first;
+`touch intermediate/extracted.txt` for the book(s) you want re-translated
+(step 2 skips up-to-date books). Compare with `check.py` metrics + a
+manual read of the known-hard pages. Make it the default only by editing
+`docker-compose.yml`.
 
 **Observed (14B Q4_K_M vs 7B Q6_K, one book):** no speed penalty;
 fewer quality-gate failures; markedly better figure captions and rule-2
