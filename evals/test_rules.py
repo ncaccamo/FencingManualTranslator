@@ -1556,6 +1556,13 @@ def test_caps_line_split_word_and_tac_au_tac():
     assert fix_known_garbles("RIPostes AFTER THE PARRIES OF THE HIGH LINES.") \
         == "RIPOSTES AFTER THE PARRIES OF THE HIGH LINES."
     assert fix_known_garbles("RIPPOSTES AFTER THE PARRIES") == "RIPOSTES AFTER THE PARRIES"
+    # the full run: back to capitals at the end (scan 244), and "at the"
+    # (scans 242, 246)
+    assert fix_known_garbles("RIPostES <i>TAC-AU-TAC</i>.") == "RIPOSTES <i>TAC-AU-TAC</i>."
+    assert fix_known_garbles("RIPOSTES AT THE <i>TAC-AU-TAC</i>.") == "RIPOSTES <i>TAC-AU-TAC</i>."
+    assert fix_known_garbles("the speed of the <i>tac-au-tac</i>") == "the speed of the <i>tac-au-tac</i>"
+    assert fix_known_garbles("je ne parle pas du tac au tac qui est foudroyant") \
+        == "je ne parle pas du tac au tac qui est foudroyant"
     # ordinary prose is left alone (McDonald-style names, sentence case)
     assert fix_known_garbles("He met McDonald at the salle.") == "He met McDonald at the salle."
     src = "RIPOSTES DU TAC AU TAC."
@@ -1592,6 +1599,58 @@ def test_margin_notes_detect_and_copy_check():
     assert M._is_copy("Il reconnaît trois gardes principales.", "Il reconnaît trois gardes principales.")
     assert not M._is_copy("Giganti a fait faire un grand pas à l'escrime, et il mérite que son "
                           "nom soit placé à côté de ceux d'Agrippa.", "Progrès dus à Giganti.")
+    # a chapter title shares all its few words with a longer note on the
+    # page but is not a copy of it (Gomard scans 156 / 236 -- one-sided
+    # overlap deleted 14 titles)
+    assert not M._is_copy("DE LA RIPOSTE.", "Valeur de la riposte.")
+    assert not M._is_copy("DU COUP ET DE LA BOTTE.",
+                          "Pour définir une attaque, il faut nommer le coup et la botte.")
+
+
+def test_margin_notes_duplicate_year_box_and_tie_break():
+    # Gomard scans 37/38/60/72 (bibliography): the detector also boxed a
+    # note's year line on its own -- "1778." inside "1778. Nicolas Demeuse.",
+    # "1786." just above "1786. Encyclopédie méthodique." -- so the year came
+    # out as a second note. And on scan 37 "1801. Bertrand." sits by the
+    # line "trand, maître d'armes. Paris, an IX", whose words tie with the
+    # page's first entry ("maître en fait d'armes. Londres"): the tie goes to
+    # the entry at/after the previous note's, not the first on the page.
+    import importlib
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
+    M = importlib.import_module("_margins")
+    notes = [{"box": [0.773, 0.232, 0.929, 0.255], "text": "1778. Nicolas Demeuse."},
+             {"box": [0.829, 0.232, 0.876, 0.242], "text": "1778."},
+             {"box": [0.828, 0.268, 0.875, 0.279], "text": "1786."},
+             {"box": [0.765, 0.278, 0.939, 0.306], "text": "1786. Encyclopédie méthodique."},
+             {"box": [0.13, 0.337, 0.176, 0.347], "text": "1841."},
+             {"box": [0.08, 0.337, 0.222, 0.361], "text": "1841. Freidrich Köthe."},
+             {"box": [0.108, 0.404, 0.196, 0.429], "text": "1841. Lafaugère."}]
+    assert [n["text"] for n in M._dedupe(notes)] == [
+        "1778. Nicolas Demeuse.", "1786. Encyclopédie méthodique.",
+        "1841. Freidrich Köthe.", "1841. Lafaugère."]
+
+    class Page:                                   # just what anchor() reads
+        rect = type("R", (), {"width": 100.0, "height": 100.0})()
+        def get_text(self, kind):
+            return [(x, 31.0, x + 8, 33.0, w) for x, w in
+                    ((10, "trand,"), (20, "maître"), (30, "d’armes."), (40, "Paris,"), (50, "an"))]
+    paras = ["royale de Paris et maître en fait d'armes. Londres.",
+             "La théorie pratique de l'Escrime pour la pointe seule.",
+             "Encyclopédie méthodique. Paris, 1786.",
+             "L'escrime appliquée à l'art militaire, par le citoyen Bertrand, "
+             "maître d'armes. Paris, an ix."]
+    box = [0.81, 0.31, 0.89, 0.33]
+    assert M.anchor(Page(), {"boxes": []}, box, paras)[0] == 0          # no earlier note
+    assert M.anchor(Page(), {"boxes": []}, box, paras, after=2)[0] == 3
+    # sentence position: the same answer whatever order a set iterates in
+    import subprocess
+    code = ("import sys; sys.path.insert(0, %r); import _margins as M; "
+            "print(M._position('Voici la garde du maître. Puis les lames se croisent.', "
+            "['garde', 'lames']))" % str(Path(M.__file__).parent))
+    outs = {subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                           env={**__import__("os").environ, "PYTHONHASHSEED": str(s)}).stdout
+            for s in range(6)}
+    assert len(outs) == 1, outs
 
 
 def test_margin_note_renders_as_note_line():

@@ -132,11 +132,14 @@ def _words(t: str) -> list:
     return [w for w in re.findall(r"[^\W\d_]{3,}", (t or "").translate(_LIG).lower())]
 
 
-def anchor(page_pdf, page_layout: dict, box: list, paras: list):
+def anchor(page_pdf, page_layout: dict, box: list, paras: list, after: int = 0):
     """(paragraph index, char position in it or None) for this note, or None.
 
     1. The main-column words printed at the note's top line (scan text
-       layer): the paragraph sharing most of them.
+       layer): the paragraph sharing most of them. On a tie, the first one
+       at or after paragraph `after` (the previous note's) -- notes and
+       paragraphs both run down the page (Gomard scan 37: "maître d'armes.
+       Paris" is in two bibliography entries; the note is by the second).
     2. Fallback: the detector's main-column text boxes, top to bottom; the
        box level with the note maps proportionally onto the paragraphs."""
     if not paras:
@@ -150,8 +153,10 @@ def anchor(page_pdf, page_layout: dict, box: list, paras: list):
     probe = set(line_words)
     if len(probe) >= 2:
         scores = [len(probe & set(_words(p))) for p in paras]
-        best = max(range(len(paras)), key=lambda i: scores[i])
-        if scores[best] >= max(2, len(probe) // 2):
+        top = max(scores)
+        tied = [i for i in range(len(paras)) if scores[i] == top]
+        best = next((i for i in tied if i >= after), tied[0])
+        if top >= max(2, len(probe) // 2):
             return best, _position(paras[best], line_words)
     col = [b[2] for b in page_layout.get("boxes", [])
            if b[0] in ("text", "list_item") and b[1] >= 0.5 and b[2][2] - b[2][0] >= 0.35]
@@ -169,7 +174,9 @@ def _position(para: str, line_words: list):
     sentence containing that line (a word of it that occurs once in the
     paragraph), or None if it's the paragraph's first sentence anyway."""
     low = para.translate(_LIG).lower()
-    for w in sorted(set(line_words), key=len, reverse=True):
+    # longest first, then alphabetical: a set's order changes from run to
+    # run, so ties must not depend on it
+    for w in sorted(set(line_words), key=lambda w: (-len(w), w)):
         hits = [m.start() for m in re.finditer(r"\b" + re.escape(w) + r"\b", low)]
         if len(hits) == 1:
             cut = max((m.end() for m in re.finditer(r"[.!?;:](?:[»”)\]]*)\s+", para[:hits[0]])),
@@ -179,11 +186,44 @@ def _position(para: str, line_words: list):
 
 
 def _is_copy(para: str, note: str) -> bool:
-    """A body paragraph that is just the OCR model's pasted copy of a note."""
+    """A body paragraph that is just the OCR model's pasted copy of a note.
+    The overlap must cover most of the words on BOTH sides: a short
+    chapter title shares all its few words with a longer note ("DE LA
+    RIPOSTE." / "Valeur de la riposte.", Gomard scan 236) without being a
+    copy of it -- one-sided overlap deleted ~20 of Gomard's chapter titles."""
     p, n = set(_words(para)), set(_words(note))
     if not p or not n or len(para.split()) > max(25, 2 * len(note.split())):
         return False
-    return len(p & n) >= 0.7 * len(p)
+    return len(p & n) >= 0.7 * max(len(p), len(n))
+
+
+def _area(b):
+    return max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+
+
+def _dedupe(notes: list) -> list:
+    """The detector sometimes also boxes a note's first line on its own
+    (Gomard's bibliography: "1778." as well as "1778. Nicolas Demeuse.").
+    Drop a note that lies mostly inside a bigger note's box, or whose whole
+    text starts a longer note printed at about the same height."""
+    def covered(a, b):
+        ix = min(a[2], b[2]) - max(a[0], b[0])
+        iy = min(a[3], b[3]) - max(a[1], b[1])
+        return ix > 0 and iy > 0 and ix * iy >= 0.6 * _area(a)
+
+    def key(t):
+        return re.sub(r"[\W_]+", " ", t).strip().lower()
+
+    out = []
+    for a in notes:
+        ka = key(a["text"])
+        if not any(b is not a and (
+                (_area(a["box"]) < _area(b["box"]) and covered(a["box"], b["box"]))
+                or (len(ka) < len(key(b["text"])) and key(b["text"]).startswith(ka)
+                    and abs(a["box"][1] - b["box"][1]) < 0.02))
+                for b in notes):
+            out.append(a)
+    return out
 
 
 def insert_markers(body: str, notes: list, page_pdf, page_layout: dict) -> tuple:
@@ -193,16 +233,18 @@ def insert_markers(body: str, notes: list, page_pdf, page_layout: dict) -> tuple
     # a year label ("1818.", Gomard's bibliography) is kept
     notes = [n for n in notes if (n.get("text") or "").strip()
              and not re.fullmatch(r"\W*\d{1,3}\W*", n["text"])]
+    notes = _dedupe(sorted(notes, key=lambda n: n["box"][1]))
     if not notes:
         return body, 0
     paras = [p for p in re.split(r"\n\s*\n", body.strip()) if p.strip()]
     paras = [p for p in paras if not any(_is_copy(p, n["text"]) for n in notes)]
     at = {}                                   # (para, char pos) -> [markers]
-    lost = 0
+    lost = prev = 0
     for n in notes:
-        hit = anchor(page_pdf, page_layout, n["box"], paras) if paras else None
+        hit = anchor(page_pdf, page_layout, n["box"], paras, prev) if paras else None
         if hit is None:
             hit, lost = (0, None), lost + 1
+        prev = hit[0]
         at.setdefault(hit, []).append(f"⟦MARGIN: {n['text']}⟧")
     out = []
     for i, p in enumerate(paras or [""]):

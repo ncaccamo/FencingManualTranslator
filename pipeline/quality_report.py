@@ -80,7 +80,7 @@ CONSISTENCY = [
     ("botte (de quarte …)", r"\bbottes?\s+de\s+\w+",
      r"\b(hits?|thrusts?|lunges?|finish(?:es)?)\s+(?:of|in|to)\s+(?:prime|seconde|tierce|quarte|quinte|sixte|septime|octave)\b"),
 ]
-GARBLES = r"\b(?:thusts?|throughs|rapises?|rompers?|rippostes?|(?-i:[A-Z]{2,}[a-z]{2,}))\b"
+GARBLES = r"\b(?:thusts?|throughs|rapises?|rompers?|rippostes?|(?-i:[A-Z]{2,}[a-z]{2,}[A-Z]*))\b"
 META = re.compile(r"(?i)\b(?:here is the translation|translated text:|as an ai\b|"
                   r"i cannot translate|please provide the text|i'm sorry)")
 

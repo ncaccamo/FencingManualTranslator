@@ -398,8 +398,14 @@ def fix_known_garbles(text: str, src: str = "") -> str:
         return w.upper() if g.isupper() else w.capitalize() if g[:1].isupper() else w
     text = re.sub(r"\bthusts?\b", lambda m: _case(m, "thrust"), text, flags=re.I)
     text = re.sub(r"\bthroughs\b", lambda m: _case(m, "thrust"), text, flags=re.I)
-    # "the du tac-au-tac riposte": the French article left in front
-    text = re.sub(r"\bdu\s+((?:<i>)?tac[- ]au[- ]tac)", r"\1", text, flags=re.I)
+    # "the du tac-au-tac riposte": the French article left in front. Only
+    # after an English article -- French kept in a translation ("je ne
+    # parle pas du tac au tac", LaMarche scan 128) must stay as it is
+    text = re.sub(r"\b(the|a|an)\s+du\s+((?:<i>)?tac[- ]au[- ]tac)", r"\1 \2", text, flags=re.I)
+    # "RIPOSTES AT THE <i>TAC-AU-TAC</i>." (Gomard scans 242, 246): the
+    # idiom read as a place. Only "at the" -- "of the" can be a real noun
+    # use ("the speed of the tac-au-tac")
+    text = re.sub(r"\bat\s+the\s+((?:<i>)?tac[- ]au[- ]tac)", r"\1", text, flags=re.I)
     text = re.sub(r"\bripposte(s?)\b", lambda m: _case(m, "riposte") + m.group(1).lower()
                   if not m.group(0).isupper() else "RIPOSTE" + m.group(1).upper(), text, flags=re.I)
     # A capitals line with one word the model split while spelling it
@@ -409,7 +415,8 @@ def fix_known_garbles(text: str, src: str = "") -> str:
     def _caps_line(line):
         plain = re.sub(r"</?i>", "", line)
         words = re.findall(r"[^\W\d_]+", plain)
-        odd = [w for w in words if re.fullmatch(r"[A-Z]{2,}[a-z]+", w)]
+        # "RIPostes" (scan 239) and "RIPostES" (scan 244)
+        odd = [w for w in words if re.fullmatch(r"[A-Z]{2,}[a-z]+[A-Z]*", w)]
         rest = [w for w in words if w not in odd and len(w) > 1]
         if odd and rest and all(w.isupper() for w in rest):
             for w in odd:
@@ -883,6 +890,10 @@ def retranslate_stray_french_headings(text: str) -> str:
         en = re.sub(r"(?m)^\s*#{1,6}\s+", "", en)
         en = re.sub(r"</?i>", "", en).splitlines()[0].strip() if en else ""
         en = apply_always_translate(en)
+        # this second answer skips the page's repairs -- run the known-
+        # garble ones ("RIPPOSTES TAC-AU-TAC.", Gomard scan 242: the kept
+        # term's "AU" made the heading look French and sent it back here)
+        en = fix_known_garbles(en, s)
         # For the single-word case the old "strictly less French" gate is
         # blind (0 < 0 is never true) -- accept a genuinely different,
         # non-French result instead of requiring the stop-word count to
@@ -1197,6 +1208,7 @@ def start_translation_server():
     return None
 
 LAST_MODEL = ""   # model file of the last reply (set by translate_with_llama)
+MODEL_CALLS = 0   # replies so far -- tells a page that used the model from one skipped as blank
 
 
 def translate_with_llama(prompt: str, temperature: float = 0.3) -> str:
@@ -1228,7 +1240,8 @@ def translate_with_llama(prompt: str, temperature: float = 0.3) -> str:
                 if "choices" in result and len(result["choices"]) > 0:
                     # the model file the server actually ran (llama-server
                     # reports its path) -- what the cover page credits
-                    global LAST_MODEL
+                    global LAST_MODEL, MODEL_CALLS
+                    MODEL_CALLS += 1
                     m = str(result.get("model") or "")
                     LAST_MODEL = re.sub(r"\.gguf$", "", re.split(r"[\\/]", m)[-1]) or LAST_MODEL
                     # A reasoning model (Qwen3.x, Gemma 4) run with thinking
@@ -1963,8 +1976,11 @@ try:
             _st = {"fn_seen": set(), "cat3_seen": set(), "fn_state": {}}
 
         for i in range(len(translated_pages) + 1, len(pages) + 1):
+            calls = MODEL_CALLS
             translated_pages.append(translate_page(pages[i - 1], i, len(pages), _st))
-            page_models.append(LAST_MODEL or TRANSLATION_MODEL_NAME)
+            # "-": no model reply (blank / marker page) -- the cover skips it
+            page_models.append((LAST_MODEL or TRANSLATION_MODEL_NAME)
+                               if MODEL_CALLS != calls else "-")
             save_partial(folder, cur_fp, translated_pages, page_models, _st)
 
         with open(dst, "w", encoding="utf-8") as f:

@@ -158,7 +158,11 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    layout problems, not a verified output. When it resumes, consider
    decoupling the English-only renderer (`3_`) from code shared with
    side-by-side (`4_` / `_render.py`) so fixes to one stop regressing the
-   other; not scoped yet. Earlier work: figure packing — `section_label(compact=True)` on
+   other; not scoped yet. Content difference to handle then: book titles
+   in bibliographies (Gomard scans 36-38) are translated, which suits
+   side-by-side (the original title is on the facing scan); with no scan
+   shown, English-only should keep titles in the original language
+   (operator, 2026-09-26). Earlier work: figure packing — `section_label(compact=True)` on
    figure-only pages (2026-09-01) drops the label chrome so a run of
    small/landscape plates packs two to a sheet when they genuinely fit.
    Portrait plates hit the `FIGURE_MAX_H` (82% column) cap and still get
@@ -276,8 +280,13 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
     page still missing one; the PDFs draw each note as a grey italic line with
     a side bar. Gomard: 384 notes on 186 pages (the OCR model had kept ~25);
     16/16 found on a 10-page scan check, all anchored. Other books: none
-    (Jacob: 1 doubtful). **Pending:** reprocess + retranslate Gomard's 186
-    pages -- waits for the translation-model decision.
+    (Jacob: 1 doubtful). **Gomard done (2026-09-26):** full Qwen3.8 run with
+    the notes; 373 notes after dropping 11 duplicate year boxes (bibliography,
+    scans 37/38/60/72), all 373 kept through translation. Placement fixes from
+    that run: duplicate boxes, in-order tie-break, run-to-run determinism, and
+    the pasted-copy check now two-sided (one-sided overlap had deleted 14
+    chapter titles). Next: a review-report check for a body title the raw OCR
+    had but the translation lacks -- only the pass-8 checklist caught it.
 
 ## Not yet tested
 
@@ -297,9 +306,6 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
   it renders the whole book in plain top-to-bottom flow instead of a
   jitter of aligned / bailed / near-miss pages. Tune with the env var;
   watch the "text layer usable on N/M pages" print.
-- Books with printed marginalia — olmOCR-2 silently drops the side-notes.
-  Acceptable for now (main text stays clean); flagged in case a source
-  carries substantive content in the margins.
 
 ## Non-obvious decisions / don't-retry-this
 

@@ -62,6 +62,7 @@ def _translation_models(book):
         models = json.load(open(p, encoding="utf-8")).get("models") or []
     except (OSError, ValueError):
         models = []
+    models = [m for m in models if m != "-"]      # pages that needed no model
     if not models:
         return _UNRECORDED_MODEL
     label = lambda m: (_UNRECORDED_MODEL if m == "" else

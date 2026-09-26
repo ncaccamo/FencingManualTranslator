@@ -818,6 +818,20 @@ missed all of them -- left and right pages differ.) Each crop is read by the
 OCR model, which gets them right where the scan's Google text layer is
 garbled. See `_margins.py` and STATUS #14.
 
+Placement lessons (Gomard, 2026-09-26): the detector sometimes also boxes a
+note's first line alone -- in the bibliography, the year ("1778." as well
+as "1778. Nicolas Demeuse."), 11 duplicates on scans 37/38/60/72 -- so a
+note inside a bigger one, or whose text starts one at the same height, is
+dropped. A note's line can share its words with an earlier paragraph
+("maître d'armes. Paris" in two entries); ties go to the paragraph at or
+after the previous note's, since both run down the page. Ties must not
+depend on a set's iteration order: that made placement differ between
+runs of the same code. Removing the OCR's pasted copy of a note needs the
+word overlap to hold both ways: a short chapter title ("DE LA RIPOSTE.")
+shares all its words with a longer note ("Valeur de la riposte.") and was
+deleted as a "copy" -- 14 Gomard chapter titles lost in the first full
+Qwen3.8 run, caught only by the review checklist, not the report.
+
 ### 1.7 Figure detection — VLM flag + density-profiler geometry
 
 The pixel-only `find_figure_band()` (row ink-density, tuned for framed
