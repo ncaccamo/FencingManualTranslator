@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 CONTAINER=booktranslator-translator-1
-TRANSLATION_MODEL="${TRANSLATION_MODEL_PATH:-/models/Qwen2.5-14B-Instruct-Q4_K_M.gguf}"
+TRANSLATION_MODEL="${TRANSLATION_MODEL_PATH:-/models/Qwen3.8-27B.i1-Q4_K_S.gguf}"
 VLM_MODEL="${VLM_MODEL_PATH:-/models/allenai_olmOCR-2-7B-1025-Q6_K.gguf}"
 
 echo "Stopping any running llama-server to free VRAM..."

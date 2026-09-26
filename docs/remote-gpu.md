@@ -72,11 +72,36 @@ models:
     ttl: 300
   bt-translate:
     cmd: >
+      llama-server -m models\Qwen3.8-27B.i1-Q4_K_S.gguf
+      --host 127.0.0.1 --port ${PORT} --api-key ${LLAMA_API_KEY}
+      --ctx-size 6144 --n-gpu-layers 46 --parallel 1 --jinja --reasoning-budget 0
+    ttl: 300
+  bt-translate-qwen25:          # previous model, kept for comparisons
+    cmd: >
       llama-server -m models\Qwen2.5-14B-Instruct-Q4_K_M.gguf
       --host 127.0.0.1 --port ${PORT} --api-key ${LLAMA_API_KEY}
-      --ctx-size 8192 --n-gpu-layers 999
+      --ctx-size 8192 --n-gpu-layers 999 --parallel 1
     ttl: 300
 ```
+
+The translation model is **Qwen3.8-27B, 4-bit** (`i1-Q4_K_S` from
+mradermacher/Qwen3.8-27B-i1-GGUF), chosen 2026-09-25 by the translation
+model selection test (`evals/translation_model_test.py`: 0 of 37 hard pages
+flagged, against 14 for Qwen2.5-14B, and the most accurate fencing
+terminology). Its flags, and why:
+
+- `--n-gpu-layers 46` (of 64): the ~15.8 GB file doesn't fit in 16 GB of
+  VRAM, and on Windows the AMD driver gives one program only ~11.8 GB —
+  past that it silently spills into shared system memory, which is far
+  slower than a deliberate split. 46 layers on the GPU, the rest on the
+  CPU: ~40 s per text page. Lower the number if Task Manager shows
+  "shared GPU memory" climbing during a run.
+- `--parallel 1`: llama.cpp now defaults to 4 slots, i.e. 4× the context
+  memory.
+- `--jinja --reasoning-budget 0`: use the model's own chat template, with
+  thinking turned off (it only slows translation down).
+- Use a plain K quant: the unsloth "UD" mixed quants crashed on Vulkan
+  (llama.cpp b11182).
 
 Set `VLM_MODEL_NAME` / `TRANSLATION_MODEL_NAME` in `backend.env` to the
 map keys (`bt-ocr` / `bt-translate`). Skip them and the pipeline sends the
@@ -93,8 +118,8 @@ between step 1 and step 2:
 llama-server -m olmOCR-2-7B-1025-Q6_K.gguf --mmproj mmproj-...-f16.gguf \
   --host 0.0.0.0 --port 11500 --api-key <shared-secret> -ngl 99 -c 8192
 # Ctrl-C, then before step 2 (translate):
-llama-server -m Qwen2.5-14B-Instruct-Q4_K_M.gguf \
-  --host 0.0.0.0 --port 11500 --api-key <shared-secret> -ngl 99 -c 8192
+llama-server -m Qwen3.8-27B.i1-Q4_K_S.gguf --jinja --reasoning-budget 0 \
+  --host 0.0.0.0 --port 11500 --api-key <shared-secret> -ngl 46 -c 6144 --parallel 1
 ```
 
 With this you must run the four steps individually (not

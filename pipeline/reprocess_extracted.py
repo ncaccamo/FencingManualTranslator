@@ -17,6 +17,7 @@ import os
 import sys
 
 import _pageio
+import _margins
 import _overrides
 
 # reuse the real logic, without running that module's main block
@@ -66,6 +67,8 @@ for folder in targets:
     _fold_caption_only_body(parsed)
     fold_caption_header_into_figure(parsed)
     reconcile_headers(parsed)
+    # margin notes as ⟦MARGIN: …⟧ lines, each before its paragraph (_margins.py)
+    _m_placed, _m_lost = _margins.apply_to_book(folder, parsed)
     _is_plate = [any(f.get("kind") == "plate" for f in (p.get("figures") or []))
                  or is_plate_leaf(p.get("body"))
                  for p in parsed]
@@ -114,4 +117,6 @@ for folder in targets:
     n_fig = sum(len(v) for v in figures_map.values())
     print(f"✓ {os.path.basename(folder)}: {len(raw_pages)} pages, "
           f"{real} corroborated folios, {len(nums) - real} inferred, "
-          f"{n_fig} figure(s) on {len(figures_map)} page(s)")
+          f"{n_fig} figure(s) on {len(figures_map)} page(s)"
+          + (f", {_m_placed} margin note(s)" + (f" ({_m_lost} unanchored)" if _m_lost else "")
+             if _m_placed else ""))

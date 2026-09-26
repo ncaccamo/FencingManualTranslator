@@ -22,9 +22,9 @@ services:
       - HSA_OVERRIDE_GFX_VERSION=12.0.1
       - HIP_VISIBLE_DEVICES=0
       - ROCR_VISIBLE_DEVICES=0
-      - MODEL_NAME=qwen2.5:14b-instruct-q4_K_M
-      - MODEL_PATH=/models/Qwen2.5-14B-Instruct-Q4_K_M.gguf
-      - TRANSLATION_MODEL_PATH=/models/Qwen2.5-14B-Instruct-Q4_K_M.gguf
+      - MODEL_NAME=qwen3.8:27b-i1-q4_K_S
+      - MODEL_PATH=/models/Qwen3.8-27B.i1-Q4_K_S.gguf
+      - TRANSLATION_MODEL_PATH=/models/Qwen3.8-27B.i1-Q4_K_S.gguf
       - VLM_MODEL_PATH=/models/allenai_olmOCR-2-7B-1025-Q6_K.gguf
       - VLM_MMPROJ_PATH=/models/mmproj-allenai_olmOCR-2-7B-1025-f16.gguf
       - TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata

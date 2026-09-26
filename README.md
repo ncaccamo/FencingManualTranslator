@@ -14,7 +14,7 @@ what it isn't sure of so you can check it against the facing scan.
 - **Reads the scan** with a vision model (olmOCR-2) — body text, the running
   head, the printed page number, plates and their captions — rather than
   trusting the PDF's own text layer.
-- **Translates** with a local LLM (Qwen2.5-14B-Instruct) under a fencing-
+- **Translates** with a local LLM (Qwen3.8-27B) under a fencing-
   specific term policy:
   - terms English fencing literature keeps (*riposte*, *remise*, *quarte*,
     *épée* …) stay in the original, italicized;
@@ -58,7 +58,7 @@ translation) lives in an `intermediate/` subfolder:
 | Step | Script | Does | Output |
 |---|---|---|---|
 | 1 | `1_ocr_and_extract_vlm.py` | page image → structured text (olmOCR-2-7B on :11435) | `intermediate/raw_ocr.txt`, `intermediate/extracted.txt`, `intermediate/page_numbers.txt` |
-| 2 | `2_translate.py` | extracted text → English (Qwen2.5-14B-Instruct on :11434) | `intermediate/translation.txt` |
+| 2 | `2_translate.py` | extracted text → English (Qwen3.8-27B on :11434) | `intermediate/translation.txt` |
 | 3 | `3_english_only_pdf.py` | flowing English reading copy, figures inline | `… — English Only (Portrait).pdf` |
 | 4 | `4_side_by_side_pdf.py` | scan left / translation right, paragraph-aligned | `… — Side by Side (Landscape).pdf` |
 

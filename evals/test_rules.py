@@ -21,7 +21,7 @@ from _rules import (
     parse_figures_block, reconcile_page_numbers, _fold_caption_only_body,
     strip_leaked_headmatter,
     leaked_top_header, is_plate_leaf,
-    extract_source_footnotes, label_margin_notes,
+    extract_source_footnotes,
     _clean_caption, _capitalize_definition_entries, fix_parry_names,
     salvage_leaked_folio_header, dehyphenate_across_pages,
     drop_google_boilerplate, mark_handwritten_inscriptions,
@@ -29,6 +29,7 @@ from _rules import (
     recover_plate_captions, parse_vlm_response, clean_vlm_extraction,
     repair_source_ocr_misreads, restore_dropped_part_title,
     fix_known_garbles, harmonize_titles_with_headers,
+    save_partial, load_partial, save_ocr_partial, load_ocr_partial,
 )
 
 
@@ -109,93 +110,6 @@ def test_extract_source_footnotes():
     assert "___FOOTNOTES___" in out
     assert out.split("___FOOTNOTES___")[1].strip().startswith("(1)")
     assert "(1) The origin" not in out.split("___FOOTNOTES___")[0]
-
-
-def test_label_margin_notes():
-    # A detected margin note is removed from body but NOT rendered
-    # anywhere (2026-09-18: showing only the single best-guess candidate
-    # when a page can carry more than one left the reader unable to tell
-    # which printed note it corresponded to -- simplest honest fix is to
-    # just not claim to reproduce it).
-    txt = ("The main body paragraph goes on for a while about the left hand "
-           "and its uses in a serious affair.\n\n"
-           "A second full paragraph of ordinary prose so the page reads as "
-           "prose-dominant and not just a caption with a stray line.\n\n"
-           "The lesson must teach in what cases one can use the left hand.")
-    out = label_margin_notes(txt)
-    assert "[margin note]" not in out
-    assert "The lesson must teach" not in out
-    assert "___FOOTNOTES___" not in out
-
-
-def test_label_margin_notes_skipped_on_figure_page():
-    # Realistic-length filler paragraphs -- a toy one-sentence filler like
-    # "A second paragraph." is itself short enough to accidentally look
-    # note-shaped now that the search checks the last 2 paragraphs, not
-    # just the last 1; real translated prose doesn't run that short.
-    txt = ("The main body paragraph goes on for a while about the left hand "
-           "and its uses in a serious affair.\n\n"
-           "A second full paragraph of ordinary prose so the page reads as "
-           "prose-dominant and not just a caption with a stray line.\n\n"
-           "Parry of septime.")
-    assert label_margin_notes(txt, has_fig=True) == txt
-    # even without has_fig, a caption-shaped trailing line is not a note
-    assert "[margin note]" not in label_margin_notes(txt)
-
-
-def test_label_margin_notes_skips_page_boundary_continuation():
-    # (P-review D) a paragraph the page boundary cut off mid-sentence --
-    # ends on a comma, continues on the next page -- is not a standalone
-    # shoulder note, even though it's short enough to look like one.
-    txt = ("The main body paragraph goes on for a while about the left hand "
-           "and its uses in a serious affair.\n\n"
-           "A second full paragraph of ordinary prose so the page reads as "
-           "prose-dominant and not just a caption with a stray line.\n\n"
-           "To move from the second to the third position: extend the arm, "
-           "the hand in supination,")
-    assert label_margin_notes(txt) == txt
-
-
-def test_label_margin_notes_skips_continuation_with_no_terminal_punctuation():
-    # A comma-ending check alone missed most of these -- a paragraph cut
-    # off mid-word/mid-clause with NO trailing punctuation at all (a
-    # corpus scan found 40/67 tagged notes like this, e.g. Gomard "One
-    # breaks the distance to disengage from an enemy"). A genuine shoulder
-    # note is a complete remark: require the sentence to actually end.
-    txt = ("The main body paragraph goes on for a while about the left hand "
-           "and its uses in a serious affair.\n\n"
-           "A second full paragraph of ordinary prose so the page reads as "
-           "prose-dominant and not just a caption with a stray line.\n\n"
-           "One breaks the distance to disengage from an enemy")
-    assert label_margin_notes(txt) == txt
-
-
-def test_label_margin_notes_prefers_note_that_precedes_more_prose():
-    # Real Gomard src 32 example: two paragraphs are EQUALLY note-shaped
-    # (both short, both end a sentence, neither uppercase-heavy) -- shape
-    # alone can't tell them apart. The genuine note, "He recognizes only
-    # three ways of striking.", sits one paragraph before the end, with a
-    # real closing paragraph still following it; the old "just check the
-    # last paragraph" logic wrongly grabbed that closing paragraph instead
-    # and left the actual note sitting in the body. A margin note
-    # introduces what follows on the page -- it's essentially never the
-    # true last paragraph -- so the second-to-last candidate must win.
-    txt = ("A long opening paragraph establishing the guard positions in "
-           "enough words to read as real prose and not a stray caption.\n\n"
-           "A second full paragraph of ordinary prose so the page reads as "
-           "prose-dominant and not just a caption with a stray line.\n\n"
-           "A third paragraph continuing the discussion at some length so "
-           "the page still reads as prose-dominant overall, definitely.\n\n"
-           "He recognizes only three ways of striking.\n\n"
-           "Like Marozzo, his cuts are directed at the shoulder, chest, "
-           "flank, and calf; his thrusts prefer the face.")
-    out = label_margin_notes(txt)
-    # dropped from body, not rendered (2026-09-18) -- but confirms the
-    # RIGHT paragraph was the one identified and removed
-    assert "[margin note]" not in out
-    assert "He recognizes only three ways of striking." not in out
-    assert "Like Marozzo" in out   # the real closing paragraph stays
-    assert "Like Marozzo" in out.split("___FOOTNOTES___")[0]   # stays in body
 
 
 def test_extract_source_footnotes_bare_number_tail():
@@ -1635,9 +1549,106 @@ def test_layout_running_head_decisions():
     assert L.header_band([head] * 3) is None
 
 
+def test_caps_line_split_word_and_tac_au_tac():
+    # Real Qwen3.8 output (Gomard scan 239, translation model test): an
+    # all-caps heading word reassembled in mixed case, and the idiom "du tac
+    # au tac" rendered word for word.
+    assert fix_known_garbles("RIPostes AFTER THE PARRIES OF THE HIGH LINES.") \
+        == "RIPOSTES AFTER THE PARRIES OF THE HIGH LINES."
+    assert fix_known_garbles("RIPPOSTES AFTER THE PARRIES") == "RIPOSTES AFTER THE PARRIES"
+    # ordinary prose is left alone (McDonald-style names, sentence case)
+    assert fix_known_garbles("He met McDonald at the salle.") == "He met McDonald at the salle."
+    src = "RIPOSTES DU TAC AU TAC."
+    out = enforce_kept_terms("RIPOSTES FROM THE TAC TO THE TAC.", src)
+    assert out == "RIPOSTES <i>TAC-AU-TAC</i>.", out
+    # the older output's "ripostes of the tac-au-tac" (Prévost) reads the same way
+    assert enforce_kept_terms("such as the ripostes of the tac au tac", "du tac au tac") \
+        == "such as the ripostes <i>tac-au-tac</i>"
+    assert "<i>tac-au-tac</i>" in enforce_kept_terms("a riposte du tac au tac follows", "du tac au tac")
+    # Qwen3.8 left the French article: "the du tac-au-tac riposte"
+    assert enforce_kept_terms("The du <i>tac-au-tac</i> <i>riposte</i> is", "du tac au tac") \
+        == "The <i>tac-au-tac</i> <i>riposte</i> is"
+
+
+def test_margin_notes_detect_and_copy_check():
+    # Gomard scan 61 (detector boxes, as fractions): main column 0.07-0.75,
+    # three shoulder notes at x 0.75-0.93. The first filter used the
+    # book-wide median column edge (0.78) and missed all three -- pages
+    # alternate left/right, so each page's own column must be used.
+    import importlib
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
+    M = importlib.import_module("_margins")
+    page = {"boxes": [
+        ["page_header", 0.89, [0.72, 0.09, 0.75, 0.11]],
+        ["text", 0.98, [0.07, 0.12, 0.75, 0.65]],
+        ["text", 0.91, [0.75, 0.18, 0.93, 0.23]],
+        ["text", 0.92, [0.75, 0.41, 0.92, 0.48]],
+        ["text", 0.98, [0.07, 0.65, 0.74, 0.82]],
+        ["text", 0.92, [0.75, 0.66, 0.92, 0.68]],
+        ["picture", 0.79, [0.62, 0.96, 0.82, 0.98]]]}
+    notes = M.detect_notes(page)
+    assert [round(n[1], 2) for n in notes] == [0.18, 0.41, 0.66]
+    # the OCR model's pasted copy of a note is recognised, real prose isn't
+    assert M._is_copy("Il reconnaît trois gardes principales.", "Il reconnaît trois gardes principales.")
+    assert not M._is_copy("Giganti a fait faire un grand pas à l'escrime, et il mérite que son "
+                          "nom soit placé à côté de ceux d'Agrippa.", "Progrès dus à Giganti.")
+
+
+def test_margin_note_renders_as_note_line():
+    # ⟦MARGIN: …⟧ must never be drawn as raw brackets: it becomes a note line
+    import importlib
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
+    try:
+        R = importlib.import_module("_render")
+        lines = R.layout("⟦MARGIN: Riposting at a lost tempo.⟧\n\nThe <i>riposte</i> follows.",
+                         300, 10)
+    except (TypeError, AttributeError, ImportError):   # needs real PyMuPDF (in the image)
+        return
+    notes = [l for l in lines if getattr(l, "note", False)]
+    assert notes and "⟦" not in "".join(t for l in lines for t, _ in l.spans)
+
+
 def test_boundary_strips_trailing_hyphen():
     assert match_boundary_punctuation("the move was per-", "le mouvement fut par-") \
         == "the move was per"
+
+
+def test_interrupted_translation_resumes_with_state():
+    # A whole-book run saves after every page; a crash or cancel resumes
+    # after the last saved page with the footnote state it had then. Saved
+    # pages whose source changed since invalidate the save; later pages
+    # changing don't (they weren't translated yet).
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        Path(d, "intermediate").mkdir()
+        fps = ["a", "b", "c", "d"]
+        st = {"fn_seen": {"feinte"}, "cat3_seen": {"coulé"}, "fn_state": {"open": True}}
+        save_partial(d, fps, ["p1", "p2"], ["Qwen3.8", "Qwen3.8"], st)
+        done, models, st2 = load_partial(d, fps)
+        assert done == ["p1", "p2"] and models == ["Qwen3.8", "Qwen3.8"]
+        assert st2 == st
+        assert load_partial(d, ["a", "b", "c", "CHANGED"]) is not None
+        assert load_partial(d, ["a", "CHANGED", "c", "d"]) is None
+        assert load_partial(d, ["a", "b", "c"]) is None          # page count changed
+        Path(d, "intermediate", "translation.partial.json").write_text("{trunc")
+        assert load_partial(d, fps) is None
+
+
+def test_interrupted_ocr_resumes_and_rereads_failed_pages():
+    # An OCR run saves the raw responses after every page; a rerun reuses
+    # them, reads failed pages again, and ignores the save if the scan's
+    # page count or crop changed.
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        crop = (0.0, 0.05, 0.0, 0.0)
+        save_ocr_partial(d, 5, crop, ["PAGE_NUMBER: 1", "[VLM Error: timeout]", "BODY_TEXT: x"])
+        assert load_ocr_partial(d, 5, crop) == ["PAGE_NUMBER: 1", None, "BODY_TEXT: x"]
+        assert load_ocr_partial(d, 6, crop) == []                 # different scan
+        assert load_ocr_partial(d, 5, (0.0, 0.0, 0.0, 0.0)) == []  # crop changed
+        save_ocr_partial(d, 5, crop, [])                         # "in progress" marker
+        assert load_ocr_partial(d, 5, crop) == []
+        Path(d, "raw_ocr.partial.json").write_text("{trunc")
+        assert load_ocr_partial(d, 5, crop) == []
 
 
 def _run_plain() -> int:

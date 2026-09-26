@@ -225,7 +225,7 @@ if [ -d /data/processed ]; then chmod -R 777 /data/processed 2>/dev/null || true
 cp /host_scripts/*.py /app/ 2>/dev/null || true
 chmod +x /app/*.py 2>/dev/null || true
 
-TRANSLATION_MODEL="${MODEL_PATH:-/models/Qwen2.5-14B-Instruct-Q4_K_M.gguf}"
+TRANSLATION_MODEL="${MODEL_PATH:-/models/Qwen3.8-27B.i1-Q4_K_S.gguf}"
 VLM_MODEL="${VLM_MODEL_PATH:-/models/allenai_olmOCR-2-7B-1025-Q6_K.gguf}"
 VLM_MMPROJ="${VLM_MMPROJ_PATH:-/models/mmproj-allenai_olmOCR-2-7B-1025-f16.gguf}"
 
@@ -241,7 +241,7 @@ find_existing_model () {
     fi
 }
 
-TRANSLATION_MODEL=$(find_existing_model "$TRANSLATION_MODEL" "*qwen2.5*14b*instruct*q4_k_m*.gguf")
+TRANSLATION_MODEL=$(find_existing_model "$TRANSLATION_MODEL" "*qwen3.8*27b*q4_k_s*.gguf")
 VLM_MODEL=$(find_existing_model "$VLM_MODEL" "*olmocr*q6*.gguf")
 VLM_MMPROJ=$(find_existing_model "$VLM_MMPROJ" "*mmproj*olmocr*.gguf")
 
@@ -284,8 +284,8 @@ else
   export LD_LIBRARY_PATH="/usr/local/lib/llama-$SUFFIX:$LD_LIBRARY_PATH"
 
   if [ ! -f "$TRANSLATION_MODEL" ]; then
-    echo "[1/3] Downloading translation model (~5.8GB)..."
-    wget --progress=bar:force:noscroll -O "$TRANSLATION_MODEL" https://huggingface.co/bartowski/Qwen2.5-14B-Instruct-GGUF/resolve/main/Qwen2.5-14B-Instruct-Q4_K_M.gguf
+    echo "[1/3] Downloading translation model (~15.8GB)..."
+    wget --progress=bar:force:noscroll -O "$TRANSLATION_MODEL" https://huggingface.co/mradermacher/Qwen3.8-27B-i1-GGUF/resolve/main/Qwen3.8-27B.i1-Q4_K_S.gguf
   else
     echo "[1/3] Translation model: OK ($TRANSLATION_MODEL)"
   fi

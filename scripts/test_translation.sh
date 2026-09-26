@@ -6,7 +6,7 @@ docker compose up -d
 sleep 5
 
 echo ""
-MODEL="${TRANSLATION_MODEL_PATH:-/models/Qwen2.5-14B-Instruct-Q4_K_M.gguf}"
+MODEL="${TRANSLATION_MODEL_PATH:-/models/Qwen3.8-27B.i1-Q4_K_S.gguf}"
 echo "Step 1: Check if model file exists ($MODEL)..."
 docker exec booktranslator-translator-1 ls -lh "$MODEL"
 
@@ -17,7 +17,7 @@ sleep 2
 
 echo ""
 echo "Step 3: Start llama-server in background..."
-docker exec -d booktranslator-translator-1 bash -c "llama-server --model \"$MODEL\" --host 0.0.0.0 --port 11434 --ctx-size 8192 --n-gpu-layers 999 --threads 16 > /tmp/llama.log 2>&1 &"
+docker exec -d booktranslator-translator-1 bash -c "llama-server --model \"$MODEL\" --host 0.0.0.0 --port 11434 --ctx-size 6144 --n-gpu-layers ${TRANSLATION_GPU_LAYERS:-46} --parallel 1 --jinja --reasoning-budget 0 --threads 16 > /tmp/llama.log 2>&1 &"
 
 echo ""
 echo "Step 4: Wait 30 seconds for server to start..."

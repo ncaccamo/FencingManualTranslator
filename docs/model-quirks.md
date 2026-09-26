@@ -805,6 +805,19 @@ with `HEADER: none` (Prévost idx 50 / 124 — scan shows a real head). A
 printed folio doesn't separate them either. Next step: test a `TITLE:`
 field in `vlm_ocr_prompt.txt` on ~20 already-diagnosed pages (STATUS).
 
+### 1.6d Printed margin notes: dropped by the OCR, now read from the layout (2026-09-25)
+
+olmOCR-2 transcribes the main text block and mostly drops printed shoulder
+notes: of Gomard's 384 it kept about 25, usually pasted into the prose as
+stray paragraphs. Text-shape heuristics can't recover them -- a short
+sentence-ending paragraph is as likely a sub-heading, a signature or a
+closing line (the old label_margin_notes() deleted Prévost's "Le rôle du
+médecin." heading). The layout detector sees them directly: narrow text
+boxes outside the page's **own** main column. (A book-wide column edge
+missed all of them -- left and right pages differ.) Each crop is read by the
+OCR model, which gets them right where the scan's Google text layer is
+garbled. See `_margins.py` and STATUS #14.
+
 ### 1.7 Figure detection — VLM flag + density-profiler geometry
 
 The pixel-only `find_figure_band()` (row ink-density, tuned for framed
@@ -942,9 +955,13 @@ matching what `2_translate.py` already did.
 
 ---
 
-## Part 2 — Translation (Qwen2.5-14B-Instruct-Q4_K_M, port 11434)
+## Part 2 — Translation (Qwen3.8-27B i1-Q4_K_S, port 11434)
 
-Default since 2026-08; `TRANSLATION_MODEL_PATH` overrides it. The 14B was
+Qwen3.8-27B is the default since 2026-09-25 (translation model selection
+test, `evals/translation_model_test.py`); `TRANSLATION_MODEL_PATH`
+overrides it. Most entries below were found on Qwen2.5-14B-Instruct-Q4_K_M,
+the default from 2026-08; the guards stay in place for any model, and
+entries that name Qwen3.8 were seen on it. The 14B was
 chosen because the term policy's `<fn>` emission (Rule 3b) needs its
 stronger instruction-following — the 7B it replaced emitted almost none.
 The model follows the term policy well and the output-hygiene rules

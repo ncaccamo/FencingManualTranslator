@@ -34,7 +34,7 @@ fi
 # `docker exec` shell does not inherit the entrypoint's version of the path.
 export LD_LIBRARY_PATH="/usr/local/lib/llama-$SUFFIX:${LD_LIBRARY_PATH:-}"
 
-TRANSLATION_MODEL="${MODEL_PATH:-/models/Qwen2.5-14B-Instruct-Q4_K_M.gguf}"
+TRANSLATION_MODEL="${MODEL_PATH:-/models/Qwen3.8-27B.i1-Q4_K_S.gguf}"
 VLM_MODEL="${VLM_MODEL_PATH:-/models/allenai_olmOCR-2-7B-1025-Q6_K.gguf}"
 VLM_MMPROJ="${VLM_MMPROJ_PATH:-/models/mmproj-allenai_olmOCR-2-7B-1025-f16.gguf}"
 
@@ -58,7 +58,8 @@ sleep 3
 
 echo "Starting translation server on 11434..."
 setsid llama-server --model "$TRANSLATION_MODEL" --host 0.0.0.0 --port 11434 \
-    --ctx-size 8192 --n-gpu-layers 999 --threads "$(nproc)" \
+    --ctx-size 6144 --n-gpu-layers "${TRANSLATION_GPU_LAYERS:-46}" --parallel 1 \
+    --jinja --reasoning-budget 0 --threads "$(nproc)" \
     >/tmp/translation_server.log 2>&1 &
 disown
 

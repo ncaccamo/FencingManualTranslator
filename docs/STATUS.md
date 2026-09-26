@@ -19,8 +19,15 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 - **OCR:** olmOCR-2-7B-1025 via llama-server on :11435 is the default and
   only path. Tesseract path (`1_ocr_and_extract.py`) is kept for reference
   / a no-VLM fallback, not used.
-- **Translation:** Qwen2.5-14B-Instruct (Q4_K_M) on :11434. Never drops a page; flags
-  low-confidence output inline.
+- **Translation:** Qwen3.8-27B (i1-Q4_K_S, ~15.8 GB) since 2026-09-25, chosen
+  by the translation model selection test (`evals/translation_model_test.py`);
+  llama-swap key `bt-translate` remotely, :11434 locally. Too big for 16 GB
+  of VRAM whole: 46 of 64 layers on the GPU (`TRANSLATION_GPU_LAYERS`),
+  ~40 s/page. The local-mode launch (image llama.cpp build, 46-layer split
+  under Linux) has not been run yet. Qwen2.5-14B-Instruct (Q4_K_M), the
+  previous model, stays on the GPU system as `bt-translate-qwen25`; books
+  translated before per-page model recording are credited to it on the
+  cover. Never drops a page; flags low-confidence output inline.
 - **PDFs:** English-only (flowing column, figures in reading order) and
   side-by-side (scan left / translation right, paragraph-aligned where the
   scan has a text layer). Both preserve `<i>` italics, indentation,
@@ -99,7 +106,7 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    That's a separate product now (llama-swap on :11500 serving a chat +
    a coding model, one resident, Open WebUI dropdown drives the swap).
    This item predates the project split; BookTranslator serves only its
-   two pipeline models (olmOCR-2, Qwen2.5-14B), sequentially, by design.
+   two pipeline models (olmOCR-2 and the translation model), sequentially, by design.
 2. **Footnotes** — DONE. `† French: <term>` source refs on Category-3
    terms (16 curated) with a `†N` inline mark → `2_translate.py`
    (`enforce_cat3_footnotes` backstop + `pull_footnotes`) appends a
@@ -256,6 +263,21 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
     The report surfaced the adjacent-pages folio misread in Prévost
     and Spinnewyn, which led to the general `reconcile_page_numbers()`
     fix (model-quirks §1.2).
+14. **Margin (shoulder) notes — rebuilt 2026-09-25.** The old text
+    heuristic (label_margin_notes) is gone: it guessed notes from paragraph
+    shape and silently deleted real text (Prévost scan 310's "Le rôle du
+    médecin." heading, with Qwen3.8's paragraphing). Now (`_margins.py`): the
+    layout detector finds notes as narrow boxes outside each page's own text
+    column, the OCR model reads each crop (`intermediate/margins.json`), and
+    reprocess puts each note into the page text as a `⟦MARGIN: …⟧` line
+    before its paragraph -- or mid-paragraph at the sentence it's printed
+    beside -- removing the OCR model's pasted copies. Prompt rule 10 keeps the
+    marker; a candidate that loses one is retried; the review report flags a
+    page still missing one; the PDFs draw each note as a grey italic line with
+    a side bar. Gomard: 384 notes on 186 pages (the OCR model had kept ~25);
+    16/16 found on a 10-page scan check, all anchored. Other books: none
+    (Jacob: 1 doubtful). **Pending:** reprocess + retranslate Gomard's 186
+    pages -- waits for the translation-model decision.
 
 ## Not yet tested
 

@@ -99,15 +99,18 @@ evals/gold/<stem>/
 The translation model is chosen by `TRANSLATION_MODEL_PATH` (env), default
 in `docker-compose.yml` (`MODEL_PATH`) and `2_translate.py`. OCR and
 translation load sequentially — each gets the whole GPU — so a bigger
-translation model doesn't have to coexist with olmOCR.
+translation model doesn't have to coexist with olmOCR. `TRANSLATION_GPU_LAYERS`
+(default 46) sets how many layers go on the GPU in local mode; a model that
+fits whole takes `999`. In remote mode the same setting is the
+`--n-gpu-layers` in the llama-swap entry.
 
 16 GB budget, 8k context:
 
 | model | quant | ~weights | fits |
 |---|---|---|---|
-| **default** | Qwen2.5-14B-Instruct Q4_K_M | 8.6 GB | yes (~11 GB total) |
+| **default** | Qwen3.8-27B i1-Q4_K_S | 15.8 GB | no — split, 46 of 64 layers on the GPU (`TRANSLATION_GPU_LAYERS`, `docs/remote-gpu.md`) |
+| previous | Qwen2.5-14B-Instruct Q4_K_M | 8.6 GB | yes (~11 GB total; set `TRANSLATION_GPU_LAYERS=999`) |
 | alternative | Qwen2.5-7B-Instruct Q6_K | 6.3 GB | yes |
-| candidate | Qwen2.5-14B-Instruct Q4_K_M | 8.6 GB | yes (~11 GB total, ~5 GB headroom) |
 | — | 14B Q5_K_M | 10 GB | tight |
 | — | 14B Q6_K / 32B any | — | no |
 

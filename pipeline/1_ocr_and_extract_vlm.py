@@ -1425,6 +1425,30 @@ def reconcile_page_numbers(page_raws: list, is_plate: list = None,
     return out
 
 
+def save_ocr_partial(int_dir: str, total: int, crop, pages: list) -> None:
+    """After each page: the raw model responses so far, so a crashed or
+    cancelled OCR run resumes instead of starting over. Temp file + rename,
+    so a crash mid-write never leaves a broken file."""
+    p = f"{int_dir}/raw_ocr.partial.json"
+    with open(p + ".tmp", "w", encoding="utf-8") as fh:
+        json.dump({"version": 1, "total": total, "crop": list(crop), "pages": pages},
+                  fh, ensure_ascii=False)
+    os.replace(p + ".tmp", p)
+
+
+def load_ocr_partial(int_dir: str, total: int, crop) -> list:
+    """Raw responses saved by an interrupted OCR run, or [] -- only if the
+    scan still has the same page count and crop. A page that failed
+    ("[VLM Error: …]") is returned as None, to be read again."""
+    try:
+        d = json.load(open(f"{int_dir}/raw_ocr.partial.json", encoding="utf-8"))
+        if d["total"] != total or d["crop"] != list(crop) or len(d["pages"]) > total:
+            return []
+        return [None if p.startswith("[VLM Error") else p for p in d["pages"]]
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return []
+
+
 def preprocess_for_ocr(img: Image.Image) -> Image.Image:
     """Light contrast normalization before OCR. Historical scans are
     frequently faded/yellowed/low-contrast; autocontrast on the luminance
@@ -1643,9 +1667,13 @@ print(f"Resize target (longest dimension): {VLM_MAX_DIMENSION}px")
 vlm_proc = None
 
 try:
+    # new books, plus any whose OCR run was interrupted (the folder exists,
+    # the saved partial run does, raw_ocr.txt doesn't yet)
     input_pdfs = [
         f for f in glob.glob("/data/books/*.pdf")
         if not os.path.exists(f"/data/processed/{Path(f).stem}_translated")
+        or (os.path.exists(f"/data/processed/{Path(f).stem}_translated/intermediate/raw_ocr.partial.json")
+            and not os.path.exists(f"/data/processed/{Path(f).stem}_translated/intermediate/raw_ocr.txt"))
     ]
 
     if not input_pdfs:
@@ -1680,8 +1708,21 @@ try:
 
         extracted_pages = []
         error_count = 0
+        saved = load_ocr_partial(int_dir, total_pages, crop)
+        if saved:
+            redo = sum(p is None for p in saved)
+            print(f"Resuming an interrupted OCR run: {len(saved) - redo} page(s) already "
+                  f"read" + (f", {redo} failed page(s) to read again" if redo else "") +
+                  f"\n  (delete intermediate/raw_ocr.partial.json to start over)\n")
+        else:
+            # marks the book as in progress from the start, so even a crash
+            # on page 1 is picked up again next run
+            save_ocr_partial(int_dir, total_pages, crop, [])
 
         for i in range(total_pages):
+            if i < len(saved) and saved[i] is not None:
+                extracted_pages.append(saved[i])
+                continue
             page = doc[i]
             mat = fitz.Matrix(300/72, 300/72)
             pix = page.get_pixmap(matrix=mat)
@@ -1717,6 +1758,7 @@ try:
                 error_count += 1
                 error_msg = result.get("error", "Unknown") if result else "No response"
                 extracted_pages.append(f"[VLM Error: {error_msg}]")
+            save_ocr_partial(int_dir, total_pages, crop, extracted_pages)
 
             time.sleep(2)
 
@@ -1729,6 +1771,23 @@ try:
         # turns out to have dropped or altered something.
         with open(f"{int_dir}/raw_ocr.txt", "w", encoding="utf-8") as f:
             f.write(_pageio.join_pages(extracted_pages))
+        if os.path.exists(f"{int_dir}/raw_ocr.partial.json"):
+            os.remove(f"{int_dir}/raw_ocr.partial.json")
+
+        # Page layout (CPU) and margin notes, before parsing: the running-head
+        # checks in the review report use the layout, and margin notes are
+        # read by the OCR model while it's still loaded, then inserted into
+        # the page text as ⟦MARGIN: …⟧ lines (_margins.py). Never allowed to
+        # fail the OCR run -- layout_scan.py can fill them in later.
+        try:
+            import _layout
+            import _margins
+            print("Layout detection (CPU)...")
+            _layout.scan_book(work_dir, ocr_pdf_path)
+            _margins.read_book(work_dir, ocr_pdf_path)
+        except Exception as e:
+            print(f"⚠ layout / margin notes skipped ({type(e).__name__}: {e}) -- "
+                  f"run layout_scan.py {stem} later\n")
 
         # Split olmOCR-2's PAGE_NUMBER/HEADER/BODY_TEXT scaffold into fields
         # and sequence-check the page number. Previously the raw scaffold
@@ -1748,6 +1807,11 @@ try:
         _fold_caption_only_body(parsed)
         fold_caption_header_into_figure(parsed)
         reconcile_headers(parsed)
+        try:
+            import _margins
+            _margins.apply_to_book(work_dir, parsed)
+        except Exception as e:
+            print(f"⚠ margin notes not inserted ({type(e).__name__}: {e})")
         _is_plate = [any(f.get("kind") == "plate" for f in (p.get("figures") or []))
                      or is_plate_leaf(p.get("body"))
                      for p in parsed]
@@ -1792,16 +1856,6 @@ try:
         else:
             print(f"✓ Extraction complete (all {total_pages} pages successful): {stem}\n")
 
-        # Page-layout detection (CPU) for the review report's running-head
-        # checks -- never allowed to fail the OCR run; layout_scan.py can
-        # fill it in later.
-        try:
-            import _layout
-            print("Layout detection (CPU)...")
-            _layout.scan_book(work_dir, ocr_pdf_path)
-        except Exception as e:
-            print(f"⚠ layout detection skipped ({type(e).__name__}: {e}) -- "
-                  f"run layout_scan.py {stem} later\n")
 
 finally:
     if vlm_proc is REMOTE_SERVER:

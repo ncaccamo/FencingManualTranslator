@@ -64,8 +64,10 @@ The two models load **one at a time**, not together, to fit in 16 GB:
 - **Vision / OCR** — `olmOCR-2-7B-1025` (Q6_K, ~5.8 GB; a Qwen2.5-VL
   fine-tune specialised for document OCR). Reads each page image and
   returns structured text.
-- **Translation** — `Qwen2.5-14B-Instruct` (Q4_K_M, ~8.6 GB). Translates the
-  extracted text.
+- **Translation** — `Qwen3.8-27B` (i1-Q4_K_S, ~15.8 GB). Translates the
+  extracted text. It doesn't fit whole in 16 GB, so it runs partly on the
+  CPU (46 of 64 layers on the GPU, `TRANSLATION_GPU_LAYERS`; ~40 s/page);
+  it was chosen for accuracy on fencing terminology (`docs/remote-gpu.md`).
 
 The OCR step (step 1) loads the vision model on port 11435 and unloads it
 when done; the translation step (step 2) then loads the text model on port
@@ -80,7 +82,7 @@ between books.
 | GPU backend | ROCm 7.2.4 **and** Vulkan (LunarG SDK), both compiled into the image | Two interchangeable ways to run llama.cpp on the AMD GPU. Vulkan is currently the faster of the two on this hardware and is the default; ROCm is kept as a fallback. Switching is a config edit, not a rebuild. |
 | Containerisation | Docker + Docker Compose | Isolates the ROCm/Vulkan libraries, Python environment and tooling from the host. The container runs as your host UID so files in `processed/` are yours, not root's. |
 | OCR / extraction | `olmOCR-2-7B-1025` via `llama-server` | A vision-language model reads the page image directly. Unlike plain OCR it also parses *structure* — it separates the page number, the running header and the body, and it transcribes drill layout and marginalia sensibly. A legacy Tesseract path (`1_ocr_and_extract.py`) is kept in the repo for reference but is not used. |
-| Translation | `Qwen2.5-14B-Instruct` via `llama-server` | Text-only translation, steered entirely by `translation_prompt.txt`. |
+| Translation | `Qwen3.8-27B` via `llama-server` | Text-only translation, steered entirely by `translation_prompt.txt`. |
 | PDF generation | PyMuPDF (`fitz`), with a custom text layouter (`pipeline/_render.py`) | Assembles the two output PDFs, pulls figure crops from the scan, and lays out rich text (line breaks, indentation, `<i>` italics, footnote blocks) with overflow-safe flow. |
 | Prompts | Plain-text files (`translation_prompt.txt`, `vlm_ocr_prompt.txt`) | Kept editable outside the code, per the original design requirement — change translation behaviour without touching Python. |
 
@@ -99,7 +101,8 @@ Renders every page of the source PDF at 300 DPI, downscales to a fixed
 three files into `intermediate/`:
 
 - **`raw_ocr.txt`** — the model's untouched responses, one per page,
-  separated by `\n---\n`. Written *before* any parsing or cleanup, always.
+  separated by a U+001E record-separator line (`_pageio.py`). Written
+  *before* any parsing or cleanup, always.
   This is the recovery point: `reprocess_extracted.py` can rebuild the
   next two files from it without paying for OCR again.
 - **`extracted.txt`** — a canonical `PAGE_NUMBER: / HEADER: / BODY_TEXT:`
@@ -115,12 +118,20 @@ three files into `intermediate/`:
 It also copies the source PDF into `intermediate/` as `<book>_OCR.pdf` for
 the side-by-side step to draw from.
 
+While it runs, the responses so far are saved after every page to
+`intermediate/raw_ocr.partial.json`; if the run crashes or is cancelled,
+re-running step 1 resumes after the last saved page (and reads failed
+pages again). The file is deleted once `raw_ocr.txt` is written.
+
 ### Step 2 — `2_translate.py`  (translation model, port 11434)
 
 Reads `intermediate/extracted.txt`, strips the structural labels, and
 translates each page's body with `translation_prompt.txt`. Writes
-**`intermediate/translation.txt`** (pages separated by `\n---\n`, so it
-stays aligned with `extracted.txt` page-for-page).
+**`intermediate/translation.txt`** (pages separated the same way, so it
+stays aligned with `extracted.txt` page-for-page). A whole-book run saves after every page
+to `intermediate/translation.partial.json` (with the book-wide footnote
+state), so an interrupted run resumes where it stopped; the file is
+deleted when the book finishes.
 
 - Technical terms are preserved and wrapped in `<i>…</i>`; headings and
   captions are translated in full.

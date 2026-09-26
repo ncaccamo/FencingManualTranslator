@@ -59,7 +59,9 @@ Each step decides for itself which books to act on:
 | Step | Acts on a book when… | To force a re-run |
 |---|---|---|
 | 1 — OCR | `processed/<stem>_translated/` does **not** exist yet | `rm -rf processed/<stem>_translated/` (loses everything), or see III.5 to re-parse without re-OCR |
+| | …or its OCR run was interrupted: OCR saves after every page (`intermediate/raw_ocr.partial.json`), and re-running step 1 resumes after the last saved page, reading any failed pages again. The save is used only while the scan's page count and crop are unchanged, and is deleted once `raw_ocr.txt` is written | start over instead: `rm processed/<stem>_translated/intermediate/raw_ocr.partial.json` |
 | 2 — translate | `intermediate/translation.txt` is missing (whole book); otherwise only the pages whose body text changed since they were translated (fingerprints in `intermediate/translated_from.json`) | whole book: `rm processed/<stem>_translated/intermediate/translation.txt`; chosen pages: `2_translate.py --pages <stem> 12,40-42` (III.5b) |
+| | A whole-book run saves after every page (`intermediate/translation.partial.json`); if it crashes or is cancelled, re-running step 2 resumes after the last saved page, with the footnote state it had then. The save is used only while those pages' source text is unchanged, and is deleted when the book finishes | start over instead: `rm processed/<stem>_translated/intermediate/translation.partial.json` |
 | 3 — English-only PDF | `intermediate/translation.txt` exists | just re-run it — it overwrites |
 | 4 — side-by-side PDF | `intermediate/translation.txt` and `intermediate/<stem>_OCR.pdf` exist | just re-run it — it overwrites |
 
@@ -107,7 +109,7 @@ from — lives in an `intermediate/` subfolder, so the root stays clean.
 | `intermediate/raw_ocr.txt` | 1 | The vision model's untouched per-page responses. The recovery point — never deleted by any step |
 | `intermediate/extracted.txt` | 1 | Canonical `PAGE_NUMBER / HEADER / BODY_TEXT` scaffold per page |
 | `intermediate/page_numbers.txt` | 1 | One reconciled folio per line; `[n]` = inferred sheet ordinal, not a printed number |
-| `intermediate/translation.txt` | 2 | English, one page per `\n---\n` block, aligned with `extracted.txt` |
+| `intermediate/translation.txt` | 2 | English, one record per page (U+001E separator), aligned with `extracted.txt` |
 | `… — English Only (Portrait).pdf` | 3 | Reading copy |
 | `… — Side by Side (Landscape).pdf` | 4 | Comparison copy |
 
@@ -183,6 +185,19 @@ Not covered yet: a title the OCR never transcribed (Gomard pdf 316).
 The review loop: read the report → look at those pages → record decisions
 in the overrides file (III.5b) → `apply_overrides.py` and/or
 `2_translate.py --pages` → rebuild the PDFs → rerun the report.
+
+### Margin notes
+
+Printed margin (shoulder) notes are found by the layout detector, read by the
+OCR model, and placed in the translation as a grey italic line with a side
+bar, right before the paragraph (or sentence) they're printed beside. New
+books get this in step 1. For a book OCR'd earlier:
+
+```bash
+docker exec booktranslator-translator-1 python3 /app/layout_scan.py --margins <stem>
+docker exec booktranslator-translator-1 python3 /app/reprocess_extracted.py /data/processed/<stem>_translated
+docker exec booktranslator-translator-1 python3 /app/2_translate.py   # retranslates just the changed pages
+```
 
 ## III.5b — Recording your review decisions: the overrides file
 
@@ -388,12 +403,14 @@ The full catalogue of model failure modes and why each guard exists:
 
 ### One page in the output is split in two / pages misalign after some point
 
-The `\n---\n` page separator is content-fragile — a stray Markdown `---`
-from the translation model once split one page into two, shifting every
-later page against its source. Step 2 now rewrites `^---+$` → `* * *` and
-`translation_prompt.txt` forbids Markdown, so this should be fixed; if you
-see it, check `intermediate/translation.txt` for a lone `---` line and
-delete it, then re-run steps 3-4.
+The old `\n---\n` page separator was content-fragile — a stray Markdown
+`---` from the translation model once split one page into two, shifting
+every later page against its source. Pages are now separated by U+001E, a
+control character no model output contains (`pipeline/_pageio.py`), so
+this can't recur in new files; old `---` files are still read. If pages
+misalign anyway, compare the page counts of `extracted.txt` and
+`translation.txt` (step 2 refuses a partial retranslation when they
+differ) and re-run step 2 for that book.
 
 ### Translation step never starts / server timeout
 
@@ -404,7 +421,9 @@ docker exec booktranslator-translator-1 python3 /app/2_translate.py
 ```
 
 Step 2 resumes — it skips books whose `intermediate/translation.txt` is
-already current and picks up where it stopped.
+already current, and a book interrupted mid-run continues after its last
+saved page (`intermediate/translation.partial.json`; see the step table
+at the top of this section).
 
 ### Container won't start
 
@@ -425,8 +444,13 @@ df -h                                          # need ≥10 GB free
 docker ps                                      # container still up?
 docker logs booktranslator-translator-1 | tail -50
 docker compose restart && sleep 20
-# then re-run the step it stopped on — each step resumes
+# then re-run the step it stopped on
 ```
+
+Steps 1 and 2 save after every page and resume from the last saved page
+(`raw_ocr.partial.json` / `translation.partial.json` in
+`intermediate/`); step 1 also reads pages that failed again. Steps 3 and
+4 just rebuild their PDF from the start (a few minutes).
 
 ### Remote mode (`BACKEND_MODE=remote`)
 

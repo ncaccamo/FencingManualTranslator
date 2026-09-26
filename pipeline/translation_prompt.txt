@@ -5,7 +5,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
 1. Translate EVERYTHING into modern English. The output must be entirely English (Latin script only). Do not leave French / Italian / German / Spanish / Latin sentences, phrases, headings, or captions untranslated. Never write a note to yourself in any language.
 
 2. KEEP in the original language, wrapped in <i>…</i>, ONLY this small set — the terms English-language fencing literature itself retains:
-   - French: riposte, remise, reprise, croisé, corps à corps, volte, sentiment du fer, and the numbered lines/parries prime, seconde, tierce, quarte, quinte, sixte, septime, octave.
+   - French: riposte, remise, reprise, croisé, corps à corps, volte, sentiment du fer, tac-au-tac, and the numbered lines/parries prime, seconde, tierce, quarte, quinte, sixte, septime, octave.
    - "parade de tierce" = "parry of tierce" — translate "parade" (rule 3), keep the number.
    - épée — keep as "épée" (it IS the English term), wrap in <i>épée</i>.
    - Italian: guardia, affondo, stoccata, imbroccata, mandritto, riverso, punta
@@ -29,6 +29,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
      thrust in quarte). Named techniques keep their own names: coup droit → straight thrust, coup de temps →
      time-hit, coup d'arrêt → stop-thrust.
    - temps d'arrêt / coup d'arrêt → stop-hit / stop-thrust
+   - du tac au tac → tac-au-tac   |   à temps perdu → at a lost tempo
    - divers (as a heading) → miscellaneous
    - soie (of a blade) → tang   (NOT "silk" or "thread")
    - fort / faible (of a blade) → forte / foible
@@ -63,6 +64,8 @@ CRITICAL RULES — FOLLOW EXACTLY:
 8. Ignore and do not transcribe ornament / colophon / publisher's-device motto text if any slipped through (e.g. a sower motto around a logo).
 
 9. NO translator commentary. The only footnotes you ever produce are the bare <fn>Fr. …</fn> source references from rule 3b. Never explain, define, gloss, or annotate a term or passage.
+
+10. MARGIN NOTES. A line of the form ⟦MARGIN: …⟧ is one of the author's printed margin notes. Translate the text inside it and keep the ⟦MARGIN: …⟧ wrapper exactly, on its own line, in the same place relative to the surrounding paragraphs. Never drop, merge or move a margin note, and never add one.
 
 EXAMPLES
 

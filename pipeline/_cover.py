@@ -17,6 +17,7 @@ What comes from where:
 """
 import json
 import os
+import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -42,24 +43,30 @@ RIGHTS = "This translation is released under CC0 1.0 (public domain dedication).
 
 _DEFAULT_ORIG_RIGHTS = "The original work is in the public domain."
 _VENDOR_PREFIXES = ("allenai_", "bartowski_", "TheBloke_", "Qwen_")
+# What translated every page before step 2 recorded the model per page
+# (2026-09-25): a fixed fact, so changing the default model never
+# re-credits an older book to the new one.
+_UNRECORDED_MODEL = "Qwen2.5-14B-Instruct-Q4_K_M"
 
 
 def _translation_models(book):
     """Which model(s) translated this book, from step 2's per-page record
     (intermediate/translated_from.json): "gemma4 (320 pages), Qwen2.5-… (12
-    pages)". The default key names the configured model file."""
+    pages)". The llama-swap key / compose name map to the configured model
+    file; pages (or books) with no record to _UNRECORDED_MODEL."""
     import json
     from collections import Counter
-    default = _model_label("TRANSLATION_MODEL_PATH") or "Qwen2.5-14B-Instruct-Q4_K_M"
+    default = _model_label("TRANSLATION_MODEL_PATH") or "Qwen3.8-27B.i1-Q4_K_S"
     p = f"/data/processed/{book}_translated/intermediate/translated_from.json"
     try:
         models = json.load(open(p, encoding="utf-8")).get("models") or []
     except (OSError, ValueError):
         models = []
     if not models:
-        return default
-    label = lambda m: default if m in ("", "bt-translate") or m == os.environ.get(
-        "MODEL_NAME") else m
+        return _UNRECORDED_MODEL
+    label = lambda m: (_UNRECORDED_MODEL if m == "" else
+                       default if m == "bt-translate" or m == os.environ.get("MODEL_NAME")
+                       else re.sub(r"^(?:%s)" % "|".join(_VENDOR_PREFIXES), "", m))
     counts = Counter(label(m) for m in models).most_common()
     if len(counts) == 1:
         return counts[0][0]
@@ -163,7 +170,7 @@ def render(doc, stem, *, page_w, page_h, margin):
     block("OCR model: "
           + (_model_label("VLM_MODEL_PATH") or "olmOCR-2-7B-1025-Q6_K"),
           9, gap_after=3)
-    block("Translation model: " + _translation_models(book),
+    block("Translation model: " + _translation_models(stem),
           9, gap_after=3)
 
     ver = _pipeline_version()

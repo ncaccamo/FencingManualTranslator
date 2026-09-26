@@ -16,7 +16,12 @@ import _pageio
 import _overrides
 
 PROMPT_FILE = "/app/translation_prompt.txt"
-TRANSLATION_MODEL = os.environ.get("TRANSLATION_MODEL_PATH", "/models/Qwen2.5-14B-Instruct-Q4_K_M.gguf")
+TRANSLATION_MODEL = os.environ.get("TRANSLATION_MODEL_PATH", "/models/Qwen3.8-27B.i1-Q4_K_S.gguf")
+# Qwen3.8-27B 4-bit is ~15.8 GB: it doesn't fit whole in 16 GB of VRAM, so a
+# fixed number of its 64 layers go on the GPU and the rest on the CPU (46 =
+# the Windows setting, where the driver allows one program ~11.8 GB;
+# docs/remote-gpu.md). A smaller model can take 999 (= all).
+TRANSLATION_GPU_LAYERS = os.environ.get("TRANSLATION_GPU_LAYERS", "46")
 # Request "model" label. Ignored by a single-model llama-server (local /
 # simple remote); the routing key under llama-swap. Kept in sync with the
 # actual model via env, falling back to the model file's own name.
@@ -330,6 +335,11 @@ _KEEP_TERMS = [
                  r"riposte response", r"rapises?"]),
     ("remise", []),
     ("reprise", []),
+    # "du tac au tac": parry and riposte in one instant -- kept in French in
+    # English fencing writing. Qwen3.8 rendered it word for word ("FROM THE
+    # TAC TO THE TAC", Gomard scan 239); older output left it bare/unitalic.
+    ("tac-au-tac", [r"(?:(?:from|of)\s+the\s+|du\s+)?tac[- ]to[- ]the[- ]tac",
+                    r"(?:(?:from|of)\s+the\s+|du\s+)?tac[- ]au[- ]tac"]),
 ]
 
 # A source-language token the 7B reliably garbles. rassemblant is now a
@@ -388,6 +398,24 @@ def fix_known_garbles(text: str, src: str = "") -> str:
         return w.upper() if g.isupper() else w.capitalize() if g[:1].isupper() else w
     text = re.sub(r"\bthusts?\b", lambda m: _case(m, "thrust"), text, flags=re.I)
     text = re.sub(r"\bthroughs\b", lambda m: _case(m, "thrust"), text, flags=re.I)
+    # "the du tac-au-tac riposte": the French article left in front
+    text = re.sub(r"\bdu\s+((?:<i>)?tac[- ]au[- ]tac)", r"\1", text, flags=re.I)
+    text = re.sub(r"\bripposte(s?)\b", lambda m: _case(m, "riposte") + m.group(1).lower()
+                  if not m.group(0).isupper() else "RIPOSTE" + m.group(1).upper(), text, flags=re.I)
+    # A capitals line with one word the model split while spelling it
+    # ("RIPostes AFTER THE PARRIES", Gomard scan 239): the model reads an
+    # all-caps word as fragments and can reassemble it in mixed case.
+    # Restore capitals when the rest of the line is capitals.
+    def _caps_line(line):
+        plain = re.sub(r"</?i>", "", line)
+        words = re.findall(r"[^\W\d_]+", plain)
+        odd = [w for w in words if re.fullmatch(r"[A-Z]{2,}[a-z]+", w)]
+        rest = [w for w in words if w not in odd and len(w) > 1]
+        if odd and rest and all(w.isupper() for w in rest):
+            for w in odd:
+                line = re.sub(r"\b" + w + r"\b", w.upper(), line)
+        return line
+    text = "\n".join(_caps_line(l) for l in text.split("\n"))
     text = re.sub(r"\bthrusts?\s*/\s*hits?\b",
                   lambda m: _case(re.search(r"thrusts?", m.group(0), re.I), "thrust"),
                   text, flags=re.I)
@@ -641,80 +669,15 @@ def extract_source_footnotes(text: str, state: dict) -> str:
     return f"{new_body}\n\n{FN_HEADER}\n{block}".strip()
 
 
-_FIG_TITLE_RE = re.compile(
-    r"(?i)^\s*(?:parry|parade|thrust|coup|lunge|figure|fig\.|plate|pl\.|planche"
-    r"|salut|guard|on guard|en garde|développement|\w+\s+(?:position|movement))\b")
-
-
-def label_margin_notes(text: str, has_fig: bool = False) -> str:
-    """A printed shoulder-note captured by the VLM as a trailing standalone
-    short paragraph -> move it to the note strip labelled '[margin note]'
-    so it is clearly not body text. Skipped on a figure page (the trailing
-    short line there is a caption title, not a shoulder note) and on a page
-    that isn't prose-dominant."""
-    if has_fig:
-        return text
-    parts = text.split("\n" + FN_HEADER + "\n", 1)
-    body = parts[0]
-    existing = parts[1] if len(parts) > 1 else ""
-    paras = [p for p in re.split(r"\n\s*\n", body.strip()) if p.strip()]
-    if len(paras) < 3:                       # need a prose-dominant page
-        return text
-
-    def _note_shaped(p):
-        s = p.strip()
-        letters = [c for c in s if c.isalpha()]
-        # A genuine printed shoulder-note is a complete remark -- it ends
-        # the sentence. A paragraph the page boundary cut off (continues on
-        # the next page) usually doesn't, and not just on a comma
-        # (P-review D) -- a corpus scan after that fix still found 40/67
-        # tagged notes with no terminal punctuation at all, nearly all
-        # clearly mid-sentence ("One breaks the distance to disengage from
-        # an enemy...", cut off). Require the sentence to actually end,
-        # instead of blacklisting a few specific "clearly continues" chars.
-        ends_sentence = bool(re.search(r'[.!?][)\]"»]*$', s))
-        return not ("\n" in s or len(s.split()) > 20 or s[:1] in "([{«"
-                    or re.match(r"\d", s) or re.match(r"[A-Za-zÀ-ÿ]?\d+[°ºo]", s)
-                    or _FIG_TITLE_RE.match(s)   # a figure caption title, not a note
-                    or (letters and sum(c.isupper() for c in letters) > 0.7 * len(letters))
-                    or not ends_sentence)
-
-    # A shoulder-note doesn't have to be the page's LAST paragraph -- real
-    # body prose can continue after it (Gomard src 32: the genuine note,
-    # "He recognizes only three ways of striking.", sat one paragraph
-    # before the end, immediately followed by a real closing paragraph
-    # that used to get wrongly tagged as the note instead). The two are
-    # shape-IDENTICAL (both short, both end a sentence, neither uppercase-
-    # heavy) -- position alone can't tell them apart. What can: a genuine
-    # printed shoulder-note is a summary that INTRODUCES what follows it
-    # in the main text (it's a marginal "argument", not a conclusion), so
-    # it is essentially never the page's actual last paragraph -- real
-    # prose almost always continues after it on the same page. Check the
-    # second-to-last paragraph FIRST for exactly that reason, and only
-    # fall back to the true last paragraph if that one isn't note-shaped.
-    # Kept narrow (not "anywhere on the page") on purpose: a 3-paragraph
-    # page's own opening paragraph can incidentally satisfy the same
-    # shape checks (short-ish, ends a sentence) without being anywhere
-    # near a margin note, so this must never reach back to paragraph 1.
-    idx = None
-    if len(paras) >= 3 and _note_shaped(paras[-2]):
-        idx = len(paras) - 2
-    elif _note_shaped(paras[-1]):
-        idx = len(paras) - 1
-    if idx is None:
-        return text
-    # Detect and remove it from body -- but do NOT render it anywhere.
-    # Review feedback (2026-09-18): a page can carry more than one
-    # margin-note-shaped paragraph (Gomard src 32 originally had two);
-    # this function only ever finds the single best candidate, so
-    # showing just one out of an unknown true count leaves the reader
-    # unable to tell which printed note it corresponds to. Simplest
-    # honest fix: keep it out of the body (still clearly not body prose)
-    # without claiming to faithfully reproduce it.
-    rest = "\n\n".join(paras[:idx] + paras[idx + 1:])
-    if existing.strip():
-        return f"{rest}\n\n{FN_HEADER}\n{existing.strip()}"
-    return rest
+# Margin (shoulder) notes: no text heuristic here any more. The old
+# label_margin_notes() guessed that a short, sentence-ending paragraph near the
+# end of a page was a margin note and deleted it from the page (2026-09-18
+# review decision). Guessing from text shape can't tell a note from a
+# sub-heading, a signature or a closing sentence: Qwen3.8's paragraphing
+# made it delete Prévost's "Le rôle du médecin." heading outright. Removed
+# 2026-09-25 -- the pipeline must never silently lose source text. Proper
+# classification belongs to the layout detector, which sees where a block
+# sits on the page (docs/STATUS.md).
 
 
 def _looks_like_subheading(s: str) -> bool:
@@ -1160,7 +1123,7 @@ def start_translation_server():
     print("LOADING TRANSLATION MODEL")
     print("="*60 + "\n")
     print(f"Model: {Path(TRANSLATION_MODEL).name}")
-    print("Port:  11434 | GPU: Full offload\n")
+    print(f"Port:  11434 | GPU layers: {TRANSLATION_GPU_LAYERS}\n")
 
     if not os.path.exists(TRANSLATION_MODEL):
         print(f"✗ Model not found: {TRANSLATION_MODEL}\n")
@@ -1179,17 +1142,23 @@ def start_translation_server():
         "--model", TRANSLATION_MODEL,
         "--host", "0.0.0.0",
         "--port", "11434",
-        # 8192, not 4096: PROMPT_TEMPLATE (term policy + EXAMPLES) is ~1.5k
+        # 6144, not 4096: PROMPT_TEMPLATE (term policy + EXAMPLES) is ~1.5k
         # tokens and prepended to every call, so a long source page + a
         # full-length response overran a 4096 window ("Context size has
-        # been exceeded" -> empty response -> "kept original text").
-        "--ctx-size", "8192",
-        "--n-gpu-layers", "999",
+        # been exceeded" -> empty response -> "kept original text"). 8192
+        # costs VRAM the 27B needs for its layers.
+        "--ctx-size", "6144",
+        "--n-gpu-layers", TRANSLATION_GPU_LAYERS,
+        # llama.cpp now defaults to 4 slots = 4x the context memory
+        "--parallel", "1",
+        # the model's own chat template, thinking off (Qwen3.x reasons by
+        # default, which only slows translation)
+        "--jinja", "--reasoning-budget", "0",
         "--threads", str(os.cpu_count())
     ]
 
-    print("Starting server (loads ~7GB VRAM; ~60s warm, up to ~4min on a "
-          "cleared GPU shader cache)...\n")
+    print("Starting server (~60s warm, up to ~4min on a cleared GPU shader "
+          "cache)...\n")
 
     log_file = open("/tmp/translation_server.log", "w")
     proc = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT,
@@ -1227,6 +1196,9 @@ def start_translation_server():
     proc.terminate()
     return None
 
+LAST_MODEL = ""   # model file of the last reply (set by translate_with_llama)
+
+
 def translate_with_llama(prompt: str, temperature: float = 0.3) -> str:
     body = {
         "model": TRANSLATION_MODEL_NAME,
@@ -1254,6 +1226,11 @@ def translate_with_llama(prompt: str, temperature: float = 0.3) -> str:
             if response.status_code == 200:
                 result = response.json()
                 if "choices" in result and len(result["choices"]) > 0:
+                    # the model file the server actually ran (llama-server
+                    # reports its path) -- what the cover page credits
+                    global LAST_MODEL
+                    m = str(result.get("model") or "")
+                    LAST_MODEL = re.sub(r"\.gguf$", "", re.split(r"[\\/]", m)[-1]) or LAST_MODEL
                     # A reasoning model (Qwen3.x, Gemma 4) run with thinking
                     # left on puts its reasoning in a separate field (ignored
                     # here) or inline as <think>...</think> -- never let that
@@ -1455,7 +1432,8 @@ def harmonize_titles_with_headers(folder: str) -> int:
         if not h or "\t" in h or h.lower() == "none" or not hmap.get(h):
             continue
         body = clean_vlm_extraction(ex[i])
-        src_title = next((l.strip() for l in body.split("\n") if l.strip()), "")
+        src_title = next((l.strip() for l in body.split("\n")
+                          if l.strip() and not l.strip().startswith("⟦MARGIN:")), "")
         if _norm_title(src_title) != _norm_title(h):
             continue
         t = tr[i]
@@ -1463,7 +1441,10 @@ def harmonize_titles_with_headers(folder: str) -> int:
             continue
         en = enforce_kept_terms(hmap[h], h)
         lines = t.split("\n")
-        k = next(j for j, l in enumerate(lines) if l.strip())
+        k = next((j for j, l in enumerate(lines)
+                  if l.strip() and not l.strip().startswith("⟦MARGIN:")), None)
+        if k is None:
+            continue
         if lines[k].strip() == en:
             continue
         if _is_title_line(lines[k], src_title):
@@ -1524,20 +1505,67 @@ def load_fingerprints(folder: str):
     return _json.load(open(p, encoding="utf-8"))["pages"] if os.path.exists(p) else None
 
 
-def save_fingerprints(folder: str, fps: list, translated: list = None) -> None:
-    """Also records which translation model produced each page (`models`,
-    the name sent to the server -- a llama-swap key in remote mode). Pages
+def save_fingerprints(folder: str, fps: list, translated: list = None,
+                      page_models: list = None) -> None:
+    """Also records which translation model produced each page (`models`:
+    the model file the server reported, else the name sent to it). Pages
     listed in `translated` (1-based) get the current model; the rest keep
-    what was recorded before. The cover page summarises it."""
+    what was recorded before. `page_models` (per page, from a resumed run)
+    overrides both. The cover page summarises it."""
     import json as _json
     p = f"{folder}/intermediate/translated_from.json"
     old = _json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
-    models = old.get("models") or [TRANSLATION_MODEL_NAME] * len(fps)
-    models = (models + [TRANSLATION_MODEL_NAME] * len(fps))[:len(fps)]
+    # pages translated before the model was recorded: unknown ("") -- the
+    # cover shows them as the configured default model, never as whatever
+    # model happens to be running now
+    models = old.get("models") or [""] * len(fps)
+    models = (models + [""] * len(fps))[:len(fps)]
     for k in (translated if translated is not None else range(1, len(fps) + 1)):
-        models[k - 1] = TRANSLATION_MODEL_NAME
+        models[k - 1] = LAST_MODEL or TRANSLATION_MODEL_NAME
+    for k, m in enumerate(page_models or []):
+        models[k] = m or models[k]
     with open(p, "w", encoding="utf-8") as fh:
         _json.dump({"version": 1, "pages": fps, "models": models}, fh, indent=0)
+
+
+def _partial_path(folder: str) -> str:
+    return f"{folder}/intermediate/translation.partial.json"
+
+
+def save_partial(folder: str, fps: list, done: list, models: list, st: dict) -> None:
+    """After each page of a whole-book run: the pages translated so far, the
+    source fingerprints they came from, the model per page, and the
+    book-wide footnote state at this point -- so a crashed or cancelled run
+    resumes where it stopped instead of starting over. Written to a temp
+    file and renamed, so a crash mid-write never leaves a broken file."""
+    import json as _json
+    p = _partial_path(folder)
+    with open(p + ".tmp", "w", encoding="utf-8") as fh:
+        _json.dump({"version": 1, "fingerprints": fps, "pages": done, "models": models,
+                    "state": {"fn_seen": sorted(st["fn_seen"]),
+                              "cat3_seen": sorted(st["cat3_seen"]),
+                              "fn_state": st["fn_state"]}}, fh, ensure_ascii=False)
+    os.replace(p + ".tmp", p)
+
+
+def load_partial(folder: str, fps: list):
+    """(pages done, models, state) from an interrupted whole-book run, or
+    None. Used only if the book still has the same page count and the done
+    pages' source text is unchanged (the saved state is only valid for
+    exactly those pages); pages after them may have changed freely."""
+    import json as _json
+    p = _partial_path(folder)
+    try:
+        d = _json.load(open(p, encoding="utf-8"))
+        done, old_fps = d["pages"], d["fingerprints"]
+        if len(old_fps) != len(fps) or old_fps[:len(done)] != fps[:len(done)]:
+            return None
+        s = d["state"]
+        st = {"fn_seen": set(s["fn_seen"]), "cat3_seen": set(s["cat3_seen"]),
+              "fn_state": dict(s["fn_state"])}
+        return done, list(d.get("models") or [""] * len(done)), st
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
@@ -1555,9 +1583,6 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
 
     # Clean VLM structured output before translation
     clean_text = clean_vlm_extraction(page_text)
-    page_has_fig = (bool(re.search(r"(?im)^\s*FIGURES\s*:", page_text))
-                    and not re.search(r"(?im)^\s*FIGURES\s*:\s*none\s*$",
-                                      page_text))
 
     if not clean_text.strip():
         print(f"  Page {i}/{n} — no body text, skipped")
@@ -1717,6 +1742,12 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
 
         best_candidate = best_candidate or candidate
 
+        # every margin note (⟦MARGIN: …⟧, from _margins.py) must survive
+        if candidate.count("⟦MARGIN:") < clean_text.count("⟦MARGIN:"):
+            print(" → margin note lost")
+            time.sleep(2)
+            continue
+
         if contains_too_much_non_english(candidate):
             print(" → not English")
             time.sleep(8)
@@ -1741,7 +1772,6 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         candidate = match_boundary_punctuation(candidate, clean_text)
         candidate, n_fn = pull_footnotes(candidate, clean_text, fn_seen)
         candidate = extract_source_footnotes(candidate, fn_state)
-        candidate = label_margin_notes(candidate, has_fig=page_has_fig)
         print(f" ✓{'  (%d fn)' % n_fn if n_fn else ''}")
         return candidate
 
@@ -1917,18 +1947,30 @@ try:
         print(f"Translating: {Path(folder).name}")
         print(f"Pages: {len(pages)}\n")
         
-        translated_pages = []
-        fn_seen = set()     # dedupe <fn> note text across the book
-        cat3_seen = set()   # footnote each Category-3 term once per book
-        fn_state = {}       # cross-page state for the book's own footnotes
-        _st = {"fn_seen": fn_seen, "cat3_seen": cat3_seen, "fn_state": fn_state}
+        # book-wide state: fn_seen dedupes <fn> note text, cat3_seen
+        # footnotes each Category-3 term once, fn_state carries the book's
+        # own footnote across a page break
+        resumed = load_partial(folder, cur_fp)
+        if resumed:
+            translated_pages, page_models, _st = resumed
+            print(f"Resuming an interrupted run: {len(translated_pages)} page(s) already "
+                  f"done, continuing at page {len(translated_pages) + 1}\n"
+                  f"  (delete intermediate/translation.partial.json to start over)\n")
+        else:
+            if os.path.exists(_partial_path(folder)):
+                print("  (saved partial run is for different source text -- starting over)\n")
+            translated_pages, page_models = [], []
+            _st = {"fn_seen": set(), "cat3_seen": set(), "fn_state": {}}
 
-        for i, page_text in enumerate(pages, 1):
-            translated_pages.append(translate_page(page_text, i, len(pages), _st))
+        for i in range(len(translated_pages) + 1, len(pages) + 1):
+            translated_pages.append(translate_page(pages[i - 1], i, len(pages), _st))
+            page_models.append(LAST_MODEL or TRANSLATION_MODEL_NAME)
+            save_partial(folder, cur_fp, translated_pages, page_models, _st)
 
         with open(dst, "w", encoding="utf-8") as f:
             f.write(_pageio.join_pages(translated_pages))
-        save_fingerprints(folder, cur_fp)
+        save_fingerprints(folder, cur_fp, page_models=page_models)
+        os.remove(_partial_path(folder))
 
         translate_figure_captions(folder)
         translate_headers(folder)

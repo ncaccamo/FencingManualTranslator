@@ -200,7 +200,7 @@ What it shows and where each piece comes from:
 | title · author · year · publisher | `books/<stem>.meta.json` (falls back to the bare stem) |
 | "The original work is in the public domain." + digitisation source/URL | `meta.json` (`rights`, `source`, `source_id`, `source_url`, `source_terms`) |
 | disclosure sentence, method, reading-conventions | constants in `_cover.py` |
-| OCR / translation model names | live from `VLM_MODEL_PATH` / `TRANSLATION_MODEL_PATH` (OCR label drops the quant tag) |
+| OCR / translation model names | OCR: live from `VLM_MODEL_PATH` (label drops the quant tag). Translation: step 2's per-page record (`intermediate/translated_from.json`), with page counts if models were mixed; pages with no record (translated before 2026-09-25) are credited to Qwen2.5-14B-Instruct-Q4_K_M |
 | `Pipeline <sha> · generated <date>` | `PIPELINE_VERSION` env (set by `run_full_pipeline.sh`); omitted on a bare `docker exec` |
 | CC0 line + GitHub URL | constants |
 | `pipeline id: <stem>` footer | the stem, for traceability back to `processed/` |

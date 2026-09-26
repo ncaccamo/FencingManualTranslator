@@ -95,12 +95,22 @@ def _wrap(spans, width, size):
 
 
 class Line:
-    __slots__ = ("indent", "spans", "gap")
+    __slots__ = ("indent", "spans", "gap", "note")
 
-    def __init__(self, indent=0.0, spans=None, gap=False):
+    def __init__(self, indent=0.0, spans=None, gap=False, note=False):
         self.indent = indent
         self.spans = spans or []
         self.gap = gap
+        self.note = note        # an author's margin note (see layout())
+
+
+# A margin note arrives from step 2 as its own line, ⟦MARGIN: …⟧, placed
+# right before the paragraph it annotates (_margins.py). Drawn as a distinct
+# grey italic line with a thin bar at its left edge -- in the text flow, next
+# to its paragraph, never stacked elsewhere and never as raw brackets.
+_MARGIN_RE = re.compile(r"^\s*⟦MARGIN:\s*(.*?)\s*⟧\s*$")
+NOTE_INDENT = 10.0
+NOTE_COLOR = (0.38, 0.38, 0.38)
 
 
 def layout(text, width, size):
@@ -109,6 +119,13 @@ def layout(text, width, size):
     for raw in (text or "").split("\n"):
         if not raw.strip():
             out.append(Line(gap=True))
+            continue
+        m = _MARGIN_RE.match(raw)
+        if m:
+            # the note is italic throughout; an <i> term inside it stays italic
+            note = re.sub(r"</?i>", "", m.group(1))
+            for vline in _wrap([(note, 1)], max(width - NOTE_INDENT, _MIN_WRAP), size):
+                out.append(Line(NOTE_INDENT, vline, note=True))
             continue
         n = len(raw) - len(raw.lstrip(" "))
         indent = n * _SPACE_PT
@@ -130,7 +147,8 @@ def draw(page, rect, lines, size, *, leading=1.28, gap_frac=0.55,
     lh = size * leading
     y = y0
     tw = None if dry else fitz.TextWriter(page.rect)
-    wrote = False
+    tw_note = None if dry else fitz.TextWriter(page.rect)
+    wrote = wrote_note = False
     leftover = []
     for idx, ln in enumerate(lines):
         if ln.gap:
@@ -150,19 +168,29 @@ def draw(page, rect, lines, size, *, leading=1.28, gap_frac=0.55,
             leftover = lines[idx:]
             break
         if tw is not None:
+            writer = tw_note if ln.note else tw
             pt = fitz.Point(x0 + ln.indent, y + size)
             for txt, ital in ln.spans:
                 if not txt:
                     continue
-                res = tw.append(pt, txt, font=_font(ITALIC if ital else ROMAN),
-                                fontsize=size)
+                res = writer.append(pt, txt, font=_font(ITALIC if ital else ROMAN),
+                                    fontsize=size)
                 # TextWriter.append returns (text_rect, last_point) on this
                 # PyMuPDF; older builds return just the point.
                 pt = res[1] if isinstance(res, (tuple, list)) else res
-                wrote = True
+                if ln.note:
+                    wrote_note = True
+                else:
+                    wrote = True
+            if ln.note:
+                bx = x0 + ln.indent - 5
+                page.draw_line((bx, y + size * 0.15), (bx, y + lh * 0.95),
+                               width=0.8, color=NOTE_COLOR)
         y += lh
     if wrote:
         tw.write_text(page, color=color)
+    if wrote_note:
+        tw_note.write_text(page, color=NOTE_COLOR)
     return leftover, y
 
 

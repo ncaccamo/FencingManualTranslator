@@ -54,7 +54,7 @@ echo ""
 
 echo "[3/4] AI Translation..."
 echo "────────────────────────────────────────────────────────"
-echo "  → This step loads Qwen2.5-14B (translation model)"
+echo "  → This step loads the translation model"
 echo "  → Translates extracted text to English"
 echo "  → Preserves technical fencing terms"
 echo "  → Time: ~10-20 seconds per page"

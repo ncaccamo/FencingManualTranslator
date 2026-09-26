@@ -56,10 +56,14 @@ def still_french(text: str, min_fr: int = 5) -> bool:
 TERM_RULES = [
     # coup = the whole action -> blow; botte = its finish -> thrust (Gomard's own
     # definition, pdf 158). Noun uses only: "they throw themselves" is fine.
-    (r"\bcoups?\b", r"\b(?:throws|(?<!\ba )single blows?|(?:simple|compound) throws?)\b",
+    # "throws" only as a noun for coups ("the throws", "simple throws", a
+    # THROWS heading) -- "he throws himself onto the point" is correct English
+    (r"\bcoups?\b", r"(?:\b(?:the|these|those|such|all|two|three|simple|compound|straight|single|of|and)"
+     r"\s+throws\b|\b(?-i:THROWS)\b|(?<!\ba )\bsingle blows?\b|\b(?:simple|compound) throw\b)",
      "coup → blow"),
     (r"\bbottes?\b", r"\bthrusts?\s*/\s*hits?\b", "botte → thrust"),
     (r"\bplanches?\b", r"\bplanks?\b", "planche → plate"),
+    (r"\btac[- ]au[- ]tac\b", r"\btac[- ]to[- ]the[- ]tac\b", "du tac au tac → tac-au-tac"),
     (r"\brompre|\brompez|\brompu", r"\bromp", "rompre → break ground"),
     # of a blade only -- "fil de soie" is real silk thread
     (r"\bsoie\b", r"\bsilk\b(?=.{0,40}\b(?:blade|hilt|handle|guard|pommel|grip)\b)"
@@ -76,7 +80,7 @@ CONSISTENCY = [
     ("botte (de quarte …)", r"\bbottes?\s+de\s+\w+",
      r"\b(hits?|thrusts?|lunges?|finish(?:es)?)\s+(?:of|in|to)\s+(?:prime|seconde|tierce|quarte|quinte|sixte|septime|octave)\b"),
 ]
-GARBLES = r"\b(?:thusts?|throughs|rapises?|rompers?)\b"
+GARBLES = r"\b(?:thusts?|throughs|rapises?|rompers?|rippostes?|(?-i:[A-Z]{2,}[a-z]{2,}))\b"
 META = re.compile(r"(?i)\b(?:here is the translation|translated text:|as an ai\b|"
                   r"i cannot translate|please provide the text|i'm sorry)")
 
@@ -140,6 +144,10 @@ def translation_issues(src: str, t: str) -> list:
             r"\s*(?:<i>)?(?:plate|pl\.|fig\.?|figure)\s+" + lab.group(1) + r"\b", t, re.I):
         out.append((CHECK, "translation", f"the page's label {lab.group(0).strip()!r} "
             "is missing from the English"))
+    n_src, n_en = src.count("⟦MARGIN:"), t.count("⟦MARGIN:")
+    if n_en < n_src:
+        out.append((CHECK, "margin note", f"{n_src - n_en} of the page's {n_src} margin "
+                    "note(s) missing from the English"))
     if "[margin note]" in t:
         out.append((NOTE, "layout", "a paragraph was moved to the notes as a margin note "
             "(heuristic) -- confirm it is one"))
