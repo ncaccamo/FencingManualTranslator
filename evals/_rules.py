@@ -15,6 +15,8 @@ import sys
 import types
 
 PIPELINE = Path(__file__).resolve().parent.parent / "pipeline"
+if not PIPELINE.is_dir():                  # in the image: evals at /data/evals, pipeline at /app
+    PIPELINE = Path("/app")
 sys.path.insert(0, str(PIPELINE))
 
 
@@ -98,6 +100,7 @@ load_ocr_partial = OCR["load_ocr_partial"]
 parse_figures_block = OCR["parse_figures_block"]
 reconcile_page_numbers = OCR["reconcile_page_numbers"]
 strip_leaked_headmatter = OCR["strip_leaked_headmatter"]
+tail_catchwords = OCR["tail_catchwords"]
 leaked_top_header = OCR["leaked_top_header"]
 is_plate_leaf = OCR["is_plate_leaf"]
 _fold_caption_only_body = OCR["_fold_caption_only_body"]

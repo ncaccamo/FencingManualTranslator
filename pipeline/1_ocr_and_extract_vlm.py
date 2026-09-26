@@ -257,7 +257,32 @@ def leaked_top_header(body: str, known_headers: set) -> str:
     return first if first and _norm_head(first) in known_headers else ""
 
 
-def strip_leaked_headmatter(body: str, known_headers: set, own_header: str = "") -> str:
+def _catchword_shaped(s: str) -> bool:
+    """Short title-shaped line: 1-2 words, >=4 letters, mostly capitals, and
+    not a name with an initial ("G. JOLLIVET.")."""
+    words = s.split()
+    letters = [c for c in s if c.isalpha()]
+    return (1 <= len(words) <= 2 and len(letters) >= 4
+            and sum(c.isupper() for c in letters) >= 0.85 * len(letters)
+            and not re.search(r"(?:^|\s)[A-ZÀ-Þ]\.(?:\s|$)", s))
+
+
+def tail_catchwords(parsed: list) -> set:
+    """Printer's catchwords of this book: a catchword-shaped last body line
+    that recurs at the foot of >= 2 pages (one per gathering -- Kirchhoffer
+    "ESCRIME." on src 17 / 33). A one-off short capitals line at a page foot
+    is content: a signature ("PAUL BOURGET"), a title-page line, "FIN."."""
+    from collections import Counter
+    seen = Counter()
+    for p in parsed:
+        lines = [l.strip() for l in (p.get("body") or "").split("\n") if l.strip()]
+        if len(lines) > 1 and _catchword_shaped(lines[-1]):
+            seen[_norm_head(lines[-1])] += 1
+    return {k for k, n in seen.items() if n >= 2}
+
+
+def strip_leaked_headmatter(body: str, known_headers: set, own_header: str = "",
+                            catchwords: set = frozenset()) -> str:
     """Peel bookbinding apparatus off BODY_TEXT.
 
     TOP: the VLM sometimes drops the running header and/or the printed
@@ -281,7 +306,13 @@ def strip_leaked_headmatter(body: str, known_headers: set, own_header: str = "")
     short line at the very start of body is more likely genuine content):
     a standalone tail line that's very short (<=2 words) and title-shaped
     (mostly uppercase) is also apparatus, regardless of whether it
-    matches a confirmed page header."""
+    matches a confirmed page header.
+
+    *2026-09-26:* that widening stripped 16 real lines across the six
+    books for 2 real catchwords -- signatures (PAUL BOURGET, G. JOLLIVET.,
+    A. SPINNEWYN.), title-page lines, Gomard's half-title "DE L'ESCRIME.",
+    "FIN.". Now the short-capitals tail line must also be one of the
+    book's `catchwords` (tail_catchwords(): recurs at >= 2 page feet)."""
     def _is_bare_number(s):
         return bool(re.fullmatch(r"[a-z]?[\dIVXLCDM]{1,4}\.?", s, re.I))
 
@@ -291,10 +322,7 @@ def strip_leaked_headmatter(body: str, known_headers: set, own_header: str = "")
     def _is_tail_apparatus(s):
         if _is_apparatus(s):
             return True
-        words = s.split()
-        letters = [c for c in s if c.isalpha()]
-        return (1 <= len(words) <= 2 and len(letters) >= 3
-                and sum(c.isupper() for c in letters) >= 0.85 * len(letters))
+        return _catchword_shaped(s) and _norm_head(s) in catchwords
 
     lines = body.split("\n")
     while lines:
@@ -763,7 +791,7 @@ def known_headmatter(parsed: list) -> set:
             if p.get("header") and _key(p["header"]) in confirmed}
 
 
-def reconcile_headers(parsed: list) -> None:
+def reconcile_headers(parsed: list, no_head: set = frozenset()) -> None:
     """The header bar is for a genuine running header -- one repeated at
     the top of the page across a section, OR a one-page subsection's own
     title standing as its running head. Both are real: visual inspection
@@ -816,7 +844,11 @@ def reconcile_headers(parsed: list) -> None:
     head root*: a two-part head ``LEFT\tRIGHT`` (section name + per-page
     topic, e.g. ``SABRE\tCORPS A CORPS``) keys on LEFT only -- the right
     half is unique to one page and must not fragment the count, or every
-    plate page in a section loses its header (K-batch2 regression)."""
+    plate page in a section loses its header (K-batch2 regression).
+
+    `no_head`: page indices the layout detector is sure print no running
+    head (_layout.no_head_pages) -- nothing here lifts or carries a header
+    onto them; the OCR model's own HEADER is still trusted."""
     def _key(h):
         return _norm_head(h.split("\t", 1)[0] if "\t" in h else h)
 
@@ -851,8 +883,10 @@ def reconcile_headers(parsed: list) -> None:
                 return f"{display}\t{' '.join(words[:-n])}"
         return None
 
-    for p in parsed:
+    for i, p in enumerate(parsed):
         head = (p.get("header") or "").strip()
+        if not head and i in no_head:
+            continue
         if head:
             # Try the reorder whenever there's no tab, regardless of
             # whether the swapped form is itself "confirmed" -- a
@@ -929,7 +963,8 @@ def reconcile_headers(parsed: list) -> None:
     # confirmed header, inherits it.
     n = len(parsed)
     for i, p in enumerate(parsed):
-        if (p.get("header") or "").strip() or i == 0 or i == n - 1 or _is_blank_leaf(p):
+        if (p.get("header") or "").strip() or i == 0 or i == n - 1 or _is_blank_leaf(p) \
+                or i in no_head:
             continue
         prev_h = (parsed[i - 1].get("header") or "").strip()
         next_h = (parsed[i + 1].get("header") or "").strip()
@@ -964,7 +999,7 @@ def reconcile_headers(parsed: list) -> None:
             _orig_confirmed.append((i, k, h.split("\t", 1)[0] if "\t" in h else h))
     _fills = {}
     for i, p in enumerate(parsed):
-        if (p.get("header") or "").strip() or _is_blank_leaf(p):
+        if (p.get("header") or "").strip() or _is_blank_leaf(p) or i in no_head:
             continue
         best = None
         best_dist = _MAX_GAP + 1
@@ -1797,16 +1832,27 @@ try:
         parsed = [parse_vlm_response(p) for p in extracted_pages]
         postprocess_parsed_pages(parsed)
         _known_heads = known_headmatter(parsed)
-        for p in parsed:
+        _catch = tail_catchwords(parsed)
+        # pages the layout detector is sure print no running head: no body
+        # line is promoted to (or stripped as) a running head on them
+        try:
+            import _layout
+            _no_head = _layout.no_head_pages(work_dir, [p.get("header") for p in parsed])
+        except Exception as e:
+            print(f"⚠ layout not used for running heads ({type(e).__name__}: {e})")
+            _no_head = set()
+        for i, p in enumerate(parsed):
+            if i in _no_head:
+                continue
             own = (p.get("header") or "").strip()   # the VLM's own, pre-promotion
             if not (p.get("header") or "").strip():
                 promoted = leaked_top_header(p["body"], _known_heads)
                 if promoted:
                     p["header"] = promoted
-            p["body"] = strip_leaked_headmatter(p["body"], _known_heads, own)
+            p["body"] = strip_leaked_headmatter(p["body"], _known_heads, own, _catch)
         _fold_caption_only_body(parsed)
         fold_caption_header_into_figure(parsed)
-        reconcile_headers(parsed)
+        reconcile_headers(parsed, _no_head)
         try:
             import _margins
             _margins.apply_to_book(work_dir, parsed)

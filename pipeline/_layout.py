@@ -110,6 +110,28 @@ def header_band(pages: list):
     return (m - w, m + w, statistics.median([_hgt(b) for b in heads]) * 2.0)
 
 
+def no_head_pages(folder: str, own_headers: list) -> set:
+    """Page indices the detector is sure print NO running head, given the
+    OCR model's own HEADER per page (before any promotion). The page parse
+    must not add a running head to these -- by lifting a body line or by
+    carrying one over from neighbouring pages (stage 2; all 32 such
+    disagreements on Gomard / Kirchhoffer / Prévost were the pipeline's own
+    additions: chapter titles, plates, title pages -- scan-checked). Empty
+    when the book has no layout.json."""
+    lay = load(folder)
+    if not lay:
+        return set()
+    pages = [lay["pages"].get(str(i), {"boxes": []}) for i in range(len(own_headers))]
+    band = header_band(pages)
+    out = set()
+    for i, own in enumerate(own_headers):
+        own = (own or "").strip()
+        printed, unsure, _ = running_head(pages[i], band, bool(own) and own.lower() != "none")
+        if not printed and not unsure:
+            out.add(i)
+    return out
+
+
 def running_head(page: dict, band, vlm_header: bool) -> tuple:
     """Does this page print a running head? -> (decision, unsure, reason).
 

@@ -33,6 +33,8 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - divers (as a heading) → miscellaneous
    - soie (of a blade) → tang   (NOT "silk" or "thread")
    - fort / faible (of a blade) → forte / foible
+   - targets: tête → head   |   figure ("attaque à la figure") → face   |   manchette → wrist
+   - tierce basse, quarte haute … → low tierce, high quarte …   (the adjective before the parry name)
    - fer (the opponent's steel) → the blade   (NOT "iron"): "attaque au fer" → attack on the blade, "chercher le fer" → seek the blade.
 
 3b. TRANSLATE these too, and the FIRST time each one appears in the text you are given, write it as  English<fn>Fr. original</fn>  — a bare source reference, NOT an explanation, nothing added. Later occurrences: just the English.

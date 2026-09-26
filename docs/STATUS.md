@@ -287,6 +287,36 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
     the pasted-copy check now two-sided (one-sided overlap had deleted 14
     chapter titles). Next: a review-report check for a body title the raw OCR
     had but the translation lacks -- only the pass-8 checklist caught it.
+14b. **Full Qwen3.8 runs + layout stage 2 (2026-09-26).** Gomard,
+    Kirchhoffer, Prévost fully retranslated; review reports: 0 / 1 (library
+    cover page) / 0 pages to check. Layout stage 2: the parse no longer adds
+    a running head to a page the detector is sure prints none (32 pages on
+    the three books, all pipeline-made; scan-checked). Also fixed from that
+    work: page-foot "catchword" rule now needs the line to recur (it was
+    deleting signatures, title-page lines, Gomard's half-title, "FIN." --
+    16 lines over six books); header overrides apply before body titles are
+    matched to their running head; review report checks for lost body
+    titles; glossary: targets tête/figure/manchette, "low tierce" order.
+    Stale books (Jacob, LaMarche, Spinnewyn): a fresh re-parse already
+    recovers nearly all their running heads (Jacob 111 -> 0, LaMarche
+    155 -> 3) -- bring-up is re-parse + scan-check + full run.
+15. **Translation speed — future options, not planned (2026-09-26).**
+    **Operator preference: keep the current split.** It loads the GPU
+    lightly, which suits long unattended / overnight runs; an extra hour per
+    book doesn't matter. Don't tune for speed unless that changes.
+    Measured on the GPU system (46/64 layers on the GPU): writing 6.8
+    tokens/s, reading ~300 tokens/s with the fixed prompt cached; ~45 s per
+    page, almost all writing. The 18 CPU layers are the limit (system-RAM
+    bandwidth). Two ways to go faster, each needing a translation model
+    selection test run before adoption and a switch only between books:
+    - **8-bit context memory** (`-ctk q8_0 -ctv q8_0`, needs flash attention
+      on Vulkan -- confirm it runs): frees ~0.8 GB VRAM → ~3 more GPU layers,
+      ~10-15% faster; quality effect negligible at our ~2-3k-token contexts
+      (4-bit would not be).
+    - **Speculative decoding** (a small same-family draft model guesses
+      ahead, the 27B checks): often 1.5-2x on predictable output like
+      translation; costs VRAM (fewer 27B layers) and adds a second model to
+      the setup.
 
 ## Not yet tested
 

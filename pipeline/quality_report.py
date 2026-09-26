@@ -64,7 +64,7 @@ TERM_RULES = [
     (r"\bbottes?\b", r"\bthrusts?\s*/\s*hits?\b", "botte → thrust"),
     (r"\bplanches?\b", r"\bplanks?\b", "planche → plate"),
     (r"\btac[- ]au[- ]tac\b", r"\btac[- ]to[- ]the[- ]tac\b", "du tac au tac → tac-au-tac"),
-    (r"\brompre|\brompez|\brompu", r"\bromp", "rompre → break ground"),
+    (r"\brompre|\brompez|\brompu", r"\bromp(?!re\b|ez\b|u\b)", "rompre → break ground"),
     # of a blade only -- "fil de soie" is real silk thread
     (r"\bsoie\b", r"\bsilk\b(?=.{0,40}\b(?:blade|hilt|handle|guard|pommel|grip)\b)"
      r"|\b(?:blade|hilt|handle|guard|pommel|grip)\b.{0,40}\bsilk\b", "soie → tang"),
@@ -89,6 +89,72 @@ def _body(tr: str) -> str:
     """English page without the footnote block and pipeline markers."""
     t = tr.split("\n" + FN_HEADER + "\n", 1)[0]
     return re.sub(r"(?m)^\[[^\]\n]*\]\s*$", "", t)
+
+
+def _norm_title(s: str) -> str:
+    import unicodedata
+    s = unicodedata.normalize("NFKD", re.sub(r"</?i>", "", s or ""))
+    return re.sub(r"[^a-z]+", "", "".join(c for c in s if not unicodedata.combining(c)).lower())
+
+
+def lead_title(body: str) -> str:
+    """The first line of a page body if it stands alone as a title: short,
+    followed by a blank line (or nothing), and either mostly capitals or a
+    short sentence-case heading ("Du dégagement."). Else ""."""
+    lines = [l.strip() for l in (body or "").strip("\n").split("\n")]
+    lines = [l for l in lines if not l.startswith("⟦MARGIN")]
+    if not lines or not lines[0]:
+        return ""
+    first = lines[0]
+    if len(lines) > 1 and lines[1]:
+        return ""                                     # runs on: a paragraph, not a title
+    plain = re.sub(r"</?i>", "", first)
+    letters = [c for c in plain if c.isalpha()]
+    words = plain.split()
+    if len(letters) < 4 or len(words) > 10 or plain.lower() == "none" \
+            or re.search(r"[,;]$", plain) or plain.startswith("FIGURES"):
+        return ""
+    caps = sum(c.isupper() for c in letters) >= 0.6 * len(letters)
+    heading = len(words) <= 6 and plain[:1].isupper() and plain.rstrip().endswith(".")
+    return first if caps or heading else ""
+
+
+def title_issues(raw_body: str, header: str, ex_body: str, tr: str,
+                 own_header: str = "", captions: str = "") -> list:
+    """A body title the OCR read that the page lost: dropped by the page
+    parse, or dropped in translation. [(level, kind, detail)]. Added after
+    14 Gomard chapter titles went missing (a margin-note copy check) and
+    only a hand review caught it."""
+    out = []
+    t = lead_title(raw_body)
+    if t:
+        # printed twice (running head AND title below it, Gomard's chapter
+        # openers): the OCR reported it as its own HEADER too -- then the
+        # body copy must survive, the header alone doesn't count
+        twice = _norm_title(own_header) == _norm_title(t)
+        # a whole line near the top of the body (not a margin note, which
+        # can repeat a title's words: "Valeur de la riposte."), the header
+        # unless printed twice, or a figure caption (plate labels move there)
+        lines = [l for l in (ex_body or "").strip("\n").split("\n")
+                 if l.strip() and not l.lstrip().startswith("⟦MARGIN")][:6]
+        have = {_norm_title(l) for l in lines} | {_norm_title(captions)} \
+            | (set() if twice else {_norm_title(header)} | {_norm_title(x) for x in header.split("\t")})
+        nt = _norm_title(t)
+        if nt and nt not in have and not any(nt in c for c in (_norm_title(captions),) if c):
+            out.append((CHECK, "title", f"the OCR read the title {t!r} at the top of the "
+                        "page, but the page text lost it"))
+    et = lead_title(ex_body)
+    if et:
+        tl = [l for l in _body(tr).strip("\n").split("\n")
+              if l.strip() and not l.startswith("⟦MARGIN")]
+        first = re.sub(r"</?i>", "", tl[0]) if tl else ""
+        letters = [c for c in first if c.isalpha()]
+        is_head = bool(letters) and (sum(c.isupper() for c in letters) >= 0.6 * len(letters)
+                                     or (len(first.split()) <= 8 and first.rstrip().endswith(".")))
+        if not is_head:
+            out.append((CHECK, "title", f"body title {et!r} is not a heading in the "
+                        "translation (missing, or lowercased into the text)"))
+    return out
 
 
 def _words(s: str) -> int:
@@ -185,6 +251,8 @@ def check_book(folder: str) -> list:
     figs = json.load(open(f"{I}/figures.json", encoding="utf-8")) \
         if os.path.exists(f"{I}/figures.json") else {}
     issues = []
+    raw = _pageio.split_pages(open(f"{I}/raw_ocr.txt", encoding="utf-8").read()) \
+        if os.path.exists(f"{I}/raw_ocr.txt") else []
 
     def add(scan, level, kind, detail):
         issues.append({"scan": scan, "level": level, "kind": kind, "detail": detail})
@@ -202,6 +270,14 @@ def check_book(folder: str) -> list:
             add(s, CHECK, "ocr", "the OCR model failed on this page")
         for level, kind, detail in translation_issues(src, t):
             add(s, level, kind, detail)
+        if raw and i < len(raw):
+            rb = raw[i].split("BODY_TEXT:", 1)[1] if "BODY_TEXT:" in raw[i] else ""
+            h = (re.search(r"(?m)^HEADER: (.*)$", e) or [None, ""])[1].strip()
+            eb = e.split("BODY_TEXT:", 1)[1] if "BODY_TEXT:" in e else ""
+            oh = re.search(r"(?im)^[ \t]*HEADER[ \t]*:[ \t]*(.*)$", raw[i])
+            caps = " ".join(f.get("caption") or "" for f in figs.get(str(i), []))
+            for level, kind, detail in title_issues(rb, h, eb, t, oh.group(1) if oh else "", caps):
+                add(s, level, kind, detail)
         if i and src.strip() and len(src) > 80:
             prev = clean_vlm_extraction(ex[i - 1]) if ex[i - 1].strip() else ""
             norm = lambda x: re.sub(r"\W+", "", x.lower())[:300]

@@ -13,13 +13,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from _rules import PIPELINE as _PIPELINE
 from _rules import (
     apply_always_translate, match_case, enforce_kept_terms,
     enforce_cat3_footnotes, pull_footnotes, fix_subheading_spacing, is_toc_page,
     repair_mangled_terms, contains_too_much_non_english,
     match_boundary_punctuation, deshout, _phrase_repairs,
     parse_figures_block, reconcile_page_numbers, _fold_caption_only_body,
-    strip_leaked_headmatter,
+    strip_leaked_headmatter, tail_catchwords,
     leaked_top_header, is_plate_leaf,
     extract_source_footnotes,
     _clean_caption, _capitalize_definition_entries, fix_parry_names,
@@ -766,8 +767,23 @@ def test_strip_tail_catchword_not_a_known_page_header():
     # title (from the title page), never any specific page's running
     # head, so it's never in known_headers and used to slip through --
     # the docstring's own example case, previously not actually caught.
-    out = strip_leaked_headmatter("Body text continues for a while.\n\nESCRIME.", set())
+    # It recurs at the foot of each gathering, which is what marks it
+    # (tail_catchwords); a one-off short capitals line is content.
+    cw = tail_catchwords([{"body": "Texte.\nESCRIME."}, {"body": "Suite.\nESCRIME."},
+                          {"body": "Vers.\nPAUL BOURGET"}])
+    assert cw == {"escrime"}
+    out = strip_leaked_headmatter("Body text continues for a while.\n\nESCRIME.", set(), "", cw)
     assert out == "Body text continues for a while."
+
+
+def test_strip_tail_keeps_signatures_and_one_off_lines():
+    # The 2026-09-18 widening stripped every short capitals tail line: 16
+    # real lines over six books. Signatures, title-page lines, a half-title's
+    # second line (Gomard scan 9 "DE L'ESCRIME."), "FIN." must survive.
+    cw = {"escrime"}
+    for tail in ("PAUL BOURGET", "G. JOLLIVET.", "A. SPINNEWYN.", "DE L’ESCRIME.", "FIN.", "PAR"):
+        body = "D'une plume qui vaut votre savant fleuret.\n\n" + tail
+        assert strip_leaked_headmatter(body, set(), "", cw) == body, tail
 
 
 def test_strip_tail_catchword_keeps_only_line():
@@ -1452,7 +1468,7 @@ def test_harmonize_body_title_with_header():
 
 def _load_overrides_module():
     import importlib
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
+    sys.path.insert(0, str(_PIPELINE))
     return importlib.import_module("_overrides")
 
 
@@ -1517,7 +1533,7 @@ def test_overrides_parse_page_spec():
 
 def _layout_mod():
     import importlib
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
+    sys.path.insert(0, str(_PIPELINE))
     return importlib.import_module("_layout")
 
 
@@ -1583,7 +1599,7 @@ def test_margin_notes_detect_and_copy_check():
     # book-wide median column edge (0.78) and missed all three -- pages
     # alternate left/right, so each page's own column must be used.
     import importlib
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
+    sys.path.insert(0, str(_PIPELINE))
     M = importlib.import_module("_margins")
     page = {"boxes": [
         ["page_header", 0.89, [0.72, 0.09, 0.75, 0.11]],
@@ -1616,7 +1632,7 @@ def test_margin_notes_duplicate_year_box_and_tie_break():
     # page's first entry ("maître en fait d'armes. Londres"): the tie goes to
     # the entry at/after the previous note's, not the first on the page.
     import importlib
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
+    sys.path.insert(0, str(_PIPELINE))
     M = importlib.import_module("_margins")
     notes = [{"box": [0.773, 0.232, 0.929, 0.255], "text": "1778. Nicolas Demeuse."},
              {"box": [0.829, 0.232, 0.876, 0.242], "text": "1778."},
@@ -1656,7 +1672,7 @@ def test_margin_notes_duplicate_year_box_and_tie_break():
 def test_margin_note_renders_as_note_line():
     # ⟦MARGIN: …⟧ must never be drawn as raw brackets: it becomes a note line
     import importlib
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
+    sys.path.insert(0, str(_PIPELINE))
     try:
         R = importlib.import_module("_render")
         lines = R.layout("⟦MARGIN: Riposting at a lost tempo.⟧\n\nThe <i>riposte</i> follows.",
@@ -1708,6 +1724,63 @@ def test_interrupted_ocr_resumes_and_rereads_failed_pages():
         assert load_ocr_partial(d, 5, crop) == []
         Path(d, "raw_ocr.partial.json").write_text("{trunc")
         assert load_ocr_partial(d, 5, crop) == []
+
+
+def test_reconcile_headers_respects_layout_no_head():
+    # Stage 2 (layout detector): on a page the detector is sure prints no
+    # running head, the parse must not lift a body title into the header
+    # (Prévost scan 203 "HISTORIQUE DU SALUT", set a third down the page)
+    # nor carry a neighbour's head onto it (Prévost plate scans 35/39/...:
+    # "THÉORIE PRATIQUE DE L'ESCRIME." inherited onto photo plates).
+    def pages():
+        return [{"header": "THÉORIE PRATIQUE DE L'ESCRIME.", "body": "La garde est la position."},
+                {"header": "", "body": "", "figures": [{"kind": "plate"}]},
+                {"header": "THÉORIE PRATIQUE DE L'ESCRIME.", "body": "Le coup droit est simple."},
+                {"header": "", "body": "HISTORIQUE DU SALUT\n\nDe tout temps il a été d'usage."},
+                {"header": "THÉORIE PRATIQUE DE L'ESCRIME.", "body": "Le salut se fait ainsi."}]
+    old = pages(); reconcile_headers(old)
+    assert old[1]["header"] and old[3]["header"] == "HISTORIQUE DU SALUT"   # what happens without layout
+    new = pages(); reconcile_headers(new, {1, 3})
+    assert new[1]["header"] == "" and new[3]["header"] == ""
+    assert new[3]["body"].startswith("HISTORIQUE DU SALUT")
+    assert new[0]["header"] == old[0]["header"]                               # others untouched
+
+
+def test_review_report_lost_title_check():
+    # Added after 14 Gomard chapter titles vanished (margin-note copy check)
+    # and the review report couldn't see it. Real shapes from Gomard.
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        Q = importlib.import_module("quality_report")
+    except (OSError, ImportError, SystemExit):   # reads /app paths: runs in the image
+        return
+    raw = "\nDE LA RIPOSTE.\n\nLa riposte est l'attaque qui suit la parade.\n"
+    good_en = "ON THE <i>RIPOSTE</i>.\n\nThe <i>riposte</i> is the attack that follows the parry."
+    # printed twice (running head + title): the header alone doesn't count,
+    # and a margin note repeating its words ("Valeur de la riposte.") neither
+    lost = "\nLa riposte est l'attaque qui suit la parade.\n\n⟦MARGIN: Valeur de la riposte.⟧\n"
+    assert Q.title_issues(raw, "DE LA RIPOSTE.", lost, good_en, "DE LA RIPOSTE.")
+    kept = "\nDE LA RIPOSTE.\n\nLa riposte est l'attaque qui suit la parade.\n"
+    assert not Q.title_issues(raw, "DE LA RIPOSTE.", kept, good_en, "DE LA RIPOSTE.")
+    # words shared across a sentence are not the title ("... de la retraite")
+    assert Q.title_issues("\nDE LA RETRAITE.\n\nLa retraite.\n", "DE LA RETRAITE.",
+                          "\nL'action de se remettre de la retraite.\n", "Retreat.", "DE LA RETRAITE.")
+    # a plate label moved into the figure caption is not lost
+    assert not Q.title_issues("\nPlanche III.\n\n", "", "\n", "", "", "Planche III. Salut")
+    # body title lowercased into the translation (Spinnewyn "preface")
+    assert Q.title_issues("\nPRÉFACE\n\npublier ce livre\n", "", "\nPRÉFACE\n\npublier ce livre\n",
+                          "preface\n\npublished with the precious collaboration", "")
+    assert Q.lead_title("Du dégagement.\n\nLe dégagement est l'action") == "Du dégagement."
+    assert Q.lead_title("Le dégagement est l'action de faire\npasser la pointe") == ""
+
+
+def test_parry_name_cut_short_in_caps_caption():
+    # Kirchhoffer scan 31 "PARADE DE QUINTE." came back "PARRY OF QUINT." on
+    # two separate translations; the snap-back keeps the caption's capitals.
+    assert fix_parry_names("PARRY OF QUINT.", "PARADE DE QUINTE.") == "PARRY OF QUINTE."
+    assert fix_parry_names("parry of seventh", "parade de septime") == "parry of septime"
+    assert fix_parry_names("A quint is five cards", "parade de quarte") == "A quint is five cards"
 
 
 def _run_plain() -> int:

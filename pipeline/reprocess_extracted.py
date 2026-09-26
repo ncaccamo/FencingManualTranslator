@@ -17,6 +17,7 @@ import os
 import sys
 
 import _pageio
+import _layout
 import _margins
 import _overrides
 
@@ -31,6 +32,7 @@ parse_vlm_response = _ns["parse_vlm_response"]
 reconcile_page_numbers = _ns["reconcile_page_numbers"]
 collapse_runs = _ns["collapse_runs"]
 strip_leaked_headmatter = _ns["strip_leaked_headmatter"]
+tail_catchwords = _ns["tail_catchwords"]
 leaked_top_header = _ns["leaked_top_header"]
 is_plate_leaf = _ns["is_plate_leaf"]
 _norm_head = _ns["_norm_head"]
@@ -57,16 +59,21 @@ for folder in targets:
     parsed = [parse_vlm_response(p) for p in raw_pages]
     postprocess_parsed_pages(parsed)
     _kh = known_headmatter(parsed)
-    for p in parsed:
+    # pages the layout detector is sure print no running head (_layout.py)
+    _no_head = _layout.no_head_pages(folder, [p.get("header") for p in parsed])
+    _catch = tail_catchwords(parsed)
+    for i, p in enumerate(parsed):
+        if i in _no_head:
+            continue
         own = (p.get("header") or "").strip()   # the VLM's own, pre-promotion
         if not (p.get("header") or "").strip():
             promoted = leaked_top_header(p["body"], _kh)
             if promoted:
                 p["header"] = promoted
-        p["body"] = strip_leaked_headmatter(p["body"], _kh, own)
+        p["body"] = strip_leaked_headmatter(p["body"], _kh, own, _catch)
     _fold_caption_only_body(parsed)
     fold_caption_header_into_figure(parsed)
-    reconcile_headers(parsed)
+    reconcile_headers(parsed, _no_head)
     # margin notes as ⟦MARGIN: …⟧ lines, each before its paragraph (_margins.py)
     _m_placed, _m_lost = _margins.apply_to_book(folder, parsed)
     _is_plate = [any(f.get("kind") == "plate" for f in (p.get("figures") or []))

@@ -791,6 +791,9 @@ def _clean_caption(cap: str) -> str:
 _PARRY_WRONG = {
     "first": "prime", "second": "seconde", "third": "tierce", "fourth": "quarte",
     "fifth": "quinte", "sixth": "sixte", "seventh": "septime", "eighth": "octave",
+    # the name cut short in a capitals caption ("PARRY OF QUINT.", Kirchhoffer
+    # scan 31, on two separate translations)
+    "quint": "quinte",
 }
 
 
@@ -803,8 +806,9 @@ def fix_parry_names(en: str, src: str) -> str:
             src, re.I):
         return en
     for wrong, right in _PARRY_WRONG.items():
-        en = re.sub(r"\b(of\s+|parry\s+of\s+)" + wrong + r"\b",
-                    lambda m, r=right: m.group(1) + r, en, flags=re.I)
+        en = re.sub(r"\b(of\s+|parry\s+of\s+)(" + wrong + r")\b",
+                    lambda m, r=right: m.group(1) + (r.upper() if m.group(2).isupper() else r),
+                    en, flags=re.I)
     return en
 
 
@@ -1473,10 +1477,14 @@ def harmonize_titles_with_headers(folder: str) -> int:
     return n
 
 
-def apply_book_overrides(folder: str) -> None:
+def apply_book_overrides(folder: str, fixes: bool = True) -> None:
     """Re-apply the reviewer's decisions (books/<stem>.overrides.toml) to
     headers.json and translation.txt. Runs after every translation pass,
-    so regenerating either file can never lose a decision."""
+    so regenerating either file can never lose a decision. Called twice:
+    fixes=False (headers only) BEFORE harmonize_titles_with_headers, so body
+    titles are matched to the reviewer's header wording, not the model's
+    (Prévost scan 47: body "BREAK GROUND." under the decided "BREAKING
+    GROUND."); then in full after it."""
     import json as _json
     stem = Path(folder).name.replace("_translated", "")
     ov = _overrides.load(stem)
@@ -1487,7 +1495,7 @@ def apply_book_overrides(folder: str) -> None:
         if _overrides.apply_headers(hmap, ov):
             with open(hp, "w", encoding="utf-8") as fh:
                 _json.dump(hmap, fh, ensure_ascii=False, indent=1)
-    if ov["fix"] and os.path.exists(tp):
+    if fixes and ov["fix"] and os.path.exists(tp):
         tr = _pageio.split_pages(open(tp, encoding="utf-8").read())
         applied, missing = _overrides.apply_fixes(tr, ov)
         if applied:
@@ -1496,7 +1504,7 @@ def apply_book_overrides(folder: str) -> None:
         if missing:
             print(f"  ⚠ overrides: [[fix]] text not found on scan page(s) {missing} "
                   f"-- obsolete after a retranslation? Review {_overrides.path_for(stem)}")
-    if ov["headers"] or ov["fix"]:
+    if fixes and (ov["headers"] or ov["fix"]):
         print(f"  overrides applied: {len(ov['headers'])} header(s), {len(ov['fix'])} fix(es)")
 
 # Per-page staleness. translated_from.json holds, for each page, a
@@ -1840,6 +1848,7 @@ if len(sys.argv) > 1 and sys.argv[1] == "--captions":
                 _overrides.load(Path(folder).name.replace("_translated", "")))
             translate_figure_captions(folder, force=True)
             translate_headers(folder, force=True)
+            apply_book_overrides(folder, fixes=False)
             harmonize_titles_with_headers(folder)
             apply_book_overrides(folder)
     finally:
@@ -1908,6 +1917,7 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
     save_fingerprints(folder, fps, translated=targets)
     translate_figure_captions(folder)      # only captions not yet translated
     translate_headers(folder)              # only header strings not yet translated
+    apply_book_overrides(folder, fixes=False)
     harmonize_titles_with_headers(folder)
     apply_book_overrides(folder)
     print(f"\n✓ {len(targets)} page(s) retranslated -- rebuild the PDFs:\n"
@@ -1990,6 +2000,7 @@ try:
 
         translate_figure_captions(folder)
         translate_headers(folder)
+        apply_book_overrides(folder, fixes=False)
         harmonize_titles_with_headers(folder)
         apply_book_overrides(folder)
 
