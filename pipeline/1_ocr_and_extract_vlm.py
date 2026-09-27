@@ -460,6 +460,44 @@ def _roman_to_int(s: str):
     return total or None
 
 
+def _int_to_roman(n: int) -> str:
+    out = ""
+    for v, r in ((1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"), (90, "XC"),
+                 (50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")):
+        while n >= v:
+            out, n = out + r, n - v
+    return out
+
+
+def _romanize_runs(out: list) -> list:
+    """Front matter printed in roman numerals comes back from the OCR half
+    normalised to arabic ("1, iv, 5, VI, 7, VIII" -- Jacob scans 13-48,
+    Spinnewyn 14-29). The values are right; show the whole numbering run
+    in roman. A run ends where the numbering restarts (xxxvi -> 2); it is
+    roman when >= 2 of its folios, and >= 30% of them, were read as roman.
+    Case follows the majority of those readings."""
+    vals = [None if (not x or x.startswith("[")) else _page_to_int(x) for x in out]
+    runs, cur, last = [], [], None
+    for i, v in enumerate(vals):
+        if v is None:
+            continue
+        if last is not None and v <= last:
+            runs.append(cur)
+            cur = []
+        cur.append(i)
+        last = v
+    runs.append(cur)
+    out = list(out)
+    for run in runs:
+        rom = [i for i in run if re.fullmatch(r"[ivxlcdmIVXLCDM]+", out[i])]
+        if len(rom) >= 2 and len(rom) >= 0.3 * len(run):
+            upper = sum(out[i].isupper() for i in rom) * 2 >= len(rom)
+            for i in run:
+                r = _int_to_roman(vals[i])
+                out[i] = r if upper else r.lower()
+    return out
+
+
 def _page_to_int(s: str):
     """Best-effort numeric value of a reported page-number string, accepting
     plain digits ('83'), digits embedded in noise, or a roman numeral
@@ -1159,7 +1197,13 @@ def recover_plate_captions(parsed: list) -> None:
         # (1) missed plate: an explicit "Planche N." / "Fig. N." line on a
         # short page with no figure flagged -> the whole (short) body is
         # the caption.
-        if not figs and len(words) <= 45 and _MISSED_PLATE_RE.search(body):
+        # ...but not a text page with figures set in it: its body opens
+        # mid-sentence in lowercase, continuing the page before (Spinnewyn
+        # scans 57 / 101 -- folded whole into a "caption", which then lost
+        # the page its folio and turned its running head into a title).
+        # Every real plate page opens "Planche N." / "Fig. N." / a caption.
+        if (not figs and len(words) <= 45 and _MISSED_PLATE_RE.search(body)
+                and not re.match(r"\s*[a-zà-ÿ]", body)):
             cap = re.sub(r"\s*\n\s*", " — ", body).strip()
             if not _neighbour_has_plate_cap(idx, _norm_head(cap)):
                 p["figures"] = [{"kind": "plate", "caption": cap}]
@@ -1289,6 +1333,16 @@ def reconcile_page_numbers(page_raws: list, is_plate: list = None,
     n = len(ints)
     plate = [bool(is_plate[i]) if is_plate and i < len(is_plate) else False
              for i in range(n)]
+    # A page with no text and no figure has no printed folio to read: the
+    # OCR invents one ("PAGE_NUMBER: 10" / "11" on Spinnewyn's blank scans
+    # 8-9, which then agreed with each other and were trusted). Drop the
+    # reading; the page can still be numbered from its neighbours. (On the
+    # reviewed books every such page already had no reading.)
+    if bodies:
+        for i in range(n):
+            b = (bodies[i] or "").strip() if i < len(bodies) else ""
+            if not plate[i] and (not b or b.lower() == "none"):
+                ints[i] = None
 
     trusted = [False] * n
     for i, v in enumerate(ints):
@@ -1457,7 +1511,7 @@ def reconcile_page_numbers(page_raws: list, is_plate: list = None,
         j = min(anchors, key=lambda a: abs(a - i))          # nearest trusted sheet
         guess = (folio[j] or 0) + (i - j)                   # 1 sheet == 1 folio
         out.append(f"[{guess}]" if guess >= 1 else f"[{i + 1}]")
-    return out
+    return _romanize_runs(out)
 
 
 def save_ocr_partial(int_dir: str, total: int, crop, pages: list) -> None:

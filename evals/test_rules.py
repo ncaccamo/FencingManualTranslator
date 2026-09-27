@@ -1783,6 +1783,40 @@ def test_parry_name_cut_short_in_caps_caption():
     assert fix_parry_names("A quint is five cards", "parade de quarte") == "A quint is five cards"
 
 
+def test_page_numbers_roman_front_matter_and_blank_pages():
+    # Jacob scans 13-24: roman front matter the OCR half-normalised to
+    # arabic ("1, 2, 3, iv, 5, VI, 7, VIII, IX, 10, XI") -> all roman; the
+    # main text restarts at 1 and stays arabic.
+    raws = ["1", "2", "3", "iv", "5", "VI", "7", "VIII", "IX", "10", "XI", "12",
+            "1", "2", "3", "4", "5", "6"]
+    out = reconcile_page_numbers(raws, [False] * len(raws), ["texte"] * len(raws))
+    assert out[:12] == ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"], out
+    assert out[12:] == ["1", "2", "3", "4", "5", "6"], out
+    # Spinnewyn scans 8-9: blank pages the OCR gave "10", "11" -- not trusted
+    raws = ["10", "11", "8", "9", "10", "11", "12"]
+    bodies = ["", "none", "texte", "texte", "texte", "texte", "texte"]
+    out = reconcile_page_numbers(raws, [False] * 7, bodies)
+    assert out[:2] != ["10", "11"] and all(not x or x.startswith("[") for x in out[:2]), out
+    assert out[2:] == ["8", "9", "10", "11", "12"], out
+
+
+def test_text_page_with_figures_not_folded_into_a_plate():
+    # Spinnewyn scans 57 / 101 (the long-standing "56/100" bug): a text
+    # page with two figures set in it, body opening mid-sentence. It was
+    # folded whole into one "plate caption", which cost the page its folio
+    # and turned its running head into a body title. A real plate page
+    # (Gomard "Planche III.") still folds.
+    text = {"header": "LE RASSEMBLEMENT", "figures": [], "body":
+            "temps la main gauche dans le rang (fig. 16).\n\nFig. 16. — Premier mouvement du "
+            "rassemblement.\n\nFig. 17. — Deuxième mouvement du rassemblement.\n\nRapporter "
+            "ensuite et aussitôt le talon droit contre le talon gauche (fig 17)."}
+    plate = {"header": "", "figures": [], "body": "Planche XVII.\n\nParade de Quarte en pointe volante."}
+    pages = [text, plate]
+    recover_plate_captions(pages)
+    assert not pages[0]["figures"] and pages[0]["body"].startswith("temps la main")
+    assert pages[1]["figures"] and pages[1]["body"] == ""
+
+
 def _run_plain() -> int:
     fns = sorted((n, f) for n, f in globals().items()
                  if n.startswith("test_") and callable(f))

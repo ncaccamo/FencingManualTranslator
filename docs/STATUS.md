@@ -318,6 +318,23 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
       translation; costs VRAM (fewer 27B layers) and adds a second model to
       the setup.
 
+16. **Italian corpus — future, after the French review settles (2026-09-26).**
+    15 Italian books have scans (~2,900 pp). Needed first:
+    - **Language layer**: a per-book language setting; the translation
+      prompt/glossary and the French word lists behind the checks
+      ("still French?", heading re-translate, review report) and a few
+      parse rules ("Planche" vs "Tavola") are French-only today.
+    - **Italian glossary from the reference pairs**, not guesswork: align
+      a pair, extract the translator's term choices (Holzman: Pecoraro-
+      Pessina *Sabre Fencing*, Parise, Rosaroll-Grisetti -- owned in print,
+      to scan into `evals/gold/<stem>/ref.pdf`; already in place: Del Frate
+      1868, Tinti, Vannucchi, Barbasetti ~ his English books), operator
+      approves; then score every change against the references.
+    - **Two-page spreads** (Lambertini, Masiello 1902 Fioretto, Tiboldi,
+      Vannucchi) need a split step -- the pipeline assumes one book page
+      per scan page. Phone scans (vFlat) untested.
+    - Pilot: Florio 1844 or Del Frate 1876 (clean single-page scans).
+
 ## Not yet tested
 
 - A physically photographed (not flatbed) book — all sources so far are

@@ -58,7 +58,7 @@ TERM_RULES = [
     # definition, pdf 158). Noun uses only: "they throw themselves" is fine.
     # "throws" only as a noun for coups ("the throws", "simple throws", a
     # THROWS heading) -- "he throws himself onto the point" is correct English
-    (r"\bcoups?\b", r"(?:\b(?:the|these|those|such|all|two|three|simple|compound|straight|single|of|and)"
+    (r"\bcoups?\b", r"(?:\b(?:the|these|those|such|all|two|three|simple|compound|straight|single|of)"
      r"\s+throws\b|\b(?-i:THROWS)\b|(?<!\ba )\bsingle blows?\b|\b(?:simple|compound) throw\b)",
      "coup → blow"),
     (r"\bbottes?\b", r"\bthrusts?\s*/\s*hits?\b", "botte → thrust"),
