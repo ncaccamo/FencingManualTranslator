@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Translation model selection test: candidate models translate a fixed set
 of hard + control pages, and the results are scored and compared.
 

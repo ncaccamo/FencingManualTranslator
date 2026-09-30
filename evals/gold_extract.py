@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Extract + clean a gold book's text from a PDF that already has a usable
 text layer (skips OCR). Writes  evals/gold/<stem>/<side>.txt  with:
 

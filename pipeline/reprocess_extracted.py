@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Rebuild extracted.txt + page_numbers.txt from a saved raw_ocr.txt.
 
 `raw_ocr.txt` holds olmOCR-2's untouched responses. The PAGE_NUMBER/HEADER/

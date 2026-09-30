@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Rich-text layout shared by 3_english_only_pdf.py and 4_side_by_side_pdf.py.
 
 Replaces the old `translation_text.replace('\\n', ' ')` + `re.sub(r'\\s+', ' ')`

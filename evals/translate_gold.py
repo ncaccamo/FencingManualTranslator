@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Run the pipeline's translation on a gold book's OCR'd original, so its
 output can be scored against the published reference.
 

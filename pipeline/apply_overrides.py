@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Apply books/<stem>.overrides.toml to a book's existing outputs -- no model,
 no reprocess. Run after editing the overrides file, then rebuild the PDFs:
 

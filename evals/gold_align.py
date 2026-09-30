@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Sentence-align a gold pair's src.txt / ref.txt -> aligned.jsonl.
 
 Gale & Church length-based dynamic programming -- no dependencies, no

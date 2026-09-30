@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Page-layout detection: which printed line is a running head.
 
 olmOCR-2 transcribes well but is unreliable at telling a running head (the

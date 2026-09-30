@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 # Bring up the two llama-server processes (11434 translation, 11435 VLM/OCR)
 # for interactive / Open WebUI use. The pipeline scripts start their own
 # servers, so this is only for using the models outside the pipeline.

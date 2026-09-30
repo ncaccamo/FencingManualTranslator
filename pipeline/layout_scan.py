@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Run the page-layout detector over a book's scan -> intermediate/layout.json.
 
     python3 /app/layout_scan.py <stem> [<stem> ...]      (or --all)

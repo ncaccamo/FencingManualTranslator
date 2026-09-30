@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 set -e
 CONTAINER=fmt-translator
 TRANSLATION_MODEL="${TRANSLATION_MODEL_PATH:-/models/Qwen3.8-27B.i1-Q4_K_S.gguf}"

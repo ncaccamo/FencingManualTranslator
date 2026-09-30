@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Side-by-side PDF: original scan (left) beside its English translation (right).
 
 Rewritten (see chat log): the old right column ran

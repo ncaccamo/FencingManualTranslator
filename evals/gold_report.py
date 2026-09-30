@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Report on a gold pair: how the published translation relates to the
 original (close vs free), how it handles fencing terms, and -- if a
 pipeline hypothesis is present -- chrF against the reference.

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Crude per-book health metrics computed straight from the pipeline
 artifacts in a `*_translated/` folder. No model calls. Cheap enough to run
 on every book on every change.

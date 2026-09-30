@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Per-book review report: every page the pipeline itself has reason to
 doubt, with the reason, by side-by-side pdf page number. No model, no GPU.
 

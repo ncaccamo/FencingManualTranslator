@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 # One-time setup for FencingManualTranslator.
 #
 # Assumes you have worked through setup/MANUAL_SECTION_II_HOST_PREREQUISITES.md

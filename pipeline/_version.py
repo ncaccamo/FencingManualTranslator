@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """The pipeline revision (short git commit hash), for the per-page
 translation record (step 2) and the PDF cover (steps 3/4).
 

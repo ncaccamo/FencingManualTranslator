@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Load the *pure* helper functions out of the pipeline scripts without
 running their `main` bodies (which start llama-servers and read /app paths).
 

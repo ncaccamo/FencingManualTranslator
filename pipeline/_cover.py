@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Shared AI-disclosure cover page for the English-only (step 3) and
 side-by-side (step 4) PDFs.
 

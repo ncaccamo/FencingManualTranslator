@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """OCR a gold book (no usable PDF text layer) with olmOCR-2, plain-text.
 
 Runs INSIDE the container (needs fitz + the VLM server). Reuses step 1's

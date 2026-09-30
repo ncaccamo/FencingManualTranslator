@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """VLM OCR using olmOCR-2-7B-1025 (Allen AI, fine-tuned from Qwen2.5-VL-7B
 specifically for document/OCR extraction -- not the general-purpose
 Qwen2-VL-7B-Instruct chat model this pipeline started with).

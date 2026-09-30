@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """
 Test VLM OCR on a single page to verify it's working -- matches the real
 pipeline's image prep (1288px, JPEG, optional preprocessing/crop) and

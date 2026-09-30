@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Per-book human decisions: books/<stem>.overrides.toml.
 
 Everything a reviewer decides about a book lives here, not in the generated

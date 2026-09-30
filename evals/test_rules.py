@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Frozen regression cases for the pipeline's deterministic helpers.
 
 Every entry here is a bug that was found by manual review and fixed. If a

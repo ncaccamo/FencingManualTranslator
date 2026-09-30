@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Generate books/<stem>.meta.json from the `status: have` rows of
 books/library.md, for the PDF cover page (see pipeline/_cover.py).
 

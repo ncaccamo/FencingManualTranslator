@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 # ============================================================================
 # FULL_CLEANUP.SH - Docker Nuclear Cleanup (Ubuntu 24.04 + overlay2)
 # ============================================================================

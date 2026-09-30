@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Margin (shoulder) notes: find them from the page layout, read them, and
 anchor each one in the text flow next to the paragraph it annotates.
 

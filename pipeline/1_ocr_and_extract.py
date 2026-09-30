@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 # Step 1: OCR + cleanup (v3)
 # Changes from v1:
 #   - Raw OCR text is now preserved permanently (raw_ocr.txt) BEFORE any

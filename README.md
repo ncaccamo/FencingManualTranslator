@@ -122,6 +122,21 @@ sources such as Gallica, Google Books and archive.org work well. The
 `books/` and `processed/` folders are excluded from git, so your scans
 and their translations are never committed.
 
+## License
+
+Copyright (C) 2026 Nicholas A. Caccamo.
+
+The code is licensed under the [GNU Affero General Public License v3.0 or
+later](LICENSE). You may use, modify and share it; modified versions,
+including ones offered as an online service, must be released under the
+same license with their source.
+
+- **Models** are downloaded at setup, not included here, and each keeps
+  its own license (see the model pages).
+- **Translations** the pipeline produces are machine output; the cover
+  page of each PDF dedicates it to the public domain (CC0 1.0). The
+  source books are your own scans of public-domain works.
+
 ## Documentation
 
 - **User manual:**

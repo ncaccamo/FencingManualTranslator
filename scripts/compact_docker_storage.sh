@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 # ============================================================================
 # COMPACT_DOCKER_STORAGE.SH - Clean Build Artifacts
 # ============================================================================

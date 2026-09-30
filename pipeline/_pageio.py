@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Page separator for the multi-page intermediate files.
 
 `raw_ocr.txt`, `extracted.txt` and `translation.txt` are one record per

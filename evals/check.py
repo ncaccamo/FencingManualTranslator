@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Diff the current pipeline output against the frozen baselines and write
 a report. Run it after any prompt/rule change + pipeline re-run.
 

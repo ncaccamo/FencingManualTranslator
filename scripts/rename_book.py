@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Rename a book's stem across EVERY place it lives, in lockstep.
 
     scripts/rename_book.py <old_stem> <new_stem> [--dry-run]

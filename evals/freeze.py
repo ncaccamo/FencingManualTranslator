@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """Snapshot a book's accepted pipeline output as a regression baseline.
 
     python3 evals/freeze.py Joseph-Renaud            # substring-matches a *_translated dir

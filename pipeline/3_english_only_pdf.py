@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
 """English-only PDF: the translated text as a continuous flowing document.
 
 Rewritten (see chat log): the old version laid every page into a fixed
