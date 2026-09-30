@@ -1,11 +1,11 @@
-# BookTranslator model-serving + OCR/translation-pipeline container.
+# FencingManualTranslator model-serving + OCR/translation-pipeline container.
 #
 # The block delimited by the BUILDSTAGE START / BUILDSTAGE END marker
 # lines below is a synced copy of BackendBuildstage/Dockerfile.buildstage
 # (the reference ROCm 7.2.4 + Vulkan + llama.cpp build stage). Do NOT
 # hand-edit it here: change it in BackendBuildstage, smoke-test with that
 # repo's test-build.sh, then re-run  sync_to_product.sh <this-file>.
-# Everything past the END marker is BookTranslator-specific.
+# Everything past the END marker is FencingManualTranslator-specific.
 #
 # BUILDSTAGE START v2026.09.06  (ubuntu 24.04 | ROCm 7.2.4 apt | Vulkan
 # LunarG 1.4.357.1 | llama.cpp triple build rocm+vulkan+cpu | rocm714 parked)
@@ -68,7 +68,7 @@ RUN $VULKAN_SDK/bin/glslc --version && \
 
 # [COMMON] Python + C/C++ build tooling (git, build-essential, libcurl)
 # shared by both llama.cpp builds and the rocm714 venv.
-# NOTE: this same layer also installs BookTranslator's OCR/PDF stack
+# NOTE: this same layer also installs FencingManualTranslator's OCR/PDF stack
 # (tesseract-ocr*, ghostscript, poppler-utils, unpaper). LocalAIChat
 # does not use those; a future COMMON-vs-product split would carve them
 # out of the shared buildstage.
@@ -80,7 +80,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git build-essential libcurl4-openssl-dev unpaper bc file \
     && rm -rf /var/lib/apt/lists/*
 
-# [COMMON/BookTranslator-only] Latin tessdata -- OCR use only.
+# [COMMON/FencingManualTranslator-only] Latin tessdata -- OCR use only.
 RUN mkdir -p /usr/share/tesseract-ocr/5/tessdata && \
     wget -q https://github.com/tesseract-ocr/tessdata/raw/main/lat.traineddata \
          -O /usr/share/tesseract-ocr/5/tessdata/lat.traineddata
@@ -313,7 +313,7 @@ fi
 # dropped PID 1 and bounced the whole container.
 #
 # For interactive / Open WebUI use (no pipeline), bring the servers up with:
-#   docker exec booktranslator-translator-1 /host_scripts/start_servers.sh
+#   docker exec fmt-translator /host_scripts/start_servers.sh
 echo "========================================================"
 echo "  Container ready. Model servers are NOT auto-started --"
 echo "  the pipeline manages them (or run start_servers.sh)."

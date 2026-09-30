@@ -1,4 +1,4 @@
-# CLAUDE.md — BookTranslator
+# CLAUDE.md — FencingManualTranslator
 
 ## What this is
 Translates historical fencing/HEMA manuals into English while preserving

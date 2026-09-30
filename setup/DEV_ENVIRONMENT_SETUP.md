@@ -1,4 +1,4 @@
-# BookTranslator — Developer Environment Setup (Internal Reference)
+# FencingManualTranslator — Developer Environment Setup (Internal Reference)
 
 This is for development, not something that applies to end users. It covers VS Code, Claude Code, and GitHub, written to route around the specific mistakes made getting this set up the first time.
 
@@ -34,7 +34,7 @@ sudo apt update
 sudo apt install -y code
 ```
 
-Verify: `code --version`. Open the project: `code ~/BookTranslator`
+Verify: `code --version`. Open the project: `code ~/FencingManualTranslator`
 
 ### Recommended extensions
 

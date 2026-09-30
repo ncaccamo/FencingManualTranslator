@@ -1262,7 +1262,7 @@ def start_translation_server():
         
         if proc.poll() is not None:
             print("\n\n✗ Server process died!")
-            print("Check logs: docker exec booktranslator-translator-1 cat /tmp/translation_server.log\n")
+            print("Check logs: docker exec fmt-translator cat /tmp/translation_server.log\n")
             log_file.close()
             return None
         
@@ -1279,7 +1279,7 @@ def start_translation_server():
             pass
     
     print(f"\n\n✗ Server timeout after 240s")
-    print("Check logs: docker exec booktranslator-translator-1 cat /tmp/translation_server.log\n")
+    print("Check logs: docker exec fmt-translator cat /tmp/translation_server.log\n")
     log_file.close()
     proc.terminate()
     return None

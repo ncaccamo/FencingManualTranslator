@@ -5,7 +5,7 @@ Runs INSIDE the container (needs fitz + the VLM server). Reuses step 1's
 server lifecycle and per-page call, but with a bare "transcribe verbatim"
 prompt instead of the corpus PAGE_NUMBER/HEADER/FIGURES scaffold.
 
-    docker exec booktranslator-translator-1 \
+    docker exec fmt-translator \
       python3 /data/evals/ocr_gold.py angelo_1763_ecolearmes            # both sides
     ... angelo_1763_ecolearmes src --force
     ... angelo_1763_ecolearmes ref --pages 8-160

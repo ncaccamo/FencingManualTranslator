@@ -35,7 +35,7 @@ fi
 
 echo ""
 echo "[1/7] Stopping all containers..."
-cd ~/BookTranslator || true
+cd ~/FencingManualTranslator || true
 docker compose down || true
 
 echo "[2/7] Removing containers, images, volumes..."
@@ -72,7 +72,7 @@ echo "Your models are safe:"
 du -sh ~/llm_models 2>/dev/null || echo "  ~/llm_models/ (models preserved)"
 echo ""
 echo "To rebuild your project:"
-echo "  cd ~/BookTranslator"
+echo "  cd ~/FencingManualTranslator"
 echo "  docker compose build --no-cache"
 echo "  docker compose up -d"
 echo ""

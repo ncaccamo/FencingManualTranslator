@@ -105,7 +105,7 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 1b. ~~Multi-model serving compose~~ — CLOSED, superseded by `LocalAIChat`.
    That's a separate product now (llama-swap on :11500 serving a chat +
    a coding model, one resident, Open WebUI dropdown drives the swap).
-   This item predates the project split; BookTranslator serves only its
+   This item predates the project split; FencingManualTranslator serves only its
    two pipeline models (olmOCR-2 and the translation model), sequentially, by design.
 2. **Footnotes** — DONE. `† French: <term>` source refs on Category-3
    terms (16 curated) with a `†N` inline mark → `2_translate.py`
@@ -416,7 +416,7 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 - **The host installs no ROCm / Vulkan / Mesa** — only the in-kernel
   `amdgpu` driver (kernel ≥ 6.12) + Docker. All GPU userspace is compiled
   into the image; `docker exec` inference never reads host `/opt/rocm`.
-  Same model across BookTranslator / LocalAIChat / BackendBuildstage.
+  Same model across FencingManualTranslator / LocalAIChat / BackendBuildstage.
   `scripts/monitor_gpu.sh` reads `rocm-smi` from inside the container so a
   ROCm-free host still has GPU monitoring (or use host `nvtop`).
   (Decided 2026-08-27; `setup_inference_backend.sh`, which did a host

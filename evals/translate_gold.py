@@ -7,7 +7,7 @@ lifecycle and per-page retry/quality-gate -- so hyp.txt reflects the real
 pipeline, deterministic bits included (apply_always_translate,
 enforce_kept_terms, match_boundary_punctuation, deshout).
 
-    docker exec booktranslator-translator-1 \
+    docker exec fmt-translator \
       python3 /data/evals/translate_gold.py bazancourt_1862_secrets
     ... --model /models/Qwen2.5-14B-Instruct-Q4_K_M.gguf     # A/B a model
 """

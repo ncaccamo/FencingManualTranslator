@@ -3,7 +3,7 @@
 # for interactive / Open WebUI use. The pipeline scripts start their own
 # servers, so this is only for using the models outside the pipeline.
 #
-#   docker exec booktranslator-translator-1 /host_scripts/start_servers.sh
+#   docker exec fmt-translator /host_scripts/start_servers.sh
 #
 # Honors backend.env:
 #   BACKEND_MODE=remote  -> does nothing (models live on the remote host)

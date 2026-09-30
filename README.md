@@ -1,4 +1,4 @@
-# BookTranslator
+# FencingManualTranslator
 
 Turns a scanned historical fencing / HEMA manual into an English study
 edition: the original page on the left, a scholarly translation on the
@@ -83,7 +83,7 @@ Two modes, set in `backend.env`:
   regardless of the host. `LLAMA_BACKEND=vulkan | rocm7 | rocm714`;
   switching is `docker compose up -d`, no rebuild.
 - **Remote** — inference runs on a `llama-server` (or llama-swap) on
-  another system on your LAN, bearer-token auth. The BookTranslator host
+  another system on your LAN, bearer-token auth. The FencingManualTranslator host
   then needs **no GPU** — just x86-64 + Docker (`scripts/setup.sh --remote`
   plus `docker-compose.override.yml`). With llama-swap the vision and text
   models swap automatically by request; with a bare `llama-server` you
@@ -101,10 +101,10 @@ bash scripts/setup.sh     # verify host, write .env/backend.env, ai-net,
 # local mode: first 'up' downloads ~13 GB of models -> docker compose logs -f translator
 
 # put source PDFs in ./books/ (name them <author>_<year>_<short-title>.pdf), then:
-docker exec booktranslator-translator-1 python3 /app/1_ocr_and_extract_vlm.py
-docker exec booktranslator-translator-1 python3 /app/2_translate.py
-docker exec booktranslator-translator-1 python3 /app/3_english_only_pdf.py
-docker exec booktranslator-translator-1 python3 /app/4_side_by_side_pdf.py
+docker exec fmt-translator python3 /app/1_ocr_and_extract_vlm.py
+docker exec fmt-translator python3 /app/2_translate.py
+docker exec fmt-translator python3 /app/3_english_only_pdf.py
+docker exec fmt-translator python3 /app/4_side_by_side_pdf.py
 # (or: scripts/run_full_pipeline.sh)
 ```
 
@@ -144,7 +144,7 @@ Rename a book everywhere it lives (source, outputs, baselines) with
 | `setup/MANUAL_SECTION_III_USAGE.md` | user manual — day-to-day operation, iteration loops, troubleshooting |
 | `docs/model-quirks.md` | every way the OCR / translation models fail on this corpus + the prompt/code mitigation — read before tuning a prompt |
 | `docs/pdf-layout.md` | how steps 3 & 4 build the PDFs — the `_render` engine, figure/alignment logic, the knobs |
-| `docs/remote-gpu.md` | running inference on a remote GPU system / GPU-less BookTranslator host |
+| `docs/remote-gpu.md` | running inference on a remote GPU system / GPU-less FencingManualTranslator host |
 | `docs/evaluation-and-tuning.md` | **maintainer-only** — the regression harness (`evals/`), gold-reference scoring, swapping the translation model, the fine-tuning plan. Not needed to run the pipeline. |
 | `CLAUDE.md` | orientation + hard invariants for AI coding agents |
 | `docker/ROCM714_NOTES.md` | why the ROCm 7.14 backend is parked |

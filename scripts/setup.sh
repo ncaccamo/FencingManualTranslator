@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time setup for BookTranslator.
+# One-time setup for FencingManualTranslator.
 #
 # Assumes you have worked through setup/MANUAL_SECTION_II_HOST_PREREQUISITES.md
 # (OS / kernel / GPU groups / Docker). This script installs NO system
@@ -177,7 +177,7 @@ if [ "$REMOTE" -eq 1 ]; then
   echo " Remote mode. No local models. Next:"
   echo "   1. edit backend.env -> REMOTE_HOST, REMOTE_API_KEY"
   echo "   2. stand up the GPU system (docs/remote-gpu.md)"
-  echo "   3. docker exec -w /app booktranslator-translator-1 \\"
+  echo "   3. docker exec -w /app fmt-translator \\"
   echo "        python3 -c 'import backend_config as b; print(b.describe())'"
   echo "      -> remote -> http://<host>:11500 (auth: yes)"
 else

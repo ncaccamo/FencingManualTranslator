@@ -200,7 +200,7 @@ and misreports the RX 9070 XT.
 
 Once II.1–II.7 are done (II.8 is optional):
 ```bash
-cd ~/BookTranslator
+cd ~/FencingManualTranslator
 bash scripts/setup.sh              # local GPU host
 bash scripts/setup.sh --remote    # no-GPU host, inference on a LAN system
 ```

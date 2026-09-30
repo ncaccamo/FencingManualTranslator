@@ -3,12 +3,12 @@
 of hard + control pages, and the results are scored and compared.
 
     # translate the set with a model (a llama-swap key in remote mode):
-    docker exec -e TRANSLATION_MODEL_NAME=bt-translate-qwen38 booktranslator-translator-1 \\
+    docker exec -e TRANSLATION_MODEL_NAME=bt-translate-qwen38 fmt-translator \\
         python3 /data/evals/translation_model_test.py run qwen38
     # the current translations as a no-GPU baseline:
-    docker exec booktranslator-translator-1 python3 /data/evals/translation_model_test.py current
+    docker exec fmt-translator python3 /data/evals/translation_model_test.py current
     # score + side-by-side reading page:
-    docker exec booktranslator-translator-1 python3 /data/evals/translation_model_test.py compare current qwen38 gemma4
+    docker exec fmt-translator python3 /data/evals/translation_model_test.py compare current qwen38 gemma4
 
 Each page goes through the real translate_page() (same prompt, retries and
 post-processing as a book run, incl. the book's [terms]); nothing under

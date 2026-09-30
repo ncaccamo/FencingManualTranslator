@@ -1,5 +1,5 @@
 #!/bin/bash
-WORKDIR=~/BookTranslator
+WORKDIR=~/FencingManualTranslator
 cd "$WORKDIR" || exit 1
 
 # Stamp the cover page with the pipeline revision. `docker exec` does not
@@ -41,7 +41,7 @@ echo "  → This step loads olmOCR-2-7B-1025 (vision model)"
 echo "  → Extracts text and structure from PDF pages"
 echo "  → Time: ~5-10 seconds per page"
 echo ""
-docker exec booktranslator-translator-1 python3 /app/1_ocr_and_extract_vlm.py
+docker exec fmt-translator python3 /app/1_ocr_and_extract_vlm.py
 OCR_EXIT=$?
 if [ $OCR_EXIT -ne 0 ]; then
     echo ""
@@ -59,25 +59,25 @@ echo "  → Translates extracted text to English"
 echo "  → Preserves technical fencing terms"
 echo "  → Time: ~10-20 seconds per page"
 echo ""
-docker exec booktranslator-translator-1 python3 /app/2_translate.py
+docker exec fmt-translator python3 /app/2_translate.py
 echo ""
 
 echo "[4/4] PDF Generation..."
 echo "────────────────────────────────────────────────────────"
-docker exec -e PIPELINE_VERSION booktranslator-translator-1 python3 /app/3_english_only_pdf.py
-docker exec -e PIPELINE_VERSION booktranslator-translator-1 python3 /app/4_side_by_side_pdf.py
+docker exec -e PIPELINE_VERSION fmt-translator python3 /app/3_english_only_pdf.py
+docker exec -e PIPELINE_VERSION fmt-translator python3 /app/4_side_by_side_pdf.py
 echo ""
 
 echo "Review reports (pages worth checking, by pdf page)..."
 echo "────────────────────────────────────────────────────────"
-docker exec booktranslator-translator-1 python3 /app/quality_report.py --all
+docker exec fmt-translator python3 /app/quality_report.py --all
 echo ""
 
 echo "╔═══════════════════════════════════════════════════════╗"
 echo "║                  PIPELINE COMPLETE                    ║"
 echo "╚═══════════════════════════════════════════════════════╝"
 echo ""
-echo "Your PDFs and review reports are in: ~/BookTranslator/processed/"
+echo "Your PDFs and review reports are in: ~/FencingManualTranslator/processed/"
 echo ""
 
 if ls "$WORKDIR/processed"/*_translated 2>/dev/null | grep -q .; then

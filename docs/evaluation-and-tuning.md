@@ -48,7 +48,7 @@ for production. The deterministic sidecars (`figures.json`,
 `page_numbers.txt`, `headers.json`, `extracted.txt`) don't need it.
 
 ```bash
-docker exec -e EVAL_DETERMINISTIC=1 booktranslator-translator-1 \
+docker exec -e EVAL_DETERMINISTIC=1 fmt-translator \
   python3 /app/2_translate.py       # then steps 3-4, then check.py
 ```
 
@@ -118,7 +118,7 @@ fits whole takes `999`. In remote mode the same setting is the
 
 ```bash
 docker exec -e TRANSLATION_MODEL_PATH=/models/<new>.gguf \
-  booktranslator-translator-1 python3 /app/2_translate.py     # then steps 3-4
+  fmt-translator python3 /app/2_translate.py     # then steps 3-4
 ```
 
 Save the incumbent's `intermediate/translation.txt` /

@@ -1,6 +1,6 @@
 # User Manual — Section I: System Overview
 
-This section explains *what BookTranslator is and how it works* at a
+This section explains *what FencingManualTranslator is and how it works* at a
 conceptual level. Section II covers preparing a host machine to run it;
 Section III covers day-to-day operation.
 
@@ -8,7 +8,7 @@ Section III covers day-to-day operation.
 
 ## I.1 — What this system does
 
-BookTranslator converts a scanned historical fencing or martial-arts
+FencingManualTranslator converts a scanned historical fencing or martial-arts
 manual (a PDF) into two English PDFs: a plain reading copy, and a
 side-by-side copy with the original scan next to the translation.
 

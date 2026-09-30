@@ -24,7 +24,7 @@ from pathlib import Path
 
 import _render
 
-GITHUB_URL = "github.com/ncaccamo/BookTranslator"
+GITHUB_URL = "github.com/ncaccamo/FencingManualTranslator"
 
 DISCLOSURE = (
     "A machine translation, created on local hardware and shared for open "
@@ -181,8 +181,8 @@ def render(doc, stem, *, page_w, page_h, margin):
 
     ver = _pipeline_version()
     today = datetime.now().strftime("%B %d, %Y")
-    block(f"Pipeline {ver}  ·  generated {today}" if ver
-          else f"Generated {today}", 9, gap_after=10)
+    block(f"FencingManualTranslator {ver}  ·  generated {today}" if ver
+          else f"FencingManualTranslator  ·  generated {today}", 9, gap_after=10)
 
     block(METHOD, 9, gap_after=8)
     block(CONVENTIONS, 9, gap_after=12)

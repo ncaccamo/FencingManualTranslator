@@ -12,7 +12,7 @@
 #   - Starts fresh container
 #
 # WHAT IT DELETES:
-#   - BookTranslator Docker images
+#   - FencingManualTranslator Docker images
 #   - Build cache (system-wide, affects all Docker)
 #
 # WHAT IT PRESERVES:
@@ -28,18 +28,18 @@
 #
 # DISK SPACE FREED: 3-8GB (this project's images + cache)
 # TIME: 15-20 minutes (models already downloaded)
-# SAFETY: Safe - only affects BookTranslator project
+# SAFETY: Safe - only affects FencingManualTranslator project
 # ============================================================================
 
-cd ~/BookTranslator || exit 1
+cd ~/FencingManualTranslator || exit 1
 
 echo "========================================"
-echo " CLEAN REBUILD - BookTranslator Only"
+echo " CLEAN REBUILD - FencingManualTranslator Only"
 echo "========================================"
 echo ""
 echo "This will:"
-echo "  • Stop BookTranslator container"
-echo "  • Delete BookTranslator images"
+echo "  • Stop FencingManualTranslator container"
+echo "  • Delete FencingManualTranslator images"
 echo "  • Clear Docker build cache (affects all projects)"
 echo "  • Rebuild from scratch"
 echo ""
@@ -54,11 +54,11 @@ if [ "$confirm" != "yes" ]; then
 fi
 echo ""
 
-echo "[1/6] Stopping BookTranslator containers..."
+echo "[1/6] Stopping FencingManualTranslator containers..."
 docker compose down
 echo ""
 
-echo "[2/6] Removing BookTranslator images..."
+echo "[2/6] Removing FencingManualTranslator images..."
 docker compose down --rmi all
 echo ""
 
@@ -87,7 +87,7 @@ echo " Rebuild Complete!"
 echo "========================================"
 echo ""
 echo "Checking status:"
-docker ps | grep booktranslator
+docker ps | grep fmt-translator
 echo ""
 echo "Models preserved:"
 du -sh ~/llm_models 2>/dev/null || echo "  ~/llm_models/"

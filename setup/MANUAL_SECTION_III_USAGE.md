@@ -3,16 +3,16 @@
 Day-to-day operation, once Section II's host setup is done and the image
 is built. Section I explains what each step does and why.
 
-Throughout, the container is `booktranslator-translator-1` and the project
-root is `~/BookTranslator`. Helper scripts live in
-`~/BookTranslator/scripts/`.
+Throughout, the container is `fmt-translator` and the project
+root is `~/FencingManualTranslator`. Helper scripts live in
+`~/FencingManualTranslator/scripts/`.
 
 ---
 
 ## III.1 — Quick start
 
 ```bash
-cd ~/BookTranslator
+cd ~/FencingManualTranslator
 
 # one-time (verifies the host, writes .env/backend.env, builds, brings up):
 bash scripts/setup.sh                    # ~20-30 min first build
@@ -48,10 +48,10 @@ framing. Run them one at a time when you're iterating.
 ```bash
 docker compose up -d       # container must be up; comes up idle
 
-docker exec booktranslator-translator-1 python3 /app/1_ocr_and_extract_vlm.py
-docker exec booktranslator-translator-1 python3 /app/2_translate.py
-docker exec booktranslator-translator-1 python3 /app/3_english_only_pdf.py
-docker exec booktranslator-translator-1 python3 /app/4_side_by_side_pdf.py
+docker exec fmt-translator python3 /app/1_ocr_and_extract_vlm.py
+docker exec fmt-translator python3 /app/2_translate.py
+docker exec fmt-translator python3 /app/3_english_only_pdf.py
+docker exec fmt-translator python3 /app/4_side_by_side_pdf.py
 ```
 
 Each step decides for itself which books to act on:
@@ -130,10 +130,10 @@ without paying for OCR again:
 
 ```bash
 # every book that has a raw_ocr.txt:
-docker exec booktranslator-translator-1 python3 /app/reprocess_extracted.py
+docker exec fmt-translator python3 /app/reprocess_extracted.py
 
 # or just some:
-docker exec booktranslator-translator-1 python3 /app/reprocess_extracted.py \
+docker exec fmt-translator python3 /app/reprocess_extracted.py \
   /data/processed/<stem>_translated
 ```
 
@@ -150,7 +150,7 @@ the pipeline itself has reason to doubt, by side-by-side **pdf page**
 involved, so it runs in seconds, and you can rerun it any time:
 
 ```bash
-docker exec booktranslator-translator-1 python3 /app/quality_report.py <stem>   # or --all
+docker exec fmt-translator python3 /app/quality_report.py <stem>   # or --all
 ```
 
 Rebuild the PDFs first, since pdf page numbers are read from the built
@@ -177,7 +177,7 @@ side-by-side PDF. What it checks:
   comes from a page-layout detection model (`pipeline/_layout.py`, CPU only)
   that step 1 runs on every page into `intermediate/layout.json`. For a book
   OCR'd before it existed, run
-  `docker exec booktranslator-translator-1 python3 /app/layout_scan.py <stem>`
+  `docker exec fmt-translator python3 /app/layout_scan.py <stem>`
   (about 0.5 s per page). Pages where the detector and the OCR disagree are
   listed as notes.
 
@@ -195,9 +195,9 @@ bar, right before the paragraph (or sentence) they're printed beside. New
 books get this in step 1. For a book OCR'd earlier:
 
 ```bash
-docker exec booktranslator-translator-1 python3 /app/layout_scan.py --margins <stem>
-docker exec booktranslator-translator-1 python3 /app/reprocess_extracted.py /data/processed/<stem>_translated
-docker exec booktranslator-translator-1 python3 /app/2_translate.py   # retranslates just the changed pages
+docker exec fmt-translator python3 /app/layout_scan.py --margins <stem>
+docker exec fmt-translator python3 /app/reprocess_extracted.py /data/processed/<stem>_translated
+docker exec fmt-translator python3 /app/2_translate.py   # retranslates just the changed pages
 ```
 
 ### Running heads the OCR left out
@@ -211,8 +211,8 @@ plate label is ignored. New books get this in step 1 (`intermediate/
 heads.json`). For a book OCR'd earlier:
 
 ```bash
-docker exec booktranslator-translator-1 python3 /app/layout_scan.py --heads <stem>
-docker exec booktranslator-translator-1 python3 /app/reprocess_extracted.py /data/processed/<stem>_translated
+docker exec fmt-translator python3 /app/layout_scan.py --heads <stem>
+docker exec fmt-translator python3 /app/reprocess_extracted.py /data/processed/<stem>_translated
 ```
 
 then translate any new running-head wording (`2_translate.py --pages <stem>
@@ -231,12 +231,12 @@ digitisation it names. The untouched original is kept as
 `books/_alt/<stem>_original.pdf`, and the book's data is backed up.
 
 ```bash
-X="docker exec booktranslator-translator-1 python3"
+X="docker exec fmt-translator python3"
 $X /app/patch_scan.py <stem> /data/books/_alt/<stem>.patch.json            # dry run
 $X /app/patch_scan.py <stem> /data/books/_alt/<stem>.patch.json --apply    # stage scan, move data
 # books/ is read-only in the container: run the printed host commands, which keep
 # the original in books/_alt/ and move the staged scan (processed/_patch/) into books/
-docker exec -e PDF_ONLY=<stem> booktranslator-translator-1 python3 /app/1_ocr_and_extract_vlm.py  # reads the new pages only
+docker exec -e PDF_ONLY=<stem> fmt-translator python3 /app/1_ocr_and_extract_vlm.py  # reads the new pages only
 $X /app/patch_scan.py <stem> x --finish                                     # re-parse; prints the pages to translate
 $X /app/2_translate.py --pages <stem> <pages>                               # as printed
 ```
@@ -296,8 +296,8 @@ Apply it to a book's existing outputs (no model, seconds), then rebuild
 the PDFs:
 
 ```bash
-docker exec booktranslator-translator-1 python3 /app/apply_overrides.py <stem>
-docker exec -e PDF_ONLY=<stem> booktranslator-translator-1 python3 /app/4_side_by_side_pdf.py
+docker exec fmt-translator python3 /app/apply_overrides.py <stem>
+docker exec -e PDF_ONLY=<stem> fmt-translator python3 /app/4_side_by_side_pdf.py
 ```
 
 Step 1, `reprocess_extracted.py` and step 2 apply the same file themselves.
@@ -311,7 +311,7 @@ To redo a few pages without retranslating the book (a changed source page,
 a bad translation, a new `[terms]` entry), name the scan pages:
 
 ```bash
-docker exec booktranslator-translator-1 python3 /app/2_translate.py --pages <stem> 12,40-42
+docker exec fmt-translator python3 /app/2_translate.py --pages <stem> 12,40-42
 ```
 
 or mark them in the overrides file and run without a list:
@@ -321,7 +321,7 @@ or mark them in the overrides file and run without a list:
 retranslate = true
 ```
 ```bash
-docker exec booktranslator-translator-1 python3 /app/2_translate.py --pages <stem>
+docker exec fmt-translator python3 /app/2_translate.py --pages <stem>
 ```
 
 Marked pages are done once per version of their source text
@@ -382,11 +382,11 @@ they produced, so rerun it last.
 After editing the overrides file:
 
 ```bash
-X="docker exec booktranslator-translator-1 python3"
+X="docker exec fmt-translator python3"
 $X /app/apply_overrides.py <stem>                   # writes the decisions in (no model, seconds)
 $X /app/2_translate.py --pages <stem> <pages>       # only if English is needed: [terms], retranslate, a new caption
-docker exec -e PDF_ONLY=<stem> booktranslator-translator-1 python3 /app/3_english_only_pdf.py
-docker exec -e PDF_ONLY=<stem> booktranslator-translator-1 python3 /app/4_side_by_side_pdf.py
+docker exec -e PDF_ONLY=<stem> fmt-translator python3 /app/3_english_only_pdf.py
+docker exec -e PDF_ONLY=<stem> fmt-translator python3 /app/4_side_by_side_pdf.py
 $X /app/quality_report.py <stem>                    # confirm the page no longer shows up
 ```
 
@@ -423,8 +423,8 @@ per-page progress to the `docker exec` stdout. In separate terminals:
 scripts/monitor_gpu.sh
 
 # the running server's own log
-docker exec booktranslator-translator-1 tail -f /tmp/vlm_server.log
-docker exec booktranslator-translator-1 tail -f /tmp/translation_server.log
+docker exec fmt-translator tail -f /tmp/vlm_server.log
+docker exec fmt-translator tail -f /tmp/translation_server.log
 ```
 
 Step 2 prints a running count of pages, marks footnoted pages with
@@ -478,7 +478,7 @@ individually). A GPU-less pipeline host is prepared by
 ### The vision server won't start / step 1 exits immediately
 
 ```bash
-docker exec booktranslator-translator-1 tail -50 /tmp/vlm_server.log
+docker exec fmt-translator tail -50 /tmp/vlm_server.log
 ```
 
 - **`libllama-server-impl.so: cannot open shared object file`** — a
@@ -490,7 +490,7 @@ docker exec booktranslator-translator-1 tail -50 /tmp/vlm_server.log
   and holds `allenai_olmOCR-2-7B-1025-Q6_K.gguf` +
   `mmproj-allenai_olmOCR-2-7B-1025-f16.gguf`. In `local` mode the
   entrypoint downloads missing models on `up`; watch
-  `docker logs booktranslator-translator-1`.
+  `docker logs fmt-translator`.
 - **RADV / device-lost on load** — transient. The wait loop now notices a
   dead server and reports it instead of hanging; re-run the step. If it
   repeats, try `LLAMA_BACKEND=rocm7` (III.9).
@@ -544,9 +544,9 @@ differ) and re-run step 2 for that book.
 ### Translation step never starts / server timeout
 
 ```bash
-docker exec booktranslator-translator-1 pkill -f llama-server
+docker exec fmt-translator pkill -f llama-server
 docker compose restart && sleep 20
-docker exec booktranslator-translator-1 python3 /app/2_translate.py
+docker exec fmt-translator python3 /app/2_translate.py
 ```
 
 Step 2 resumes — it skips books whose `intermediate/translation.txt` is
@@ -563,7 +563,7 @@ at the top of this section).
   $USER`, then log out and back in.
 - **Crash loop right after `up`** — the container is *meant* to crash
   visibly rather than restart (`restart: "no"`). Read
-  `docker logs booktranslator-translator-1`; don't add a restart policy
+  `docker logs fmt-translator`; don't add a restart policy
   to paper over it.
 
 ### Processing hangs mid-book
@@ -571,7 +571,7 @@ at the top of this section).
 ```bash
 df -h                                          # need ≥10 GB free
 docker ps                                      # container still up?
-docker logs booktranslator-translator-1 | tail -50
+docker logs fmt-translator | tail -50
 docker compose restart && sleep 20
 # then re-run the step it stopped on
 ```
@@ -584,7 +584,7 @@ Steps 1 and 2 save after every page and resume from the last saved page
 ### Remote mode (`BACKEND_MODE=remote`)
 
 ```bash
-docker exec -w /app booktranslator-translator-1 \
+docker exec -w /app fmt-translator \
   python3 -c "import backend_config as b; print(b.describe())"
 ```
 

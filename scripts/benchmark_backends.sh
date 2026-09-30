@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-CONTAINER=booktranslator-translator-1
+CONTAINER=fmt-translator
 TRANSLATION_MODEL="${TRANSLATION_MODEL_PATH:-/models/Qwen3.8-27B.i1-Q4_K_S.gguf}"
 VLM_MODEL="${VLM_MODEL_PATH:-/models/allenai_olmOCR-2-7B-1025-Q6_K.gguf}"
 
@@ -20,10 +20,10 @@ run_bench () {
     # inherit env vars exported inside entrypoint.sh's own process.
     docker exec -e LD_LIBRARY_PATH="/usr/local/lib/llama-$backend" "$CONTAINER" \
         "/usr/local/bin/llama-bench-$backend" -m "$model" -p 512 -n 128 -ngl 999 \
-        2>&1 | tee -a /tmp/booktranslator_bench_results.txt
+        2>&1 | tee -a /tmp/fmt_bench_results.txt
 }
 
-rm -f /tmp/booktranslator_bench_results.txt
+rm -f /tmp/fmt_bench_results.txt
 for backend in rocm rocm714 vulkan; do
     run_bench "$backend" "$TRANSLATION_MODEL" "translation model"
 done
@@ -32,6 +32,6 @@ for backend in rocm rocm714 vulkan; do
 done
 
 echo ""
-echo "Results saved to /tmp/booktranslator_bench_results.txt"
+echo "Results saved to /tmp/fmt_bench_results.txt"
 echo "To switch backend: edit LLAMA_BACKEND in .env, then:"
 echo "  docker compose up -d --force-recreate"

@@ -32,7 +32,7 @@
 # SAFETY: Very safe - only removes unused artifacts
 # ============================================================================
 
-cd ~/BookTranslator || exit 1
+cd ~/FencingManualTranslator || exit 1
 
 echo "========================================"
 echo " Docker Storage Compaction"

@@ -13,7 +13,7 @@
 # the packaged version predates RDNA4 and misreports this card.
 # ============================================================================
 
-CONTAINER=booktranslator-translator-1
+CONTAINER=fmt-translator
 
 echo "╔════════════════════════════════════════════════════════╗"
 echo "║          GPU MONITORING - Press Ctrl+C to stop          ║"

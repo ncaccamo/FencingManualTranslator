@@ -30,10 +30,10 @@ git add evals/baselines/Joseph-Renaud_Lescrime && git commit -m "freeze JR basel
 # 2. make a prompt / rule change, then re-run the pipeline for the frozen
 #    books (reprocess is enough for parser/reconcile changes; add step 2
 #    for term/translation changes):
-docker exec booktranslator-translator-1 python3 /app/reprocess_extracted.py <folders>
-docker exec booktranslator-translator-1 python3 /app/2_translate.py
-docker exec booktranslator-translator-1 python3 /app/3_english_only_pdf.py
-docker exec booktranslator-translator-1 python3 /app/4_side_by_side_pdf.py
+docker exec fmt-translator python3 /app/reprocess_extracted.py <folders>
+docker exec fmt-translator python3 /app/2_translate.py
+docker exec fmt-translator python3 /app/3_english_only_pdf.py
+docker exec fmt-translator python3 /app/4_side_by_side_pdf.py
 
 # 3. see what moved:
 python3 evals/test_rules.py          # deterministic layer — must stay green

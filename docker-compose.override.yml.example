@@ -1,4 +1,4 @@
-# Compose override for running BookTranslator in REMOTE mode on a host
+# Compose override for running FencingManualTranslator in REMOTE mode on a host
 # with no AMD GPU (BACKEND_MODE=remote in backend.env -- inference runs on
 # a separate llama-server over the LAN, so this container needs no
 # /dev/kfd and no video/render groups).

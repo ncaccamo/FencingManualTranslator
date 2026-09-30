@@ -1938,7 +1938,7 @@ def start_vlm_server(restart=False):
             pass
 
     print("\n\n✗ Server timeout")
-    print("Check logs: docker exec booktranslator-translator-1 cat /tmp/vlm_server.log\n")
+    print("Check logs: docker exec fmt-translator cat /tmp/vlm_server.log\n")
     proc.terminate()
     return None
 

@@ -1,7 +1,7 @@
 # Running inference on a remote GPU
 
 `BACKEND_MODE=remote` moves all model inference to a separate machine on
-your LAN. The BookTranslator host then needs **no GPU** — it runs the
+your LAN. The FencingManualTranslator host then needs **no GPU** — it runs the
 OCR-parse and PDF-render work on CPU and calls the remote system over HTTP
 with a bearer token. Nothing leaves your network.
 
@@ -39,7 +39,7 @@ single resolver — `1_`, `2_`, `test_vlm_single_page.py` all read their URL
 + key from it. Verify:
 
 ```bash
-docker exec -w /app booktranslator-translator-1 \
+docker exec -w /app fmt-translator \
   python3 -c "import backend_config as b; print(b.describe())"
 # remote -> http://192.168.1.50:11500 (auth: yes)
 ```
@@ -53,12 +53,12 @@ uses the gaming GPU driver; no ROCm needed on Windows). Two ways to run it:
 
 [llama-swap](https://github.com/mostlygeek/llama-swap) sits on `:11500`
 and spawns/tears down a `llama-server` per request, keyed by the request's
-`"model"` field. BookTranslator sends `VLM_MODEL_NAME` for step 1 and
+`"model"` field. FencingManualTranslator sends `VLM_MODEL_NAME` for step 1 and
 `TRANSLATION_MODEL_NAME` for step 2, so llama-swap swaps the vision and
 text models automatically **with no manual step between steps** —
 `scripts/run_full_pipeline.sh` works unchanged in remote mode.
 
-A minimal `llama-swap.yaml` for the two BookTranslator models:
+A minimal `llama-swap.yaml` for the two FencingManualTranslator models:
 
 ```yaml
 healthCheckTimeout: 300
@@ -130,7 +130,7 @@ single name the server reports.
 ### Either way
 
 - Give the system a static IP / DHCP reservation so `REMOTE_HOST` stays valid.
-- Firewall: allow inbound TCP on the port, scoped to the BookTranslator
+- Firewall: allow inbound TCP on the port, scoped to the FencingManualTranslator
   host's IP.
 - The OCR step needs the vision model **and** its `mmproj` projector GGUF.
 - `1_`/`2_` probe `GET /health` **without** the auth header. Stock
@@ -141,7 +141,7 @@ A full turnkey setup for a Windows system — install scripts, llama-swap
 config, firewall, a generated key, autostart — is maintained separately
 (the reference deployment keeps it in its infra repo under `gpu-host/`).
 
-## 3. Setting up a GPU-less BookTranslator host
+## 3. Setting up a GPU-less FencingManualTranslator host
 
 `scripts/setup.sh --remote` does this for you (skips the GPU checks,
 writes a remote `backend.env` skeleton, creates `ai-net`, builds, brings
