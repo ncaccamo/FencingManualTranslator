@@ -102,9 +102,8 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    slips, ToC / dotted-leader pages half-translate `coupé`/`battement`,
    and literary prose (LaMarche) leaves a few `[low-confidence]` pages
    substantially in French. The Larousse sower-motto garble is OCR-side.
-1b. ~~Multi-model serving compose~~ — CLOSED, superseded by `LocalAIChat`.
-   That's a separate product now (llama-swap on :11500 serving a chat +
-   a coding model, one resident, Open WebUI dropdown drives the swap).
+1b. ~~Multi-model serving compose~~ — CLOSED, out of scope: general chat /
+   coding model serving belongs to a separate project.
    This item predates the project split; FencingManualTranslator serves only its
    two pipeline models (olmOCR-2 and the translation model), sequentially, by design.
 2. **Footnotes** — DONE. `† French: <term>` source refs on Category-3
@@ -167,17 +166,10 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    small/landscape plates packs two to a sheet when they genuinely fit.
    Portrait plates hit the `FIGURE_MAX_H` (82% column) cap and still get
    one each — by design, no shrinking to force a pair.
-7. `rocm714` backend — wired everywhere but not compiled; build it in
-   `BackendBuildstage` and sync in.
-8. ~~Backend-selection port to `LocalAIChat`.~~ DONE + verified
-   (2026-08-27). Grepped the repo: the one endpoint that matters,
-   Open WebUI's `OWUI_OPENAI_BASE_URL`, is set by `scripts/start.sh` from
-   `backend.env` (local default `http://model-server:11500/v1`, remote →
-   `http://$REMOTE_HOST:$REMOTE_PORT/v1`); `LISTEN_PORT` / `REMOTE_PORT`
-   are parameterised; the `127.0.0.1` binds are llama-swap's internal
-   child servers (correct); the `:11500` setup probe is `local`-mode
-   guarded. LocalAIChat's own STATUS "Verified" table also covers
-   local/vulkan, local/rocm7, and remote against a real LAN stand-in.
+7. `rocm714` backend — wired everywhere but not compiled; see
+   `docker/ROCM714_NOTES.md`.
+8. ~~Backend-selection port to a separate chat project~~ — DONE
+   (2026-08-27); nothing in this repo depends on it.
 
 9. **Heading tier / per-book header scheme** — FUTURE WORK, own effort.
    The renderer has two buckets: `HEADER:` → small italic running-head
@@ -416,7 +408,6 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 - **The host installs no ROCm / Vulkan / Mesa** — only the in-kernel
   `amdgpu` driver (kernel ≥ 6.12) + Docker. All GPU userspace is compiled
   into the image; `docker exec` inference never reads host `/opt/rocm`.
-  Same model across FencingManualTranslator / LocalAIChat / BackendBuildstage.
   `scripts/monitor_gpu.sh` reads `rocm-smi` from inside the container so a
   ROCm-free host still has GPU monitoring (or use host `nvtop`).
   (Decided 2026-08-27; `setup_inference_backend.sh`, which did a host
@@ -454,4 +445,4 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
   superseded numbered scripts + the ROCm 6.x
   `translation_pipeline_manual.md` — all in git history; Manual I/II/III
   supersede the old manual), and `setup/03_setup_open_webui.sh`
-  (Open WebUI belongs to `LocalAIChat`, never connected here).
+  (Open WebUI was never connected here).

@@ -1,150 +1,134 @@
 # FencingManualTranslator
 
-Turns a scanned historical fencing / HEMA manual into an English study
-edition: the original page on the left, a scholarly translation on the
-right, page for page. It runs fully on your own hardware — **no cloud API
-calls; nothing leaves your machine (or, in remote-GPU mode, your LAN).**
+Turns a scanned historical fencing manual into an English study edition:
+the original page on the left, a scholarly translation on the right, page
+for page. Everything runs on your own hardware, and no text is sent to a
+cloud service.
 
-It is built for reading and research, not for publishing unreviewed: every
-translation is machine-made (a cover page says so), and the output flags
-what it isn't sure of so you can check it against the facing scan.
+It is built for reading and research, not for publishing unreviewed. Every
+translation is machine-made (the cover page says so), and the output flags
+what it is unsure of so you can check it against the facing scan.
 
-## What it does to a book
+## What it produces
 
-- **Reads the scan** with a vision model (olmOCR-2) — body text, the running
-  head, the printed page number, plates and their captions — rather than
-  trusting the PDF's own text layer.
-- **Translates** with a local LLM (Qwen3.8-27B) under a fencing-
-  specific term policy:
-  - terms English fencing literature keeps (*riposte*, *remise*, *quarte*,
-    *épée* …) stay in the original, italicized;
-  - ordinary terms get their standard English names (*parade* → parry,
-    *fente* → lunge, *coup* → thrust, *botte* → hit);
-  - hard-to-translate terms (*coupé*, *dérobement*, *appel* …) are translated
-    and footnoted with the French on first use.
-- **Keeps the book's apparatus**: running heads (translated), page numbers
-  (shown when printed, or when the surrounding numbers pin them down
-  exactly; unnumbered plates show none — never a guess), chapter titles,
-  the author's own footnotes, plate captions.
-- **Builds two PDFs**, with an AI-disclosure cover page:
-  - **Side by Side (Landscape)** — scan left, translation right. This is the
-    primary output and the one under active review.
-  - **English Only (Portrait)** — a flowing reading copy with figures
-    inline. Currently deferred: it has known layout issues
-    (`docs/STATUS.md`).
+- **Side by Side (Landscape) PDF**: scan on the left, translation on the
+  right. Running heads, chapter titles, page numbers, the author's
+  footnotes and margin notes, and plate captions are carried over.
+- **English Only (Portrait) PDF**: a flowing reading copy with figures
+  inline.
+- **A cover page** naming the models used and the pipeline revision and
+  date behind the translation.
+- **A review report** listing the pages worth checking, and why.
 
-**Source language:** tested on French manuals (six so far, 1845–1911). The
-prompt also carries Italian and German term lists, but no Italian or German
-book has been run.
+Pages the model struggled with are marked in the output
+(`[low-confidence translation — review]`), and `†` footnotes give the
+original wording of terms whose English is only an approximation.
 
-**Review report:** each run also writes `<book> — Review Report.md` next to
-the PDFs, a short list of the pages worth checking (by pdf page number) and
-why, plus book-wide terminology choices to settle. Your decisions go in a
-per-book overrides file that every later run re-applies (manual III.5a–b).
+## How it works
 
-**What the output flags:** `[low-confidence translation — review]` or
-`[translation unavailable — original text follows]` on a page the model
-struggled with; `†` footnotes for kept French terms; `[margin note]` for
-the author's shoulder notes; `[table — see facing page]` where a table is
-left to the scan.
+The models read the page and draft the translation; the pipeline around
+them does most of the work.
 
-## Pipeline
+- **Layout first.** A layout detector locates text, figures, tables and
+  margin notes before the vision model reads each page.
+- **Book structure rebuilt.** Page numbers are reconciled across the book,
+  running heads cross-checked, hyphenation across page breaks rejoined,
+  scan-library stamps removed, footnotes and margin notes kept in place.
+- **A term glossary per language.** Each source language has its own
+  glossary, since each fencing tradition has its own vocabulary; a new
+  language starts by building one. Every term is translated, translated
+  with the original in a footnote, or kept in italics as English fencing
+  literature keeps it. The lists come from surveying every term in the
+  corpus, with per-book entries where an author defines a word his own
+  way.
+- **Checks after the model.** Code enforces the term policy, repairs known
+  model errors, and retries or flags any page left partly untranslated.
+- **Measured.** Output is scored against published sample human
+  translations; the translation model was chosen by a comparative test;
+  every fixed bug is a regression test, so a fix for one book cannot
+  silently break another.
+- **Review loop.** Reviewer decisions go in a per-book overrides file that
+  every later run re-applies, and only pages whose source text changed are
+  retranslated.
 
 ![Pipeline overview](docs/img/pipeline.drawio.svg)
 
-Step by step — what happens, the tools, and the files each step reads and
-writes: [detailed pipeline diagram](docs/img/pipeline-detail.drawio.svg).
+Four steps, each a script in `pipeline/`:
 
-Each book runs through four scripts in `pipeline/`, writing to
-`processed/<book>_translated/`. The two finished PDFs land in that folder's
-root; everything else (raw OCR, the parsed scaffold, page numbers, the
-translation) lives in an `intermediate/` subfolder:
+| Step | Does |
+|---|---|
+| 1 | Page layout, OCR and structure: scan → text with page numbers, heads, figures |
+| 2 | Translation, term policy and checks → English |
+| 3 | English Only PDF |
+| 4 | Side by Side PDF |
 
-| Step | Script | Does | Output |
-|---|---|---|---|
-| 1 | `1_ocr_and_extract_vlm.py` | page image → structured text (olmOCR-2-7B on :11435) | `intermediate/raw_ocr.txt`, `intermediate/extracted.txt`, `intermediate/page_numbers.txt` |
-| 2 | `2_translate.py` | extracted text → English (Qwen3.8-27B on :11434) | `intermediate/translation.txt` |
-| 3 | `3_english_only_pdf.py` | flowing English reading copy, figures inline | `… — English Only (Portrait).pdf` |
-| 4 | `4_side_by_side_pdf.py` | scan left / translation right, paragraph-aligned | `… — Side by Side (Landscape).pdf` |
+Every intermediate file is kept, so any step can be rerun without
+redoing the earlier ones. Step by step, with the files each step reads
+and writes: [detailed pipeline diagram](docs/img/pipeline-detail.drawio.svg).
 
-Every intermediate is kept, so a later stage can be re-run (e.g. after a
-`translation_prompt.txt` change) without redoing OCR. A 350-page book takes
-a few hours, most of it in step 1; steps 3 and 4 take a minute or two.
+## Architecture: local models on a consumer GPU
 
-## Where it runs
+- **Models.** Two open-weight models, both run through
+  [llama.cpp](https://github.com/ggml-org/llama.cpp): olmOCR-2-7B (a
+  vision model trained for document OCR) reads the pages, and
+  Qwen3.8-27B translates. They take turns on the GPU; the pipeline starts
+  and stops each server as it needs it. The layout detector (Docling's
+  RT-DETR) runs on the CPU.
+- **Hardware.** Developed on a 16 GB AMD RX 9070 XT (RDNA4). The 27B
+  translation model does not fit in 16 GB, so it is split between GPU
+  and CPU. A 350-page book takes about an hour to read and four to five
+  hours to translate.
+- **Self-contained container.** The Docker image carries the whole GPU
+  stack: ROCm 7.2 and Vulkan builds of llama.cpp, switchable without a
+  rebuild. The host needs only a recent kernel and Docker, with no
+  ROCm or driver install.
+- **Remote GPU option.** Inference can instead run on another system on
+  your network (a `llama-server` or llama-swap, e.g. a Windows gaming PC).
+  The pipeline host then needs no GPU at all.
+- **NVIDIA.** Untested. A CUDA `llama-server` works through remote mode
+  as it stands, even on the same system; a CUDA backend inside the
+  container is outlined but not built
+  ([`docs/remote-gpu.md`](docs/remote-gpu.md) §5).
 
-Two modes, set in `backend.env`:
-
-- **Local** — the GPU is in the same system. Tuned for an AMD RX 9070 XT
-  (RDNA4, 16 GB) + Ryzen 7 5700X3D. Host needs only Ubuntu 24.04 **or
-  newer**, kernel ≥ 6.12 (in-kernel `amdgpu`), the `render`/`video` groups,
-  and Docker — **no host ROCm, Vulkan SDK, or Mesa**; those are in the
-  image (ROCm 7.2.4 + Vulkan + llama.cpp), which stays `FROM ubuntu:24.04`
-  regardless of the host. `LLAMA_BACKEND=vulkan | rocm7 | rocm714`;
-  switching is `docker compose up -d`, no rebuild.
-- **Remote** — inference runs on a `llama-server` (or llama-swap) on
-  another system on your LAN, bearer-token auth. The FencingManualTranslator host
-  then needs **no GPU** — just x86-64 + Docker (`scripts/setup.sh --remote`
-  plus `docker-compose.override.yml`). With llama-swap the vision and text
-  models swap automatically by request; with a bare `llama-server` you
-  swap them by hand between step 1 and step 2.
-
-Details: `docs/remote-gpu.md`. Bare-metal host setup:
-`setup/MANUAL_SECTION_II_HOST_PREREQUISITES.md`.
+Hardware, software stack and backends in detail:
+[`setup/MANUAL_SECTION_I_OVERVIEW.md`](setup/MANUAL_SECTION_I_OVERVIEW.md);
+remote mode: [`docs/remote-gpu.md`](docs/remote-gpu.md).
 
 ## Quick start
 
 ```bash
-bash scripts/setup.sh     # verify host, write .env/backend.env, ai-net,
-                          # build (~20-30 min), bring the container up idle
-                          # (--remote for a GPU-less host)
-# local mode: first 'up' downloads ~13 GB of models -> docker compose logs -f translator
+bash scripts/setup.sh          # checks the host, builds the image (~20-30 min)
+                               # (--remote for a host without a GPU)
+                               # local mode: the first start downloads ~13 GB of models
 
-# put source PDFs in ./books/ (name them <author>_<year>_<short-title>.pdf), then:
-docker exec fmt-translator python3 /app/1_ocr_and_extract_vlm.py
-docker exec fmt-translator python3 /app/2_translate.py
-docker exec fmt-translator python3 /app/3_english_only_pdf.py
-docker exec fmt-translator python3 /app/4_side_by_side_pdf.py
-# (or: scripts/run_full_pipeline.sh)
+# put scans in ./books/ as <author>_<year>_<short-title>.pdf, then:
+scripts/run_full_pipeline.sh
 ```
 
-Day-to-day operation, re-run rules, troubleshooting:
-**`setup/MANUAL_SECTION_III_USAGE.md`**.
+Running steps individually, reviewing a book, and troubleshooting:
+[`setup/MANUAL_SECTION_III_USAGE.md`](setup/MANUAL_SECTION_III_USAGE.md).
 
-## Your books stay yours
+## Status
 
-The repository is a general tool, not tied to any corpus. `books/`,
-`processed/` and the evaluation data under `evals/` are git-ignored: you
-bring your own scans (public-domain sources such as Gallica, Google Books
-and archive.org work well) and nothing about them is committed.
+- **French:** nine manuals (1818–1912) translated and under review.
+- **Italian:** ten manuals (1844–1905) in progress.
+- **English Only PDF:** has known layout issues; the side-by-side edition
+  is the primary output.
 
-## Per-book overrides
+## Source scans
 
-Optional files next to a source PDF in `books/`, matching its stem:
+No books are included. Put your own scans in `books/`; public-domain
+sources such as Gallica, Google Books and archive.org work well. The
+`books/` and `processed/` folders are excluded from git, so your scans
+and their translations are never committed.
 
-| File | Effect |
-|---|---|
-| `<stem>.overrides.toml` | your review decisions — page numbers, headers, header wording, book terms, fixes to the English; re-applied on every run (manual III.5b) |
-| `<stem>.meta.json` | title / author / year / publisher / rights for the cover page (generate with `scripts/make_book_meta.py`) |
-| `<stem>.crop` | `left,top,right,bottom` fractions trimmed from each page before OCR |
-| `<stem>.rotate` | rotate sideways-scanned plates in the PDFs: `cw`, `ccw` or `180`, optionally prefixed `plates:` (default) or `all:` |
-| `<stem>.lang` | Tesseract language codes — only used by the non-default Tesseract OCR path |
+## Documentation
 
-Rename a book everywhere it lives (source, outputs, baselines) with
-`scripts/rename_book.py`.
-
-## Docs
-
-| File | For |
-|---|---|
-| `README.md` | this — the front door |
-| `docs/STATUS.md` | current state, open items, decisions worth not re-litigating |
-| `setup/MANUAL_SECTION_I_OVERVIEW.md` | user manual — what it does, hardware, stack |
-| `setup/MANUAL_SECTION_II_HOST_PREREQUISITES.md` | user manual — bare-metal host setup |
-| `setup/MANUAL_SECTION_III_USAGE.md` | user manual — day-to-day operation, iteration loops, troubleshooting |
-| `docs/model-quirks.md` | every way the OCR / translation models fail on this corpus + the prompt/code mitigation — read before tuning a prompt |
-| `docs/pdf-layout.md` | how steps 3 & 4 build the PDFs — the `_render` engine, figure/alignment logic, the knobs |
-| `docs/remote-gpu.md` | running inference on a remote GPU system / GPU-less FencingManualTranslator host |
-| `docs/evaluation-and-tuning.md` | **maintainer-only** — the regression harness (`evals/`), gold-reference scoring, swapping the translation model, the fine-tuning plan. Not needed to run the pipeline. |
-| `CLAUDE.md` | orientation + hard invariants for AI coding agents |
-| `docker/ROCM714_NOTES.md` | why the ROCm 7.14 backend is parked |
+- **User manual:**
+  [overview](setup/MANUAL_SECTION_I_OVERVIEW.md) ·
+  [host setup](setup/MANUAL_SECTION_II_HOST_PREREQUISITES.md) ·
+  [usage](setup/MANUAL_SECTION_III_USAGE.md)
+- **How it works:** [model failure modes and fixes](docs/model-quirks.md) ·
+  [PDF layout](docs/pdf-layout.md) · [remote GPU](docs/remote-gpu.md)
+- **For contributors:** [current status](docs/STATUS.md) ·
+  [evaluation and tuning](docs/evaluation-and-tuning.md)

@@ -181,16 +181,36 @@ never reads.
 `docker compose up -d`, no rebuild.
 
 `rocm714` is wired everywhere but **not compiled** — selecting it fails
-fast with a pointer to `BackendBuildstage`. To un-park it: build the
-ROCm 7.14 llama.cpp stage in `BackendBuildstage`, add it to
-`docker/Dockerfile` under its own `BUILDSTAGE-ROCM714` marker pair, sync,
-rebuild. See `docker/ROCM714_NOTES.md` for why it's parked (the preview
+fast. To un-park it: add a llama.cpp build against ROCm 7.14 to
+`docker/Dockerfile` and rebuild. See `docker/ROCM714_NOTES.md` for why it's parked (the preview
 wheels ship no `hip-lang-config.cmake`, so they can't compile HIP source).
 
-## 5. Porting this to LocalAIChat
+## 5. NVIDIA GPUs
 
-Already done — `LocalAIChat` has `backend.env`, `restart: "no"`, a
-`backend_config`-shaped resolver, and its `scripts/start.sh` reads URLs
-from `backend.env`. For a GPU-less host it ships its own
-`docker-compose.override.yml.example` (only needed for `hybrid` mode;
-`remote` mode never starts its GPU service).
+Developed and tested on AMD only. The pipeline itself doesn't care about
+the GPU vendor -- it talks HTTP to `llama-server` -- so there are two routes.
+
+**Remote mode (works as-is).** Run a CUDA build of `llama-server` (official
+prebuilt releases, or the `ghcr.io/ggml-org/llama.cpp:server-cuda` image),
+alone or behind llama-swap, with the same model files and flags as in §2.
+It can be on another system, or on the same one: set `REMOTE_HOST` to that
+system's own LAN IP. The FencingManualTranslator host is then set up as
+GPU-less (§3), since the compose file's AMD device mounts don't apply.
+
+**Local mode (not implemented; outline).** The container would need a CUDA
+llama.cpp alongside the ROCm and Vulkan ones:
+
+1. `docker/Dockerfile`: a build stage compiling llama.cpp with
+   `-DGGML_CUDA=ON` on an `nvidia/cuda` devel image, installing
+   `llama-server-cuda` and its libraries (plus the CUDA runtime / cuBLAS
+   libraries) the same way the ROCm and Vulkan builds are installed.
+2. `pipeline/backend_config.py`: add `"cuda": "cuda"` to `LOCAL_BACKENDS`,
+   so `LLAMA_BACKEND=cuda` selects it.
+3. Compose: an override that swaps the `/dev/kfd` / `/dev/dri` devices and
+   `video`/`render` groups for `gpus: all` (the host needs the NVIDIA
+   driver and the NVIDIA Container Toolkit).
+
+Either way: with 24 GB or more of VRAM, raise `TRANSLATION_GPU_LAYERS`
+(default 46 of 64) so more of the translation model runs on the GPU --
+all 64 layers fit, and translation gets considerably faster. Below 16 GB,
+lower it.

@@ -57,8 +57,8 @@ part is the *container*, not the host.
   (II.2). So 24.04, 26.04, or another recent Debian-family release all
   work; only 24.04 has actual mileage here.
 - Bumping the *image* to a newer base is a separate, deliberate exercise
-  (test in `BackendBuildstage`, then `sync_to_product.sh`), gated on AMD
-  publishing the ROCm apt repo for the newer codename.
+  (a rebuild and a full test run), gated on AMD publishing the ROCm apt
+  repo for the newer codename.
 
 Standard Desktop or Server ISO; no special install-time options. On a
 non-24.04 host, adjust the Docker apt repo line in II.6 to your release's

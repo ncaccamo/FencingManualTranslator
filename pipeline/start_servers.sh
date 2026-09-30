@@ -27,7 +27,7 @@ case "${LLAMA_BACKEND:-vulkan}" in
 esac
 if [ ! -x "/usr/local/bin/llama-server-$SUFFIX" ]; then
     echo "[FAIL] /usr/local/bin/llama-server-$SUFFIX is not in this image."
-    echo "       Build backend '$LLAMA_BACKEND' in BackendBuildstage, re-sync, rebuild."
+    echo "       Add a llama.cpp build for '$LLAMA_BACKEND' to docker/Dockerfile and rebuild."
     exit 1
 fi
 # llama-server links libllama-server-impl.so at runtime from this dir; a

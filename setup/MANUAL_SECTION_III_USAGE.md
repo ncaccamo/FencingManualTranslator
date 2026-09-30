@@ -93,6 +93,8 @@ Drop a sidecar file next to the PDF in `books/`, named with the same stem:
 
 | File | Content | Effect |
 |---|---|---|
+| `<stem>.overrides.toml` | your review decisions | Page numbers, headers, header wording, book terms, caption fixes and fixes to the English; re-applied on every run. See III.5b. |
+| `<stem>.meta.json` | title / author / year / publisher / rights / source | The cover page's bibliographic block. Generate it from `books/library.md` with `scripts/make_book_meta.py`, then hand-edit. |
 | `<stem>.crop` | `left,top,right,bottom` — fractions, e.g. `0.06,0.04,0.06,0.08` | Trims that fraction off each page image before OCR. Use it to cut a dark scanner-bed border or a gutter shadow that the vision model keeps transcribing as noise. |
 | `<stem>.lang` | Tesseract language codes, e.g. `fra+lat` | Only used by the legacy non-VLM `1_ocr_and_extract.py`. The default VLM path ignores it. |
 | `<stem>.rotate` | `cw` / `ccw` / `180` (every plate), or page lists: `cw: 35, 39, 55-229` and `ccw: 241` | Turns sideways-printed plates upright in both PDFs. Page lists are for books whose plates face different ways. See `docs/pdf-layout.md`. |
@@ -460,8 +462,8 @@ LLAMA_BACKEND=rocm7        # or: vulkan (default)
 ```
 
 `vulkan` and `rocm7` are both compiled into the image, so the switch is
-~10 seconds. `rocm714` is wired but not built and will fail fast with a
-pointer to `BackendBuildstage`.
+~10 seconds. `rocm714` is wired but not built and fails fast if selected
+(`docker/ROCM714_NOTES.md`).
 
 For `BACKEND_MODE=remote` (inference on another GPU system on your LAN), see
 `docs/remote-gpu.md`. Set `REMOTE_HOST` / `REMOTE_PORT` / `REMOTE_API_KEY`

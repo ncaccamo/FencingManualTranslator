@@ -194,6 +194,10 @@ runs:
   between step 1 and step 2. `scripts/setup.sh --remote` prepares a
   GPU-less pipeline host. Details in `docs/remote-gpu.md`.
 
+**NVIDIA GPUs** are untested. Remote mode works with a CUDA `llama-server`
+as-is, even on the same system; local mode would need a CUDA build of
+llama.cpp added to the image. Both are outlined in `docs/remote-gpu.md` §5.
+
 ## I.6 — Known limitations
 
 Authoritative, current list: `docs/STATUS.md`. Every model failure mode

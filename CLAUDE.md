@@ -7,18 +7,11 @@ footnotes for hard-to-translate passages, original layout/images
 preserved, English-only and side-by-side PDF outputs, AI-disclosure cover
 page. Runs fully locally, no cloud API calls.
 
-## Sibling projects — read this before assuming a dependency exists
-This repo is **fully self-contained**. It does not depend on
-`LocalAIChat` or `BackendBuildstage` to build or run — `docker/Dockerfile`
-already compiles its own ROCm 7.2.4 + Vulkan dual llama.cpp build stage.
-
-- `LocalAIChat` — separate product (Open WebUI + general chat/coding
-  models). No relationship at build or runtime. Not run at the same time
-  as this project (shared GPU).
-- `BackendBuildstage` — offline sandbox only, for testing a new
-  ROCm/Vulkan/llama.cpp version before it's manually copied into this
-  repo's Dockerfile. Never a build or runtime dependency. This repo is
-  the *source* that sandbox was seeded from, not the other way around.
+## Self-contained
+This repo builds and runs without any other repository —
+`docker/Dockerfile` compiles its own ROCm 7.2.4 + Vulkan llama.cpp build
+stage. The GPU is shared with other local AI workloads; don't assume it's
+free while something else is running.
 
 ## Hardware this is tuned for
 AMD RX 9070 XT (RDNA4, gfx1201, 16GB VRAM), Ryzen 7 5700X3D (8c/16t),

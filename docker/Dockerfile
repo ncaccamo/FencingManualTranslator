@@ -1,11 +1,10 @@
 # FencingManualTranslator model-serving + OCR/translation-pipeline container.
 #
 # The block delimited by the BUILDSTAGE START / BUILDSTAGE END marker
-# lines below is a synced copy of BackendBuildstage/Dockerfile.buildstage
-# (the reference ROCm 7.2.4 + Vulkan + llama.cpp build stage). Do NOT
-# hand-edit it here: change it in BackendBuildstage, smoke-test with that
-# repo's test-build.sh, then re-run  sync_to_product.sh <this-file>.
-# Everything past the END marker is FencingManualTranslator-specific.
+# lines below is the GPU build stage (ROCm 7.2.4 + Vulkan + llama.cpp). It
+# is maintained as a unit and replaced wholesale when the backend is
+# upgraded -- keep the marker lines. Everything past the END marker is
+# FencingManualTranslator-specific.
 #
 # BUILDSTAGE START v2026.09.06  (ubuntu 24.04 | ROCm 7.2.4 apt | Vulkan
 # LunarG 1.4.357.1 | llama.cpp triple build rocm+vulkan+cpu | rocm714 parked)
@@ -68,10 +67,8 @@ RUN $VULKAN_SDK/bin/glslc --version && \
 
 # [COMMON] Python + C/C++ build tooling (git, build-essential, libcurl)
 # shared by both llama.cpp builds and the rocm714 venv.
-# NOTE: this same layer also installs FencingManualTranslator's OCR/PDF stack
-# (tesseract-ocr*, ghostscript, poppler-utils, unpaper). LocalAIChat
-# does not use those; a future COMMON-vs-product split would carve them
-# out of the shared buildstage.
+# NOTE: this same layer also installs an OCR/PDF stack
+# (tesseract-ocr*, ghostscript, poppler-utils, unpaper).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv tesseract-ocr \
     tesseract-ocr-fra tesseract-ocr-eng tesseract-ocr-ita \
@@ -80,7 +77,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git build-essential libcurl4-openssl-dev unpaper bc file \
     && rm -rf /var/lib/apt/lists/*
 
-# [COMMON/FencingManualTranslator-only] Latin tessdata -- OCR use only.
+# [COMMON/OCR-only] Latin tessdata -- OCR use only.
 RUN mkdir -p /usr/share/tesseract-ocr/5/tessdata && \
     wget -q https://github.com/tesseract-ocr/tessdata/raw/main/lat.traineddata \
          -O /usr/share/tesseract-ocr/5/tessdata/lat.traineddata
@@ -91,8 +88,8 @@ RUN tesseract --list-langs && \
 
 # [ROCM714] Preview venv install ONLY. The llama.cpp build against it is
 # skipped (the wheel ships no hip-lang-config.cmake, so CMake HIP can't
-# configure). Full rationale + revisit/un-park checklist: ROCM714_NOTES.md
-# in the BackendBuildstage repo (the canonical home for this variant).
+# configure). Full rationale + revisit/un-park checklist:
+# ROCM714_NOTES.md, next to this Dockerfile.
 # ---- ROCm 7.14 (PREVIEW, pip/wheel) - install kept for future use, the
 # llama.cpp BUILD against it is disabled. See ROCM714_NOTES.md:
 # this wheel combination doesn't ship hip-lang-config.cmake, so it can't
@@ -264,7 +261,7 @@ else
       *) echo "[WARN] Unknown LLAMA_BACKEND='$LLAMA_BACKEND', using vulkan"; LLAMA_BACKEND=vulkan; SUFFIX=vulkan ;;
   esac
   if [ ! -x "/usr/local/bin/llama-server-$SUFFIX" ]; then
-      echo "[WARN] llama-server-$SUFFIX not in this image (build it in BackendBuildstage); falling back to vulkan"
+      echo "[WARN] llama-server-$SUFFIX not in this image (add its build to docker/Dockerfile); falling back to vulkan"
       LLAMA_BACKEND=vulkan; SUFFIX=vulkan
   fi
 

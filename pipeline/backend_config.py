@@ -92,8 +92,7 @@ def local_backend_suffix() -> str:
         raise SystemExit(
             f"LLAMA_BACKEND={name} selected but /usr/local/bin/llama-server-{suffix} "
             f"is not in this image.\n"
-            f"Build that backend in BackendBuildstage (Dockerfile.buildstage.{name}), "
-            f"re-sync into docker/Dockerfile, and rebuild the image.")
+            f"Add a llama.cpp build for it to docker/Dockerfile and rebuild the image.")
     return suffix
 
 
