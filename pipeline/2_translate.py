@@ -165,7 +165,7 @@ def _strip_accents(s: str) -> str:
                    if unicodedata.category(c) != "Mn")
 
 
-# Footnoted terms (category 2) (see translation_prompt.txt): translate to the English
+# Footnoted terms (see translation_prompt.txt): translate to the English
 # rendering, and on the FIRST occurrence in a book mark it as
 # "English<fn>Fr. <term></fn>" -- a bare source reference, never an
 # explanatory gloss. The model does this from the prompt;
@@ -188,7 +188,7 @@ _FOOTNOTED_FR = [
     ("caver",          "to drop the point"),
 ]
 
-# Italian footnoted terms (category 2) (translated, first use footnoted "It. <term>"),
+# Italian footnoted terms (translated, first use footnoted "It. <term>"),
 # 2026-09-30. "filo" (glide) is left to the model -- as a bare word it also
 # means the blade's edge, so the backstop must not rewrite it.
 _FOOTNOTED_IT = [
@@ -238,7 +238,7 @@ def _footnote_ref():
 
 
 def enforce_footnoted_terms(text: str, seen: set, footnote: bool = True) -> str:
-    """Backstop for footnoted terms (category 2). Translate EVERY occurrence the model
+    """Backstop for footnoted terms. Translate EVERY occurrence the model
     left in French (bare or italicised) to its English rendering, and on
     the FIRST one in a book append "<fn>Fr. <term></fn>". Case of the
     surrounding token is preserved. `<fn>...</fn>` spans already in the
@@ -298,7 +298,7 @@ def pull_footnotes(text: str, source_text: str = "", seen: set = None):
     def take(m):
         note = re.sub(r"</?fn>", "", re.sub(r"\s+", " ", m.group(1))).strip()
         # accept only a bare source reference ("Fr. liement" / "French:
-        # liement", "It. legamento") for a footnoted term (category 2) -- the model
+        # liement", "It. legamento") for a footnoted term -- the model
         # sometimes footnotes a kept term or puts the English in the note.
         ref = re.sub(rf"^(?:{ab}\.|{label.lower()}:)\s*", "", note, flags=re.I).lower().rstrip(".")
         if not note or ref not in _footnoted_refs:
@@ -413,7 +413,7 @@ def _phrase_repairs(text: str) -> str:
     return text
 
 
-# Kept terms (category 4): "keep in the source language, italic" that the 7B
+# Kept terms: "keep in the source language, italic" that the 7B
 # drops the <i>...</i> off or mistranslates -- plate captions especially.
 # Only the tight retained set; riposte / remise / reprise / the parry
 # numbers the model handles on its own. Each entry: term -> English
@@ -597,7 +597,7 @@ def fix_known_garbles(text: str, src: str = "") -> str:
 
 
 def enforce_kept_terms(text: str, src: str = "") -> str:
-    """Make sure a kept term (category 4) is present and italicised: repair a
+    """Make sure a kept term is present and italicised: repair a
     known mistranslation, then wrap any bare occurrence in <i>...</i>
     (skipping what is already inside a tag), matching the case of
     whatever prompted the wrap."""
@@ -902,7 +902,7 @@ _DEF_ENTRY_RE = re.compile(
 
 def _capitalize_definition_entries(text: str) -> str:
     """A glossary / definition-list entry headword is capitalised in the
-    source ("Riposte. — ...", "Coup d'arrêt. — ..."). A kept term (category 4)
+    source ("Riposte. — ...", "Coup d'arrêt. — ..."). A kept term
     kept lowercase-italic loses that capital ("<i>riposte</i>. — ...",
     Kirchhoffer TERMES TECHNIQUES). Restore it: upper-case the first
     letter of any line shaped "<short headword>. — <definition>",
@@ -991,7 +991,7 @@ _PARRY_WRONG = {
 
 
 def fix_parry_names(en: str, src: str) -> str:
-    """Numbered parries (prime..octave) are kept terms (category 4) -- kept, not
+    """Numbered parries (prime..octave) are kept terms -- kept, not
     translated. When the source names one and the model turned it into an
     English ordinal, snap it back."""
     if not en or not re.search(

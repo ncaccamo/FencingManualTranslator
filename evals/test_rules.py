@@ -2327,50 +2327,6 @@ def test_review_report_italian_rules_only_on_italian_books():
                               "completed his action, in the line of the parry.")
 
 
-def test_explained_terms_first_use_note_once():
-    # category 3: first italic use in the running text gets †N + the note;
-    # headings skipped; numbered after the page's own footnotes; plural
-    # forms found; a second run adds nothing
-    import _explained as X
-    terms = [(["cavazione", "cavazioni"], "A spiral movement of the point."),
-             (["croisé"], "A bind carried from high to low.")]
-    pages = ["\nOF THE <i>CAVAZIONE</i>\n\nNo term here.\n",
-             "\nThe gathering†1 and two <i>cavazioni</i> follow.\n\n___FOOTNOTES___\n†1 French: rassemblement\n",
-             "\nAnother <i>cavazione</i>, and a <i>croisé</i>.\n"]
-    assert X.add_notes(pages, terms) == 2
-    assert "<i>CAVAZIONE</i>\n" in pages[0]                       # heading untouched
-    assert "two <i>cavazioni</i>†2 follow" in pages[1], pages[1]
-    assert pages[1].endswith("†1 French: rassemblement\n†2 <i>cavazione</i>: A spiral movement of the point.\n"), pages[1]
-    assert "Another <i>cavazione</i>, and" in pages[2]            # only the first use
-    assert "<i>croisé</i>†1." in pages[2] and pages[2].endswith(
-        "___FOOTNOTES___\n†1 <i>croisé</i>: A bind carried from high to low.\n"), pages[2]
-    before = list(pages)
-    assert X.add_notes(pages, terms) == 0 and pages == before     # idempotent
-
-
-def test_explained_terms_respect_page_footnote_limit():
-    import _explained as X
-    full = "\nA†1 B†2 C†3 D†4 and <i>scandaglio</i>.\n\n___FOOTNOTES___\n†1 a\n†2 b\n†3 c\n†4 d\n"
-    pages = [full, "\nLater, <i>scandaglio</i> again.\n"]
-    assert X.add_notes(pages, [(["scandaglio"], "Probing movements.")]) == 1
-    assert pages[0] == full and "<i>scandaglio</i>†1" in pages[1]
-
-
-def test_explained_terms_skip_contents_margins_and_mark_after_plural():
-    # dry run on the French books (2026-09-30): notes landed in contents
-    # lines (LaMarche p. 19, Spinnewyn p. 28), a margin note (Gomard p. 56),
-    # and "<i>volte</i>†1s" (Prévost p. 238)
-    import _explained as X
-    pages = ["\n  <i>Tac-au-tac</i> ripostes ...... 106\n⟦MARGIN: the <i>volte</i>.⟧\n",
-             "\nthe passes, the <i>volte</i>s, and the <i>tac-au-tac</i> riposte.\n"]
-    X.add_notes(pages, [(["volte"], "An evasion."), (["tac-au-tac"], "Immediate riposte.")])
-    assert "†" not in pages[0], pages[0]
-    toc = ["\nCONTENTS\nThe guard . 12\nThe parries of the <i>croisé</i> . 73\nThe disarm 80\nThe lunge . 91\n"]
-    X.add_notes(toc, [(["croisé"], "A bind.")])
-    assert "†" not in toc[0], toc[0]                            # Spinnewyn p. 28
-    assert "<i>volte</i>s†1," in pages[1] and "<i>tac-au-tac</i>†2 riposte" in pages[1], pages[1]
-
-
 def _run_plain() -> int:
     fns = sorted((n, f) for n, f in globals().items()
                  if n.startswith("test_") and callable(f))

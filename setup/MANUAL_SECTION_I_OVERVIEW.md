@@ -136,20 +136,18 @@ deleted when the book finishes.
 - **Fencing terms follow a glossary per source language**: French in
   `translation_prompt.txt`, Italian in `translation_prompt_it.txt` (which
   replaces the French term rules for an Italian book). Every term is in
-  one of four categories:
+  one of three categories:
 
   | # | Category | Output | Examples |
   |---|---|---|---|
   | 1 | **Translated** | plain English | *parade* → parry, *fente* → lunge, *colpo* → hit / attack |
   | 2 | **Footnoted** | English, and on the first use in the book a footnote with the original: `† French: liement` | *liement* → bind, *legamento* → engagement |
-  | 3 | **Explained** | the original in italics, and on first use a short explanatory note | *scandaglio*, *traccheggio* *(notes being written)* |
-  | 4 | **Kept** | the original in italics, as English fencing literature keeps it | *riposte*, *quarte*, *cavazione* |
+  | 3 | **Kept** | the original in italics, no note | *riposte*, *quarte*, *cavazione*, *scandaglio* |
 
-  Which category a term belongs in is decided by two questions:
-  1. *Is there an English word that means the same?* Exactly → 1;
-     approximately, or only a recognised name → 2; no → question 2.
-  2. *Would an English-speaking fencer already know the original?*
-     Yes → 4; no → 3.
+  Which category a term belongs in: *is there an English word that means
+  the same?* Exactly → 1; approximately, or only a recognised name → 2;
+  no → 3. A kept term gets no explanatory note: the side-by-side shows the
+  original page, and these books usually define their own terms.
 
   The lists come from surveying every term in a language's corpus. A
   book that defines a word its own way gets a per-book entry (`[terms]`

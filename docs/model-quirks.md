@@ -1223,28 +1223,32 @@ against both the false-positive case and a real echoed-French page.
 
 ### 2.8 The translation prompt's term policy, condensed
 
-**Current (2026-09-30): one glossary per source language, four categories.**
+**Current (2026-09-30): one glossary per source language, three categories.**
 French rules in `translation_prompt.txt`; an Italian book gets
 `translation_prompt_it.txt` spliced in place of the French term rules
 (`prompt_for_language()`), chosen by the book's `meta.json` language. The
-categories, and the two questions that place a term, are in manual
-Section I (step 2):
+categories are in manual Section I (step 2):
 
 1. **Translated** — plain English (*parade* → parry, *colpo* → hit / attack).
 2. **Footnoted** — English in the text, the original in a bare footnote on
    first use per book (`† French: liement`). The model emits
    `English<fn>Fr. term</fn>`; `enforce_footnoted_terms()` translates any
    stray original and notes the first; `pull_footnotes()` builds the block.
-3. **Explained** — the original in italics with a short explanatory note on
-   first use (`pipeline/_explained.py`, placed after translation, no model).
-   **This reverses an earlier decision:** in 2026-08 `footnote_glossary.txt`
-   was deleted because definitional glosses read as translator commentary.
-   The operator chose (2026-09-30) to add them back for terms with no
-   English equivalent that an English-speaking fencer wouldn't know —
-   one-line notes drawn from how the books themselves define the term.
-4. **Kept** — the original in italics, no note (*riposte*, *quarte*,
+3. **Kept** — the original in italics, no note (*riposte*, *quarte*,
    *cavazione*). Backstop: `enforce_kept_terms()` re-italicises and repairs
    known garbles.
+
+**An "explained" category was tried and dropped (2026-09-30):** kept terms
+with a one-line explanatory note on first use. The notes drafted well, but
+a note is redundant where the book defines the term itself, and *where* a
+book defines a term can't be detected reliably — a pattern match was right
+on ~2/3 of the definitions it found and missed others (ordinary homonyms
+like *sforzo* "effort", tables, descriptions). Doing it properly meant
+per-book research for every term; the benefit didn't justify it (the
+side-by-side shows the original, and most books define their terms). The
+earlier 2026-08 decision against definitional glosses in footnotes stands.
+A one-page glossary of kept terms at the end of each PDF is an open idea,
+undecided.
 
 Unchanged from before: **rule 4** (headings are translated in full, a kept
 term keeps its accents), **rule 6** (output only the translation), and the

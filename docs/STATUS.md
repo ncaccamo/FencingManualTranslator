@@ -18,9 +18,9 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
   Rosaroll and Pecoraro translations being rerun with it (the earlier
   scores, 49.8 / 40.2 chrF++, were made with the French prompt). The full
   translation waits for those scores.
-- **Term policy:** four categories (translated / footnoted / explained /
-  kept) and a two-question rule for placing a term — manual I.4, step 2.
-  The "explained" notes (category 3) are being written.
+- **Term policy:** three categories (translated / footnoted / kept) —
+  manual I.4, step 2. An "explained" category with notes was tried and
+  dropped (`docs/model-quirks.md` 2.8).
 - **Review loop:** each run writes a review report (French and Italian
   checks); decisions go in `books/<stem>.overrides.toml` and are re-applied
   on every run; only pages whose source text changed are retranslated.
@@ -61,10 +61,10 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    Check first how the two-page-spread scans (Lambertini, Masiello 1902
    *Fioretto*, Tiboldi) came through the OCR — the pipeline assumes one book
    page per scan page.
-2. **Category 3 ("explained") notes.** Draft notes for review
-   (`review-notes/`, local); the placement step is built and tested
-   (`pipeline/_explained.py`) but not switched on until the notes are
-   approved.
+2. **Glossary page — undecided.** A one-page glossary at the end of each
+   PDF listing the kept terms that occur in that book, with one-line
+   definitions (drafts exist in `review-notes/`, local). Book-independent,
+   unlike the dropped per-use notes (model-quirks 2.8).
 3. **Page numbers the OCR missed or invented.** Neither the layout detector
    nor the scans' text layer tells a printed-but-unread number from no
    number (measured on the 9 French books: detector ~75% recall with false
@@ -196,6 +196,6 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
   them. Pages from before the record existed got a date range only where
   the evidence supported it (model record + file dates), no revision.
 - **Term categories have names in code, numbers only in docs.** The code
-  says "footnoted" / "kept" / "explained": the numbering changed once
+  says "footnoted" / "kept": the numbering changed twice
   (2026-09-30) and a number in an identifier would have gone wrong again.
 
