@@ -328,6 +328,24 @@ lowercase+hyphen and page *i+1* starts lowercase, the completion fragment
 capitalised continuation (`Sainct-` | `Didier`, `La-` | `Boëssière`) is a
 real hyphenated name and is left alone.
 
+**Extended 2026-09-30 — the halves aren't always adjacent.** Kirchhoffer
+scan 12 ends "Il faudra se mé-" and then the author's footnote, so the
+text did not *end* with the hyphen and the join never ran: "se mé-" /
+"fler" (the OCR's misread of *fier*) became "smell of" instead of "beware
+of". Now the join also looks past a footnote block closing the page ("(1) …"
+or "* …") and past margin notes opening the next page. Found on 4 page
+pairs (Baudry 67, Gomard 24 and 28, Kirchhoffer 12).
+- **Regression caught before it shipped:** the first version also treated
+  a numbered paragraph ("1. …") as a footnote block, cut the page there,
+  and so *un*-joined four words that were already correct (LaMarche
+  117/200/267, Spinnewyn 112). Only "(1)" / "*" markers count now, and the
+  plain end-of-page case runs first, exactly as before. Found by
+  reprocessing scratch copies of all 9 books and diffing every page before
+  touching the real files — the pattern to repeat for any parse change.
+- **Not handled:** Gomard 81/82 ("pro-" / "nation"), where a margin note
+  sits between the halves *in the raw OCR* and is only moved out after
+  the join has run. One instance: fixed in the overrides file.
+
 ### 1.6c Glossary / "termes techniques" sections
 
 **Seen:** Kirchhoffer — a multi-page *TERMES TECHNIQUES* section, plus
@@ -340,7 +358,7 @@ without the English word the body text uses for it. A glossary section
 now goes through the normal term policy like body text; the facing scan
 still carries the original headword.
 
-**Headword case:** a Category-2 term kept lowercase-italic loses the
+**Headword case:** a kept term (category 4) kept lowercase-italic loses the
 capital the source gives it at the start of an entry (`<i>riposte</i>. —
 …` where the book prints "Riposte."). `_capitalize_definition_entries()`
 (2026-09-02) upper-cases the first letter of any line shaped
@@ -816,7 +834,7 @@ médecin." heading). The layout detector sees them directly: narrow text
 boxes outside the page's **own** main column. (A book-wide column edge
 missed all of them -- left and right pages differ.) Each crop is read by the
 OCR model, which gets them right where the scan's Google text layer is
-garbled. See `_margins.py` and STATUS #14.
+garbled. See `_margins.py`.
 
 Placement lessons (Gomard, 2026-09-26): the detector sometimes also boxes a
 note's first line alone -- in the bibliography, the year ("1778." as well
@@ -969,6 +987,53 @@ matching what `2_translate.py` already did.
 
 ---
 
+### 1.10 Printed italics come back as Markdown asterisks (2026-09-30)
+
+**Seen:** `*Inside line*`, `*The Adventuress*` — the OCR marks italics
+Markdown-style and the translation keeps the asterisks; 21 places, 12 in
+Vauresmont's glossary, shown literally in the PDFs.
+**Mitigation:** `_render.markdown_italics()` renders a pair as italics.
+Only a pair within one line that opens on a letter / digit / quote and
+closes on a non-space, so a note marker "(*)", a bulleted "* In the bout",
+"* * *" and a lone "*" are untouched.
+
+### 1.11 Old-style roman page numbers misread (2026-09-30)
+
+**Seen:** La Boëssière's front matter prints *vij*, *viij*, *xiij*, *xvj*
+(final i written j). The parse accepts the j; the problem is misreads by
+one stroke — *viij* → "vij", *xiij* → "xiiij", *xvj* → "xvij". The
+page-number step rightly distrusts a value that breaks the sequence, works
+out the right one, and then hides it, because it can't tell "printed but
+misread" from "not printed" (and the same pages carry printer's gathering
+marks "1", "6" the OCR also reports).
+**Open:** neither the layout detector (~75% recall on known folios, false
+hits on unnumbered pages) nor the scan's text layer (~35%) settles it.
+Planned: an OCR read of just the top and bottom strip of each uncertain
+page (`docs/STATUS.md`, page numbers).
+
+### 1.12 Paragraph indents, inconsistently (2026-09-30)
+
+**Seen:** the OCR indents some paragraphs with leading spaces and not
+others (LaMarche pp. 14-16), and `_render.py` keeps leading spaces as
+indentation — meant for drills and braced command groups (LaMarche pp.
+82-83), so running prose came out randomly indented (~330 lines, 8 books).
+**Mitigation:** a long prose line (60+ characters, starts with a letter or
+quote, no list marker, no brace) is set flush left; drills, braces,
+numbered lists and short lines keep their indent. Accepted loss: long
+quoted passages the OCR indented (Baudry) go flush left, keeping their
+quotation marks.
+
+### 1.13 Engraved captions read into the page text (2026-09-30)
+
+**Seen:** La Boëssière's 20 plates: on 4 of them the OCR also transcribed
+the engraving into the page's *text*, and the PDF showed that text instead
+of the plate caption — no "Pl. N." label, one line per figure, and Pl. 16
+with its misread "La poche" (the pocket) for *La passe*.
+**Fix:** those four pages' text emptied in the overrides file, like the
+other 16, so the transcribed caption (`[pages.N] caption` /
+`caption_en`) shows. Where a reviewer has set a plate's caption, an OCR
+copy of it in the text is always wrong — a rule candidate if it recurs.
+
 ## Part 2 — Translation (Qwen3.8-27B i1-Q4_K_S, port 11434)
 
 Qwen3.8-27B is the default since 2026-09-25 (translation model selection
@@ -1040,7 +1105,7 @@ glossary (`footnote_glossary.txt`).
 
 **Now (2026-08-30 term-policy revision):** the glossary is deleted — its
 definitions were translator commentary. Footnotes are **only** the bare
-`†Fr. <term>` source reference on a Category-3 term (see 2.8). The prompt
+`†Fr. <term>` source reference on a footnoted term (category 2; see 2.8). The prompt
 tells the model to write `English<fn>Fr. term</fn>` on first use;
 `enforce_cat3_footnotes()` is the backstop (translates every stray French
 Cat-3 occurrence, footnotes the first). `pull_footnotes()` turns `<fn>`
@@ -1061,7 +1126,7 @@ the label just cost a line.
 Despite `translation_prompt.txt` rule 7 and a worked `Doublé { high /
 inside / low` example, the model merges braced alternatives into a
 sentence on roughly half the pages where they occur. Partially mitigated,
-not solved. Open item in [STATUS](STATUS.md) #1.
+not solved. Open item in [STATUS](STATUS.md), "Known translation soft spots".
 
 ### 2.5 ToC / dotted-leader pages half-translate kept terms
 
@@ -1091,7 +1156,7 @@ entries still translate consistently with the body.
   (2.10) that voting alone didn't catch it — same class of bug as the
   "riposte"/"rassemblant" entries already in this list, fixed the same
   way: added to `_ALWAYS_TRANSLATE`.
-* **`enforce_kept_terms()` forced every Category-2 term to lower-case,
+* **`enforce_kept_terms()` forced every kept term (category 4) to lower-case,
   unconditionally** — including inside an all-caps context, e.g. a
   body-level title line: Prévost's Part Four opens with the all-caps
   body line "DE LA RIPOSTE" (immediately under the "QUATRIÈME PARTIE"
@@ -1158,48 +1223,36 @@ against both the false-positive case and a real echoed-French page.
 
 ### 2.8 The translation prompt's term policy, condensed
 
-Revised 2026-08-30 to a **translate-by-default** policy — the earlier
-inherited list kept too much in French. Three categories:
+**Current (2026-09-30): one glossary per source language, four categories.**
+French rules in `translation_prompt.txt`; an Italian book gets
+`translation_prompt_it.txt` spliced in place of the French term rules
+(`prompt_for_language()`), chosen by the book's `meta.json` language. The
+categories, and the two questions that place a term, are in manual
+Section I (step 2):
 
-- **Cat 1 — translate, plain text (default).** Everything not listed
-  below, plus explicitly `garde`→guard, `engagement`→engagement,
-  `parade`→parry, `doublé`→double, `fer`→the blade, `temps`→tempo,
-  `temps d'arrêt`→stop-hit, `soie`→tang, `fort`/`faible`→forte/foible,
-  `rompre`→to break ground / to retreat (2026-09-11: was missing from
-  every list, so the model improvised the false cognate "romp"), the
-  heading connectives **DE / DES / SUR / PAR / AVEC**.
-- **Cat 2 — KEEP in French, `<i>…</i>`** (the tight retained set English
-  fencing literature itself keeps): `riposte`, `remise`, `reprise`,
-  `croisé`, `corps à corps`, `volte`, `sentiment du fer`, the numbered
-  parries `prime`…`octave`, `épée`. Plus Italian / German / Latin.
-  Backstop: `enforce_kept_terms()` (`_KEEP_TERMS` = `corps à corps`,
-  `sentiment du fer`, `croisé`, `volte`) re-italicises and repairs
-  "body to body" etc.
-- **Cat 3 — translate, + a bare `†Fr. <term>` footnote on the first
-  occurrence per book** (`rule 3b`): `prise de fer`→taking the blade,
-  `liement`→bind, `coupé`→cut-over, `dégagement`→disengagement,
-  `froissement`→graze, `coulé`→glide, `caver`→drop the point,
-  `à-propos`→sense of timing, `coup de temps`→time-hit, `appel`→stamp of
-  the foot, `rassemblement`/`-er`/`-ant`→gathering of the feet. The model
-  emits `English<fn>Fr. term</fn>`; `enforce_cat3_footnotes()` is the
-  backstop (translates every stray French occurrence, footnotes the
-  first). NOT an explanatory gloss — just the source word.
-- **`footnote_glossary.txt` deleted** — the definitional glosses were
-  translator commentary, which the "clean translation, no editorial
-  voice" goal rules out. `pull_footnotes()` now only turns the model's
-  own `<fn>` tags into `†N` + a `___FOOTNOTES___` block, deduped once per
-  book. The PDF label is "Original terms:".
-- **Rule 4 — headings are normal text.** All-caps line ⇒ almost always a
-  heading, translate fully, no `<i>`, but keep a kept-term's accents
-  intact (`PARRIES OF THE CROISÉ`, never `CROIS`).
-- **Rule 6 — output only the translation**, first character = first
-  character of the translation, no preamble, no Markdown.
-- **EXAMPLES block** — few-shots for the `<ACTION> DE/DES/SUR/PAR <THING>`
-  all-caps heading pattern (`PARADES DE UNE-DEUX` → `PARRIES OF THE
-  ONE-TWO`, `ATTAQUES PAR UN COUP DROIT, AVEC DEMI-FENTE` → `ATTACKS WITH
-  A STRAIGHT THRUST, WITH A HALF-FENTE`, …), added because zero-shot the
-  model left the connectives in French or mistranslated `coup droit` as
-  "straight right".
+1. **Translated** — plain English (*parade* → parry, *colpo* → hit / attack).
+2. **Footnoted** — English in the text, the original in a bare footnote on
+   first use per book (`† French: liement`). The model emits
+   `English<fn>Fr. term</fn>`; `enforce_footnoted_terms()` translates any
+   stray original and notes the first; `pull_footnotes()` builds the block.
+3. **Explained** — the original in italics with a short explanatory note on
+   first use (`pipeline/_explained.py`, placed after translation, no model).
+   **This reverses an earlier decision:** in 2026-08 `footnote_glossary.txt`
+   was deleted because definitional glosses read as translator commentary.
+   The operator chose (2026-09-30) to add them back for terms with no
+   English equivalent that an English-speaking fencer wouldn't know —
+   one-line notes drawn from how the books themselves define the term.
+4. **Kept** — the original in italics, no note (*riposte*, *quarte*,
+   *cavazione*). Backstop: `enforce_kept_terms()` re-italicises and repairs
+   known garbles.
+
+Unchanged from before: **rule 4** (headings are translated in full, a kept
+term keeps its accents), **rule 6** (output only the translation), and the
+EXAMPLES few-shots for all-caps `<ACTION> DE <THING>` headings.
+
+The earlier three-category scheme (2026-08-30) numbered these differently —
+"Cat 2" = kept, "Cat 3" = footnoted — which is why the code now uses names,
+not numbers.
 
 ### 2.9 Figure captions need the *full* prompt, not a one-liner
 
@@ -1437,7 +1490,7 @@ division word ("livre", "section", …) with the same drop pattern.
 ### 2.11 Author's footnotes vs. ours
 
 A page can carry the **author's** own `(1) (2) (3)` footnotes *and*
-**our** Category-3 `<fn>` source references. Both land in the same grey
+**our** footnoted-term `<fn>` source references. Both land in the same grey
 ruled block (`_render.footnote_lines`, no label since 2026-09-01), so a
 reader can always tell body from note:
 
@@ -1466,7 +1519,27 @@ reader can always tell body from note:
   tests (plain-text fixtures) and still silently failed on the real
   translated data because of (b) — worth remembering when writing a test
   fixture for a passage with kept terms in it.
-- `pull_footnotes()` — our `†N` Category-3 markers, deduped once per book.
+- `pull_footnotes()` — our `†N` footnoted-term markers, deduped once per book.
+
+### 2.12 Italian sample, and two cache/heading traps (2026-09-30)
+
+**Italian sample (30 pages, 10 books):** the new glossary held — footnoted
+terms noted once per book, *picchio* → beat, *volante* → off the blade,
+Florio's flying *cartoccio*. Three misses, each now a backstop:
+*sforzo* / *riposte* left bare (added to the Italian kept-term list); a
+heading "DELLE RISPOSTE" → "OF THE *RIPONSES*" (`fix_known_garbles()`, the
+Italian twin of "RAPISES"); *urto* → "blow" (prompt: *urto* → knock).
+
+**Running heads are cached, so a glossary change doesn't reach them.**
+Retranslating the 102 *mesure* pages left Gomard's head "DE LA MESURE." as
+"OF DISTANCE.": heads are translated once per distinct string into
+`headers.json` and reused. After a glossary change, clear the affected
+entries and rerun a page of that book so they're retranslated.
+
+**An isolated title drops its article.** LaMarche's running head and title
+*L'Épée* came out "Épée." / "ÉPÉE" on 137 pages, while the body always says
+"the épée". Decided: "The Épée" (overrides file). Only when the word stands
+alone — longer heads keep the article.
 
 ## Part 3 — shared / architectural
 
@@ -1483,8 +1556,25 @@ reader can always tell body from note:
   the text model on :11434. This is why they're separate scripts and why
   the pipeline (not the container entrypoint) owns server lifecycle.
 - **Iterating cheaply** — every intermediate is kept. Tweak
-  `translation_prompt.txt` → `rm translation.txt`, re-run steps 2–4.
+  `translation_prompt.txt` → retranslate the pages concerned with
+  `2_translate.py --pages <stem> <pages>`, then steps 3–4 (a prompt change
+  alone triggers nothing: step 2 retranslates only pages whose *source*
+  changed; running heads are cached separately, see 2.12).
   Tweak `vlm_ocr_prompt.txt` → you need a real re-OCR (`rm -rf` the
   book's folder). Tweak the *parse/reconcile* logic only → 
   `reprocess_extracted.py` rebuilds from `raw_ocr.txt`, no OCR cost.
   Full detail in [`setup/MANUAL_SECTION_III_USAGE.md`](../setup/MANUAL_SECTION_III_USAGE.md).
+
+- **Overrides must be safe to apply twice.** Every run re-applies the
+  overrides file. A two-line `prepend` compared only its first line against
+  the page, never matched, and was added again on each run — Jacob scan 49
+  had six copies of "THE GAME OF THE ÉPÉE / INTRODUCTION" in the published
+  PDF (2026-09-30). Now compared over all its lines, and stacked copies
+  collapse to one. Same care for `find`/`replace`: a `find` contained in
+  its own `replace` ("in pro" → "in pronation") would fire on every run —
+  include the line break in the `find`.
+- **The review report respects reviewer decisions.** A running head set in
+  the overrides file (`[pages.N] header`) is not re-flagged against the
+  layout detector — the decision is the answer.
+- **`books/_skip/` is not read by anything.** A finished or out-of-scope
+  book moves there; to work on it again, move it back to `books/`.

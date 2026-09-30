@@ -1,13 +1,20 @@
 # FencingManualTranslator
 
 Turns a scanned historical fencing manual into an English study edition:
-the original page on the left, a scholarly translation on the right, page
-for page. Everything runs on your own hardware, and no text is sent to a
+the original page on the left, the translation on the right, page
+for page. Everything runs on local hardware, and no text is sent to a
 cloud service.
 
-It is built for reading and research, not for publishing unreviewed. Every
-translation is machine-made (the cover page says so), and the output flags
-what it is unsure of so you can check it against the facing scan.
+This project is built for reading and research. It grew out of finding
+public-domain fencing manuals with no English translation available. Every
+translation is machine-made, but the prompting has been tailored to fencing
+terminology through many rounds of human review, and the layout engine
+handles the quirks of historical printing, from old-style page numbers to
+margin notes and engraved plates.
+
+The output is not intended to replace translations by professional
+scholars. It fills gaps in the study of historical fencing manuals that
+have not yet received a translator's attention.
 
 ## What it produces
 

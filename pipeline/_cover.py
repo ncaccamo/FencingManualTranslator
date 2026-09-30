@@ -70,7 +70,8 @@ def _translation_models(book):
     if not models:
         return _UNRECORDED_MODEL
     label = lambda m: (_UNRECORDED_MODEL if m == "" else
-                       default if m == "bt-translate" or m == os.environ.get("MODEL_NAME")
+                       # the llama-swap key, current or its pre-rename name
+                       default if m in ("fmt-translate", "bt-translate") or m == os.environ.get("MODEL_NAME")
                        else re.sub(r"^(?:%s)" % "|".join(_VENDOR_PREFIXES), "", m))
     counts = Counter(label(m) for m in models).most_common()
     if len(counts) == 1:

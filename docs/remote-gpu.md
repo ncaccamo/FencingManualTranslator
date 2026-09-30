@@ -25,8 +25,8 @@ REMOTE_PORT=11500
 REMOTE_API_KEY=<shared-secret>  # must match the server's --api-key
 
 # route each step to the right model on the remote system (see §3)
-VLM_MODEL_NAME=bt-ocr
-TRANSLATION_MODEL_NAME=bt-translate
+VLM_MODEL_NAME=fmt-ocr
+TRANSLATION_MODEL_NAME=fmt-translate
 ```
 
 It is loaded into the container via compose `env_file:`; editing it and
@@ -63,20 +63,20 @@ A minimal `llama-swap.yaml` for the two FencingManualTranslator models:
 ```yaml
 healthCheckTimeout: 300
 models:
-  bt-ocr:
+  fmt-ocr:
     cmd: >
       llama-server -m models\allenai_olmOCR-2-7B-1025-Q6_K.gguf
       --mmproj models\mmproj-allenai_olmOCR-2-7B-1025-f16.gguf
       --host 127.0.0.1 --port ${PORT} --api-key ${LLAMA_API_KEY}
       --ctx-size 8192 --n-gpu-layers 999 --parallel 1
     ttl: 300
-  bt-translate:
+  fmt-translate:
     cmd: >
       llama-server -m models\Qwen3.8-27B.i1-Q4_K_S.gguf
       --host 127.0.0.1 --port ${PORT} --api-key ${LLAMA_API_KEY}
       --ctx-size 6144 --n-gpu-layers 46 --parallel 1 --jinja --reasoning-budget 0
     ttl: 300
-  bt-translate-qwen25:          # previous model, kept for comparisons
+  fmt-translate-qwen25:          # previous model, kept for comparisons
     cmd: >
       llama-server -m models\Qwen2.5-14B-Instruct-Q4_K_M.gguf
       --host 127.0.0.1 --port ${PORT} --api-key ${LLAMA_API_KEY}
@@ -104,7 +104,7 @@ terminology). Its flags, and why:
   (llama.cpp b11182).
 
 Set `VLM_MODEL_NAME` / `TRANSLATION_MODEL_NAME` in `backend.env` to the
-map keys (`bt-ocr` / `bt-translate`). Skip them and the pipeline sends the
+map keys (`fmt-ocr` / `fmt-translate`). Skip them and the pipeline sends the
 model file's stem and the compose `MODEL_NAME` respectively — then your
 llama-swap keys have to be those exact strings instead.
 

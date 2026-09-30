@@ -133,11 +133,30 @@ to `intermediate/translation.partial.json` (with the book-wide footnote
 state), so an interrupted run resumes where it stopped; the file is
 deleted when the book finishes.
 
-- Technical terms are preserved and wrapped in `<i>…</i>`; headings and
-  captions are translated in full.
-- Each Category-3 term (see `translation_prompt.txt` rule 3b) is
-  translated and gets a bare `Fr. <term>` footnote on its first
-  occurrence per book, under a `___FOOTNOTES___` marker on that page.
+- **Fencing terms follow a glossary per source language**: French in
+  `translation_prompt.txt`, Italian in `translation_prompt_it.txt` (which
+  replaces the French term rules for an Italian book). Every term is in
+  one of four categories:
+
+  | # | Category | Output | Examples |
+  |---|---|---|---|
+  | 1 | **Translated** | plain English | *parade* → parry, *fente* → lunge, *colpo* → hit / attack |
+  | 2 | **Footnoted** | English, and on the first use in the book a footnote with the original: `† French: liement` | *liement* → bind, *legamento* → engagement |
+  | 3 | **Explained** | the original in italics, and on first use a short explanatory note | *scandaglio*, *traccheggio* *(notes being written)* |
+  | 4 | **Kept** | the original in italics, as English fencing literature keeps it | *riposte*, *quarte*, *cavazione* |
+
+  Which category a term belongs in is decided by two questions:
+  1. *Is there an English word that means the same?* Exactly → 1;
+     approximately, or only a recognised name → 2; no → question 2.
+  2. *Would an English-speaking fencer already know the original?*
+     Yes → 4; no → 3.
+
+  The lists come from surveying every term in a language's corpus. A
+  book that defines a word its own way gets a per-book entry (`[terms]`
+  in its overrides file). Step 2 enforces the lists after the model:
+  kept terms are put back in italics, footnoted terms left untranslated
+  are translated and noted once per book.
+- Headings and captions are translated in full.
 - Output is validated: wrong-script output (CJK / Cyrillic / etc.),
   more than ~35 % non-English words, output under half the source length,
   or a bare model preamble / refusal ("Here is the translation:", "Please

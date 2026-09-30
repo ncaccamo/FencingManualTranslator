@@ -5,346 +5,112 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 
 ---
 
-## Current state (2026-09-25)
+## Current state (2026-09-30)
 
-- **Runs end-to-end.** Five full books through 1→2→3→4:
-  `Joseph-Renaud_Lescrime` (109 pp), `Spinnewyn` (178 pp),
-  `gomard_…1845` (386 pp — Google Books scan, 1845 text, printed
-  marginalia), `LaMarche_TraitDeLEpee` (337 pp — clean scan, literary
-  prose), `…Jacob_Jules_bd6t53440660` (331 pp — Gallica 68 ppi flat
-  JPEG). All **0 dead pages** (1341 pp). Those runs were
-  `BACKEND_MODE=local` (Vulkan); no cloud calls. `remote` mode (GPU-less
-  pipeline host + LAN `llama-server`/llama-swap) is wired and the
-  orchestrator side is stood up — see open item #4.
-- **OCR:** olmOCR-2-7B-1025 via llama-server on :11435 is the default and
-  only path. Tesseract path (`1_ocr_and_extract.py`) is kept for reference
-  / a no-VLM fallback, not used.
-- **Translation:** Qwen3.8-27B (i1-Q4_K_S, ~15.8 GB) since 2026-09-25, chosen
-  by the translation model selection test (`evals/translation_model_test.py`);
-  llama-swap key `bt-translate` remotely, :11434 locally. Too big for 16 GB
+- **French: nine books translated and in review** (Gomard, LaMarche, Jacob,
+  Prévost, Baudry, Spinnewyn, Kirchhoffer, Vauresmont, La Boëssière), all
+  with Qwen3.8-27B. La Boëssière is finished and moved to `books/_skip/`
+  (Crawley's 2018 translation is in print); it stays the French gold pair.
+  Review state per book: `review-notes/REVIEW_CHECKLIST_3.md` (local only).
+- **Italian: ten books OCR'd, not yet translated.** Own term glossary
+  (`pipeline/translation_prompt_it.txt`, from a survey of every term in the
+  ten books); 30-page sample test passed; evaluation against the published
+  Rosaroll and Pecoraro translations being rerun with it (the earlier
+  scores, 49.8 / 40.2 chrF++, were made with the French prompt). The full
+  translation waits for those scores.
+- **Term policy:** four categories (translated / footnoted / explained /
+  kept) and a two-question rule for placing a term — manual I.4, step 2.
+  The "explained" notes (category 3) are being written.
+- **Review loop:** each run writes a review report (French and Italian
+  checks); decisions go in `books/<stem>.overrides.toml` and are re-applied
+  on every run; only pages whose source text changed are retranslated.
+- **Provenance:** the cover records the models and the pipeline revision
+  and date behind each page (per revision after a partial retranslation).
+- **Public release prep:** AGPL-3.0-or-later licence, README rewritten,
+  references to private sibling repos removed. The repo is still private.
+- **Remote GPU in use:** llama-swap on the Windows GPU system; keys being
+  renamed `bt-*` → `fmt-*` (old names kept as aliases).
+- **OCR:** olmOCR-2-7B-1025 via llama-server (:11435 locally) is the only
+  path; the Tesseract script is kept for reference, not used. A layout
+  detector (Docling's `docling-layout-heron`, CPU) supplies running-head,
+  figure and margin-note boxes (`intermediate/layout.json`).
+- **Translation:** Qwen3.8-27B (i1-Q4_K_S, ~15.8 GB), chosen by the
+  translation model selection test (`evals/translation_model_test.py`);
+  llama-swap key `fmt-translate` remotely, :11434 locally. Too big for 16 GB
   of VRAM whole: 46 of 64 layers on the GPU (`TRANSLATION_GPU_LAYERS`),
-  ~40 s/page. The local-mode launch (image llama.cpp build, 46-layer split
-  under Linux) has not been run yet. Qwen2.5-14B-Instruct (Q4_K_M), the
-  previous model, stays on the GPU system as `bt-translate-qwen25`; books
-  translated before per-page model recording are credited to it on the
-  cover. Never drops a page; flags low-confidence output inline.
-- **PDFs:** English-only (flowing column, figures in reading order) and
-  side-by-side (scan left / translation right, paragraph-aligned where the
-  scan has a text layer). Both preserve `<i>` italics, indentation,
-  drill/brace layout via `pipeline/_render.py`. Side-by-side is the one
-  under active review; English-only is deferred (Open items #6).
-- **Figures (English-only):** the VLM flags each page as `plate` / `inset`
-  and reads its caption (`figures.json` from step 1, caption translated by
-  step 2 with the full prompt). Step 3 embeds a plate whole (cropped to
-  the profiler's ink band when it's portrait), an inset from the profiler
-  band, with the English caption beneath. Catches line-drawing plates the
-  old density-only path missed. Prototyped on Joseph-Renaud (31 plates)
-  and Gomard 1845 (8) — the other 3 books still use the profiler-only
-  path until re-OCR'd. Open: sideways fold-out engravings stay sideways
-  (can't tell from page geometry); pure-plate pages waste ~½ a sheet
-  (see #6); adjacent captions can run together.
-- **Backend selection:** `backend.env` switches local (`vulkan` | `rocm7` |
-  `rocm714`) vs. remote (LAN llama-server/llama-swap + bearer token;
-  GPU-less host via `scripts/setup.sh --remote` + the compose override).
-  See `docs/remote-gpu.md`.
-- **Container:** comes up idle (no auto-started servers); the pipeline
-  owns server lifecycle. Runs as the host UID.
-- **`processed/<book>_translated/` layout (2026-09-20):** only the two
-  finished PDFs sit in a book's own folder root now; everything
-  intermediate (`raw_ocr.txt`, `extracted.txt`, `page_numbers.txt`,
-  `translation.txt`, `figures.json`, `headers.json`, the copied
-  `<stem>_OCR.pdf`) lives in an `intermediate/` subfolder underneath.
-  Every pipeline script, `reprocess_extracted.py`, `evals/freeze.py` /
-  `check.py` / `metrics.py`, and `scripts/rename_book.py` already know
-  about this — `evals/baselines/<stem>/` (the frozen, committed
-  snapshots) deliberately stays flat, no `intermediate/` subfolder, since
-  that's a separate, single-purpose archive, not a live book folder.
-- **Regression net (`evals/test_rules.py`):** grew from a handful of
-  cases to **118 frozen input→output tests** for the deterministic
-  helpers in both pipeline scripts, one per bug ever fixed. `python3
-  evals/test_rules.py` (no pytest needed) — run it after touching either
-  script; a failure means a fix broke an earlier, already-confirmed
-  behaviour on a *different* book. This is the actual mechanism behind
-  the CLAUDE.md regression-caution note below.
-- **Batch-2 review cycle (2026-09, ongoing):** an intensive multi-pass
-  review of `reconcile_headers()` / `reconcile_page_numbers()` /
-  `strip_leaked_headmatter()` / header-and-caption translation
-  (`match_case()`, `enforce_kept_terms()`) against real problem pages in
-  3 books under active review (Kirchhoffer, Gomard 1845, Prévost-Jollivet
-  1891) — 7 passes so far, each landing as its own commit
-  (`git log --grep "review batch-2"`). Every fix in this cycle follows
-  the same discipline: reproduce against the real page (raw OCR text +
-  rendered PDF, never assumption), add a narrow evidence-based fix with
-  its own regression test, re-verify against real data, then reprocess +
-  retranslate the affected pages only (never a needless full-book GPU
-  pass) and rebuild the PDFs. `docs/model-quirks.md` has the full
-  technical writeup of every failure mode found this way; the operator's
-  own `review-notes/` (gitignored) tracks the live per-book checklist and
-  its resolved history. This is genuinely still finding new, narrow edge
-  cases each pass — treat it as ongoing, not close to done.
+  ~40-50 s/page. Qwen2.5-14B-Instruct, the previous model, stays on the GPU
+  system as `fmt-translate-qwen25`. A page is never dropped; low-confidence
+  output is flagged inline.
+- **PDFs:** side-by-side (scan left, translation right) is the primary
+  output; English-only is deferred (open item 5). Both render through
+  `pipeline/_render.py`: italics, drill/brace indentation, footnote blocks,
+  margin notes. Details: `docs/pdf-layout.md`.
+- **Backends:** `backend.env` switches local (`vulkan` | `rocm7` | `rocm714`)
+  vs. remote (LAN llama-server / llama-swap). See `docs/remote-gpu.md`.
+- **Outputs:** `processed/<stem>_translated/` holds the two PDFs and the
+  review report; everything intermediate is in `intermediate/`.
+- **Regression net:** `python3 evals/test_rules.py` — 170+ frozen
+  input→output tests, one per bug fixed. Run it after any pipeline change;
+  a failure means a fix broke a different book.
 
-## Open items (roughly prioritized)
+## Open items
 
-1. **Translation quality** — a prompt pass landed (compound terms
-   `coup droit`/`dérobement`/`doublement`, all-caps `PARADES DE X` heading
-   few-shots, Markdown ban + `2_translate.py` sanitizer, accented-caps in
-   headings). The LaMarche/Jacob-Jules run surfaced + fixed **model
-   meta-responses leaking in as page content** — near-blank pages got
-   "Please provide the text you would like to translate", and "Here is the
-   translation:" / "This text does not appear to be fencing…" preambles
-   slipped past rule 6. `2_translate.py` now: skips near-blank source
-   (`is_near_blank`), rejects whole-output refusals (`looks_like_refusal`),
-   strips leading preambles (`strip_model_preamble` — regexes kept narrow
-   so real page-initial prose like "In this case, … Example:" survives).
-   Verified 0 leaks across all 5 books after re-run. Full catalogue of
-   this and every other model quirk: `docs/model-quirks.md`. Still soft: braced
-   command groups flatten ~half the time, occasional article/word-order
-   slips, ToC / dotted-leader pages half-translate `coupé`/`battement`,
-   and literary prose (LaMarche) leaves a few `[low-confidence]` pages
-   substantially in French. The Larousse sower-motto garble is OCR-side.
-1b. ~~Multi-model serving compose~~ — CLOSED, out of scope: general chat /
-   coding model serving belongs to a separate project.
-   This item predates the project split; FencingManualTranslator serves only its
-   two pipeline models (olmOCR-2 and the translation model), sequentially, by design.
-2. **Footnotes** — DONE. `† French: <term>` source refs on Category-3
-   terms (16 curated) with a `†N` inline mark → `2_translate.py`
-   (`enforce_cat3_footnotes` backstop + `pull_footnotes`) appends a
-   `___FOOTNOTES___` block, each term once per book. The book's **own**
-   `(1)`/`1.` footnotes are pulled into the same block by
-   `extract_source_footnotes()`; margin notes by `label_margin_notes()`.
-   `_render.py` splits the block off (no label — each line
-   self-identifies); `3_` renders it end-of-section (small grey type +
-   rule), `4_` reserves a bottom strip in the right column. A footnote
-   that spans two source pages renders as two halves, one per spread
-   (tail prefixed `…`) — **kept split by design** (2026-09-01), fidelity
-   to the original's pagination over readability. TODO: expand the
-   curated term set as more books surface terms.
-3. ~~More full books.~~ DONE — five now (see Current state). Each surfaced
-   something: Spinnewyn → `\n---\n` separator collision + VLM server-death
-   detection gap; Gomard 1845 → Google Books scan / printed marginalia
-   (dropped) / line-drawing plates (figure detector caught 4 of ~20) /
-   para-alignment 47%; repetition-loop fix held (10 runaway ToC pages → 0).
-   LaMarche (clean scan, literary prose) → para-alignment 81% (best), but
-   several `[low-confidence]` pages left mostly in French; model
-   meta-response leak found + fixed. Jacob Jules (Gallica 68 ppi) → only
-   27% corroborated folios (olmOCR can't read the low-res page numbers;
-   bracketed sheet ordinals by design), para-alignment 34%.
-4. ~~**Remote mode end-to-end**~~ VERIFIED 2026-09-10. The reference
-   deployment runs it: a GPU-less Ubuntu pipeline host (`scripts/setup.sh
-   --remote` + `docker-compose.override.yml`) against a Windows system
-   running llama-swap on :11500 (`bt-ocr` / `bt-translate` keys, so the
-   models swap automatically — `run_full_pipeline.sh` unchanged). The
-   Kirchhoffer 16-page `_sample.pdf` went through 1→2→3→4 clean: step 1's
-   base64 page-image upload to the remote server works, and llama-swap
-   swaps vision→text between steps with no manual step. Fixes that landed
-   with the run: step 1 no longer resolves a local `mmproj` in remote mode
-   (would `exit(1)` on the empty `/models`); `run_full_pipeline.sh` dropped
-   its explicit `-f` so the compose override auto-merges;
-   `test_vlm_single_page.py` sends `VLM_MODEL_NAME` so it routes under
-   llama-swap. Setup + both paths (llama-swap / bare server):
-   `docs/remote-gpu.md`.
-5. ~~**User Manual** Sections I and III.~~ DONE — Section I rewritten
-   (current models, flowing PDF, footnotes-done, backend selection,
-   limitations reconciled with this file); Section III written
-   (`setup/MANUAL_SECTION_III_USAGE.md` — quick start, per-step re-run
-   rules, iteration loops, `reprocess_extracted.py`, helper-script table,
-   troubleshooting). Keep in sync as behaviour changes. Section II is
-   current.
-6. **English-only PDF — DEFERRED (2026-09-25).** Review has been
-   side-by-side only since batch 2; English-only had too many formatting
-   issues to work both in parallel, so side-by-side was prioritized. The
-   operator intends to return to it — expect a backlog of unreviewed
-   layout problems, not a verified output. When it resumes, consider
-   decoupling the English-only renderer (`3_`) from code shared with
-   side-by-side (`4_` / `_render.py`) so fixes to one stop regressing the
-   other; not scoped yet. Content difference to handle then: book titles
-   in bibliographies (Gomard scans 36-38) are translated, which suits
-   side-by-side (the original title is on the facing scan); with no scan
-   shown, English-only should keep titles in the original language
-   (operator, 2026-09-26). Earlier work: figure packing — `section_label(compact=True)` on
-   figure-only pages (2026-09-01) drops the label chrome so a run of
-   small/landscape plates packs two to a sheet when they genuinely fit.
-   Portrait plates hit the `FIGURE_MAX_H` (82% column) cap and still get
-   one each — by design, no shrinking to force a pair.
-7. `rocm714` backend — wired everywhere but not compiled; see
-   `docker/ROCM714_NOTES.md`.
-8. ~~Backend-selection port to a separate chat project~~ — DONE
-   (2026-08-27); nothing in this repo depends on it.
-
-9. **Heading tier / per-book header scheme** — FUTURE WORK, own effort.
-   The renderer has two buckets: `HEADER:` → small italic running-head
-   line, and `BODY_TEXT` → flowed prose, one size. There is no third
-   rendering for a part / section / chapter title, so a title olmOCR-2
-   files in the body just reads as one more prose line, and which bucket
-   a given title lands in varies page to page. `reconcile_headers()`
-   (batch 2, 2026-09-01) makes the *placement* consistent by repetition —
-   a one-off title always goes to the body, a repeated one always to the
-   bar — but everything in the body still renders flat. The real fix is a
-   heading hierarchy: a pre-pass that samples the book, infers its
-   heading scheme (what's a part title vs a section title vs a running
-   head — feasibility unclear, olmOCR-2 sees one page at a time), a
-   `level` field in `_render.py`, size/weight/spacing per level, and
-   likely a VLM-prompt change + full re-OCR + an eval loop. Scoped and
-   rejected as too large for batch 2. Related: title-page special layout,
-   and the deferred "section/part-title display size". **When this lands
-   it supersedes `fix_subheading_spacing()`** (2026-09-01 stop-gap — an
-   all-caps heuristic that moves the blank line to *before* a run-in
-   sub-heading; the hierarchy feature will space headings from a real
-   signal instead).
-
-10. **Heading detection at the source — prompt test** (next, agreed
-    2026-09-25). Add a `TITLE:` field (centred title in the text block) to
-    `vlm_ocr_prompt.txt`, separate from `HEADER:` (running head in the top
-    margin), and run it on ~20 already-diagnosed pages (Gomard idx 38 /
-    155 / 161 / 336, Prévost 50 / 124 / 130, Jacob 217, …) — a few minutes
-    of GPU. If olmOCR-2 fills it reliably it would resolve the ambiguity in
-    model-quirks §1.2f (Gomard src 23 INTRODUCTION) and could replace much
-    of the header/title heuristics; if not, stay with narrow fixes.
-    **Result (2026-09-25, 25 pages, 2 prompt variants):** v1 got 20/25
-    right, and about 24/25 with a previous-page running-head check. Its one
-    failure mode: a running head on a continuation page reported as TITLE
-    with HEADER empty. The stricter v2 only moved the errors around.
-    Not adopted. **A layout-detection model did better:** Docling's
-    `docling-layout-heron` (Apache-2.0, DocLayNet classes page_header /
-    title / section_header; CPU, about 0.4 s/page) scored 23/25, including all
-    of v1's failures. It needs no re-OCR, since it reads the existing scans.
-    **Stage 1 landed (2026-09-25):** in the image (CPU torch 2.14.0 +
-    transformers 5.17.0, model pinned at rev 8f39ad3c), step 1 writes
-    `intermediate/layout.json`, `layout_scan.py` backfills, and the review
-    report flags running-head disagreements. Output isn't changed yet.
-    **Stage 2 (next):** let it decide running heads in reconcile_headers(),
-    after the flags have been reviewed.
-    **Full-corpus run (1,673 pages):** combined with olmOCR's HEADER
-    signal, per-book calibration and a disagreement flag, the detector
-    disagreed with current output on 117 pages (6 in Gomard). Where checked on
-    the scans the current output was wrong in nearly every case. 24/24 random
-    agreed pages were correct. 6% of pages were flagged. Also: the published
-    LaMarche/Jacob/Spinnewyn outputs lack running heads on ~280 pages because
-    they predate this cycle's code (fixable by a no-GPU reprocess).
-11. **Reprocess hazards** (batch 2, pass 8). *Partly resolved
-    2026-09-25:* review decisions now live in `books/<stem>.overrides.toml`
-    (manual III.5b) and are re-applied by step 1, reprocess, step 2 (incl.
-    `--captions`) and `apply_overrides.py`, so hand-set header wording and
-    the Gomard 298/299 patch no longer revert. Pages can be retranslated
-    individually (`2_translate.py --pages <stem> [12,40-42]`, or
-    `retranslate = true`), replacing batch 2's ad-hoc single-page scripts.
-    `reprocess_extracted.py` now keeps step 2's translated captions for
-    figures whose caption didn't change. *Resolved 2026-09-25:* step 2 no
-    longer uses the "extracted.txt newer than translation.txt → whole book"
-    rule. It fingerprints each page's source (`translated_from.json`) and
-    retranslates only pages whose body text changed, so no more `touch`.
-11b. **Jacob / LaMarche / Spinnewyn outputs are stale — deferred (2026-09-25).**
-    They predate this cycle's code: ~280 pages lack running heads, and none
-    of the page-number/header/title fixes have reached them. A reprocess
-    would change the body text of 258 pages (Jacob 150, LaMarche 62,
-    Spinnewyn 46), which step 2 would then retranslate (~60-75 min GPU).
-    Deferred until each book comes up for review, ideally after the layout
-    detector lands so one reprocess brings both.
-12. **Spinnewyn idx 56 / 100** (not under review): a plate leaf's real
-    running head ("LE RASSEMBLEMENT", "LE LIEMENT") is demoted to body by
-    `reconcile_headers()`'s half-title rule (header present, no body, not
-    confirmed). Latent until Spinnewyn is next reprocessed.
-13. **Local end state: review loop** (2026-09-25, roadmap in memory /
-    this list). Done: per-book overrides file + `apply_overrides.py`
-    (manual III.5b), page retranslation `2_translate.py --pages`, review
-    report `quality_report.py` run at the end of `run_full_pipeline.sh`
-    (III.5a). Report sizes on current outputs: Gomard 8, Kirchhoffer 2,
-    Prévost 4, Jacob 6, LaMarche 9, Spinnewyn 5 pages. It caught every
-    translation-side issue in the batch-2 pass-7 review when run on the
-    pre-pass-8 files, but none of the layout ones. Next: the layout detector
-    (item 10) as a report signal, then a local translation-review pass.
-    Gomard coup/botte settled (coup → blow, botte → thrust; model-quirks
-    §2.10b); after retranslating the 33 inconsistent pages and 2 recorded
-    fixes, Gomard's and Kirchhoffer's reports are empty, Prévost's has 1 page.
-    The report surfaced the adjacent-pages folio misread in Prévost
-    and Spinnewyn, which led to the general `reconcile_page_numbers()`
-    fix (model-quirks §1.2).
-14. **Margin (shoulder) notes — rebuilt 2026-09-25.** The old text
-    heuristic (label_margin_notes) is gone: it guessed notes from paragraph
-    shape and silently deleted real text (Prévost scan 310's "Le rôle du
-    médecin." heading, with Qwen3.8's paragraphing). Now (`_margins.py`): the
-    layout detector finds notes as narrow boxes outside each page's own text
-    column, the OCR model reads each crop (`intermediate/margins.json`), and
-    reprocess puts each note into the page text as a `⟦MARGIN: …⟧` line
-    before its paragraph -- or mid-paragraph at the sentence it's printed
-    beside -- removing the OCR model's pasted copies. Prompt rule 10 keeps the
-    marker; a candidate that loses one is retried; the review report flags a
-    page still missing one; the PDFs draw each note as a grey italic line with
-    a side bar. Gomard: 384 notes on 186 pages (the OCR model had kept ~25);
-    16/16 found on a 10-page scan check, all anchored. Other books: none
-    (Jacob: 1 doubtful). **Gomard done (2026-09-26):** full Qwen3.8 run with
-    the notes; 373 notes after dropping 11 duplicate year boxes (bibliography,
-    scans 37/38/60/72), all 373 kept through translation. Placement fixes from
-    that run: duplicate boxes, in-order tie-break, run-to-run determinism, and
-    the pasted-copy check now two-sided (one-sided overlap had deleted 14
-    chapter titles). Next: a review-report check for a body title the raw OCR
-    had but the translation lacks -- only the pass-8 checklist caught it.
-14b. **Full Qwen3.8 runs + layout stage 2 (2026-09-26).** Gomard,
-    Kirchhoffer, Prévost fully retranslated; review reports: 0 / 1 (library
-    cover page) / 0 pages to check. Layout stage 2: the parse no longer adds
-    a running head to a page the detector is sure prints none (32 pages on
-    the three books, all pipeline-made; scan-checked). Also fixed from that
-    work: page-foot "catchword" rule now needs the line to recur (it was
-    deleting signatures, title-page lines, Gomard's half-title, "FIN." --
-    16 lines over six books); header overrides apply before body titles are
-    matched to their running head; review report checks for lost body
-    titles; glossary: targets tête/figure/manchette, "low tierce" order.
-    Stale books (Jacob, LaMarche, Spinnewyn): a fresh re-parse already
-    recovers nearly all their running heads (Jacob 111 -> 0, LaMarche
-    155 -> 3) -- bring-up is re-parse + scan-check + full run.
-15. **Translation speed — future options, not planned (2026-09-26).**
-    **Operator preference: keep the current split.** It loads the GPU
-    lightly, which suits long unattended / overnight runs; an extra hour per
-    book doesn't matter. Don't tune for speed unless that changes.
-    Measured on the GPU system (46/64 layers on the GPU): writing 6.8
-    tokens/s, reading ~300 tokens/s with the fixed prompt cached; ~45 s per
-    page, almost all writing. The 18 CPU layers are the limit (system-RAM
-    bandwidth). Two ways to go faster, each needing a translation model
-    selection test run before adoption and a switch only between books:
-    - **8-bit context memory** (`-ctk q8_0 -ctv q8_0`, needs flash attention
-      on Vulkan -- confirm it runs): frees ~0.8 GB VRAM → ~3 more GPU layers,
-      ~10-15% faster; quality effect negligible at our ~2-3k-token contexts
-      (4-bit would not be).
-    - **Speculative decoding** (a small same-family draft model guesses
-      ahead, the 27B checks): often 1.5-2x on predictable output like
-      translation; costs VRAM (fewer 27B layers) and adds a second model to
-      the setup.
-
-16. **Italian corpus — future, after the French review settles (2026-09-26).**
-    15 Italian books have scans (~2,900 pp). Needed first:
-    - **Language layer**: a per-book language setting; the translation
-      prompt/glossary and the French word lists behind the checks
-      ("still French?", heading re-translate, review report) and a few
-      parse rules ("Planche" vs "Tavola") are French-only today.
-    - **Italian glossary from the reference pairs**, not guesswork: align
-      a pair, extract the translator's term choices (Holzman: Pecoraro-
-      Pessina *Sabre Fencing*, Parise, Rosaroll-Grisetti -- owned in print,
-      to scan into `evals/gold/<stem>/ref.pdf`; already in place: Del Frate
-      1868, Tinti, Vannucchi, Barbasetti ~ his English books), operator
-      approves; then score every change against the references.
-    - **Two-page spreads** (Lambertini, Masiello 1902 Fioretto, Tiboldi,
-      Vannucchi) need a split step -- the pipeline assumes one book page
-      per scan page. Phone scans (vFlat) untested.
-    - Pilot: Florio 1844 or Del Frate 1876 (clean single-page scans).
+1. **Italian translation run.** Waiting on the evaluation rerun with the
+   Italian glossary (Rosaroll + Pecoraro against the published
+   translations). Then the ten books, ~35-60 h of GPU over several sessions.
+   Check first how the two-page-spread scans (Lambertini, Masiello 1902
+   *Fioretto*, Tiboldi) came through the OCR — the pipeline assumes one book
+   page per scan page.
+2. **Category 3 ("explained") notes.** Draft notes for review
+   (`review-notes/`, local); the placement step is built and tested
+   (`pipeline/_explained.py`) but not switched on until the notes are
+   approved.
+3. **Page numbers the OCR missed or invented.** Neither the layout detector
+   nor the scans' text layer tells a printed-but-unread number from no
+   number (measured on the 9 French books: detector ~75% recall with false
+   hits; text layer ~35%). Plan: the OCR model reads just the top and
+   bottom strip of each uncertain page (~780 pages, 30-40 min GPU); show a
+   number only where one is printed.
+4. **Sentences split across a page break.** The hyphenated-word case is
+   handled (also past footnotes and margin notes). Whole sentences split
+   across ~1,060 page breaks in the French books translate as two
+   fragments, occasionally badly. Plan: give the model the neighbouring
+   pages' text as context; test on ~20 pages first, then use it for Italian
+   from the start and retranslate only French pages where it helps.
+5. **English-only PDF — deferred (2026-09-25).** Review has been
+   side-by-side only; expect a backlog of layout problems. When it resumes,
+   consider decoupling the English-only renderer from code shared with the
+   side-by-side, so fixes to one stop regressing the other. Content
+   difference: book titles in bibliographies are translated, which suits
+   the side-by-side (the original is on the facing scan); English-only
+   should keep them in the original language.
+6. **Heading hierarchy — future work.** The renderer has a running head and
+   one body size; a part / chapter / section title in the body reads as one
+   more prose line. The fix is a per-book heading scheme with levels in
+   `_render.py` (sizes and spacing per level). Supersedes the
+   `fix_subheading_spacing()` stop-gap. A `TITLE:` field in the OCR prompt
+   was tested and not adopted (2026-09-25, 20/25 pages right); the layout
+   detector is the better signal (23/25).
+7. **Known translation soft spots** (see `docs/model-quirks.md`): braced
+   command groups sometimes flatten; literary prose (LaMarche) leaves a few
+   `[low-confidence]` pages partly untranslated.
+8. **Translation speed — options, not planned.** Operator preference is the
+   current light GPU load for unattended runs. If that changes: 8-bit
+   context memory (`-ctk q8_0 -ctv q8_0`, ~3 more GPU layers, ~10-15%
+   faster) or speculative decoding with a small draft model (often
+   1.5-2x). Either needs a model selection test run first.
+9. **`rocm714` backend** — wired, not compiled; `docker/ROCM714_NOTES.md`.
 
 ## Not yet tested
 
-- A physically photographed (not flatbed) book — all sources so far are
-  clean library scans.
-- Figure detection: the VLM path (`figures.json`) now handles full-page
-  plates including line art; `find_figure_band()` still does the *geometry*
-  for an inset crop and is the fallback for un-re-OCR'd books (misses
-  faint half-tones / line art). Still unproven: how many mid-book plates
-  the VLM under-reports (Gomard flagged only 8 — physical-book check
-  pending), inset figures embedded in busy text pages, orientation of
-  sideways fold-out engravings.
-- Paragraph alignment against a sparse/patchy embedded text layer —
-  Gomard's Google OCR gave 47% aligned vs. Spinnewyn's 71% on a cleaner
-  Gallica layer. **Book-level bail (2026-09-01):** step 4 counts the text
-  pages with a usable text layer up front; below `ALIGN_MIN_RATE` (0.55)
-  it renders the whole book in plain top-to-bottom flow instead of a
-  jitter of aligned / bailed / near-miss pages. Tune with the env var;
-  watch the "text layer usable on N/M pages" print.
+- A photographed (not scanned) book; phone scans (vFlat).
+- The local-mode launch of the 46-layer Qwen3.8 split under Linux (all
+  Qwen3.8 runs so far were remote).
+- NVIDIA GPUs (`docs/remote-gpu.md` §5 outlines both routes).
+- How many mid-book plates the OCR model under-reports; sideways fold-out
+  engravings on books without a `.rotate` file.
+- Paragraph alignment on a patchy scan text layer: below `ALIGN_MIN_RATE`
+  the side-by-side falls back to plain flow for the whole book.
 
 ## Non-obvious decisions / don't-retry-this
 
@@ -416,33 +182,20 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
   checks and `docker-compose.override.yml` `!reset`s the compose device
   mounts.
 
-## Doc set
+- **A skipped book is not processed.** `books/_skip/` holds books with a
+  readily available English translation (they become gold pairs) and
+  out-of-scope scans. Nothing reads from it; to work on a book again, move
+  it back to `books/` (its overrides file travels with it).
+- **One glossary per source language.** French in `translation_prompt.txt`,
+  Italian in `translation_prompt_it.txt` (replaces the French term rules);
+  the review report's term checks are per language too — the Italian list
+  fired on French books (their own *volant*, Italian titles in
+  bibliographies) until it was scoped.
+- **Provenance is per page and never guessed.** `translated_from.json`
+  records model, revision and date for each page; the cover summarises
+  them. Pages from before the record existed got a date range only where
+  the evidence supported it (model record + file dates), no revision.
+- **Term categories have names in code, numbers only in docs.** The code
+  says "footnoted" / "kept" / "explained": the numbering changed once
+  (2026-09-30) and a number in an identifier would have gone wrong again.
 
-- `README.md` — index / quick start.
-- `docs/STATUS.md` (this) — current state, open items, decisions.
-- `CLAUDE.md` — AI-agent orientation + hard invariants.
-- `setup/MANUAL_SECTION_I/II/III` — operator manual: overview / host
-  setup / day-to-day operation. Sections I and III updated 2026-09-25 for
-  the `intermediate/` subfolder reorg; Section II still current as of
-  2026-08-27.
-- `docs/model-quirks.md` — field guide to every OCR / translation model
-  failure mode + the prompt/code mitigation. The "why" behind
-  `vlm_ocr_prompt.txt` / `translation_prompt.txt` and the `2_translate.py`
-  guards.
-- `docs/pdf-layout.md` — how steps 3 & 4 render the PDFs: the `_render`
-  text engine, figure placement (`figures.json` + profiler), paragraph
-  alignment, and every layout knob.
-- `docs/remote-gpu.md` — remote-GPU mode (supported; llama-swap or bare
-  server) + GPU-less pipeline-host setup + `rocm714` (still parked).
-- `docker/ROCM714_NOTES.md` — why ROCm 7.14 is parked.
-- `setup/DEV_ENVIRONMENT_SETUP.md` — maintainer development-system setup (VS Code,
-  git, Claude Code); not for end users.
-- Retired 2026-08-27: `HANDOFF.md` (→ git log), `MANIFEST.md` (job done),
-  `docs/design-backend-selection.md` (→ `docs/remote-gpu.md`),
-  `setup/setup_inference_backend.sh` (installed host ROCm + inline-generated
-  a stale Dockerfile; → `scripts/setup.sh`, verify-and-build only, host
-  needs no ROCm/Vulkan). `setup/archive/` (10 `.bak` Dockerfiles + 12
-  superseded numbered scripts + the ROCm 6.x
-  `translation_pipeline_manual.md` — all in git history; Manual I/II/III
-  supersede the old manual), and `setup/03_setup_open_webui.sh`
-  (Open WebUI was never connected here).
