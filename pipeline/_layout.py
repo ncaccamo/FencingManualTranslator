@@ -17,6 +17,7 @@ runs twice for the same scan: {"model": <rev>, "pages": {idx: {"w", "h",
 "boxes": [[label, score, [x0, y0, x1, y1] as fractions of the page]]}}}.
 """
 import json
+import re
 import os
 import statistics
 
@@ -126,8 +127,32 @@ def no_head_pages(folder: str, own_headers: list) -> set:
     out = set()
     for i, own in enumerate(own_headers):
         own = (own or "").strip()
+        # a plate's own label read into HEADER ("Pl. 2.", "Planche V.") is
+        # not a running head (La Boëssière's plates)
+        if re.match(r"(?i)(?:pl\.?|planche|fig\.?)\s*[\divxlc]", own):
+            own = ""
         printed, unsure, _ = running_head(pages[i], band, bool(own) and own.lower() != "none")
         if not printed and not unsure:
+            out.add(i)
+    return out
+
+
+def disputed_heads(folder: str, own_headers: list) -> set:
+    """Page indices where the OCR reported a running head but the detector
+    sees none on the page (its "unsure" case: only the OCR's word says
+    printed). See settle_disputed_heads() in 1_ocr_and_extract_vlm.py."""
+    lay = load(folder)
+    if not lay:
+        return set()
+    pages = [lay["pages"].get(str(i), {"boxes": []}) for i in range(len(own_headers))]
+    band = header_band(pages)
+    out = set()
+    for i, own in enumerate(own_headers):
+        own = (own or "").strip()
+        if not own or own.lower() in ("none", "[none]"):
+            continue
+        printed, unsure, _ = running_head(pages[i], band, True)
+        if not printed:
             out.add(i)
     return out
 

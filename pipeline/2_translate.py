@@ -375,6 +375,41 @@ def _match_term_case(term: str, sample: str) -> str:
         else term.capitalize() if sample[:1].isupper() else term
 
 
+def caps_kept_terms(text: str, src: str = "") -> str:
+    """A kept term (<i>épée</i>) inside a line set in capitals takes capitals
+    too: "OF THE <i>épée</i>." -> "OF THE <i>ÉPÉE</i>." (20 cases over 8
+    books). Rule: its neighbouring words are capitals (missing neighbour =
+    line edge), at least one exists; or it stands alone on its line and the
+    French has it in capitals (Kirchhoffer's "ÉPÉE" section title). A
+    sentence-case caption keeps it lowercase ("(An <i>épée</i> bout.)")."""
+    def _is_caps(w):
+        letters = [c for c in w if c.isalpha()]
+        return len(letters) >= 2 and all(c.isupper() for c in letters)
+
+    def _line(line):
+        parts = re.split(r"(<i>[^<]*</i>)", line)
+        for k, part in enumerate(parts):
+            m = re.fullmatch(r"<i>([^<]*)</i>", part)
+            if not m or m.group(1).isupper() or not any(c.isalpha() for c in m.group(1)):
+                continue
+            before = re.findall(r"[^\W\d_][\w'’-]*", re.sub(r"<[^>]+>", " ", "".join(parts[:k])))
+            after = re.findall(r"[^\W\d_][\w'’-]*", re.sub(r"<[^>]+>", " ", "".join(parts[k + 1:])))
+            prev, nxt = (before[-1] if before else None), (after[0] if after else None)
+            alone = prev is None and nxt is None
+            if alone:
+                # a title line of its own: copy the case of the same word
+                # standing alone in the French ("Épée", Kirchhoffer scan 41)
+                same = [l.strip(" .") for l in (src or "").split("\n")
+                        if l.strip(" .").lower() == m.group(1).lower()]
+                if same:
+                    parts[k] = f"<i>{_match_term_case(m.group(1), same[0])}</i>"
+                continue
+            if all(_is_caps(w) for w in (prev, nxt) if w is not None):
+                parts[k] = f"<i>{m.group(1).upper()}</i>"
+        return "".join(parts)
+    return "\n".join(_line(l) for l in text.split("\n"))
+
+
 def fix_known_garbles(text: str, src: str = "") -> str:
     """Deterministic repairs for REPEATABLE model mistakes -- ones that
     survive the 3-sample majority vote because the model makes them the
@@ -383,7 +418,7 @@ def fix_known_garbles(text: str, src: str = "") -> str:
         Also "SIMPLE THROUGHS" (pdf 174 retranslation). Neither is an
         English word, so safe to fix anywhere.
       * "THRUST/HIT" -- the prompt glossary's old "botte -> thrust/hit"
-        copied verbatim. botte -> thrust (coup -> blow: Gomard pdf 158
+        copied verbatim. botte -> thrust (coup -> attack: Gomard pdf 158
         defines the coup as the whole action, the botte as its finish).
       * "plank(s)" for planche(s) -- the carpentry sense; in these books a
         planche is always an illustration plate. Only when the source
@@ -428,7 +463,17 @@ def fix_known_garbles(text: str, src: str = "") -> str:
                   text, flags=re.I)
     if src and re.search(r"\bplanches?\b", src, re.I):
         text = re.sub(r"\bplanks?\b", lambda m: _case(m, "plate"), text, flags=re.I)
-    return text
+    # a plate's label and its caption on one line: "Plate V. — Blow
+    # delivered …" (operator preference, Gomard review 2026-09-28)
+    text = re.sub(r"\A(\s*)((?:<i>)?(?:PLATE|Plate|PLANCHE|Planche)\s+[IVXLC]+[a-z]*\.?(?:</i>)?)[ \t]*\n\s*\n?(?=\S)(?![\s\S]*\n\s*\n[\s\S]*\n\s*\n)",
+                  lambda m: m.group(1) + m.group(2).rstrip() + " — ", text, count=1)
+    # ",," -- a print mark beside a comma read as a second one (Prévost scan 157)
+    text = re.sub(r",\s*,(?!,)", ",", text)
+    # a name's particle translated: "Mr. A. OF LA FORGE" -> "A. DE LA FORGE"
+    # (Jacob), "Count F. of L'Angle-Beaumanoir" (Spinnewyn) -- after an initial
+    text = re.sub(r"\b([A-Z]\.\s+)(of|OF|Of)(\s+(?:La|LA|Le|LE|L['’]))",
+                  lambda m: m.group(1) + ("DE" if m.group(2) == "OF" else "de") + m.group(3), text)
+    return caps_kept_terms(text, src)
 
 
 def enforce_kept_terms(text: str, src: str = "") -> str:
@@ -564,11 +609,11 @@ def match_case(src: str, dst: str) -> str:
             if not lead and w.lower() in _TITLE_STOPWORDS:
                 return w.lower()
             return w[:1].upper() + w[1:].lower()
-        return _recase(dst, lambda s: re.sub(r"[^\W\d_]+(?:['’-][^\W\d_]+)*", _title, s))
+        return _recase(dst, lambda s, first: re.sub(r"[^\W\d_]+(?:['’-][^\W\d_]+)*", _title, s))
 
     # sentence case: lower the model's over-capitalisation, keep source
     # acronyms, then upper the very first letter.
-    def _sent(s):
+    def _sent(s, first=True):
         s = re.sub(r"[^\W\d_]+",
                    lambda m: m.group(0) if (m.group(0).upper() in src_acronyms
                                             and len(m.group(0)) >= 2)
@@ -577,6 +622,8 @@ def match_case(src: str, dst: str) -> str:
         # first letter found -- a clause starting with an ordinal ("3rd
         # tempo...", "3e TEMPS...") has its first letter mid-token ("r"
         # in "3rd"), and force-capitalising that produced a broken "3Rd".
+        if not first:
+            return s
         return re.sub(r"(?<![\dA-Za-zÀ-ÿ])[A-Za-zÀ-ÿ]",
                       lambda m: m.group(0).upper(), s, count=1)
     return _recase(dst, _sent)
@@ -584,13 +631,17 @@ def match_case(src: str, dst: str) -> str:
 
 def _recase(text: str, fn) -> str:
     """Apply fn to the parts of `text` that are NOT inside <i>...</i>
-    (kept-in-source terms keep their own casing)."""
-    out, i = [], 0
+    (kept-in-source terms keep their own casing). fn(part, first): `first`
+    only for the part at the very start -- sentence case capitalises that
+    one alone, not the word after every italic term ("the <i>riposte</i>
+    Is hit", Baudry Fig. 7)."""
+    out, i, k = [], 0, 0
     for m in re.finditer(r"<i>.*?</i>", text, re.DOTALL | re.IGNORECASE):
-        out.append(fn(text[i:m.start()]))
+        out.append(fn(text[i:m.start()], k == 0 and i == 0))
         out.append(m.group(0))
         i = m.end()
-    out.append(fn(text[i:]))
+        k += 1
+    out.append(fn(text[i:], i == 0))
     return "".join(out)
 
 
@@ -750,6 +801,28 @@ _CAPTION_JUNK = re.compile(
     r"|\b\d{5,}\b|high\s+holborn|\blondres\b|\bimp\.\b|\blith\.\b|\bdel\.\b"
     r"|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\s+\d{4}\b",
     re.I)
+
+
+def match_dash_caps(fr: str, en: str) -> str:
+    """A caption's segments after a dash start with a capital in the French
+    ("Fig. 2. — Garde classique vue de face.") but the model lowercases them
+    ("Fig. 2. — classical guard ..."; Baudry, Gomard plates). Capitalise the
+    first letter after each dash in the English when the French segment at
+    the same position starts with a capital."""
+    split = r"\s*[—–]\s*"
+    fr_parts = re.split(split, fr or "")
+    en_parts = re.split(r"(\s*[—–]\s*)", en or "")
+    if len(fr_parts) < 2 or len(en_parts) != 2 * len(fr_parts) - 1:
+        return en
+    for k in range(1, len(fr_parts)):
+        f = fr_parts[k].lstrip()
+        if not (f[:1].isalpha() and f[:1].isupper()):
+            continue
+        seg = en_parts[2 * k]
+        m = re.match(r"(\s*(?:<i>)?)([a-zà-ÿ])", seg)
+        if m:
+            en_parts[2 * k] = m.group(1) + m.group(2).upper() + seg[m.end():]
+    return "".join(en_parts)
 
 
 def _clean_caption(cap: str) -> str:
@@ -1278,10 +1351,14 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
         return 0
     with open(fig_path, encoding="utf-8") as fh:
         fig_map = _json.load(fh)
+    # the reviewer's caption decisions first, so a corrected caption is
+    # translated in this same pass
+    _overrides.apply_captions(fig_map, _overrides.load(Path(folder).name.replace("_translated", "")))
     n = 0
     for figs in fig_map.values():
         for fig in figs:
-            cap = _clean_caption((fig.get("caption") or "").strip())
+            raw = (fig.get("caption") or "").strip()
+            cap = raw if fig.get("decided") else _clean_caption(raw)
             if cap != (fig.get("caption") or "").strip():
                 fig["caption"] = cap            # persist the cleaned source caption
             if not cap:
@@ -1327,9 +1404,9 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
                 counts = Counter(c.lower() for c in candidates)
                 best_norm, _ = counts.most_common(1)[0]
                 one = next(c for c in candidates if c.lower() == best_norm)
-                fig["caption_en"] = match_case(cap, one) or cap
+                fig["caption_en"] = caps_kept_terms(match_case(cap, one) or cap, cap)
             elif fallback:
-                fig["caption_en"] = match_case(cap, fallback) or cap
+                fig["caption_en"] = caps_kept_terms(match_case(cap, fallback) or cap, cap)
             else:
                 fig["caption_en"] = cap
             n += 1
@@ -1381,6 +1458,7 @@ def translate_headers(folder: str, force: bool = False) -> int:
             en = enforce_kept_terms(apply_always_translate(en), h)   # snap "RAPIER RAPIER" -> riposte
             en = enforce_cat3_footnotes(en, set(), footnote=False)
             en = re.sub(r'</?i>', '', en)          # drop the <i> enforce_kept_terms added
+            en = re.sub(r'\s*<fn>.*?</fn>|</?fn>|†\d*', '', en)   # a running head carries no note (Spinnewyn "BIND<fn>…")
             en = en.splitlines()[0].strip() if en else ""
             en = re.sub(r'\s*:\s*$', '', en)       # "CONTRES:" -> "CONTRES" (P8)
             if en:
@@ -1504,6 +1582,23 @@ def apply_book_overrides(folder: str, fixes: bool = True) -> None:
         if missing:
             print(f"  ⚠ overrides: [[fix]] text not found on scan page(s) {missing} "
                   f"-- obsolete after a retranslation? Review {_overrides.path_for(stem)}")
+    gp = f"{I}/figures.json"
+    if fixes and os.path.exists(gp):
+        fmap = _json.load(open(gp, encoding="utf-8"))
+        changed, need = _overrides.apply_captions(fmap, ov)
+        for figs in fmap.values():
+            for fg in figs:
+                if fg.get("caption_en"):
+                    fixed = match_dash_caps(fg.get("caption", ""), fg["caption_en"])
+                    if fixed != fg["caption_en"]:
+                        fg["caption_en"] = fixed
+                        changed += 1
+        if changed:
+            with open(gp, "w", encoding="utf-8") as fh:
+                _json.dump(fmap, fh, ensure_ascii=False, indent=1)
+        if need:
+            print(f"  ⚠ overrides: caption(s) on scan page(s) {need} have no English yet -- "
+                  f"run 2_translate.py --pages {stem} {','.join(map(str, need))}")
     if fixes and (ov["headers"] or ov["fix"]):
         print(f"  overrides applied: {len(ov['headers'])} header(s), {len(ov['fix'])} fix(es)")
 
@@ -1904,17 +1999,36 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
             st["cat3_seen"].add(ref.strip().lower())
             st["fn_seen"].add(_strip_accents(ref.strip().lower()))
     print(f"Retranslating {stem}: scan page(s) {targets}")
-    for s_ in targets:
-        tr[s_ - 1] = translate_page(ex[s_ - 1].strip(), s_, len(ex), st)
-        done[str(s_)] = fp(ex[s_ - 1])
-    with open(tp, "w", encoding="utf-8") as fh:
-        fh.write(_pageio.join_pages(tr))
-    with open(done_p, "w", encoding="utf-8") as fh:
-        _json.dump(done, fh, indent=1, sort_keys=True)
+    # Saved after every page, and resumable: an interrupted run of the same
+    # page list skips the pages it already finished (the progress record is
+    # dropped at the end). A long list (Gomard: 226 pages, ~3 h) must not be
+    # all-or-nothing.
+    prog_p = f"{I}/retranslate.partial.json"
+    try:
+        prog = _json.load(open(prog_p, encoding="utf-8"))
+        finished = set(prog["done"]) if prog.get("targets") == targets else set()
+    except (OSError, ValueError, KeyError):
+        finished = set()
+    if finished:
+        print(f"Resuming: {len(finished)} of {len(targets)} page(s) already done")
     fps = load_fingerprints(folder) or [page_fingerprint(p) for p in ex]
     for s_ in targets:
+        if s_ in finished:
+            continue
+        tr[s_ - 1] = translate_page(ex[s_ - 1].strip(), s_, len(ex), st)
+        done[str(s_)] = fp(ex[s_ - 1])
         fps[s_ - 1] = page_fingerprint(ex[s_ - 1])
-    save_fingerprints(folder, fps, translated=targets)
+        finished.add(s_)
+        with open(tp, "w", encoding="utf-8") as fh:
+            fh.write(_pageio.join_pages(tr))
+        with open(done_p, "w", encoding="utf-8") as fh:
+            _json.dump(done, fh, indent=1, sort_keys=True)
+        save_fingerprints(folder, fps, translated=[s_])
+        with open(prog_p + ".tmp", "w", encoding="utf-8") as fh:
+            _json.dump({"targets": targets, "done": sorted(finished)}, fh)
+        os.replace(prog_p + ".tmp", prog_p)
+    if os.path.exists(prog_p):
+        os.remove(prog_p)
     translate_figure_captions(folder)      # only captions not yet translated
     translate_headers(folder)              # only header strings not yet translated
     apply_book_overrides(folder, fixes=False)
@@ -1933,7 +2047,11 @@ if len(sys.argv) > 2 and sys.argv[1] == "--pages":
     sys.exit(0)
 
 try:
+    # PDF_ONLY=stem[,stem...] limits the run to those books (as in steps 1, 3, 4)
+    _only = set(os.environ.get("PDF_ONLY", "").replace(",", " ").split())
     for folder in glob.glob("/data/processed/*_translated"):
+        if _only and Path(folder).name.replace("_translated", "") not in _only:
+            continue
         src = f"{folder}/intermediate/extracted.txt"
         dst = f"{folder}/intermediate/translation.txt"
         

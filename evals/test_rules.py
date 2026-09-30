@@ -14,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _rules import PIPELINE as _PIPELINE
+from _rules import match_dash_caps, apply_read_heads, match_case
 from _rules import (
     apply_always_translate, match_case, enforce_kept_terms,
     enforce_cat3_footnotes, pull_footnotes, fix_subheading_spacing, is_toc_page,
@@ -83,7 +84,11 @@ def test_dehyphenate_skips_capital_continuation():
 
 
 def test_reconcile_tight_gap_promotes():
-    assert reconcile_page_numbers(["14", "", "16"]) == ["14", "15", "16"]
+    # the gap's value is known (15) but nothing was read there: kept for
+    # sequencing, not shown (operator rule 2026-09-28: only printed numbers)
+    assert reconcile_page_numbers(["14", "", "16"]) == ["14", "[15]", "16"]
+    # ...unless the scan's text layer shows it
+    assert reconcile_page_numbers(["14", "", "16"], printed=["", "  15 ", ""]) == ["14", "15", "16"]
 
 
 def test_reconcile_plate_run_stays_bracketed():
@@ -546,10 +551,10 @@ def test_reconcile_trusts_run():
 
 
 def test_reconcile_promotes_matching_read():
-    # 24 matches the run's projection -> promoted. The misread "12" sits in
-    # a tight EXACT single-slot gap (22 .. 24) -> forced to the real folio.
+    # 24 matches the run's projection -> promoted. "12" in the 22 .. 24 slot
+    # is what the OCR invents on unnumbered pages: value 23, not shown.
     assert reconcile_page_numbers(["20", "21", "22", "12", "24"]) \
-        == ["20", "21", "22", "23", "24"]
+        == ["20", "21", "22", "[23]", "24"]
     # ...but if that slot is a PLATE leaf it carries no folio -> blank.
     assert reconcile_page_numbers(["20", "21", "22", "12", "24"],
                                   is_plate=[0, 0, 0, 1, 0]) \
@@ -601,8 +606,9 @@ def test_reconcile_rejects_mutually_corroborating_misreads():
         == ["295", "296", "297", "298", "299", "300", "301"]
     assert reconcile_page_numbers(["196", "197", "108", "109", "200", "201"]) \
         == ["196", "197", "198", "199", "200", "201"]
+    # (invented numbers: values known, not shown)
     assert reconcile_page_numbers(["138", "139", "10", "11", "142", "143"]) \
-        == ["138", "139", "140", "141", "142", "143"]
+        == ["138", "139", "[140]", "[141]", "142", "143"]
 
 
 def test_reconcile_repeated_folio():
@@ -1466,10 +1472,136 @@ def test_harmonize_body_title_with_header():
         assert harmonize_titles_with_headers(d) == 0             # idempotent
 
 
+def test_rotation_plan_book_rule_and_page_lists():
+    # Gomard's one-word file keeps meaning "every figure page, clockwise";
+    # books whose plates face different ways (Prévost, Baudry) list pages,
+    # and a listed page wins over the book rule.
+    import importlib
+    import tempfile
+    sys.path.insert(0, str(_PIPELINE))
+    r = importlib.import_module("_render")
+    with tempfile.TemporaryDirectory() as t:
+        folder = f"{t}/demo_1900_x_translated"
+        import os
+        os.makedirs(folder)
+        f = f"{folder}/demo_1900_x.rotate"
+        open(f, "w").write("cw\n")
+        assert r.rotation_plan(folder) == (("plates", 270), {})
+        assert r.load_rotate(folder) == ("plates", 270)
+        open(f, "w").write("all:ccw\n")
+        assert r.rotation_plan(folder) == (("all", 90), {})
+        open(f, "w").write("# Prévost\ncw: 35, 39, 55-57\nccw: 241   # the hall photo\n")
+        book, pages = r.rotation_plan(folder)
+        assert book is None
+        assert pages == {34: 270, 38: 270, 54: 270, 55: 270, 56: 270, 240: 90}
+        open(f, "w").write("cw\nccw: 10\n")
+        assert r.rotation_plan(folder) == (("plates", 270), {9: 90})
+
+
 def _load_overrides_module():
     import importlib
     sys.path.insert(0, str(_PIPELINE))
     return importlib.import_module("_overrides")
+
+
+
+def test_caption_capital_after_dash_follows_french():
+    # The model lowercased every caption segment after a dash (Baudry
+    # "Fig. 2. — classical guard ...", Gomard "Plate VIII. — a thrust ...").
+    assert match_dash_caps("Fig. 2. — Garde classique vue de face.",
+                           "Fig. 2. — classical guard seen from the front.") \
+        == "Fig. 2. — Classical guard seen from the front."
+    assert match_dash_caps("Fig. 6.—La fente.", "Fig. 6.—the lunge.") == "Fig. 6.—The lunge."
+    # several segments; an italic first word
+    assert match_dash_caps("Planche I. — Première position. — Deuxième position.",
+                           "Plate I. — first position. — <i>second</i> position.") \
+        == "Plate I. — First position. — <i>Second</i> position."
+    # French lowercase after the dash, or the segment counts differ: unchanged
+    assert match_dash_caps("Fig. 1 — coup droit", "Fig. 1 — straight thrust") == "Fig. 1 — straight thrust"
+    assert match_dash_caps("Fig. 1. — A. — B.", "Fig. 1. — a") == "Fig. 1. — a"
+
+
+def test_read_heads_stand_in_for_a_missing_header_field():
+    # 2026-09-29: on pages whose OCR reply had no HEADER field, the head
+    # read from the detector's box is used (LaMarche scan 51 "L'Épée.",
+    # left empty by the fill; Kirchhoffer 49 "OFFENSIVE", where the fill
+    # copied the facing "ÉPÉE"). Folios and plate labels are skipped; a
+    # near-miss takes the book's own spelling ("Applicatians").
+    raws = ["PAGE_NUMBER: 25\nHEADER: Applications de la Leçon.\nBODY_TEXT:\nx",
+            "PAGE_NUMBER: 30\nBODY_TEXT:\nEn général",        # no HEADER field
+            "PAGE_NUMBER: 27\nBODY_TEXT:\nloin.",
+            "PAGE_NUMBER: 28\nBODY_TEXT:\ntaires",
+            "PAGE_NUMBER: 29\nBODY_TEXT:\nplate",
+            "PAGE_NUMBER: 31\nBODY_TEXT:\ny",
+            "PAGE_NUMBER: 32\nHEADER: none\nBODY_TEXT:\nz"]    # field present: untouched
+    parsed = [{"header": "Applications de la Leçon."}, {"header": ""}, {"header": ""},
+              {"header": ""}, {"header": ""}, {"header": ""}, {"header": ""}]
+    read = {"1": {"text": "L'Épée."}, "2": {"text": "27 OFFENSIVE"}, "3": {"text": "28"},
+            "4": {"text": "Pl. 3."}, "5": {"text": "Applicatians de la Leçon."},
+            "6": {"text": "SOMETHING"}}
+    # a plate label with its number ("Pl. 14") is still a plate label
+    read["4"] = {"text": "Pl. 14"}
+    assert apply_read_heads(parsed, raws, read) == 3
+    assert parsed[1]["header"] == "L'Épée."
+    assert parsed[2]["header"] == "OFFENSIVE"                 # folio stripped
+    assert parsed[3]["header"] == "" and parsed[4]["header"] == ""   # folio only / plate label
+    assert parsed[5]["header"] == "Applications de la Leçon."  # the book's own spelling
+    assert parsed[6]["header"] == ""                          # the OCR answered "none"
+    # the head already sits at the top of the body (Jacob 111): left for the
+    # usual promotion, not duplicated
+    p2 = [{"header": "", "body": "\nPREMIÈRE LEÇON.\n\nDégagez à la main"}]
+    assert apply_read_heads(p2, ["BODY_TEXT:\nPREMIÈRE LEÇON."], {"0": {"text": "PREMIÈRE LEÇON."}}) == 0
+    p2 = [{"header": "", "body": "\n26: INTRODUCTION.\n\nLes armes"}]          # with its folio (Gomard 42)
+    assert apply_read_heads(p2, ["BODY_TEXT:\n26: INTRODUCTION."], {"0": {"text": "INTRODUCTION."}}) == 0
+    # exact match takes the book's usual punctuation (LaMarche 113 "L'Épée")
+    # ... the MOST common spelling, not the first met (LaMarche's title page
+    # prints "L'ÉPÉE" once, every page after "L'Épée.")
+    p3 = [{"header": "L'ÉPÉE"}, {"header": "L'Épée."}, {"header": "L'Épée."}, {"header": "", "body": "x"}]
+    r3 = ["HEADER: L'ÉPÉE\nBODY_TEXT:\ny", "HEADER: L'Épée.\nBODY_TEXT:\ny",
+          "HEADER: L'Épée.\nBODY_TEXT:\ny", "BODY_TEXT:\nx"]
+    assert apply_read_heads(p3, r3, {"3": {"text": "L'Épée"}}) == 1
+    assert p3[3]["header"] == "L'Épée."
+
+
+def test_caption_case_no_capital_after_italic_term():
+    # Sentence case capitalised the word after every kept (italic) term:
+    # Baudry Fig. 7 "... to avoid the <i>riposte</i> Is hit on the arm",
+    # La Boëssière "<i>Riposte</i> Of prime". Only the caption's start.
+    src = "Fig. 7. — Le tireur qui reste fendu pour éviter la riposte est touché au bras."
+    out = match_case(src, "Fig. 7. — The fencer who remains in the lunge to avoid the <i>riposte</i> is hit on the arm.")
+    assert "<i>riposte</i> is hit" in out and out.startswith("Fig. 7.")
+    out = match_case("Riposte de prime avec opposition de la main gauche.",
+                     "<i>Riposte</i> of prime with opposition of the left hand.")
+    assert out == "<i>Riposte</i> of prime with opposition of the left hand."
+    # still capitalises the start, and all-caps / title case are unchanged
+    assert match_case("La fente.", "the lunge.") == "The lunge."
+    assert match_case("PARADE DE TIERCE", "Parry of <i>tierce</i>") == "PARRY OF <i>TIERCE</i>"
+
+def test_overrides_caption_decisions():
+    # An engraved caption the OCR misread (La Boëssière Pl. 4 read "Coup de
+    # lance") is corrected in the overrides file: the corrected caption
+    # replaces the OCR's, its stale English is dropped so step 2 translates
+    # it, a page with no figure recorded gets one, a caption_en decision
+    # wins, and re-applying changes nothing.
+    ov = _load_overrides_module()
+    o = {"headers": {}, "terms": {}, "fix": [], "pages": {
+        346: {"caption": "Coup de tierce, 3e coup paré dans la même position en tierce."},
+        362: {"caption": "Coup de tems pris en quarte sur les armes."},
+        96: {"caption": "Fig. 3. — Épée à pointe d'arrêt.", "figure": "inset"},
+        376: {"caption_en": "Plate 19. Riposte of prime with opposition of the left hand."}}}
+    fmap = {"345": [{"kind": "plate", "caption": "Coup de lance 3e coup", "caption_en": "Lance hit."}],
+            "375": [{"kind": "plate", "caption": "Pl. 49.", "caption_en": "Pl. 49."}]}
+    changed, need = ov.apply_captions(fmap, o)
+    assert changed == 4
+    assert fmap["95"][0]["kind"] == "inset"          # a missed figure on a text page
+    assert fmap["345"][0]["caption"].startswith("Coup de tierce") and "caption_en" not in fmap["345"][0]
+    assert fmap["345"][0]["decided"] is True
+    assert fmap["361"] == [{"kind": "plate", "caption": "Coup de tems pris en quarte sur les armes.", "decided": True}]
+    assert fmap["375"][0]["caption_en"].startswith("Plate 19.")
+    assert need == [96, 346, 362]                   # still to be translated
+    fmap["345"][0]["caption_en"] = "Tierce attack, ..."
+    assert ov.apply_captions(fmap, o)[0] == 0        # idempotent, English kept
+    assert fmap["345"][0]["caption_en"] == "Tierce attack, ..."
 
 
 def test_overrides_fix_prepend_is_idempotent_and_case_insensitive():
@@ -1739,11 +1871,37 @@ def test_reconcile_headers_respects_layout_no_head():
                 {"header": "", "body": "HISTORIQUE DU SALUT\n\nDe tout temps il a été d'usage."},
                 {"header": "THÉORIE PRATIQUE DE L'ESCRIME.", "body": "Le salut se fait ainsi."}]
     old = pages(); reconcile_headers(old)
-    assert old[1]["header"] and old[3]["header"] == "HISTORIQUE DU SALUT"   # what happens without layout
+    # without layout the title is lifted into the header; the plate stays
+    # headless either way now -- this book's plates print no running head
+    assert old[3]["header"] == "HISTORIQUE DU SALUT" and old[1]["header"] == ""
     new = pages(); reconcile_headers(new, {1, 3})
     assert new[1]["header"] == "" and new[3]["header"] == ""
     assert new[3]["body"].startswith("HISTORIQUE DU SALUT")
     assert new[0]["header"] == old[0]["header"]                               # others untouched
+
+
+def test_review_report_coup_blow_check_skips_non_fencing_blows():
+    # After the coup -> attack retranslation, 58 "blow" flags survived; most
+    # were right: hammer blows (La Boëssière mounting chapter), "blows and
+    # wounds" (coups et blessures, Prévost/Jacob), a coup sec on the blade
+    # (Spinnewyn x9), a bull's horn (Vauresmont). Real misses still flag.
+    import importlib
+    import re
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        Q = importlib.import_module("quality_report")
+    except (OSError, ImportError, SystemExit):   # reads /app paths: runs in the image
+        return
+    rx = re.compile(Q.TERM_RULES[0][1], re.I)
+    for ok in ("a few light blows of the hammer", "the effect of the hammer blow",
+               "the Penal Code on blows and wounds", "strike the blade with a sharp blow",
+               "a furious blow of the horn", "end with a sharp blow on the opponent's blade",
+               "the effect of a blow with a stick",
+               "he throws himself onto the point"):
+        assert not rx.search(ok), ok
+    for bad in ("Blows called: threaten-disengage", "on the parried blow",
+                "THE CUTTING BLOW", "the simple throws"):
+        assert rx.search(bad), bad
 
 
 def test_review_report_lost_title_check():
@@ -1768,6 +1926,10 @@ def test_review_report_lost_title_check():
                           "\nL'action de se remettre de la retraite.\n", "Retreat.", "DE LA RETRAITE.")
     # a plate label moved into the figure caption is not lost
     assert not Q.title_issues("\nPlanche III.\n\n", "", "\n", "", "", "Planche III. Salut")
+    # a plate label joined to its caption on one line (Gomard pdf 350) is the title
+    assert not Q.title_issues("\nPlanche V.\n\nCoup tiré en botte de prime\n", "",
+                              "\nPlanche V.\n\nCoup tiré en botte de prime\n",
+                              "Plate V. — Attack finished in a thrust in prime, parried by prime", "")
     # body title lowercased into the translation (Spinnewyn "preface")
     assert Q.title_issues("\nPRÉFACE\n\npublier ce livre\n", "", "\nPRÉFACE\n\npublier ce livre\n",
                           "preface\n\npublished with the precious collaboration", "")
@@ -1815,6 +1977,125 @@ def test_text_page_with_figures_not_folded_into_a_plate():
     recover_plate_captions(pages)
     assert not pages[0]["figures"] and pages[0]["body"].startswith("temps la main")
     assert pages[1]["figures"] and pages[1]["body"] == ""
+
+
+def test_page_numbers_shown_only_when_printed():
+    # Gomard scan 39 (INTRODUCTION, p. 23 unprinted): OCR invented "1"
+    out = reconcile_page_numbers(["21", "22", "1", "24", "25"])
+    assert out[2] == "[23]", out
+    # a real misread of a printed folio still shows (Prévost 198 read "108")
+    assert reconcile_page_numbers(["196", "197", "108", "199"])[2] == "198"
+    # roman front matter: arabic junk never becomes a shown roman page
+    out = reconcile_page_numbers(["xvi", "xvii", "12", "xix", "xx"], None, ["t"] * 5)
+    assert out[2].startswith("["), out
+    # a malformed OCR reply (no PAGE_NUMBER field) says nothing: keep the
+    # sequence value shown (Jacob scan 77 prints 29, reply omitted it) --
+    # but an explicit "none" / invented number stays hidden
+    out = reconcile_page_numbers(["27", "28", "", "30"], answered=[True, True, False, True])
+    assert out == ["27", "28", "29", "30"], out
+    out = reconcile_page_numbers(["27", "28", "none", "30"], answered=[True, True, True, True])
+    assert out[2] == "[29]", out
+    # old-style roman ending in j (La Boëssière "xij", "viiij")
+    out = reconcile_page_numbers(["x", "xj", "xij", "xiij", "xiiij"], None, ["t"] * 5)
+    assert out == ["x", "xi", "xii", "xiii", "xiv"], out
+
+
+def test_kept_term_takes_capitals_in_capital_lines():
+    from _rules import TX
+    c = TX["caps_kept_terms"]
+    assert c("OF THE <i>épée</i> OR THE FOIL.") == "OF THE <i>ÉPÉE</i> OR THE FOIL."
+    assert c("PRAISE OF THE <i>épée</i>.") == "PRAISE OF THE <i>ÉPÉE</i>."
+    assert c("MONTE-CARLO TOURNAMENT. (An <i>épée</i> bout.)") == "MONTE-CARLO TOURNAMENT. (An <i>épée</i> bout.)"
+    assert c("THE <i>épée</i> is the oldest weapon") == "THE <i>épée</i> is the oldest weapon"
+    assert c("Duel of the Duke.\n\n<i>épée</i>\n\nThe history", "Duel du duc.\n\nÉPÉE\n\nL'histoire") \
+        == "Duel of the Duke.\n\n<i>ÉPÉE</i>\n\nThe history"
+    assert c("Royale.\n\n<i>épée</i>\n\nThe history", "Royale.\n\nÉpée\n\nL'histoire") \
+        == "Royale.\n\n<i>Épée</i>\n\nThe history"
+    assert c("with the <i>épée</i>\n\n<i>épée</i>", "avec l'épée") == "with the <i>épée</i>\n\n<i>épée</i>"
+
+
+def test_margin_false_notes_dropped():
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    M = importlib.import_module("_margins")
+    prose = "mot " * 80
+    notes = [{"box": [0.8, 0.1, 0.9, 0.12], "text": t} for t in ("309", "ibid.", "Pag.", "36.141 6", "1843.")]
+    assert [n["text"] for n in M._drop_false_notes(notes, prose)] == ["1843."]
+    short = [{"box": [0.8, 0.1, 0.9, 0.12], "text": t} for t in
+             ("Chez", "L'ÉCONOMIE", "Sous l'influence de ce même préjugé, que")]
+    assert [n["text"] for n in M._drop_false_notes(short, "SE TROUVE chez M. La Boëssière")] \
+        == ["Sous l'influence de ce même préjugé, que"]
+    over = [{"box": [0.07, 0.244, 0.24, 0.274], "text": "1828. Encyclopédie moderne 1831"},
+            {"box": [0.08, 0.268, 0.22, 0.29], "text": "1834. Heinrich Kiemann."}]
+    assert M._trim_overlapping_year(over)[0]["text"] == "1828. Encyclopédie moderne"
+
+
+def test_stamp_lines_removed_not_the_page():
+    # Jacob scan 10: printed edition notice above a library stamp -- keep it
+    p = [{"header": "", "figures": [], "body":
+          "IL A ÉTÉ TIRÉ À PART :\n\nCent exemplaires sur papier du Japon numérotés à la presse "
+          "(1 à 100).\n\nN° d'entrée ... NIG...20238.\nINSTITUT NATIONAL DU SPORT\n"
+          "ET DE L'ÉDUCATION PHYSIQUE\nClassement ....L.R....JAC a"},
+         # Spinnewyn scan 174: a stamp and nothing else
+         {"header": "", "figures": [], "body": "INSTITUT NATIONAL DES SPORTS\nInventaire général :\nBibliothèque Centrale :"},
+         # Jacob scan 9: stamp filed as the running head
+         {"header": "INSTITUT NATIONAL DES SPORTS", "figures": [], "body": "LE\nJEU DE L'ÉPÉE"},
+         # a prose page that mentions sous-officiers keeps its sentence
+         {"header": "", "figures": [], "body": "Les sous-officiers de l'école de Joinville apprennent l'escrime "
+          "à l'épée avec une méthode très complète et suivie par tous les élèves de la salle."}]
+    drop_scan_apparatus(p)
+    assert p[0]["body"].startswith("IL A ÉTÉ TIRÉ À PART") and "INSTITUT" not in p[0]["body"] \
+        and "Classement" not in p[0]["body"], p[0]["body"]
+    assert p[1]["body"] == ""
+    assert p[2]["header"] == "" and "JEU DE L'ÉPÉE" in p[2]["body"]
+    assert p[3]["body"].startswith("Les sous-officiers")
+
+
+def test_image_description_becomes_plate():
+    from _rules import drop_image_descriptions
+    p = [{"body": "[The page contains a black and white illustration of a person in fencing attire, "
+                  "holding a sword.]", "figures": []},
+         {"body": "[Voir la planche ci-contre] La garde est la position.", "figures": []}]
+    drop_image_descriptions(p)
+    assert p[0]["body"] == "" and p[0]["figures"] == [{"kind": "plate", "caption": ""}]
+    assert p[1]["body"].startswith("[Voir")
+
+
+def test_small_repairs_commas_and_name_particles():
+    assert fix_known_garbles("the arm,, extended") == "the arm, extended"
+    assert fix_known_garbles("LETTER-PREFACE FROM MR. A. OF LA FORGE") == "LETTER-PREFACE FROM MR. A. DE LA FORGE"
+    assert fix_known_garbles("Count F. of L'Angle-Beaumanoir") == "Count F. de L'Angle-Beaumanoir"
+    assert fix_known_garbles("the art of La Boëssière's school") == "the art of La Boëssière's school"
+
+
+def test_plate_pages_filled_only_if_the_books_plates_carry_heads():
+    H = "THÉORIE PRATIQUE DE L'ESCRIME."
+    def book(plate_head):
+        ps = []
+        for k in range(12):
+            if k % 3 == 1:
+                ps.append({"header": H if plate_head else "", "body": "", "figures": [{"kind": "plate"}]})
+            else:
+                ps.append({"header": H, "body": "Texte de la page."})
+        ps[4]["header"] = ""                      # a plate the OCR gave no head
+        return ps
+    a = book(False); reconcile_headers(a); assert a[4]["header"] == ""   # Prévost: plates print none
+    b = book(True);  reconcile_headers(b); assert b[4]["header"] == H    # Kirchhoffer: they do
+
+
+def test_plate_label_joined_with_caption():
+    assert fix_known_garbles("PLATE V.\n\nBlow delivered as a thrust in prime\nThe blades are crossed.") \
+        == "PLATE V. — Blow delivered as a thrust in prime\nThe blades are crossed."
+    long = "PLATE II.\n\nFirst paragraph.\n\nSecond paragraph.\n\nThird paragraph."
+    assert fix_known_garbles(long) == long            # a text page is left alone
+
+
+def test_caption_not_borrowed_from_a_neighbouring_plate():
+    # Gomard Planche 1re (engraved captions unread) got Planche II's caption
+    pages = [{"header": "", "body": "Planche 1re.", "figures": [{"kind": "plate", "caption": ""}]},
+             {"header": "Planche II.", "body": "Troisième Position, ou la garde.", "figures": []}]
+    recover_plate_captions(pages)
+    assert pages[0]["figures"][0]["caption"] == ""
 
 
 def _run_plain() -> int:

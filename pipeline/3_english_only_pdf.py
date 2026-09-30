@@ -285,9 +285,10 @@ class Flow:
             return (x1f - x0f) * r.width, (y1f - y0f) * r.height
         return r.width, r.height
 
-    def _fig_size(self, src_page, band):
+    def _fig_size(self, src_page, band, rotate=None):
+        rotate = self.rotate if rotate is None else rotate
         cw, ch = self._clip_dims(src_page, band)
-        if self.rotate in (90, 270):
+        if rotate in (90, 270):
             cw, ch = ch, cw
         w = COL.width
         h = w * (ch / cw)
@@ -295,7 +296,7 @@ class Flow:
             h, w = FIGURE_MAX_H, FIGURE_MAX_H * (cw / ch)
         return w, h
 
-    def figure(self, src_page, band=None, caption=""):
+    def figure(self, src_page, band=None, caption="", rotate=None):
         """Embed src_page (optionally cropped to `band`, a
         (y0f,y1f,x0f,x1f) fraction rect) scaled into the column. Figures
         are embedded in their source orientation -- auto-rotation was
@@ -309,7 +310,8 @@ class Flow:
                              r.x0 + x1f * r.width, r.y0 + y1f * r.height)
         else:
             clip = r
-        w, h = self._fig_size(src_page, band)
+        rotate = self.rotate if rotate is None else rotate
+        w, h = self._fig_size(src_page, band, rotate)
         need = h + FS * 1.6
         if self.page is None or self.y + need > COL.y1:
             self._newpage()
@@ -317,7 +319,7 @@ class Flow:
         x0 = COL.x0 + (COL.width - w) / 2
         self.page.insert_image(fitz.Rect(x0, self.y, x0 + w, self.y + h),
                                stream=pix.tobytes("jpeg", jpg_quality=72),
-                               rotate=self.rotate)
+                               rotate=rotate)
         self.y += h + 4
         if caption.strip():
             for vl in _render.layout(caption, COL.width, FS - 1):
@@ -374,7 +376,7 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
 
     doc = fitz.open()
     _cover.render(doc, book, page_w=PAGE_W, page_h=PAGE_H, margin=MARGIN)
-    _rot = _render.load_rotate(folder)
+    _rot, _rot_pages = _render.rotation_plan(folder)
     flow = Flow(doc, rotate=_rot[1] if _rot else 0)
 
     rendered = figures = 0
@@ -460,13 +462,14 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
         if is_empty and not placements:
             continue  # genuinely blank sheet
 
-        first_h = flow._fig_size(src_page, placements[0][0])[1] if placements else 0.0
+        rot = _rot_pages.get(i)      # a listed page's own direction, else the book's
+        first_h = flow._fig_size(src_page, placements[0][0], rot)[1] if placements else 0.0
         hdr = st.get("header", "")
         flow.section_label(st.get("page_num", ""), re.sub(r"</?i>", "", header_map.get(hdr, hdr)),
                            reserve=(first_h + FS * 1.6) if placements else 0.0,
                            compact=bool(is_empty and placements))
         for band, caption in placements:
-            flow.figure(src_page, band, caption=caption)
+            flow.figure(src_page, band, caption=caption, rotate=rot)
             figures += 1
 
         # Skip the body when it's just the plate caption again (the OCR body

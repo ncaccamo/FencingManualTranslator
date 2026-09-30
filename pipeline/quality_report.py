@@ -54,13 +54,20 @@ def still_french(text: str, min_fr: int = 5) -> bool:
 # wrong-English regex, what it should be). Only fires when the SOURCE has
 # the term, so a legitimate English word elsewhere is left alone.
 TERM_RULES = [
-    # coup = the whole action -> blow; botte = its finish -> thrust (Gomard's own
-    # definition, pdf 158). Noun uses only: "they throw themselves" is fine.
+    # coup = the whole offensive action -> attack (or hit: the touch that
+    # lands); never "blow" (operator decision 2026-09-28, replacing the
+    # pass-8 "blow"). botte = its finish -> thrust (Gomard pdf 158).
     # "throws" only as a noun for coups ("the throws", "simple throws", a
     # THROWS heading) -- "he throws himself onto the point" is correct English
     (r"\bcoups?\b", r"(?:\b(?:the|these|those|such|all|two|three|simple|compound|straight|single|of)"
-     r"\s+throws\b|\b(?-i:THROWS)\b|(?<!\ba )\bsingle blows?\b|\b(?:simple|compound) throw\b)",
-     "coup → blow"),
+     r"\s+throws\b|\b(?-i:THROWS)\b|\b(?:simple|compound) throw\b|"
+     # "blow" is right where coup isn't the fencing action: hammer blows
+     # (La Boëssière's mounting chapter), "coups et blessures" (the legal
+     # "blows and wounds"), a coup sec on the blade ("a sharp blow"), a bull's
+     # horn, "coups du hasard"
+     r"(?<!hammer )(?<!sharp )(?<!clean )(?<!light )\bblows?\b"
+     r"(?!\s+(?:of\s+(?:the\s+)?(?:hammer|horn|chance)|and\s+wounds|on\s+the\s+(?:opponent|blade)|with\s+a\s+(?:stick|cane))))",
+     "coup → attack"),
     (r"\bbottes?\b", r"\bthrusts?\s*/\s*hits?\b", "botte → thrust"),
     (r"\bplanches?\b", r"\bplanks?\b", "planche → plate"),
     (r"\btac[- ]au[- ]tac\b", r"\btac[- ]to[- ]the[- ]tac\b", "du tac au tac → tac-au-tac"),
@@ -150,7 +157,10 @@ def title_issues(raw_body: str, header: str, ex_body: str, tr: str,
         first = re.sub(r"</?i>", "", tl[0]) if tl else ""
         letters = [c for c in first if c.isalpha()]
         is_head = bool(letters) and (sum(c.isupper() for c in letters) >= 0.6 * len(letters)
-                                     or (len(first.split()) <= 8 and first.rstrip().endswith(".")))
+                                     or (len(first.split()) <= 8 and first.rstrip().endswith("."))
+                                     # a plate label joined to its caption on one
+                                     # line, as decided ("Plate V. — Attack ...")
+                                     or bool(re.match(r"(?i)(?:plate|pl\.)\s+[ivxlcdm\d]+\.?\s+—", first)))
         if not is_head:
             out.append((CHECK, "title", f"body title {et!r} is not a heading in the "
                         "translation (missing, or lowercased into the text)"))
@@ -319,7 +329,11 @@ def check_book(folder: str) -> list:
                 add(i + 1, NOTE, "layout", "the layout detector and the OCR disagree on "
                     "whether this page has a running head")
             elif printed and not shown:
-                add(i + 1, CHECK, "layout", "the page prints a running head, but none is shown")
+                # a plate's printed plate number ("Pl. 6.") reads as a page
+                # head to the detector; a plate page shows no running head
+                # (La Boëssière's 18 plates)
+                if not any(f.get("kind") == "plate" for f in figs.get(str(i), [])):
+                    add(i + 1, CHECK, "layout", "the page prints a running head, but none is shown")
             elif shown and not printed:
                 add(i + 1, CHECK, "layout", f"running head {h.replace(chr(9), ' / ')!r} is "
                     "shown, but the page prints none (title page, plate, or opener?)")

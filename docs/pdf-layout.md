@@ -215,7 +215,7 @@ sidecars are git-ignored, like the rest of the private corpus.
 | File | Effect |
 |---|---|
 | `<stem>.crop` | `left,top,right,bottom` fractions trimmed before OCR |
-| `<stem>.rotate` | `cw` / `ccw` / `180`, optionally `all:` (default `plates:`) — rotates the embedded scan when a book's plates are printed sideways (Gomard). `plates:` = figure pages only. Steps 3 & 4, via `_render.load_rotate()`. |
+| `<stem>.rotate` | Turns sideways-printed plates upright in both PDFs (steps 3 & 4, via `_render.rotation_plan()`). One rule per line, `#` comments. `cw` / `ccw` / `180`, optionally `all:` (default `plates:` = figure pages only) — the whole book one way (Gomard). `cw: 35, 39, 55-229` / `ccw: 241` — listed scan pages, for books whose plates face different ways (Baudry's face the spine); a page rule wins over the book rule. Directions can be read off a Google/Gallica text layer (caption text running up the page → `cw`), but check each page by eye. |
 
 ### Tables and folios in the PDFs
 

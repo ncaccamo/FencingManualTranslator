@@ -95,6 +95,7 @@ Drop a sidecar file next to the PDF in `books/`, named with the same stem:
 |---|---|---|
 | `<stem>.crop` | `left,top,right,bottom` — fractions, e.g. `0.06,0.04,0.06,0.08` | Trims that fraction off each page image before OCR. Use it to cut a dark scanner-bed border or a gutter shadow that the vision model keeps transcribing as noise. |
 | `<stem>.lang` | Tesseract language codes, e.g. `fra+lat` | Only used by the legacy non-VLM `1_ocr_and_extract.py`. The default VLM path ignores it. |
+| `<stem>.rotate` | `cw` / `ccw` / `180` (every plate), or page lists: `cw: 35, 39, 55-229` and `ccw: 241` | Turns sideways-printed plates upright in both PDFs. Page lists are for books whose plates face different ways. See `docs/pdf-layout.md`. |
 
 ## III.4 — What lands in `processed/<stem>_translated/`
 
@@ -199,6 +200,58 @@ docker exec booktranslator-translator-1 python3 /app/reprocess_extracted.py /dat
 docker exec booktranslator-translator-1 python3 /app/2_translate.py   # retranslates just the changed pages
 ```
 
+### Running heads the OCR left out
+
+On some pages the OCR's reply has no running-head field at all (on
+LaMarche, more than half the pages). The running head is then read
+straight from the box the layout detector found at the top of the page —
+the same way margin notes are read — and used as the OCR's own answer; the
+book's usual spelling is kept, and a box holding only the page number or a
+plate label is ignored. New books get this in step 1 (`intermediate/
+heads.json`). For a book OCR'd earlier:
+
+```bash
+docker exec booktranslator-translator-1 python3 /app/layout_scan.py --heads <stem>
+docker exec booktranslator-translator-1 python3 /app/reprocess_extracted.py /data/processed/<stem>_translated
+```
+
+then translate any new running-head wording (`2_translate.py --pages <stem>
+N` for one page that carries it) and rebuild the PDFs.
+
+### Patching a scan with pages from another copy
+
+When a scan has a defect another digitised copy doesn't — a missing page, a
+page scanned twice, a folded plate — `patch_scan.py` builds a corrected scan
+and keeps the OCR and translation of every other page. A plan file
+(`books/_alt/<stem>.patch.json`) lists the new scan page by page: a number is
+a page of the original scan, `{"file": "_alt/x.pdf", "page": 1}` a page of
+another PDF, `{"image": "_alt/plate.jpg"}` a picture. Its `note` goes on the
+cover ("Changes to this scan: …"), since the scan is then no longer only the
+digitisation it names. The untouched original is kept as
+`books/_alt/<stem>_original.pdf`, and the book's data is backed up.
+
+```bash
+X="docker exec booktranslator-translator-1 python3"
+$X /app/patch_scan.py <stem> /data/books/_alt/<stem>.patch.json            # dry run
+$X /app/patch_scan.py <stem> /data/books/_alt/<stem>.patch.json --apply    # stage scan, move data
+# books/ is read-only in the container: run the printed host commands, which keep
+# the original in books/_alt/ and move the staged scan (processed/_patch/) into books/
+docker exec -e PDF_ONLY=<stem> booktranslator-translator-1 python3 /app/1_ocr_and_extract_vlm.py  # reads the new pages only
+$X /app/patch_scan.py <stem> x --finish                                     # re-parse; prints the pages to translate
+$X /app/2_translate.py --pages <stem> <pages>                               # as printed
+```
+
+To change a plan that has already been applied (say, a better copy of the
+plates turns up), first put the book's data back as it was: move
+`processed/<stem>_translated/intermediate` aside and copy
+`intermediate.before_patch-<time>` in its place — the plan's page numbers
+refer to the original scan, so the data has to as well — then `--apply` the
+new plan.
+
+Then rebuild the PDFs and the review report as usual. Renumbering pages
+shifts scan page numbers after the first change, so a book with an
+overrides file needs its scan numbers updated (the dry run warns).
+
 ## III.5b — Recording your review decisions: the overrides file
 
 When a review finds something the pipeline got wrong and can't fix
@@ -223,6 +276,12 @@ continuation sheet, so it can't key a durable decision.)
 page_number = "298"              # folio to show ("" = none)
 header = ""                      # French running head ("" = none)
 note = "free text"
+
+[pages.346]                      # a plate whose engraved caption the OCR misread
+caption = "Coup de tierce, 3e coup paré dans la même position en tierce."
+caption_en = "..."               # optional: your own English (else step 2 translates it)
+# figure = "inset"               # only if the OCR missed the figure entirely and it's a
+                                 # small picture on a text page (default "plate")
 
 [[fix]]                          # edit to the English, re-applied after every translation
 scan = 314
@@ -272,6 +331,76 @@ changes. Only the named pages change. Footnote first-use is worked out from
 the rest of the book, and the header/title harmonization and your overrides
 are re-applied afterwards. Rebuild the PDFs as above. GPU cost is about 10–30
 seconds per page.
+
+## III.5c — Manual corrections: which tool for which problem
+
+The pipeline handles most of a book on its own, but some books need a
+human decision here and there: an engraved caption the OCR can't read, a
+page missing from the scan, a heading worded differently. Every such
+correction is **a small file in `books/`, next to the scan** — never an edit
+of the files under `processed/`, which are regenerated and would silently
+lose it. The pipeline re-applies these files on every run, so a correction
+is made once and survives retranslation and rebuilding.
+
+Pages are always **scan pages**: the page number your PDF viewer shows for
+the source scan in `books/`, counting from 1 — not the number printed on the
+page, and not the side-by-side PDF's page (a long page can spill onto a
+second sheet there). The review report lists pages as scan pages.
+
+| The problem | The fix | Where it's described |
+|---|---|---|
+| A word or sentence in the English is wrong | `[[fix]]` find/replace in `<stem>.overrides.toml` | III.5b |
+| A heading / running head is translated badly | `[headers]` in the overrides file | III.5b |
+| A term should always be rendered a certain way in this book | `[terms]` in the overrides file (then retranslate the pages that use it) | III.5b |
+| A page number is misread, or shown where none is printed | `[pages.N] page_number = "…"` | III.5b |
+| A running head is wrong, or shouldn't be there | `[pages.N] header = "…"` | III.5b |
+| A plate caption is misread (engraved script, damage) | `[pages.N] caption = "…"` (the printed text, corrected), optionally `caption_en` | III.5b |
+| A page's translation is poor and should be redone | `2_translate.py --pages <stem> N` or `[pages.N] retranslate = true` | III.5b |
+| Plates are printed sideways | `<stem>.rotate` | III.3 |
+| A dark border or gutter shadow gets transcribed as text | `<stem>.crop` | III.3 |
+| A page is missing, scanned twice, or a plate is folded/cut in this copy | patch the scan with pages from another digitised copy: `patch_scan.py` | III.5a, "Patching a scan" |
+
+**What each correction needs rerun.** Every correction is read by the step
+it affects, and that step re-applies it on every run — so order doesn't
+matter, and a later rerun never undoes one. What differs is how much has to
+run again before you see it:
+
+| Correction | Read by | To see it | GPU? |
+|---|---|---|---|
+| `[headers]`, `[[fix]]`, `caption_en` | end of step 2; `apply_overrides.py` | `apply_overrides.py`, rebuild PDFs | no |
+| `<stem>.rotate` | steps 3 and 4 | rebuild PDFs | no |
+| `source_changes` in `<stem>.meta.json` (cover note) | steps 3 and 4 | rebuild PDFs | no |
+| `[pages.N]` `page_number`, `header` | step 1 / `reprocess_extracted.py` (after the automatic logic, so the decision wins) | `apply_overrides.py`, rebuild PDFs | no |
+| `[pages.N] caption` | step 1 / `reprocess_extracted.py`, and step 2 (translates it) | `apply_overrides.py`, `2_translate.py --pages <stem> N`, rebuild PDFs | yes, seconds |
+| `[terms]`, `[pages.N] retranslate` | step 2 | `2_translate.py --pages <stem> <pages>`, rebuild PDFs | yes, ~10–30 s per page |
+| `<stem>.crop` | step 1 (trims the image before OCR) | a full rerun: remove `processed/<stem>_translated/` (III.2), then steps 1–4 — so set it before a book's first run | yes, whole book |
+| patched scan (`patch_scan.py`) | step 1 (new pages only) | the `patch_scan.py` sequence | yes, new pages only |
+
+The review report doesn't read corrections directly; it checks the output
+they produced, so rerun it last.
+
+After editing the overrides file:
+
+```bash
+X="docker exec booktranslator-translator-1 python3"
+$X /app/apply_overrides.py <stem>                   # writes the decisions in (no model, seconds)
+$X /app/2_translate.py --pages <stem> <pages>       # only if English is needed: [terms], retranslate, a new caption
+docker exec -e PDF_ONLY=<stem> booktranslator-translator-1 python3 /app/3_english_only_pdf.py
+docker exec -e PDF_ONLY=<stem> booktranslator-translator-1 python3 /app/4_side_by_side_pdf.py
+$X /app/quality_report.py <stem>                    # confirm the page no longer shows up
+```
+
+`apply_overrides.py` says which pages still need a translation (a new
+caption without `caption_en`, for example). A typo'd key or malformed file
+stops the run with a message naming it; a `[[fix]]` whose text no longer
+matches (the page was retranslated since) is reported so you can update it.
+
+**Keep corrections few.** If the same kind of mistake shows up on many
+pages or in several books, it's a pipeline rule to improve, not a list of
+corrections to maintain — report it (with scan page numbers) rather than
+adding dozens of `[[fix]]` entries. The corrections file is for what is
+genuinely particular to one book: its engraved captions, its print damage,
+its one odd heading.
 
 ## III.6 — Processing several books at once
 

@@ -96,12 +96,25 @@ def align(src: list[str], tgt: list[str]):
     return pairs
 
 
+def page_range(text: str, rng) -> str:
+    """Keep only the <!--p N--> chunks with lo <= N <= hi (meta.json
+    "src_pages"/"ref_pages", inclusive) -- e.g. to leave out a translator's
+    own preface, or the untranslated rest of a partly scanned book."""
+    if not rng:
+        return text
+    lo, hi = rng
+    chunks = re.split(r"(?=<!--p \d+-->)", text)
+    return "".join(c for c in chunks
+                   if (m := re.match(r"<!--p (\d+)-->", c)) and lo <= int(m[1]) <= hi)
+
+
 def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)
     d = GOLD / sys.argv[1]
-    src = sentences((d / "src.txt").read_text(encoding="utf-8"))
-    ref = sentences((d / "ref.txt").read_text(encoding="utf-8"))
+    meta = json.loads((d / "meta.json").read_text()) if (d / "meta.json").exists() else {}
+    src = sentences(page_range((d / "src.txt").read_text(encoding="utf-8"), meta.get("src_pages")))
+    ref = sentences(page_range((d / "ref.txt").read_text(encoding="utf-8"), meta.get("ref_pages")))
     print(f"{d.name}: {len(src)} src sentences, {len(ref)} ref sentences")
     pairs = align(src, ref)
     (d / "aligned.jsonl").write_text(

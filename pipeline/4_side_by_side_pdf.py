@@ -246,9 +246,10 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
 
     src = fitz.open(ocr_pdf)
     n = min(len(src), len(translations))
-    _rot = _load_rotate(folder)
+    _rot, _rot_pages = _render.rotation_plan(folder)
     print(f"Creating: {book}  ({n} pages)"
-          + (f"  [rotate {_rot[1]}° {_rot[0]}]" if _rot else ""))
+          + (f"  [rotate {_rot[1]}° {_rot[0]}]" if _rot else "")
+          + (f"  [rotate {len(_rot_pages)} listed page(s)]" if _rot_pages else ""))
 
     doc = fitz.open()
     _cover.render(doc, book, page_w=PAGE_W, page_h=PAGE_H, margin=48)
@@ -290,7 +291,7 @@ for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.i
         tr = re.sub(r"(?m)^\s*\[\[TABLE\]\]\s*$",
                     "[table — see facing page]", tr or "")
 
-        rot = _rot[1] if (_rot and (_rot[0] == "all" or str(i) in fig_map)) else 0
+        rot = _rot_pages.get(i, _rot[1] if (_rot and (_rot[0] == "all" or str(i) in fig_map)) else 0)
         page, y = new_spread(doc, src, i, struct, rotate=rot)
 
         if not tr or tr in SKIP_MARKERS:

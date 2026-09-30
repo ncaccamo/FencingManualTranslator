@@ -18,6 +18,15 @@ continuation sheet, so it can't key anything durable.)
         header           French running head ("" = none)
         retranslate      true -> retranslated by `2_translate.py --pages <stem>`
                          (once per version of the page's source text)
+        caption          the printed caption of the page's plate/figure,
+                         corrected (source language) -- for engraved or
+                         damaged captions the OCR can't read. Step 2
+                         translates it.
+        caption_en       your own English for that caption (optional; wins
+                         over the model's translation)
+        figure           "plate" (default) or "inset": the kind of figure to
+                         record when the OCR missed the figure altogether --
+                         "inset" for a small picture on a text page
         note             free text, ignored by the pipeline
     [[fix]]              direct edit of the English translation, applied
                          after every translation run. scan = N, then either
@@ -29,7 +38,7 @@ import os
 import re
 import tomllib
 
-_PAGE_KEYS = {"page_number", "header", "retranslate", "note"}
+_PAGE_KEYS = {"page_number", "header", "retranslate", "note", "caption", "caption_en", "figure"}
 _TOP_KEYS = {"headers", "terms", "pages", "fix"}
 
 
@@ -99,7 +108,46 @@ def apply_extraction(parsed: list, nums: list, ov: dict) -> list:
             nums[i] = str(v["page_number"])
         if "header" in v:
             parsed[i]["header"] = v["header"]
+        if "caption" in v:
+            set_caption(parsed[i].setdefault("figures", []), v["caption"], v.get("figure", "plate"))
     return nums
+
+
+def set_caption(figs: list, caption: str, kind: str = "plate") -> bool:
+    """The page's (first) figure gets the decided caption; a page with no
+    figure recorded gets one (a plate). True if anything changed."""
+    if not figs:
+        figs.append({"kind": kind, "caption": caption, "decided": True})
+        return True
+    if figs[0].get("caption") == caption:
+        figs[0]["decided"] = True
+        return False
+    figs[0]["caption"] = caption
+    figs[0]["decided"] = True             # step 2's caption clean-up leaves it as is
+    figs[0].pop("caption_en", None)       # the old English was for the old caption
+    return True
+
+
+def apply_captions(fig_map: dict, ov: dict) -> tuple:
+    """figures.json ({0-based page: [figure, ...]}): impose caption and
+    caption_en decisions. Returns (changed, pages still needing a
+    translation of their caption)."""
+    changed, need = 0, []
+    for scan, v in sorted(ov["pages"].items()):
+        if "caption" not in v and "caption_en" not in v:
+            continue
+        figs = fig_map.setdefault(str(scan - 1), [])
+        if "caption" in v and set_caption(figs, v["caption"], v.get("figure", "plate")):
+            changed += 1
+        if "caption_en" in v:
+            if not figs:
+                figs.append({"kind": "plate", "caption": ""})
+            if figs[0].get("caption_en") != v["caption_en"]:
+                figs[0]["caption_en"] = v["caption_en"]
+                changed += 1
+        elif figs and not figs[0].get("caption_en"):
+            need.append(scan)
+    return changed, need
 
 
 def terms_addendum(ov: dict) -> str:

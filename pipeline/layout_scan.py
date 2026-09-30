@@ -3,6 +3,8 @@
 
     python3 /app/layout_scan.py <stem> [<stem> ...]      (or --all)
     python3 /app/layout_scan.py --margins <stem> ...     also read margin notes
+    python3 /app/layout_scan.py --heads <stem> ...       read running heads the OCR
+                                                          reply left out (-> heads.json)
 
 Layout: CPU only, ~0.5 s/page, resumable. --margins also reads each margin
 note with the OCR model (GPU, ~0.5 s/note) into intermediate/margins.json;
@@ -17,7 +19,7 @@ import _layout
 import _margins
 
 
-def main(stems, margins=False):
+def main(stems, margins=False, heads=False):
     for stem in stems:
         folder = f"/data/processed/{stem}_translated"
         pdfs = glob.glob(f"{folder}/intermediate/*_OCR.pdf")
@@ -27,6 +29,9 @@ def main(stems, margins=False):
         print(f"Layout: {stem}")
         data = _layout.scan_book(folder, pdfs[0])
         print(f"✓ {stem}: {len(data['pages'])} page(s) in intermediate/layout.json")
+        if heads:
+            got = _margins.read_heads(folder, pdfs[0])
+            print(f"✓ {stem}: {len(got)} running head(s) read into intermediate/heads.json")
         if margins:
             notes = _margins.read_book(folder, pdfs[0])
             print(f"✓ {stem}: {sum(len(v) for v in notes.values())} margin note(s) "
@@ -36,11 +41,12 @@ def main(stems, margins=False):
 if __name__ == "__main__":
     args = sys.argv[1:]
     margins = "--margins" in args
-    args = [a for a in args if a != "--margins"]
+    heads = "--heads" in args
+    args = [a for a in args if a not in ("--margins", "--heads")]
     if not args:
         sys.exit(__doc__)
     if args == ["--all"]:
         main(sorted(os.path.basename(f)[:-len("_translated")]
-                    for f in glob.glob("/data/processed/*_translated")), margins)
+                    for f in glob.glob("/data/processed/*_translated")), margins, heads)
     else:
-        main(args, margins)
+        main(args, margins, heads)

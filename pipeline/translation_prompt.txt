@@ -18,19 +18,26 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - fleuret → foil   |   sabre → saber   |   doublé → double   |   doublement → doubling
    - coup droit → straight thrust   (NOT "straight right"; "droit" here = straight)
    - dérobement → evasion (of the blade)   |   déroulé → glide
-   - une-deux → one-two   |   fente → lunge   |   demi-fente → half-lunge   |   coup(s) (bare) → blow(s)
+   - une-deux → one-two   |   fente → lunge   |   demi-fente → half-lunge
    - assaut → bout   |   tireur → fencer   |   maître (d'armes) → fencing master   |   salle (d'armes) → fencing hall/room
    - "leçon d'assaut" → "bout lesson" (keep the word "lesson" — NOT the same as a bare "assaut")
    - "un assaut d'épée" → "an épée bout"  (plain "assaut", NO "lesson")
    - mouvement, mise en garde, botte, temps, mesure, ligne → movement, on-guard position, thrust, tempo, distance, line
-   - coup vs botte: the coup is the whole action of the attack (its path and movements), the botte is its
-     terminal delivery (the line it finishes in and the hand position) — keep them distinct: coup → blow,
-     botte → thrust ("coups simples" → simple blows, "coups composés" → compound blows, "botte de quarte" →
-     thrust in quarte). Named techniques keep their own names: coup droit → straight thrust, coup de temps →
-     time-hit, coup d'arrêt → stop-thrust.
+   - coup vs botte: the coup is the whole offensive action (its path and movements), the botte is its
+     finish (the line it ends in and the hand position). coup → attack ("coups simples" → simple attacks,
+     "coups composés" → compound attacks), or hit where it means the touch that lands ("recevoir un coup" →
+     receive a hit); NEVER "blow" — also in phrasings like "coup porté" → attack delivered, "coup paré" →
+     parried attack, "coups pour coups" → hit for hit. A cut with the edge is a cut: "coup de taille",
+     "coup de tranchant", "coup de sabre", "coup d'estramaçon" → cut ("coups de taille" → cuts), never
+     "cutting blow". Only where coup is not a fencing action does ordinary English stay: "coups et
+     blessures" → blows and wounds, "coup de marteau" → hammer blow. botte → thrust ("botte de quarte" → thrust in quarte). Named techniques
+     keep their own names: coup droit → straight thrust, coup de temps → time-hit, coup d'arrêt → stop-thrust.
+     Where the text DEFINES or CONTRASTS the two words as terms ("le coup est … ; la botte est …", "on ne
+     doit appeler botte que …"), keep them in French: <i>coup</i>, <i>botte</i>.
    - temps d'arrêt / coup d'arrêt → stop-hit / stop-thrust
    - du tac au tac → tac-au-tac   |   à temps perdu → at a lost tempo
-   - divers (as a heading) → miscellaneous
+   - divers (as a heading) → miscellaneous   |   avant-propos → foreword
+   - première partie, deuxième partie … → First Part, Second Part … (ordinal first, never "Part One")
    - soie (of a blade) → tang   (NOT "silk" or "thread")
    - fort / faible (of a blade) → forte / foible
    - targets: tête → head   |   figure ("attaque à la figure") → face   |   manchette → wrist
@@ -53,7 +60,9 @@ CRITICAL RULES — FOLLOW EXACTLY:
    Example:  "… and by a bind<fn>Fr. liement</fn> he carried the blade aside."
    In a HEADING (rule 4) translate the term but omit the <fn> tag.
 
-4. Headings, section titles, chapter titles, running heads, and figure captions are NORMAL TEXT — translate them fully, no <i>…</i>, no <fn> tags. A line in all capitals is almost always a heading, not a technical term. When a heading contains a KEPT rule-2 term (e.g. "PARADES DU CROISÉ"), keep that word intact WITH its accents — do not drop letters ("PARRIES OF THE CROISÉ", never "CROIS").
+4. Headings, section titles, chapter titles, running heads, and figure captions are NORMAL TEXT — translate them fully, no <i>…</i>, no <fn> tags. A section title beginning De / Du / Des ("DU DÉSARMEMENT", "De la garde") → "OF …" ("OF DISARMING", "Of the guard"), never "On …". A line in all capitals is almost always a heading, not a technical term. When a heading contains a KEPT rule-2 term (e.g. "PARADES DU CROISÉ"), keep that word intact WITH its accents — do not drop letters ("PARRIES OF THE CROISÉ", never "CROIS").
+
+4b. Names: never translate the particle of a person's name — "M. A. de La Forge" → "Mr. A. de La Forge", "le comte F. de L'Angle-Beaumanoir" → "Count F. de L'Angle-Beaumanoir". A word the French puts in quotation marks (« rassemblant ») stays in quotation marks in English ("GATHERING").
 
 5. Preserve every number, measurement, and unit exactly as written (e.g. "0m,85", "470 grams", "1°", "no. 5"). Never drop a numeric callout.
 
@@ -146,6 +155,6 @@ WITH A FULL LUNGE
 Input:
 COUPS SUR DES FEINTES
 Output:
-THRUSTS AGAINST FEINTS
+ATTACKS AGAINST FEINTS
 
 Text to translate:

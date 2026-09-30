@@ -24,20 +24,58 @@ from pathlib import Path
 import fitz
 
 
-def load_rotate(folder):
-    """books/<stem>.rotate -> (scope, degrees) or None. Content is one
-    token: cw | ccw | 180, optionally prefixed 'plates:' (default) or
-    'all:'. Used by steps 3 & 4 to rotate a book's sideways-scanned plates
-    (Gomard) when embedding the source page."""
+_DEG = {"cw": 270, "ccw": 90, "90": 270, "-90": 90, "180": 180}
+
+
+def _rotate_file(folder):
     stem = Path(folder).name.replace("_translated", "")
     for base in (f"/data/books/{stem}.rotate", f"{folder}/{stem}.rotate"):
         if os.path.exists(base):
-            tok = open(base).read().strip().lower()
-            scope = "all" if tok.startswith("all:") else "plates"
-            tok = tok.split(":")[-1]
-            deg = {"cw": 270, "ccw": 90, "90": 270, "-90": 90, "180": 180}.get(tok)
-            return (scope, deg) if deg else None
+            return base
     return None
+
+
+def rotation_plan(folder):
+    """books/<stem>.rotate -> (book, pages). Steps 3 & 4 turn sideways-
+    printed plates upright when embedding the source page.
+
+    One rule per line ('#' starts a comment):
+      cw | ccw | 180            every figure page of the book ('plates:' prefix
+                                optional), e.g. Gomard
+      all:cw                    every page
+      cw: 35, 39, 55-229        these scan pages (1-based), whatever they hold --
+      ccw: 241                  for books whose plates face different ways
+    book = (scope, degrees) or None; pages = {0-based index: degrees}. A
+    page rule wins over the book rule."""
+    path = _rotate_file(folder)
+    book, pages = None, {}
+    if not path:
+        return book, pages
+    for line in open(path, encoding="utf-8"):
+        line = line.split("#")[0].strip().lower()
+        if not line:
+            continue
+        m = re.match(r"^(cw|ccw|180|-?90)\s*:\s*([\d,\s-]+)$", line)
+        if m:
+            deg = _DEG[m.group(1)]
+            for part in re.split(r"[,\s]+", m.group(2).strip()):
+                if not part:
+                    continue
+                a, _, b = part.partition("-")
+                for n in range(int(a), int(b or a) + 1):
+                    pages[n - 1] = deg
+            continue
+        scope = "all" if line.startswith("all:") else "plates"
+        deg = _DEG.get(line.split(":")[-1].strip())
+        if deg:
+            book = (scope, deg)
+    return book, pages
+
+
+def load_rotate(folder):
+    """The book-wide rule only: (scope, degrees) or None (see rotation_plan)."""
+    return rotation_plan(folder)[0]
+
 
 # reserved names for the built-in PDF base-14 fonts
 ROMAN, ITALIC, BOLD = "times-roman", "times-italic", "times-bold"

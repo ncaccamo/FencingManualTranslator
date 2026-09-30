@@ -33,6 +33,10 @@ reconcile_page_numbers = _ns["reconcile_page_numbers"]
 collapse_runs = _ns["collapse_runs"]
 strip_leaked_headmatter = _ns["strip_leaked_headmatter"]
 tail_catchwords = _ns["tail_catchwords"]
+text_layer_folio_bands = _ns["text_layer_folio_bands"]
+settle_disputed_heads = _ns["settle_disputed_heads"]
+has_page_number_field = _ns["has_page_number_field"]
+apply_read_heads = _ns["apply_read_heads"]
 leaked_top_header = _ns["leaked_top_header"]
 is_plate_leaf = _ns["is_plate_leaf"]
 _norm_head = _ns["_norm_head"]
@@ -58,9 +62,14 @@ for folder in targets:
                  _pageio.split_pages(open(raw_path, encoding="utf-8").read())]
     parsed = [parse_vlm_response(p) for p in raw_pages]
     postprocess_parsed_pages(parsed)
+    # running heads read from the page where the OCR reply left the field out
+    _hp = os.path.join(int_dir, "heads.json")
+    if os.path.isfile(_hp):
+        apply_read_heads(parsed, raw_pages, json.load(open(_hp, encoding="utf-8")))
     _kh = known_headmatter(parsed)
     # pages the layout detector is sure print no running head (_layout.py)
     _no_head = _layout.no_head_pages(folder, [p.get("header") for p in parsed])
+    _disputed = _layout.disputed_heads(folder, [p.get("header") for p in parsed])
     _catch = tail_catchwords(parsed)
     for i, p in enumerate(parsed):
         if i in _no_head:
@@ -73,14 +82,18 @@ for folder in targets:
         p["body"] = strip_leaked_headmatter(p["body"], _kh, own, _catch)
     _fold_caption_only_body(parsed)
     fold_caption_header_into_figure(parsed)
+    _no_head |= settle_disputed_heads(parsed, _disputed)
     reconcile_headers(parsed, _no_head)
     # margin notes as ⟦MARGIN: …⟧ lines, each before its paragraph (_margins.py)
     _m_placed, _m_lost = _margins.apply_to_book(folder, parsed)
     _is_plate = [any(f.get("kind") == "plate" for f in (p.get("figures") or []))
                  or is_plate_leaf(p.get("body"))
                  for p in parsed]
+    _pdfs = glob.glob(f"{folder}/intermediate/*_OCR.pdf")
     nums = reconcile_page_numbers([p["page_raw"] for p in parsed], _is_plate,
-                                  [p.get("body") for p in parsed])
+                                  [p.get("body") for p in parsed],
+                                  text_layer_folio_bands(_pdfs[0]) if _pdfs else None,
+                                  [has_page_number_field(r) for r in raw_pages])
     # the reviewer's per-book decisions always win (see _overrides.py)
     nums = _overrides.apply_extraction(
         parsed, nums, _overrides.load(os.path.basename(folder).replace("_translated", "")))

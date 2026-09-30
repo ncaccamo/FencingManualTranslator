@@ -252,8 +252,14 @@ def leaked_top_header(body: str, known_headers: set) -> str:
     promotes on the spot, using this page's OWN evidence, before that
     happens -- strictly narrower than the gap-fill (no cross-page
     inference at all) so it carries none of that mechanism's risk."""
-    first, _, _ = body.lstrip("\n").partition("\n")
+    first, _, rest = body.lstrip("\n").partition("\n")
     first = first.strip()
+    # "LE JEU DE L'ÉPÉE" / "INTRODUCTION" (Jacob scan 49): two title lines
+    # opening the text are its titles, not a running head + title
+    second = rest.lstrip("\n").partition("\n")[0].strip()
+    # (a contents entry "DES ATTAQUES SUR PRÉPARATIONS. 245" is not a title)
+    if second and _looks_like_section_title(second) and not re.search(r"(?:\d+|\bid)\.?\s*$", second):
+        return ""
     return first if first and _norm_head(first) in known_headers else ""
 
 
@@ -314,6 +320,9 @@ def strip_leaked_headmatter(body: str, known_headers: set, own_header: str = "",
     "FIN.". Now the short-capitals tail line must also be one of the
     book's `catchwords` (tail_catchwords(): recurs at >= 2 page feet)."""
     def _is_bare_number(s):
+        # not a year: "1818." at the foot of La Boëssière's title page
+        if re.fullmatch(r"1[5-9]\d\d\.?", s):
+            return False
         return bool(re.fullmatch(r"[a-z]?[\dIVXLCDM]{1,4}\.?", s, re.I))
 
     def _is_apparatus(s):
@@ -449,6 +458,8 @@ def parse_figures_block(raw: str) -> list:
 
 def _roman_to_int(s: str):
     s = s.strip().upper()
+    if len(s) > 1 and s.endswith("J"):          # old style "xij", "viiij" (La Boëssière)
+        s = s[:-1] + "I"
     if not s or not re.fullmatch(r'[IVXLCDM]+', s):
         return None
     vals = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
@@ -489,7 +500,7 @@ def _romanize_runs(out: list) -> list:
     runs.append(cur)
     out = list(out)
     for run in runs:
-        rom = [i for i in run if re.fullmatch(r"[ivxlcdmIVXLCDM]+", out[i])]
+        rom = [i for i in run if re.fullmatch(r"[ivxlcdmIVXLCDM]+[jJ]?", out[i])]
         if len(rom) >= 2 and len(rom) >= 0.3 * len(run):
             upper = sum(out[i].isupper() for i in rom) * 2 >= len(rom)
             for i in run:
@@ -558,8 +569,8 @@ def _fold_caption_only_body(parsed: list) -> None:
 
 _LEAKED_HEAD_RE = re.compile(
     r"^\s*(?:"
-    r"\(?(?P<num1>\d{1,4})\)?[.\s]+(?P<head1>[A-ZÀ-Þ][A-ZÀ-Þ0-9 '’.,\-]{3,}?)"
-    r"|(?P<head2>[A-ZÀ-Þ][A-ZÀ-Þ0-9 '’.,\-]{3,}?)[.\s]+\(?(?P<num2>\d{1,4})\)?"
+    r"\(?(?P<num1>\d{1,4}|[ivxlc]{1,7}j?)\)?[.\s]+(?P<head1>[A-ZÀ-Þ][A-ZÀ-Þ0-9 '’.,\-]{3,}?)"
+    r"|(?P<head2>[A-ZÀ-Þ][A-ZÀ-Þ0-9 '’.,\-]{3,}?)[.\s]+\(?(?P<num2>\d{1,4}|[ivxlc]{1,7}j?)\)?"
     r")\s*\.?\s*$")
 
 
@@ -588,8 +599,21 @@ def salvage_leaked_folio_header(parsed: list, known_headers: set) -> None:
         rest = body[nl + 1:] if nl >= 0 else ""
         m = _LEAKED_HEAD_RE.match(line1)
         if not m:
+            # italic title-case head after the folio ("XIV    Table des
+            # matières.", LaMarche scans 19 / 321) -- only a known head
+            t = re.match(r"\s*(\d{1,3}|[IVXLCivxlc]{1,7})\s+([A-ZÀ-Þ][^\n]{2,48}?)\s*$", line1)
+            if t and len(t.group(2).split()) <= 6 and _norm_head(t.group(2)) in known_headers:
+                if not p.get("page_raw"):
+                    p["page_raw"] = t.group(1)
+                if not p.get("header"):
+                    p["header"] = t.group(2).strip()
+                p["body"] = rest.lstrip("\n")
             continue
         num = m.group("num1") or m.group("num2")
+        # a year is not a page number: "REPRODUCTION D'UNE GRAVURE DE
+        # BONNART (1680)" (LaMarche scan 10) is a caption, not folio + head
+        if num.isdigit() and int(num) >= 1000:
+            continue
         head = (m.group("head1") or m.group("head2") or "").strip().rstrip(".")
         if not head or not (_norm_head(head) in known_headers
                             or _looks_like_running_head(head)):
@@ -722,8 +746,19 @@ _SCAN_APPARATUS_RE = re.compile(
     r"|pages?\s+manquantes?|auteur\s+du\s+texte"
     r"|biblioth[eè]que\s+[\wàâäéèêëïîôùûç.'’-]+\s+\d{3,}"
     r"|\bex[- ]?libris\b|n[°o]\s*d['’]?(?:inventaire|entrée)\b"
-    r"|/\s*par\s+[A-ZÀ-Þ]",                      # BnF catalog "Title / par Author"
+    r"|/\s*par\s+[A-ZÀ-Þ]"                       # BnF catalog "Title / par Author"
+    # owners' stamps in these copies (2026-09-28 review): Jacob / Spinnewyn
+    # "INSTITUT NATIONAL DES SPORTS", inventory numbers, "CENTRE DE
+    # DOCUMENTATION", the round "SOUS-OFFICIERS … ESCRIME" stamp; La
+    # Boëssière's "HARVARD COLLEGE LIBRARY"
+    r"|institut\w*\s+(?:national\s+)?d(?:u|es)\s+sports?|inventaire\s+(?:g[ée]n[ée]ral|particulier)"
+    r"|biblioth[eè]que\s+centrale|centre\s+de\s+documentation|[ée]cole\s+sup[ée]rieure\s+d['’]\s*[ée]ducation"
+    r"|\bcollege\s+library\b|\bcollege\s+of\s+officers\b|sous[- ]officiers",
     re.I)
+# a line of a stamp block: the pattern above, an accession number
+# ("554037", "N° d'entrée … 20238."), or a stamp's short follow-on line
+_STAMP_LINE_RE = re.compile(r"^\s*(?:\d{5,}\.?|et\s+de\s+l['’]\s*[ée]ducation\s+physique"
+                            r"|classement\s*\.{2,}.*)\s*$", re.I)
 # a bare library shelfmark on its own line ("NF Z 43-120-14", "RES 8-V-1234")
 _SHELFMARK_RE = re.compile(
     r"^(?=.*\d)(?=.*[A-Z])[A-Z0-9]{1,4}(?:[ .\-]+[A-Z0-9]{1,6}){2,5}$")
@@ -747,9 +782,21 @@ def drop_scan_apparatus(parsed: list) -> None:
             continue
         if len(body.split()) <= 15:
             p["header"] = ""
-        if (_SCAN_APPARATUS_RE.search(body) or len(body.split()) <= 8
-                or (body1 and _SHELFMARK_RE.match(body1))):
-            p["body"] = ""
+        # Remove the stamp's own lines, keep the rest of the page (Jacob scan
+        # 10: the printed edition notice "IL A ÉTÉ TIRÉ À PART …" sat above a
+        # library stamp and the whole page used to be blanked with it).
+        lines = body.split("\n")
+        keep = [l for l in lines if not ((_SCAN_APPARATUS_RE.search(l) and len(l.split()) <= 8)
+                                          or re.search(r"/\s*par\s+[A-ZÀ-Þ]", l)   # catalogue line, any length
+                                          or _STAMP_LINE_RE.match(l)
+                                          or (_SHELFMARK_RE.match(l.strip()) and len(l.split()) <= 4))]
+        rest = "\n".join(keep).strip()
+        # what's left must read as text, not a stamp's leftovers ("Inventaire
+        # général :" / "Bibliothèque Centrale :" labels, "8936")
+        if len(re.findall(r"[^\W\d_]{3,}", rest)) < 4:
+            rest = ""
+        p["body"] = rest
+        if not rest:
             p["figures"] = []
 
 
@@ -829,6 +876,110 @@ def known_headmatter(parsed: list) -> set:
             if p.get("header") and _key(p["header"]) in confirmed}
 
 
+def apply_read_heads(parsed: list, raw_pages: list, read: dict) -> int:
+    """Running heads read straight from the layout detector's box
+    (intermediate/heads.json, _margins.read_heads) stand in for the HEADER
+    field on pages whose OCR reply left it out altogether. Measured
+    2026-09-29 on 9 books: the neighbour fill agreed with the reading on
+    343 of 345 pages; on the other two the reading was right (Kirchhoffer
+    scan 49 "OFFENSIVE", Spinnewyn 99 "LE LIEMENT"), and it gave the head on
+    16 pages the fill left empty (LaMarche 14, Jacob 2). Entering as the
+    OCR's own answer, a read head also anchors the fills around it.
+
+    Skipped: a reading that is only a page number or a plate label ("Pl.
+    3."); a reading that nearly matches a head the book prints elsewhere
+    takes that spelling (LaMarche 190 "Applicatians" -> "Applications").
+    Returns the number of pages given a head."""
+    import difflib
+    from collections import Counter
+    spellings = {}
+    for p, raw in zip(parsed, raw_pages):
+        h = (p.get("header") or "").strip()
+        if h and has_header_field(raw):
+            spellings.setdefault(_norm_head(h), Counter())[h] += 1
+    # the most common spelling of each head (LaMarche prints "L'ÉPÉE" once, on
+    # the title page, and "L'Épée." on every page after)
+    native = {k: c.most_common(1)[0][0] for k, c in spellings.items()}
+    n = 0
+    for i, (p, raw) in enumerate(zip(parsed, raw_pages)):
+        v = read.get(str(i))
+        if not v or has_header_field(raw) or (p.get("header") or "").strip():
+            continue
+        text = (v.get("text") or "").strip()
+        if re.match(r"(?i)^\s*(?:pl(?:anche)?\b\.?|planche)", text):
+            continue                                   # a plate label, not a running head
+        text = re.sub(r"^\s*(?:\d+|[ivxlcdmj]+\.?)\s+|\s+(?:\d+|[ivxlcdmj]+\.?)\s*$", "",
+                      text, flags=re.I).strip()
+        if not text or re.fullmatch(r"[\W\d]*(?:[ivxlcdmj]+)?[\W\d]*", text, re.I):
+            continue                                   # only the page number
+        key = _norm_head(text)
+        # the OCR did read the head, as the body's first line: the usual
+        # promotion (leaked_top_header) moves it up -- setting it here would
+        # leave the line in the body too (Jacob 111, LaMarche 30, Baudry 26)
+        top = [l.strip() for l in (p.get("body") or "").split("\n") if l.strip()][:2]
+        nodigits = lambda t: re.sub(r"[^a-z]", "", _norm_head(t))       # letters only
+        if any(nodigits(l) == nodigits(text) for l in top):   # "26: INTRODUCTION." (Gomard 42)
+            continue
+        if key in native:
+            text = native[key]                        # the book's own spelling
+        elif native:
+            close = difflib.get_close_matches(key, list(native), n=1, cutoff=0.85)
+            if close:
+                text = native[close[0]]
+        p["header"] = text
+        n += 1
+    return n
+
+
+def has_header_field(raw: str) -> bool:
+    return any(l.lstrip().upper().startswith("HEADER") for l in (raw or "").split("\n"))
+
+
+def settle_disputed_heads(parsed: list, disputed: set) -> set:
+    """The OCR reported a running head the layout detector doesn't see
+    (`disputed`). In these books a section's running head starts on its
+    SECOND page; the first page prints the section's title in the text. So:
+      * the "head" repeats the body's first line -> it is that title, not a
+        running head: drop the header (Spinnewyn "AVANT-PROPOS", Jacob "DUEL
+        AU SABRE", La Boëssière "SE TROUVE:" -- 2026-09-28 review);
+      * else, on the first page of that head's run (the page before has a
+        different head) -> it is the section's title, set only in the
+        header field: move it into the body (Jacob "PRÉFACE DE M. A. RANC."
+        over "I", "PREMIÈRE LEÇON"; La Boëssière "A MM. LES OFFICIERS").
+    Returns the pages settled, for reconcile_headers' `no_head`."""
+    def _n(s):
+        return _norm_head(s or "")
+    done = set()
+    for i in sorted(disputed):
+        p = parsed[i]
+        head = (p.get("header") or "").strip()
+        if not head or "\t" in head:
+            continue
+        body = (p.get("body") or "").strip()
+        first = body.split("\n", 1)[0].strip()
+        if _n(first) == _n(head):
+            p["header"] = ""
+            done.add(i)
+            continue
+        prev = (parsed[i - 1].get("header") or "").strip() if i else ""
+        if body and _n(prev.split("\t")[0]) != _n(head.split("\t")[0]) and _looks_like_section_title(head):
+            p["body"] = f"{head}\n\n{body}"
+            p["header"] = ""
+            done.add(i)
+    return done
+
+
+def _alternating_heads(parsed: list) -> bool:
+    """Running heads alternate by page side: among pages with a head, the
+    page two on repeats it clearly more often than the next page does."""
+    keys = [_norm_head(((p.get("header") or "").split("\t")[0])) for p in parsed]
+    def rate(d):
+        pairs = [(a, b) for a, b in zip(keys, keys[d:]) if a and b]
+        return (sum(a == b for a, b in pairs) / len(pairs)) if len(pairs) >= 10 else None
+    r1, r2 = rate(1), rate(2)
+    return r1 is not None and r2 is not None and r2 > r1 + 0.15
+
+
 def reconcile_headers(parsed: list, no_head: set = frozenset()) -> None:
     """The header bar is for a genuine running header -- one repeated at
     the top of the page across a section, OR a one-page subsection's own
@@ -896,14 +1047,18 @@ def reconcile_headers(parsed: list, no_head: set = frozenset()) -> None:
     # wherever it's already correctly cased elsewhere in the book -- so a
     # reordered header matches the casing the rest of its section uses,
     # not whatever casing this one stray instance happened to have.
-    root_display = {}
+    # (the spelling the book prints most often -- not the first one seen,
+    # which can be a title page's "L'ÉPÉE" for a running head "L'Épée.")
+    _spellings = {}
     for p in parsed:
         h = (p.get("header") or "").strip()
         if not h:
             continue
         k = _key(h)
-        if k in confirmed and k not in root_display:
-            root_display[k] = (h.split("\t", 1)[0] if "\t" in h else h).strip()
+        if k in confirmed:
+            d = (h.split("\t", 1)[0] if "\t" in h else h).strip()
+            _spellings.setdefault(k, Counter())[d] += 1
+    root_display = {k: c.most_common(1)[0][0] for k, c in _spellings.items()}
 
     def _reorder_swapped_two_part(head):
         words = head.split()
@@ -972,8 +1127,11 @@ def reconcile_headers(parsed: list, no_head: set = frozenset()) -> None:
         # ANOTHER title-shaped line means "compound title block, leave it
         # all in body" -- a genuine section-opener is followed by ordinary
         # prose, not a second title line.
+        # a title set over several lines ("TRAITÉ" / "DE" / "L'ART DES
+        # ARMES", La Boëssière's title page) continues on the next line
+        continues = bool(re.match(r"(?:DE|DU|DES|D['’]|ET|À|A|AU|AUX|SUR|PAR|POUR|EN)\b", second))
         if first and (_key(first) in confirmed or _looks_like_section_title(first)) \
-                and not (second and _looks_like_section_title(second)):
+                and not (second and _looks_like_section_title(second)) and not continues:
             p["header"] = first
             p["body"] = rest.lstrip("\n")
         elif first and second and _looks_like_section_title(first) \
@@ -996,16 +1154,36 @@ def reconcile_headers(parsed: list, no_head: set = frozenset()) -> None:
         return ((not b or b.lower() == "none") and not p.get("figures")) \
             or p.get("_title_leaf")
 
+    # Books whose running heads alternate left/right (book title on one
+    # side, chapter on the other): the page two on repeats the head, the
+    # next page almost never does (Jacob, La Boëssière, LaMarche, Prévost,
+    # Spinnewyn -- measured on the OCR's own heads). There a page takes its
+    # head from its own side: the fills below look 2 pages away, not 1
+    # (LaMarche scan 23 "L'Épée." took the facing page's chapter title; La
+    # Boëssière scan 207 the facing "TRAITÉ").
+    step = 2 if _alternating_heads(parsed) else 1
+
+    # Plate pages carry a running head only in some books (Kirchhoffer's
+    # "FLEURET" plates do; Prévost's photo plates and La Boëssière's
+    # engravings don't). Fill a plate page only if this book's plates show
+    # a head of their own often enough.
+    def _is_plate_page(p):
+        return any(f.get("kind") == "plate" for f in (p.get("figures") or [])) \
+            and not (p.get("body") or "").strip()
+    _plates = [p for p in parsed if _is_plate_page(p)]
+    _plates_carry_heads = bool(_plates) and \
+        sum(bool((p.get("header") or "").strip()) for p in _plates) >= 0.3 * len(_plates)
+
     # Sandwich interpolation: a page still headerless after everything
-    # above, with both immediate neighbours already agreeing on the same
+    # above, with both same-side neighbours already agreeing on the same
     # confirmed header, inherits it.
     n = len(parsed)
     for i, p in enumerate(parsed):
-        if (p.get("header") or "").strip() or i == 0 or i == n - 1 or _is_blank_leaf(p) \
-                or i in no_head:
+        if (p.get("header") or "").strip() or i < step or i >= n - step or _is_blank_leaf(p) \
+                or i in no_head or (_is_plate_page(p) and not _plates_carry_heads):
             continue
-        prev_h = (parsed[i - 1].get("header") or "").strip()
-        next_h = (parsed[i + 1].get("header") or "").strip()
+        prev_h = (parsed[i - step].get("header") or "").strip()
+        next_h = (parsed[i + step].get("header") or "").strip()
         if prev_h and next_h and _key(prev_h) == _key(next_h) and _key(prev_h) in confirmed:
             p["header"] = prev_h
 
@@ -1035,15 +1213,33 @@ def reconcile_headers(parsed: list, no_head: set = frozenset()) -> None:
         k = _key(h)
         if h and k in confirmed:
             _orig_confirmed.append((i, k, h.split("\t", 1)[0] if "\t" in h else h))
+    # a section opener is a barrier: a running head never carries across the
+    # page that starts a new section (LaMarche scan 22 "L'ÉPÉE / CHAPITRE I"
+    # between the contents and chapter I)
+    def _opens_section(p):
+        if p.get("_title_leaf"):
+            return True
+        first = (p.get("body") or "").lstrip("\n").split("\n", 1)[0].strip()
+        return not (p.get("header") or "").strip() and bool(first) and _looks_like_section_title(first)
+    _barriers = [b for b, p in enumerate(parsed) if b in no_head and _opens_section(p)]
     _fills = {}
     for i, p in enumerate(parsed):
-        if (p.get("header") or "").strip() or _is_blank_leaf(p) or i in no_head:
+        if (p.get("header") or "").strip() or _is_blank_leaf(p) or i in no_head \
+                or (_is_plate_page(p) and not _plates_carry_heads):
             continue
         best = None
         best_dist = _MAX_GAP + 1
         for j, k, disp in _orig_confirmed:
+            if any(min(i, j) < b < max(i, j) for b in _barriers):
+                continue
             d = abs(j - i)
-            if d < best_dist:
+            if d % step:                     # alternating book: own side only
+                continue
+            d //= step                       # distance in same-side pages
+            # a tie goes to the page ahead: a section's head runs forward
+            # from its opener (LaMarche scan 23 between the contents, 4 pages
+            # back, and chapter I's "L'Épée.", 4 pages on)
+            if d < best_dist or (d == best_dist and j > i):
                 best_dist = d
                 best = root_display.get(k, disp)
         if best is not None and best_dist <= _MAX_GAP:
@@ -1228,6 +1424,12 @@ def recover_plate_captions(parsed: list) -> None:
                     # is just the caption, so this stays tight.
                     if j != idx and len(nb_body.split()) > 15:
                         continue
+                    # a neighbour that is itself a plate owns its caption
+                    # (Gomard Planche 1re got Planche II's "Troisième
+                    # Position, ou la garde.")
+                    if j != idx and (parsed[j].get("figures") or re.match(
+                            r"(?i)\s*(?:planche|pl\.|fig)", (parsed[j].get("header") or "") + " " + nb_body)):
+                        continue
                     cap = _cap_line(nb_body)
                     if cap:
                         figs[0]["caption"] = cap
@@ -1290,6 +1492,24 @@ def repair_source_ocr_misreads(parsed: list) -> None:
             p[field] = val
 
 
+_IMAGE_DESCRIPTION_RE = re.compile(
+    r"\s*\[(?:the |this )?(?:page|image|illustration|picture|photo(?:graph)?|drawing)\b[^\]]{15,}\]\s*",
+    re.I)
+
+
+def drop_image_descriptions(parsed: list) -> None:
+    """The OCR model sometimes describes a full-page picture instead of
+    transcribing ("[The page contains a black and white illustration of a
+    person in fencing attire …]", Spinnewyn scan 156). That's not the
+    book's text: the page becomes a plate with no caption."""
+    for p in parsed:
+        body = p.get("body") or ""
+        if body.strip() and _IMAGE_DESCRIPTION_RE.fullmatch(body):
+            p["body"] = ""
+            if not p.get("figures"):
+                p["figures"] = [{"kind": "plate", "caption": ""}]
+
+
 def postprocess_parsed_pages(parsed: list) -> None:
     """Run every Group-A structural salvage in order. Called once, right
     after parse_vlm_response() over the whole book. reconcile_headers() and
@@ -1301,12 +1521,60 @@ def postprocess_parsed_pages(parsed: list) -> None:
     dehyphenate_across_pages(parsed)
     drop_google_boilerplate(parsed)
     drop_scan_apparatus(parsed)
+    drop_image_descriptions(parsed)
     mark_handwritten_inscriptions(parsed)
     recover_plate_captions(parsed)
 
 
+def text_layer_folio_bands(pdf_path: str) -> list:
+    """Per page, the scan's own text layer in the top 12% and bottom 10% --
+    where a printed page number sits. [] when unreadable. Used only to
+    confirm a number the OCR skipped (reconcile_page_numbers `printed`)."""
+    try:
+        doc = fitz.open(pdf_path)
+    except Exception:
+        return []
+    out = []
+    for pg in doc:
+        r = pg.rect
+        out.append(pg.get_text(clip=fitz.Rect(0, 0, r.width, 0.12 * r.height)) + " "
+                   + pg.get_text(clip=fitz.Rect(0, 0.9 * r.height, r.width, r.height)))
+    return out
+
+
+def _printed_here(band: str, value: int, shown: str) -> bool:
+    """The text layer shows the number -- exactly, or damaged print read one
+    digit off (Gomard scan 276 prints "260": OCR "209", text layer "200")."""
+    if not band or value is None:
+        return False
+    band = re.sub(r"(?<=\d)[.,](?=\d)", "", band)         # "2.38" (Prévost scan 302)
+    forms = {str(value), shown.strip(".").lower()}
+    if any(re.search(r"(?<![\w])" + re.escape(f) + r"(?![\w])", band, re.I) for f in forms if f):
+        return True
+    return any(_plausible_misread(int(m), value) for m in re.findall(r"(?<![\w])\d{2,4}(?![\w])", band))
+
+
+def _plausible_misread(read: int, value: int) -> bool:
+    """The OCR misread a printed folio: same number of digits (>= 2), one
+    digit wrong ("108" for 198). Small readings are what the OCR invents on
+    unnumbered pages (1, 10, 11, 12 ...), so a reading under 20 never counts."""
+    if read is None or value is None or read < 20:
+        return False
+    a, b = str(read), str(value)
+    return len(a) == len(b) and sum(x != y for x, y in zip(a, b)) == 1
+
+
+def has_page_number_field(raw: str) -> bool:
+    """Did the OCR answer the PAGE_NUMBER question at all? A malformed reply
+    (plain text, no fields) says nothing about whether a number is printed
+    -- Jacob scans 77/115/127 print 29/67/79 and the reply just omitted
+    the field."""
+    return bool(re.search(r"(?im)^[ \t]*PAGE_NUMBER[ \t]*:", raw or ""))
+
+
 def reconcile_page_numbers(page_raws: list, is_plate: list = None,
-                           bodies: list = None) -> list:
+                           bodies: list = None, printed: list = None,
+                           answered: list = None) -> list:
     """olmOCR-2 reliably reads a real printed folio, but it will also invent
     a plausible-looking number from a stray mark -- an engraver's plate
     number inside an illustration, a library accession stamp -- or silently
@@ -1328,6 +1596,17 @@ def reconcile_page_numbers(page_raws: list, is_plate: list = None,
     `is_plate[i]` (a whole-page illustration -- no printed folio) lets the
     tight-gap fill skip plate leaves when checking the arithmetic. Never
     emits <= 0.
+
+    SHOWN only if printed (operator rule, 2026-09-28: "if the page does not
+    say a page, I don't want one"): a number is left unbracketed only when
+    the OCR read it, or misread it plausibly (_plausible_misread), or the
+    scan's text layer shows it (`printed`, text_layer_folio_bands), or the
+    OCR never answered the question for that page (`answered[i]` False: a
+    malformed reply with no PAGE_NUMBER field -- unknown, so the sequence
+    value is shown as before). Any other page keeps its value bracketed --
+    used for sequencing, not shown.
+    The OCR invents small numbers on unnumbered pages (chapter openers,
+    plates), and those used to be "corrected" into shown folios.
     """
     ints = [_page_to_int(p) for p in page_raws]
     n = len(ints)
@@ -1511,6 +1790,16 @@ def reconcile_page_numbers(page_raws: list, is_plate: list = None,
         j = min(anchors, key=lambda a: abs(a - i))          # nearest trusted sheet
         guess = (folio[j] or 0) + (i - j)                   # 1 sheet == 1 folio
         out.append(f"[{guess}]" if guess >= 1 else f"[{i + 1}]")
+    for i in range(n):
+        if not out[i] or out[i].startswith("["):
+            continue
+        value = _page_to_int(out[i])
+        read = _page_to_int(page_raws[i]) if page_raws[i] else None
+        if read == value or _plausible_misread(read, value) or (
+                printed and i < len(printed) and _printed_here(printed[i], value, out[i])) or (
+                answered is not None and i < len(answered) and not answered[i] and read is None):
+            continue
+        out[i] = f"[{value}]"
     return _romanize_runs(out)
 
 
@@ -1758,8 +2047,18 @@ vlm_proc = None
 try:
     # new books, plus any whose OCR run was interrupted (the folder exists,
     # the saved partial run does, raw_ocr.txt doesn't yet)
+    # PDF_ONLY=stem[,stem...] limits step 1 to those books (as in steps 3/4)
+    _only = set(os.environ.get("PDF_ONLY", "").replace(",", " ").split())
     input_pdfs = [
         f for f in glob.glob("/data/books/*.pdf")
+        if not _only or Path(f).stem in _only
+    ]
+    # BOOK_PDF=/path/to/<stem>.pdf reads that one file instead -- e.g. a
+    # temporary evaluation copy kept in evals/gold/, never in books/
+    if os.environ.get("BOOK_PDF"):
+        input_pdfs = [os.environ["BOOK_PDF"]]
+    input_pdfs = [
+        f for f in input_pdfs
         if not os.path.exists(f"/data/processed/{Path(f).stem}_translated")
         or (os.path.exists(f"/data/processed/{Path(f).stem}_translated/intermediate/raw_ocr.partial.json")
             and not os.path.exists(f"/data/processed/{Path(f).stem}_translated/intermediate/raw_ocr.txt"))
@@ -1885,6 +2184,13 @@ try:
         # translator and printed on the side-by-side PDF.
         parsed = [parse_vlm_response(p) for p in extracted_pages]
         postprocess_parsed_pages(parsed)
+        # running heads read from the page where the OCR reply left the field out
+        try:
+            import _margins
+            _read = _margins.read_heads(work_dir, ocr_pdf_path)
+            apply_read_heads(parsed, extracted_pages, _read)
+        except Exception as e:
+            print(f"⚠ running heads not read ({type(e).__name__}: {e})")
         _known_heads = known_headmatter(parsed)
         _catch = tail_catchwords(parsed)
         # pages the layout detector is sure print no running head: no body
@@ -1892,9 +2198,10 @@ try:
         try:
             import _layout
             _no_head = _layout.no_head_pages(work_dir, [p.get("header") for p in parsed])
+            _disputed = _layout.disputed_heads(work_dir, [p.get("header") for p in parsed])
         except Exception as e:
             print(f"⚠ layout not used for running heads ({type(e).__name__}: {e})")
-            _no_head = set()
+            _no_head, _disputed = set(), set()
         for i, p in enumerate(parsed):
             if i in _no_head:
                 continue
@@ -1906,6 +2213,7 @@ try:
             p["body"] = strip_leaked_headmatter(p["body"], _known_heads, own, _catch)
         _fold_caption_only_body(parsed)
         fold_caption_header_into_figure(parsed)
+        _no_head |= settle_disputed_heads(parsed, _disputed)
         reconcile_headers(parsed, _no_head)
         try:
             import _margins
@@ -1916,7 +2224,9 @@ try:
                      or is_plate_leaf(p.get("body"))
                      for p in parsed]
         reconciled_nums = reconcile_page_numbers(
-            [p["page_raw"] for p in parsed], _is_plate, [p.get("body") for p in parsed])
+            [p["page_raw"] for p in parsed], _is_plate, [p.get("body") for p in parsed],
+            text_layer_folio_bands(ocr_pdf_path),
+            [has_page_number_field(r) for r in extracted_pages])
         # the reviewer's per-book decisions (books/<stem>.overrides.toml)
         # always win over the automatic reconciliation above
         reconciled_nums = _overrides.apply_extraction(

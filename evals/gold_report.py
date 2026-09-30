@@ -65,8 +65,11 @@ def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)
     d = GOLD / sys.argv[1]
-    src_t = (d / "src.txt").read_text(encoding="utf-8")
-    ref_t = (d / "ref.txt").read_text(encoding="utf-8")
+    from gold_align import page_range
+    meta = json.loads((d / "meta.json").read_text()) if (d / "meta.json").exists() else {}
+    lang = meta.get("src", {}).get("lang", "fr").upper()
+    src_t = page_range((d / "src.txt").read_text(encoding="utf-8"), meta.get("src_pages"))
+    ref_t = page_range((d / "ref.txt").read_text(encoding="utf-8"), meta.get("ref_pages"))
     pairs = [json.loads(l) for l in (d / "aligned.jsonl").read_text().splitlines() if l]
     L = [f"# gold report: {d.name}", ""]
 
@@ -79,7 +82,7 @@ def main():
     adds = types.get("0-1", 0)
     drops = types.get("1-0", 0)
     L += ["## Shape",
-          f"- words: {sw} FR  ->  {rw} EN   (expansion {rw / sw:.2f}x)",
+          f"- words: {sw} {lang}  ->  {rw} EN   (expansion {rw / sw:.2f}x)",
           f"- alignment blocks: {len(pairs)}",
           f"- types: " + ", ".join(f"{k} {v}" for k, v in types.most_common()),
           f"- clean 1-1: {n11} ({100 * n11 // max(len(pairs),1)}%)  |  "

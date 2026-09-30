@@ -54,8 +54,6 @@ left to the scan.
 
 Step by step — what happens, the tools, and the files each step reads and
 writes: [detailed pipeline diagram](docs/img/pipeline-detail.drawio.svg).
-Both diagrams open for editing in draw.io or the VS Code Draw.io Integration
-extension.
 
 Each book runs through four scripts in `pipeline/`, writing to
 `processed/<book>_translated/`. The two finished PDFs land in that folder's

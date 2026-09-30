@@ -162,6 +162,11 @@ def render(doc, stem, *, page_w, page_h, margin):
         block(line, 9.5, gap_after=4)
     if str(meta.get("source_terms", "")).strip():
         block(meta["source_terms"].strip(), 9, italic=True, gap_after=4)
+    # pages patched in from another copy (e.g. a page missing from this
+    # scan): the scan is then no longer the digitisation named above alone
+    if str(meta.get("source_changes", "")).strip():
+        block("Changes to this scan: " + meta["source_changes"].strip(),
+              9, gap_after=4)
 
     rule()
 

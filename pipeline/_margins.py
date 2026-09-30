@@ -58,7 +58,13 @@ def detect_notes(page: dict) -> list:
     return out
 
 
-def _read_crop(page, box, vlm_url, headers, model):
+HEAD_PROMPT = ("This image is the running head printed at the top of one page of an old "
+               "fencing treatise (it may include the page number). Transcribe its "
+               "printed text exactly, on one line. Output only the text -- no labels, "
+               "no commentary.")
+
+
+def _read_crop(page, box, vlm_url, headers, model, prompt=None):
     import fitz
     import requests
     from PIL import Image, ImageOps
@@ -73,7 +79,7 @@ def _read_crop(page, box, vlm_url, headers, model):
     img.save(buf, format="PNG")
     body = {"model": model, "temperature": 0.1, "max_tokens": 300,
             "messages": [{"role": "user", "content": [
-                {"type": "text", "text": READ_PROMPT},
+                {"type": "text", "text": prompt or READ_PROMPT},
                 {"type": "image_url", "image_url": {
                     "url": "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()}}]}]}
     resp = requests.post(vlm_url, json=body, headers=headers, timeout=300)
@@ -226,6 +232,39 @@ def _dedupe(notes: list) -> list:
     return out
 
 
+_REF_ONLY = re.compile(r"\W*(?:[\d.,\s]+|ibid|id|pag|p)\W*", re.I)
+
+
+def _drop_false_notes(notes: list, body: str) -> list:
+    """Things in the margin that are not the author's notes (2026-09-28
+    review): a contents page's number column ("309", "ibid.", "Pag." -- La
+    Boëssière scan 338), a shelfmark ("36.141 6"), a library stamp or a
+    title-page brace read as a word ("L'ÉCONOMIE", "Chez"). Keep a lone year
+    ("1843.") -- Gomard's bibliography dates its entries that way."""
+    few = len(re.findall(r"[^\W\d_]{2,}", MARK_RE.sub("", body or ""))) < 60
+    out = []
+    for n in notes:
+        t = n["text"].strip()
+        if _REF_ONLY.fullmatch(t) and not re.fullmatch(r"\W*1[5-9]\d\d\W*", t):
+            continue
+        if few and len(re.findall(r"[^\W\d_]{2,}", t)) < 3:
+            continue
+        out.append(n)
+    return out
+
+
+def _trim_overlapping_year(notes: list) -> list:
+    """A note box that runs into the next note picks up its year: Gomard scan
+    38 "1828. Encyclopédie moderne 1831" -- the "1831" is the next note's
+    "1834." misread. Drop a trailing year when the next note's box overlaps
+    this one and starts with a year."""
+    out = [dict(n) for n in notes]
+    for a, b in zip(out, out[1:]):
+        if b["box"][1] < a["box"][3] and re.match(r"\W*1[5-9]\d\d\b", b["text"]):
+            a["text"] = re.sub(r"\s+1[5-9]\d\d\.?\s*$", "", a["text"])
+    return out
+
+
 def insert_markers(body: str, notes: list, page_pdf, page_layout: dict) -> tuple:
     """Body text with ⟦MARGIN: …⟧ lines inserted before each note's paragraph
     (and pasted copies removed). Returns (body, unanchored_count)."""
@@ -234,6 +273,8 @@ def insert_markers(body: str, notes: list, page_pdf, page_layout: dict) -> tuple
     notes = [n for n in notes if (n.get("text") or "").strip()
              and not re.fullmatch(r"\W*\d{1,3}\W*", n["text"])]
     notes = _dedupe(sorted(notes, key=lambda n: n["box"][1]))
+    notes = _drop_false_notes(notes, body)
+    notes = _trim_overlapping_year(notes)
     if not notes:
         return body, 0
     paras = [p for p in re.split(r"\n\s*\n", body.strip()) if p.strip()]
@@ -286,3 +327,50 @@ def apply_to_book(folder: str, parsed: list) -> tuple:
         placed += len(MARK_RE.findall(body))
         lost += l
     return placed, lost
+
+
+def head_boxes(page: dict) -> list:
+    """A page's confident running-head box: page_header class, >= 0.8, in
+    the top quarter, wider than tall. [] if none."""
+    return [b[2] for b in page.get("boxes", [])
+            if b[0] == "page_header" and b[1] >= 0.8 and b[2][1] < 0.25
+            and (b[2][2] - b[2][0]) > (b[2][3] - b[2][1])][:1]
+
+
+def read_heads(folder: str, pdf_path: str, progress=print) -> dict:
+    """Read the running head straight from the detector's box on pages
+    whose OCR reply has no HEADER field at all (a malformed reply: 491
+    pages across 9 books, 2026-09-29) -> intermediate/heads.json
+    {page_idx: {"box": [...], "text": "..."}}. Those pages otherwise get a
+    head only by copying a neighbour's, which can be wrong (LaMarche pdf
+    318). Measurement first: nothing reads heads.json yet. Resumes."""
+    import fitz
+    import backend_config as bc
+    import _layout
+    import _pageio
+    lay = _layout.load(folder)
+    if not lay:
+        raise RuntimeError("no intermediate/layout.json -- run layout_scan.py first")
+    raw = _pageio.split_pages(open(f"{folder}/intermediate/raw_ocr.txt", encoding="utf-8").read())
+    path = f"{folder}/intermediate/heads.json"
+    data = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
+    doc = fitz.open(pdf_path)
+    url = f"{bc.ocr_base_url()}/v1/chat/completions"
+    headers = {"Content-Type": "application/json", **bc.auth_headers()}
+    model = os.environ.get("VLM_MODEL_NAME", "")
+    todo = []
+    for i, r in enumerate(raw):
+        if any(l.startswith("HEADER") for l in r.split("\n")) or str(i) in data:
+            continue
+        boxes = head_boxes(lay["pages"].get(str(i), {}))
+        if boxes:
+            todo.append((i, boxes[0]))
+    for n, (i, box) in enumerate(todo, 1):
+        text = _read_crop(doc[i], box, url, headers, model, prompt=HEAD_PROMPT)
+        data[str(i)] = {"box": box, "text": text}
+        if n % 20 == 0 or n == len(todo):
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(data, fh, ensure_ascii=False, indent=1)
+            if progress:
+                progress(f"  heads: {n}/{len(todo)}")
+    return data
