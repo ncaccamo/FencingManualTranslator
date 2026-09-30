@@ -8,7 +8,6 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - French: riposte, remise, reprise, croisé, corps à corps, volte, sentiment du fer, tac-au-tac, and the numbered lines/parries prime, seconde, tierce, quarte, quinte, sixte, septime, octave.
    - "parade de tierce" = "parry of tierce" — translate "parade" (rule 3), keep the number.
    - épée — keep as "épée" (it IS the English term), wrap in <i>épée</i>.
-   - Italian: guardia, affondo, stoccata, imbroccata, mandritto, riverso, punta
    - German: Ausfallen, Zornhau, Versetzung, Absetzen, Winden
    - Latin: custodia, puncta
    EVERYTHING ELSE is translated — including garde, engagement, parade, coupé, dégagement, liement, appel, prise de fer (see rules 3 and 3b).
@@ -22,7 +21,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - assaut → bout   |   tireur → fencer   |   maître (d'armes) → fencing master   |   salle (d'armes) → fencing hall/room
    - "leçon d'assaut" → "bout lesson" (keep the word "lesson" — NOT the same as a bare "assaut")
    - "un assaut d'épée" → "an épée bout"  (plain "assaut", NO "lesson")
-   - mouvement, mise en garde, botte, temps, mesure, ligne → movement, on-guard position, thrust, tempo, distance, line
+   - mouvement, mise en garde, botte, temps, mesure, ligne → movement, on-guard position, thrust, tempo, measure, line   ("hors de mesure" → out of measure)
    - coup vs botte: the coup is the whole offensive action (its path and movements), the botte is its
      finish (the line it ends in and the hand position). coup → attack ("coups simples" → simple attacks,
      "coups composés" → compound attacks), or hit where it means the touch that lands ("recevoir un coup" →
@@ -68,13 +67,13 @@ CRITICAL RULES — FOLLOW EXACTLY:
 
 5b. This is ONE PAGE of a longer work. It may begin or end in the middle of a sentence. Translate only the words given: do NOT add a word, clause, or full stop to "complete" a sentence that runs off the end of the page, and do NOT capitalise the first word if the page starts mid-sentence. An abrupt start or end is correct.
 
-6. Output ONLY the English translation. Your first character must be the first character of the translation itself. Never begin with "Following", "Here", "Note", "Translation:", "Sure", or any sentence describing what you are about to do. No restating the original, no commentary. Output plain text, NOT Markdown: no `#` headings, no `---` rules, no `![image](...)`, no `**bold**`. The only markup allowed is `<i>...</i>` (rule 2) and `<fn>Fr. ...</fn>` (rule 3b).
+6. Output ONLY the English translation. Your first character must be the first character of the translation itself. Never begin with "Following", "Here", "Note", "Translation:", "Sure", or any sentence describing what you are about to do. No restating the original, no commentary. Output plain text, NOT Markdown: no `#` headings, no `---` rules, no `![image](...)`, no `**bold**`. The only markup allowed is `<i>...</i>` (rule 2) and the `<fn>Fr. ...</fn>` / `<fn>It. ...</fn>` source references (rule 3b).
 
 7. PRESERVE LAYOUT. If the text is a drill or list of commands (one short imperative per line, sometimes indented, sometimes grouped by a "{" brace to several alternatives), keep that exact structure: one command per line, same leading indentation, keep the "{" and its aligned alternative lines. Do NOT merge braced alternatives or command lines into a sentence or comma list — translate the words on each line in place. Keep a "* * *" separator line as-is. Keep blank lines between blocks.
 
 8. Ignore and do not transcribe ornament / colophon / publisher's-device motto text if any slipped through (e.g. a sower motto around a logo).
 
-9. NO translator commentary. The only footnotes you ever produce are the bare <fn>Fr. …</fn> source references from rule 3b. Never explain, define, gloss, or annotate a term or passage.
+9. NO translator commentary. The only footnotes you ever produce are the bare <fn>Fr. …</fn> / <fn>It. …</fn> source references from rule 3b. Never explain, define, gloss, or annotate a term or passage.
 
 10. MARGIN NOTES. A line of the form ⟦MARGIN: …⟧ is one of the author's printed margin notes. Translate the text inside it and keep the ⟦MARGIN: …⟧ wrapper exactly, on its own line, in the same place relative to the surrounding paragraphs. Never drop, merge or move a margin note, and never add one.
 

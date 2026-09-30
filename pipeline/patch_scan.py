@@ -167,6 +167,7 @@ def apply(stem: str, plan: dict) -> None:
         d = json.load(open(fp, encoding="utf-8"))
         d["pages"] = remap_list(d["pages"], m, "")
         d["models"] = remap_list(d.get("models") or [], m, "")
+        d["stamps"] = remap_list(d.get("stamps") or [], m, None)
         json.dump(d, open(fp, "w", encoding="utf-8"), indent=0)
     # 6. figures (with their translated captions): step 1 rewrites
     #    figures.json, so keep the moved copy for --finish

@@ -12,17 +12,19 @@ What comes from where:
     generic public-domain line.
   * model names -- read live from VLM_MODEL_PATH / TRANSLATION_MODEL_PATH
     at render time (never hard-coded).
-  * pipeline revision -- PIPELINE_VERSION env if set (run_full_pipeline.sh
-    exports it), else a git short SHA if a repo is reachable, else omitted.
+  * translation revision + date -- step 2's per-page record
+    (intermediate/translated_from.json "stamps"): a partial retranslation
+    leaves the other pages on the revision and date they were made with.
+  * PDF revision + date -- at render time (_version.pipeline_version()).
 """
 import json
 import os
 import re
-import subprocess
 from datetime import datetime
 from pathlib import Path
 
 import _render
+import _version
 
 GITHUB_URL = "github.com/ncaccamo/FencingManualTranslator"
 
@@ -92,18 +94,83 @@ def _model_label(env_var):
 
 
 def _pipeline_version():
-    v = os.environ.get("PIPELINE_VERSION", "").strip()
-    if v:
-        return v
+    return _version.pipeline_version()
+
+
+def _long_date(iso):
+    return datetime.strptime(iso, "%Y-%m-%d").strftime("%B %-d, %Y")
+
+
+def _date_range(isos):
+    """"September 30, 2026" / "September 26–30, 2026" /
+    "September 26 – October 2, 2026" / across years, both in full."""
+    a, b = min(isos), max(isos)
+    if a == b:
+        return _long_date(a)
+    da, db = (datetime.strptime(x, "%Y-%m-%d") for x in (a, b))
+    if da.year != db.year:
+        return f"{_long_date(a)} – {_long_date(b)}"
+    if da.month != db.month:
+        return f"{da.strftime('%B %-d')} – {db.strftime('%B %-d')}, {db.year}"
+    return f"{da.strftime('%B %-d')}–{db.day}, {db.year}"
+
+
+_MAX_REV_GROUPS = 3
+
+
+def provenance_line(models, stamps):
+    """The cover's translation line from step 2's per-page record: which
+    pipeline revision translated the pages, and when. One revision -> no
+    page counts; several (a partial retranslation) -> one group each, oldest
+    first; pages translated before the record existed -> "not recorded",
+    never a guessed revision. A stamp is [rev, date] or, filled in afterwards
+    from the evidence (step 2's model record + file dates), ["", earliest,
+    latest] -- shown as the date range with no revision. Pages that needed
+    no model ("-") don't count."""
+    from collections import defaultdict
+    stamps = (list(stamps or []) + [None] * len(models))[:len(models)]
+    groups, count, unrec = defaultdict(list), defaultdict(int), 0
+    for m, t in zip(models, stamps):
+        if m == "-":
+            continue
+        if not t or not t[1]:
+            unrec += 1
+        else:
+            groups[t[0] or ""].extend(d for d in t[1:3] if d)
+            count[t[0] or ""] += 1
+    if not groups:
+        return "Translated with FencingManualTranslator (revision and date not recorded)"
+    order = sorted(groups, key=lambda r: (max(groups[r]), min(groups[r])))
+    if len(order) > _MAX_REV_GROUPS:               # a long history: fold the oldest
+        old = order[:len(order) - _MAX_REV_GROUPS + 1]
+        folded = [d for r in old for d in groups[r]]
+        n_folded = sum(count[r] for r in old)
+        order = order[len(old):]
+    else:
+        folded, n_folded = [], 0
+    # no revision: the dates alone
+    label = lambda r: f"{r}, {_date_range(groups[r])}" if r else _date_range(groups[r])
+    if len(order) == 1 and not folded and not unrec:
+        r = order[0]
+        return (f"Translated with FencingManualTranslator {r}, "
+                f"{_date_range(groups[r])}" if r else
+                f"Translated with FencingManualTranslator, {_date_range(groups[r])}")
+    parts = []
+    if folded:
+        parts.append(f"earlier revisions, {_date_range(folded)} ({n_folded} pages)")
+    parts += [f"{label(r)} ({count[r]} pages)" for r in order]
+    if unrec:
+        parts.append(f"not recorded ({unrec} pages)")
+    return "Translated with FencingManualTranslator: " + "; ".join(parts)
+
+
+def _translation_provenance(book):
+    p = f"/data/processed/{book}_translated/intermediate/translated_from.json"
     try:
-        out = subprocess.run(
-            ["git", "-C", "/app", "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, timeout=3)
-        if out.returncode == 0 and out.stdout.strip():
-            return out.stdout.strip()
-    except Exception:
-        pass
-    return ""
+        d = json.load(open(p, encoding="utf-8"))
+    except (OSError, ValueError):
+        d = {}
+    return provenance_line(d.get("models") or [], d.get("stamps") or [])
 
 
 def _meta(stem):
@@ -179,10 +246,11 @@ def render(doc, stem, *, page_w, page_h, margin):
     block("Translation model: " + _translation_models(stem),
           9, gap_after=3)
 
+    block(_translation_provenance(stem), 9, gap_after=3)
     ver = _pipeline_version()
-    today = datetime.now().strftime("%B %d, %Y")
-    block(f"FencingManualTranslator {ver}  ·  generated {today}" if ver
-          else f"FencingManualTranslator  ·  generated {today}", 9, gap_after=10)
+    today = datetime.now().strftime("%B %-d, %Y")
+    block(f"PDF generated {today} with FencingManualTranslator {ver}" if ver
+          else f"PDF generated {today}", 9, gap_after=10)
 
     block(METHOD, 9, gap_after=8)
     block(CONVENTIONS, 9, gap_after=12)

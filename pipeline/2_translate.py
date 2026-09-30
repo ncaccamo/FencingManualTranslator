@@ -48,6 +48,60 @@ if not os.path.exists(PROMPT_FILE):
 with open(PROMPT_FILE, "r", encoding="utf-8") as f:
     PROMPT_TEMPLATE = f.read().strip()
 BASE_PROMPT = PROMPT_TEMPLATE   # + each book's [terms] from its overrides file
+PROMPT_FILE_IT = os.path.join(os.path.dirname(PROMPT_FILE), "translation_prompt_it.txt")
+
+
+def prompt_for_language(lang: str) -> str:
+    """The base prompt for a source language. translation_prompt.txt is the
+    French prompt; for an Italian book its language-specific parts -- rules
+    2-3b (kept / translated / footnoted terms) and the examples -- are
+    replaced by translation_prompt_it.txt. Everything else is shared."""
+    if lang != "Italian" or not os.path.exists(PROMPT_FILE_IT):
+        return BASE_PROMPT
+    it = open(PROMPT_FILE_IT, encoding="utf-8").read().strip()
+    rules, _, examples = it.partition("=== EXAMPLES ===")
+    p = BASE_PROMPT
+    a, b = p.index("2. KEEP"), p.index("4. Headings")
+    p = p[:a] + rules.strip() + "\n\n" + p[b:]
+    c, d = p.index("EXAMPLES\n"), p.index("Text to translate:")
+    return p[:c] + "EXAMPLES\n\n" + examples.strip() + "\n\n" + p[d:]
+
+
+def book_language(stem: str) -> str:
+    """The book's source language: books/<stem>.meta.json "language" (an
+    evaluation copy's meta file sits next to it in evals/gold/), else a
+    guess from the extracted text's function words."""
+    import json as _json
+    for base in (os.environ.get("BOOKS_DIR", "/data/books"), "/data/books", "/data/books/_skip"):
+        mp = os.path.join(base, f"{stem}.meta.json")
+        if os.path.exists(mp):
+            try:
+                lang = _json.load(open(mp, encoding="utf-8")).get("language", "")
+                if lang:
+                    return lang
+            except (OSError, ValueError):
+                pass
+    for mp in glob.glob(f"/data/evals/gold/*/{stem}.meta.json"):
+        try:
+            return _json.load(open(mp, encoding="utf-8")).get("language", "French") or "French"
+        except (OSError, ValueError):
+            pass
+    ep = f"/data/processed/{stem}_translated/intermediate/extracted.txt"
+    if os.path.exists(ep):
+        words = re.findall(r"[a-zàèéìòù]+", open(ep, encoding="utf-8").read(200000).lower())
+        it = sum(w in {"il", "della", "di", "che", "si", "nel", "sono", "gli", "colpo", "sciabola"} for w in words)
+        fr = sum(w in {"le", "les", "des", "du", "que", "est", "une", "dans", "coup", "épée"} for w in words)
+        if it > fr:
+            return "Italian"
+    return "French"
+
+
+def prompt_for_book(stem: str) -> str:
+    """Set BOOK_LANG for this book and return its full prompt: the base
+    prompt for its language + its own [terms] (overrides file)."""
+    global BOOK_LANG
+    BOOK_LANG = book_language(stem)
+    return prompt_for_language(BOOK_LANG) + _overrides.terms_addendum(_overrides.load(stem))
 
 FRENCH_WORDS = {
     "le", "la", "les", "un", "une", "des", "du", "de", "d", "et", "est", "sont", "était", "étaient",
@@ -116,7 +170,7 @@ def _strip_accents(s: str) -> str:
 # enforce_cat3_footnotes() is the backstop for when it leaves the term in
 # French or forgets the note. Plural before singular so the longer pattern
 # wins.
-_CAT3 = [
+_CAT3_FR = [
     ("prise de fer",   "taking the blade"),
     ("rassemblements", "gatherings of the feet"), ("rassemblement", "gathering of the feet"),
     ("rassemblant",    "gathering the feet"),     ("rassembler",   "to gather the feet"),
@@ -132,8 +186,25 @@ _CAT3 = [
     ("caver",          "to drop the point"),
 ]
 
+# Italian category-2 terms (translated, first use footnoted "It. <term>"),
+# 2026-09-30. "filo" (glide) is left to the model -- as a bare word it also
+# means the blade's edge, so the backstop must not rewrite it.
+_CAT3_IT = [
+    ("legamenti",       "engagements"),     ("legamento",   "engagement"),
+    ("filo sottomesso", "forced glide"),
+    ("trasporti",       "transports"),      ("trasporto",   "transport"),
+    ("uscita in tempo", "action in tempo"),
+    ("deviamenti",      "deviations"),      ("deviamento",  "deviation"),
+    ("parata di picco", "beat parry"),
+    ("controtempo",     "countertime"),
+]
+# accepted as source references in the model's <fn> notes, beyond _CAT3_IT
+_CAT3_IT_REFS = {"filo"}
+
 # canonical singular French for the "Fr. <term>" note, so a plural form
 # ("appels") doesn't produce a second note distinct from "Fr. appel".
+_CAT3_NOTE_IT = {"legamenti": "legamento", "trasporti": "trasporto",
+                 "deviamenti": "deviamento"}
 _CAT3_NOTE = {
     "rassemblements": "rassemblement", "rassemblant": "rassemblement",
     "rassembler": "rassemblement", "dérobements": "dérobement",
@@ -141,6 +212,21 @@ _CAT3_NOTE = {
     "froissements": "froissement", "coupés": "coupé",
     "coulés": "coulé", "déroulé": "coulé", "appels": "appel",
 }
+
+# The book's source language (set per book with its prompt, see
+# prompt_for_book): picks the category-2 list, the "Fr."/"It." reference
+# and the kept-term backstop.
+BOOK_LANG = "French"
+_LANG_REF = {"French": ("fr", "French"), "Italian": ("it", "Italian")}
+
+
+def _cat3():
+    return _CAT3_IT if BOOK_LANG == "Italian" else _CAT3_FR
+
+
+def _cat3_note():
+    return _CAT3_NOTE_IT if BOOK_LANG == "Italian" else _CAT3_NOTE
+
 
 
 def enforce_cat3_footnotes(text: str, seen: set, footnote: bool = True) -> str:
@@ -160,11 +246,12 @@ def enforce_cat3_footnotes(text: str, seen: set, footnote: bool = True) -> str:
 
     text = re.sub(r"<fn>.*?</fn>", _mask, text, flags=re.DOTALL | re.IGNORECASE)
 
-    for fr, en in _CAT3:
+    label = _LANG_REF.get(BOOK_LANG, _LANG_REF["French"])[1]
+    for fr, en in _cat3():
         pat = re.compile(r"(?:<i>\s*)?(?<![\w-])" + re.escape(fr)
                          + r"(?![\w-])(?:\s*</i>)?", re.I)
         first = [True]
-        note_fr = _CAT3_NOTE.get(fr, fr)
+        note_fr = _cat3_note().get(fr, fr)
 
         def _sub(m, en=en, note_fr=note_fr, first=first):
             g = m.group(0)
@@ -173,7 +260,7 @@ def enforce_cat3_footnotes(text: str, seen: set, footnote: bool = True) -> str:
             if footnote and first[0] and note_fr not in seen:
                 # mask the tag we add too, so a later _CAT3 pass can't
                 # match the French term sitting inside it
-                masked.append(f"<fn>French: {note_fr}</fn>")
+                masked.append(f"<fn>{label}: {note_fr}</fn>")
                 r += f"\x00{len(masked) - 1}\x00"
                 seen.add(note_fr)
             first[0] = False
@@ -197,17 +284,19 @@ def pull_footnotes(text: str, source_text: str = "", seen: set = None):
         seen = set()
     numbered = []
 
-    _cat3_fr = {t for t, _ in _CAT3}
+    _cat3_fr = {t for t, _ in _cat3()} | (_CAT3_IT_REFS if BOOK_LANG == "Italian" else set())
+    ab, label = _LANG_REF.get(BOOK_LANG, _LANG_REF["French"])
 
     def take(m):
         note = re.sub(r"</?fn>", "", re.sub(r"\s+", " ", m.group(1))).strip()
         # accept only a bare source reference ("Fr. liement" / "French:
-        # liement") for a cat-3 term -- the 14B sometimes footnotes a
-        # Cat-2 term or puts the English rendering in the note.
-        ref = re.sub(r"^(?:fr\.|french:)\s*", "", note, flags=re.I).lower().rstrip(".")
+        # liement", "It. legamento") for a category-2 term -- the model
+        # sometimes footnotes a kept term or puts the English in the note.
+        ref = re.sub(rf"^(?:{ab}\.|{label.lower()}:)\s*", "", note, flags=re.I).lower().rstrip(".")
         if not note or ref not in _cat3_fr:
             return ""                       # drop the tag, keep the phrase
-        note = f"French: {ref}"             # canonical rendered form
+        ref = _cat3_note().get(ref, ref)
+        note = f"{label}: {ref}"            # canonical rendered form
         key = _strip_accents(ref)
         if key in seen or len(numbered) >= FN_MAX_PER_PAGE:
             return ""
@@ -321,7 +410,7 @@ def _phrase_repairs(text: str) -> str:
 # Only the tight retained set; riposte / remise / reprise / the parry
 # numbers the model handles on its own. Each entry: term -> English
 # mistranslations to snap back to it.
-_KEEP_TERMS = [
+_KEEP_TERMS_FR = [
     ("corps à corps", [r"body[- ]to[- ]body", r"body contact"]),
     ("sentiment du fer", [r"feeling of (?:the )?(?:blade|iron|steel)"]),
     ("croisé", []),
@@ -341,6 +430,20 @@ _KEEP_TERMS = [
     ("tac-au-tac", [r"(?:(?:from|of)\s+the\s+|du\s+)?tac[- ]to[- ]the[- ]tac",
                     r"(?:(?:from|of)\s+the\s+|du\s+)?tac[- ]au[- ]tac"]),
 ]
+
+# Italian kept terms (translation_prompt_it.txt rule 2), 2026-09-30. Only
+# words that never occur as ordinary English -- the hand positions and
+# Maestro are left to the model.
+_KEEP_TERMS_IT = [(t, []) for t in (
+    "controcavazione", "cavazione", "cartoccio", "fianconata", "inquartata",
+    "intrecciata", "appuntata", "passata sotto", "intagliata", "molinello",
+    "molinelli", "fendente", "traversone", "raddoppio", "ripigliata",
+    "copertino", "balestrata", "scandaglio", "traccheggio", "ricasso")]
+
+
+def _keep_terms():
+    return _KEEP_TERMS_IT if BOOK_LANG == "Italian" else _KEEP_TERMS_FR
+
 
 # A source-language token the 7B reliably garbles. rassemblant is now a
 # Category-3 (translated) term, so snap the garble back to the BARE French
@@ -485,7 +588,7 @@ def enforce_kept_terms(text: str, src: str = "") -> str:
         return text
     text = repair_mangled_terms(text, src)
     text = fix_known_garbles(text, src)
-    for term, wrongs in _KEEP_TERMS:
+    for term, wrongs in _keep_terms():
         for w in wrongs:
             def _sub_term(m, term=term):
                 # preserve plurality of the garbled match ("RAPISES" ->
@@ -1621,36 +1724,60 @@ def load_fingerprints(folder: str):
     return _json.load(open(p, encoding="utf-8"))["pages"] if os.path.exists(p) else None
 
 
+_RUN_STAMP = None
+
+
+def run_stamp() -> list:
+    """[pipeline revision, ISO date] for pages translated by this run --
+    taken once per run, so a run crossing midnight stamps one date."""
+    global _RUN_STAMP
+    if _RUN_STAMP is None:
+        import _version
+        from datetime import date
+        _RUN_STAMP = [_version.pipeline_version(), date.today().isoformat()]
+    return list(_RUN_STAMP)
+
+
 def save_fingerprints(folder: str, fps: list, translated: list = None,
-                      page_models: list = None) -> None:
+                      page_models: list = None, page_stamps: list = None) -> None:
     """Also records which translation model produced each page (`models`:
-    the model file the server reported, else the name sent to it). Pages
-    listed in `translated` (1-based) get the current model; the rest keep
-    what was recorded before. `page_models` (per page, from a resumed run)
-    overrides both. The cover page summarises it."""
+    the model file the server reported, else the name sent to it), and the
+    pipeline revision + date it was translated on (`stamps`: [rev, date]).
+    Pages listed in `translated` (1-based) get the current model and stamp;
+    the rest keep what was recorded before. `page_models` / `page_stamps`
+    (per page, from a resumed run) override both. The cover page
+    summarises them."""
     import json as _json
     p = f"{folder}/intermediate/translated_from.json"
     old = _json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
     # pages translated before the model was recorded: unknown ("") -- the
     # cover shows them as the configured default model, never as whatever
-    # model happens to be running now
+    # model happens to be running now. Same for the stamp (None): the cover
+    # says "not recorded".
     models = old.get("models") or [""] * len(fps)
     models = (models + [""] * len(fps))[:len(fps)]
+    stamps = old.get("stamps") or [None] * len(fps)
+    stamps = (stamps + [None] * len(fps))[:len(fps)]
     for k in (translated if translated is not None else range(1, len(fps) + 1)):
         models[k - 1] = LAST_MODEL or TRANSLATION_MODEL_NAME
+        stamps[k - 1] = run_stamp()
     for k, m in enumerate(page_models or []):
         models[k] = m or models[k]
+    for k, t in enumerate(page_stamps or []):
+        stamps[k] = t or stamps[k]
     with open(p, "w", encoding="utf-8") as fh:
-        _json.dump({"version": 1, "pages": fps, "models": models}, fh, indent=0)
+        _json.dump({"version": 1, "pages": fps, "models": models, "stamps": stamps},
+                   fh, indent=0)
 
 
 def _partial_path(folder: str) -> str:
     return f"{folder}/intermediate/translation.partial.json"
 
 
-def save_partial(folder: str, fps: list, done: list, models: list, st: dict) -> None:
+def save_partial(folder: str, fps: list, done: list, models: list, st: dict,
+                 stamps: list = None) -> None:
     """After each page of a whole-book run: the pages translated so far, the
-    source fingerprints they came from, the model per page, and the
+    source fingerprints they came from, the model and stamp per page, and the
     book-wide footnote state at this point -- so a crashed or cancelled run
     resumes where it stopped instead of starting over. Written to a temp
     file and renamed, so a crash mid-write never leaves a broken file."""
@@ -1658,6 +1785,7 @@ def save_partial(folder: str, fps: list, done: list, models: list, st: dict) -> 
     p = _partial_path(folder)
     with open(p + ".tmp", "w", encoding="utf-8") as fh:
         _json.dump({"version": 1, "fingerprints": fps, "pages": done, "models": models,
+                    "stamps": stamps or [None] * len(done),
                     "state": {"fn_seen": sorted(st["fn_seen"]),
                               "cat3_seen": sorted(st["cat3_seen"]),
                               "fn_state": st["fn_state"]}}, fh, ensure_ascii=False)
@@ -1665,7 +1793,7 @@ def save_partial(folder: str, fps: list, done: list, models: list, st: dict) -> 
 
 
 def load_partial(folder: str, fps: list):
-    """(pages done, models, state) from an interrupted whole-book run, or
+    """(pages done, models, state, stamps) from an interrupted whole-book run, or
     None. Used only if the book still has the same page count and the done
     pages' source text is unchanged (the saved state is only valid for
     exactly those pages); pages after them may have changed freely."""
@@ -1679,7 +1807,8 @@ def load_partial(folder: str, fps: list):
         s = d["state"]
         st = {"fn_seen": set(s["fn_seen"]), "cat3_seen": set(s["cat3_seen"]),
               "fn_state": dict(s["fn_state"])}
-        return done, list(d.get("models") or [""] * len(done)), st
+        return (done, list(d.get("models") or [""] * len(done)), st,
+                list(d.get("stamps") or [None] * len(done)))
     except (OSError, ValueError, KeyError, TypeError):
         return None
 
@@ -1939,8 +2068,7 @@ if len(sys.argv) > 1 and sys.argv[1] == "--captions":
     try:
         for folder in glob.glob("/data/processed/*_translated"):
             print(f"captions/headers: {Path(folder).name}")
-            PROMPT_TEMPLATE = BASE_PROMPT + _overrides.terms_addendum(
-                _overrides.load(Path(folder).name.replace("_translated", "")))
+            PROMPT_TEMPLATE = prompt_for_book(Path(folder).name.replace("_translated", ""))
             translate_figure_captions(folder, force=True)
             translate_headers(folder, force=True)
             apply_book_overrides(folder, fixes=False)
@@ -1974,7 +2102,7 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
         sys.exit(f"✗ {stem}: extracted.txt has {len(ex)} pages, translation.txt "
                  f"{len(tr)} -- out of step; a full translation is needed")
     ov = _overrides.load(stem)
-    PROMPT_TEMPLATE = BASE_PROMPT + _overrides.terms_addendum(ov)
+    PROMPT_TEMPLATE = prompt_for_book(stem)
     done_p = f"{I}/retranslated.json"
     done = _json.load(open(done_p)) if os.path.exists(done_p) else {}
     fp = lambda t: hashlib.sha1(t.strip().encode("utf-8")).hexdigest()[:16]
@@ -2082,8 +2210,8 @@ try:
                 continue
             print(f"{Path(folder).name}: page count changed ({n_tr} translated, "
                   f"{len(pages)} extracted) -- translating the whole book")
-        PROMPT_TEMPLATE = BASE_PROMPT + _overrides.terms_addendum(
-            _overrides.load(Path(folder).name.replace("_translated", "")))
+        PROMPT_TEMPLATE = prompt_for_book(Path(folder).name.replace("_translated", ""))
+        print(f"Source language: {BOOK_LANG}")
 
         print(f"Translating: {Path(folder).name}")
         print(f"Pages: {len(pages)}\n")
@@ -2093,14 +2221,14 @@ try:
         # own footnote across a page break
         resumed = load_partial(folder, cur_fp)
         if resumed:
-            translated_pages, page_models, _st = resumed
+            translated_pages, page_models, _st, page_stamps = resumed
             print(f"Resuming an interrupted run: {len(translated_pages)} page(s) already "
                   f"done, continuing at page {len(translated_pages) + 1}\n"
                   f"  (delete intermediate/translation.partial.json to start over)\n")
         else:
             if os.path.exists(_partial_path(folder)):
                 print("  (saved partial run is for different source text -- starting over)\n")
-            translated_pages, page_models = [], []
+            translated_pages, page_models, page_stamps = [], [], []
             _st = {"fn_seen": set(), "cat3_seen": set(), "fn_state": {}}
 
         for i in range(len(translated_pages) + 1, len(pages) + 1):
@@ -2109,11 +2237,13 @@ try:
             # "-": no model reply (blank / marker page) -- the cover skips it
             page_models.append((LAST_MODEL or TRANSLATION_MODEL_NAME)
                                if MODEL_CALLS != calls else "-")
-            save_partial(folder, cur_fp, translated_pages, page_models, _st)
+            page_stamps.append(run_stamp())
+            save_partial(folder, cur_fp, translated_pages, page_models, _st, page_stamps)
 
         with open(dst, "w", encoding="utf-8") as f:
             f.write(_pageio.join_pages(translated_pages))
-        save_fingerprints(folder, cur_fp, page_models=page_models)
+        save_fingerprints(folder, cur_fp, page_models=page_models,
+                          page_stamps=page_stamps)
         os.remove(_partial_path(folder))
 
         translate_figure_captions(folder)

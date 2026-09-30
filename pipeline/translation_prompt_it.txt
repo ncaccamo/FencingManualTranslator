@@ -1,0 +1,72 @@
+2. KEEP in Italian, wrapped in <i>…</i>, ONLY this set — the terms English-language writing on Italian fencing itself retains:
+   - the hand positions, lines and parries: prima, seconda, terza, quarta, quinta, sesta, settima, ottava ("quarta bassa", "in seconda", "invito di terza"). "parata di terza" = "parry of terza" — translate "parata" (rule 3), keep the number.
+   - named techniques: cavazione, controcavazione, cartoccio, fianconata, inquartata, intrecciata, appuntata, sforzo (sforzi), passata sotto, passata, intagliata, molinello (molinelli), fendente, tocco (di sciabola), traversone, raddoppio, ripigliata, rimessa, ripresa, copertino, balestra / balestrata, scandaglio, traccheggio.
+   - parts of the weapon: ricasso.
+   - Maestro (the fencing master, in the lessons and drill tables; plural Maestri) — keep it capitalised: <i>Maestro</i>.
+   - risposta → <i>riposte</i> (the fencing term, as in French).
+   A book may DEFINE one of these words as its own technique or use it only descriptively; follow the rules here unless the book's own [terms] say otherwise.
+   EVERYTHING ELSE is translated (rules 3 and 3b).
+
+3. TRANSLATE these to their standard English names — plain text, NO <i>…</i>:
+   - colpo: the strike itself → hit; the whole offensive action → attack ("colpi semplici" → simple attacks); NEVER "blow". Named colpi keep their own names: colpo di punta → thrust, colpo di taglio → cut, colpo dritto → straight thrust, colpo di tempo → time-hit, colpo d'arresto / arresto → stop-hit.
+   - stoccata, botta, puntata → thrust   |   tirata → thrust (the one delivered)   |   sciabolata → cut ("sciabolata alla testa" → cut to the head)
+   - montante → rising ("sciabolata di montante" → rising cut, "molinello montante" → rising <i>molinello</i>) — a direction, not a named cut in these books.
+   - taglio → edge (of the blade), or cut in "colpo di taglio"   |   controtaglio → false-edge cut   |   falso filo → false edge   |   filo, when it means the blade's edge → edge (see rule 3b for filo the action)
+   - guardia → guard   |   misura → measure ("fuori misura" → out of measure)   |   a fondo, affondo, spaccata → lunge   |   allungo → extension
+   - piè fermo / piede fermo → firm-footed   |   passo avanti / indietro → step forward / back   |   salto indietro → jump back
+   - parata → parry   |   parata di contro, contro di prima … → counter parry, counter of prima …   |   mezza contro → half-counter   |   parata di ceduta, ceduta → yielding parry
+   - circolata → circular ("finta di punta circolata" → circular feint of the point)   |   mezzo cerchio → half-circle
+   - finta → feint   |   doppia finta → double feint   |   finta dritta → straight feint   |   accennare → indicate (a feint or threat)
+   - battuta → beat   |   invito → invitation   |   presa di ferro → taking the blade   |   disarmo → disarm   |   opposizione → opposition
+   - tempo → tempo ("in tempo", "a tempo")   |   contraria → contrary   |   contrazione → contraction
+   - assalto → bout   |   lezione → lesson   |   allievo → student   |   tiratore, schermitore → fencer   |   avversario, nemico → opponent
+   - spada → sword   |   sciabola → saber   |   fioretto → foil   |   ferro (the opponent's steel) → the blade   |   forte / debole → forte / foible
+   - targets: testa → head   |   figura → face ("figura interna / esterna" → inside / outside face)   |   petto → chest   |   fianco → flank   |   addome → abdomen   |   braccio → arm
+
+3b. TRANSLATE these too, and the FIRST time each one appears in the text you are given, write it as  English<fn>It. original</fn>  — a bare source reference, NOT an explanation, nothing added. Later occurrences: just the English.
+   - legamento → engagement
+   - filo, when it is an ACTION along the opponent's blade ("colpo di filo", "accennare il filo", "filo di terza") → glide
+   - filo sottomesso → forced glide
+   - trasporto → transport (of the blade)
+   - uscita in tempo → action in tempo
+   - deviamento → deviation
+   - parata di picco → beat parry
+   - controtempo → countertime
+   Example:  "… with an engagement<fn>It. legamento</fn> of <i>terza</i> he closed the line."
+   In a HEADING (rule 4) translate the term but omit the <fn> tag.
+
+=== EXAMPLES ===
+Input:
+PARTE PRIMA
+Output:
+FIRST PART
+
+Input:
+DEL COLPO D'ARRESTO
+Output:
+OF THE STOP-HIT
+
+Input:
+Dalla guardia di terza, vibrerà la sciabolata alla testa.
+Output:
+From the guard of <i>terza</i>, he will deliver the cut to the head.
+
+Input:
+Parata di quarta e risposta di cavazione al petto.
+Output:
+Parry of <i>quarta</i> and <i>riposte</i> by <i>cavazione</i> to the chest.
+
+Input:
+Dal legamento di seconda, filo al petto in fuori, battendo il piede destro a terra.
+Output:
+From the engagement<fn>It. legamento</fn> of <i>seconda</i>, glide<fn>It. filo</fn> to the chest on the outside, stamping the right foot on the ground.
+
+Input:
+MAESTRO — Inviterà di terza. Parerà contro di quarta. Si lascerà colpire.
+Output:
+<i>MAESTRO</i> — Invites in <i>terza</i>. Parries counter of <i>quarta</i>. Lets himself be hit.
+
+Input:
+Il colpo deve giungere al bersaglio prima che l'avversario abbia compiuto la sua azione.
+Output:
+The hit must reach the target before the opponent has completed his action.

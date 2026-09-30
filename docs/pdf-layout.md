@@ -201,7 +201,8 @@ What it shows and where each piece comes from:
 | "The original work is in the public domain." + digitisation source/URL | `meta.json` (`rights`, `source`, `source_id`, `source_url`, `source_terms`) |
 | disclosure sentence, method, reading-conventions | constants in `_cover.py` |
 | OCR / translation model names | OCR: live from `VLM_MODEL_PATH` (label drops the quant tag). Translation: step 2's per-page record (`intermediate/translated_from.json`), with page counts if models were mixed; pages with no record (translated before 2026-09-25) are credited to Qwen2.5-14B-Instruct-Q4_K_M |
-| `Pipeline <sha> · generated <date>` | `PIPELINE_VERSION` env (set by `run_full_pipeline.sh`); omitted on a bare `docker exec` |
+| `Translated with FencingManualTranslator <sha>, <date>` | step 2's per-page record (`translated_from.json` `stamps`: revision + date each page was translated). After a partial retranslation it lists each revision with its dates and page count; pages translated before 2026-09-30 show as "not recorded" |
+| `PDF generated <date> with FencingManualTranslator <sha>` | render time. The revision (`pipeline/_version.py`) comes from `PIPELINE_VERSION`, else the repo's `.git` mounted read-only at `/data/git`; omitted if neither is reachable. Commit before a run you want to keep -- uncommitted changes aren't flagged |
 | CC0 line + GitHub URL | constants |
 | `pipeline id: <stem>` footer | the stem, for traceability back to `processed/` |
 

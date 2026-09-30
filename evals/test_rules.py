@@ -1830,10 +1830,11 @@ def test_interrupted_translation_resumes_with_state():
         Path(d, "intermediate").mkdir()
         fps = ["a", "b", "c", "d"]
         st = {"fn_seen": {"feinte"}, "cat3_seen": {"coulé"}, "fn_state": {"open": True}}
-        save_partial(d, fps, ["p1", "p2"], ["Qwen3.8", "Qwen3.8"], st)
-        done, models, st2 = load_partial(d, fps)
+        stamps = [["cbd42c1", "2026-09-29"], ["cbd42c1", "2026-09-30"]]
+        save_partial(d, fps, ["p1", "p2"], ["Qwen3.8", "Qwen3.8"], st, stamps)
+        done, models, st2, stamps2 = load_partial(d, fps)
         assert done == ["p1", "p2"] and models == ["Qwen3.8", "Qwen3.8"]
-        assert st2 == st
+        assert st2 == st and stamps2 == stamps
         assert load_partial(d, ["a", "b", "c", "CHANGED"]) is not None
         assert load_partial(d, ["a", "CHANGED", "c", "d"]) is None
         assert load_partial(d, ["a", "b", "c"]) is None          # page count changed
@@ -2096,6 +2097,80 @@ def test_caption_not_borrowed_from_a_neighbouring_plate():
              {"header": "Planche II.", "body": "Troisième Position, ou la garde.", "figures": []}]
     recover_plate_captions(pages)
     assert pages[0]["figures"][0]["caption"] == ""
+
+
+def _cover_module():
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        return importlib.import_module("_cover")
+    except (TypeError, AttributeError, ImportError):   # needs real PyMuPDF (in the image)
+        return None
+
+
+def test_cover_translation_line_single_run():
+    # a book translated in one run: revision and date, no page counts
+    C = _cover_module()
+    if C is None:
+        return
+    line = C.provenance_line(["Q", "-", "Q"], [["cbd42c1", "2026-09-30"], None,
+                                               ["cbd42c1", "2026-09-30"]])
+    assert line == "Translated with FencingManualTranslator cbd42c1, September 30, 2026", line
+
+
+def test_cover_translation_line_partial_retranslation():
+    # a partial retranslation must not re-date the whole book: each
+    # revision keeps its own pages and dates; pages from before the record
+    # existed say "not recorded", never a guessed revision
+    C = _cover_module()
+    if C is None:
+        return
+    models = ["Q"] * 6
+    stamps = [["54806ab", "2026-09-29"], ["54806ab", "2026-09-30"],
+              ["cbd42c1", "2026-10-02"], None, None, None]
+    line = C.provenance_line(models, stamps)
+    assert line == ("Translated with FencingManualTranslator: "
+                    "54806ab, September 29–30, 2026 (2 pages); "
+                    "cbd42c1, October 2, 2026 (1 pages); not recorded (3 pages)"), line
+    assert C.provenance_line(["Q", "Q"], []) == \
+        "Translated with FencingManualTranslator (revision and date not recorded)"
+
+
+def test_cover_translation_line_filled_in_date_range():
+    # pages stamped afterwards from the evidence carry a date range and no
+    # revision: shown as the dates alone, never "not recorded"
+    C = _cover_module()
+    if C is None:
+        return
+    fill = ["", "2026-09-25", "2026-09-29"]
+    assert C.provenance_line(["Q", "Q"], [fill, fill]) == \
+        "Translated with FencingManualTranslator, September 25–29, 2026"
+    assert C.provenance_line(["Q", "Q", "Q"], [fill, fill, ["cbd42c1", "2026-10-02"]]) == (
+        "Translated with FencingManualTranslator: September 25–29, 2026 (2 pages); "
+        "cbd42c1, October 2, 2026 (1 pages)")
+
+def test_cover_date_range_formats():
+    C = _cover_module()
+    if C is None:
+        return
+    assert C._date_range(["2026-09-26", "2026-10-02"]) == "September 26 – October 2, 2026"
+    assert C._date_range(["2025-12-30", "2026-01-02"]) == "December 30, 2025 – January 2, 2026"
+
+
+def test_save_fingerprints_stamps_only_retranslated_pages():
+    # --pages retranslation stamps just those pages; the others keep theirs
+    import tempfile, json
+    from _rules import TX
+    with tempfile.TemporaryDirectory() as d:
+        Path(d, "intermediate").mkdir()
+        Path(d, "intermediate", "translated_from.json").write_text(json.dumps(
+            {"version": 1, "pages": ["a", "b", "c"], "models": ["Q", "Q", "Q"],
+             "stamps": [["old1234", "2026-09-26"], None, None]}))
+        TX["_RUN_STAMP"] = ["new5678", "2026-10-02"]
+        TX["save_fingerprints"](d, ["a", "B", "c"], translated=[2])
+        rec = json.loads(Path(d, "intermediate", "translated_from.json").read_text())
+        assert rec["stamps"] == [["old1234", "2026-09-26"], ["new5678", "2026-10-02"], None]
+        TX["_RUN_STAMP"] = None
 
 
 def _run_plain() -> int:
