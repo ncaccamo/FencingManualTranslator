@@ -26,7 +26,6 @@ import time
 from collections import Counter
 
 sys.path.insert(0, "/app")
-import _overrides  # noqa: E402
 import _pageio     # noqa: E402
 
 OUT = "/data/evals/reports/translation-model-test"
@@ -107,7 +106,7 @@ def run(label, current=False):
             res["pages"][key] = {"text": tr[scan - 1].strip(), "secs": None}
             continue
         stem = os.path.basename(folder)[:-len("_translated")]
-        ns["PROMPT_TEMPLATE"] = ns["BASE_PROMPT"] + _overrides.terms_addendum(_overrides.load(stem))
+        ns["PROMPT_TEMPLATE"] = ns["prompt_for_book"](stem)   # language prompt + book terms, as step 2
         st = {"fn_seen": set(), "cat3_seen": set(), "fn_state": {}}
         t0 = time.time()
         out = ns["translate_page"](page, scan, 0, st)

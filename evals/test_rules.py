@@ -2173,6 +2173,49 @@ def test_save_fingerprints_stamps_only_retranslated_pages():
         TX["_RUN_STAMP"] = None
 
 
+def test_italian_cat2_new_terms_translated_and_noted_once():
+    # post-OCR survey terms (2026-09-30): a bare Italian word left in the
+    # English becomes its rendering, with one "Italian: <singular>" note
+    # per book; "di striscio" wins over bare "striscio"
+    from _rules import TX
+    TX["BOOK_LANG"] = "Italian"
+    try:
+        seen = set()
+        out = TX["enforce_cat3_footnotes"]("A feint volante, then two feints volanti.", seen)
+        assert "volant" not in out.replace("Italian: volante", ""), out
+        assert out.count("off the blade") == 2 and out.count("<fn>Italian: volante</fn>") == 1, out
+        out = TX["enforce_cat3_footnotes"]("He hits di striscio.", seen)
+        assert out == "He hits grazing<fn>Italian: striscio</fn>.", out
+        out = TX["enforce_cat3_footnotes"]("The controazioni of seconda.", seen)
+        assert out == "The counter-actions<fn>Italian: controazione</fn> of seconda.", out
+    finally:
+        TX["BOOK_LANG"] = "French"
+
+
+def test_italian_prompt_carries_survey_terms():
+    from _rules import TX
+    p = TX["prompt_for_language"]("Italian")
+    for t in ("<i>coupé</i>", "picchio, picco → beat", "controazione → counter-action",
+              "mezzocerchio → half-circle", "mezzo contro", "pancia → belly",
+              "off the blade", "write <i>fianconata</i>"):
+        assert t in p, t
+    assert "picchio" not in TX["prompt_for_language"]("French")
+
+
+def test_italian_kept_terms_backstop():
+    # Italian sample 2026-09-30: Bruno "An sforzo is called..." left bare,
+    # Masiello 1902 heading "OF THE RIPONSES" (DELLE RISPOSTE)
+    from _rules import TX
+    TX["BOOK_LANG"] = "Italian"
+    try:
+        out = TX["enforce_kept_terms"]("The sforzo and the simple sforzi.")
+        assert out == "The <i>sforzo</i> and the simple <i>sforzi</i>.", out
+        out = TX["enforce_kept_terms"]("OF THE <i>RIPONSES</i> FROM THE FINAL PARRY")
+        assert "RIPOSTES" in out and "RIPONSES" not in out, out
+    finally:
+        TX["BOOK_LANG"] = "French"
+
+
 def _run_plain() -> int:
     fns = sorted((n, f) for n, f in globals().items()
                  if n.startswith("test_") and callable(f))

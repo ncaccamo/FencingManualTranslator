@@ -197,6 +197,10 @@ _CAT3_IT = [
     ("deviamenti",      "deviations"),      ("deviamento",  "deviation"),
     ("parata di picco", "beat parry"),
     ("controtempo",     "countertime"),
+    ("controazioni",    "counter-actions"), ("controazione", "counter-action"),
+    ("circolazioni",    "circlings"),       ("circolazione", "circling"),
+    ("di striscio",     "grazing"),         ("striscio",    "graze"),
+    ("volanti",         "off the blade"),   ("volante",     "off the blade"),
 ]
 # accepted as source references in the model's <fn> notes, beyond _CAT3_IT
 _CAT3_IT_REFS = {"filo"}
@@ -204,7 +208,9 @@ _CAT3_IT_REFS = {"filo"}
 # canonical singular French for the "Fr. <term>" note, so a plural form
 # ("appels") doesn't produce a second note distinct from "Fr. appel".
 _CAT3_NOTE_IT = {"legamenti": "legamento", "trasporti": "trasporto",
-                 "deviamenti": "deviamento"}
+                 "deviamenti": "deviamento", "controazioni": "controazione",
+                 "circolazioni": "circolazione", "di striscio": "striscio",
+                 "volanti": "volante"}
 _CAT3_NOTE = {
     "rassemblements": "rassemblement", "rassemblant": "rassemblement",
     "rassembler": "rassemblement", "dérobements": "dérobement",
@@ -438,7 +444,12 @@ _KEEP_TERMS_IT = [(t, []) for t in (
     "controcavazione", "cavazione", "cartoccio", "fianconata", "inquartata",
     "intrecciata", "appuntata", "passata sotto", "intagliata", "molinello",
     "molinelli", "fendente", "traversone", "raddoppio", "ripigliata",
-    "copertino", "balestrata", "scandaglio", "traccheggio", "ricasso")]
+    "copertino", "balestrata", "scandaglio", "traccheggio", "ricasso",
+    "imbroccata", "mandritto", "coupé", "sforzi", "sforzo", "rimessa", "ripresa")] + [
+    # riposte: kept in the body, but an isolated heading can garble it
+    # (the French "RAPISES"; "RIPONSES" is fixed in fix_known_garbles)
+    ("riposte", [r"rapier(?:[- ]?(?:rapier|response|riposte|reply))?",
+                 r"riposte response", r"rapises?"])]
 
 
 def _keep_terms():
@@ -536,6 +547,10 @@ def fix_known_garbles(text: str, src: str = "") -> str:
         return w.upper() if g.isupper() else w.capitalize() if g[:1].isupper() else w
     text = re.sub(r"\bthusts?\b", lambda m: _case(m, "thrust"), text, flags=re.I)
     text = re.sub(r"\bthroughs\b", lambda m: _case(m, "thrust"), text, flags=re.I)
+    # "RIPONSES" for riposte(s) -- an Italian heading "DELLE RISPOSTE"
+    # (Masiello 1902, sample 2026-09-30), already italicised. Not a word in
+    # any of the languages here, so safe to fix anywhere.
+    text = re.sub(r"\briponses?\b", lambda m: _case(m, "riposte"), text, flags=re.I)
     # "the du tac-au-tac riposte": the French article left in front. Only
     # after an English article -- French kept in a translation ("je ne
     # parle pas du tac au tac", LaMarche scan 128) must stay as it is

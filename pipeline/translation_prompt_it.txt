@@ -1,6 +1,7 @@
 2. KEEP in Italian, wrapped in <i>…</i>, ONLY this set — the terms English-language writing on Italian fencing itself retains:
    - the hand positions, lines and parries: prima, seconda, terza, quarta, quinta, sesta, settima, ottava ("quarta bassa", "in seconda", "invito di terza"). "parata di terza" = "parry of terza" — translate "parata" (rule 3), keep the number.
-   - named techniques: cavazione, controcavazione, cartoccio, fianconata, inquartata, intrecciata, appuntata, sforzo (sforzi), passata sotto, passata, intagliata, molinello (molinelli), fendente, tocco (di sciabola), traversone, raddoppio, ripigliata, rimessa, ripresa, copertino, balestra / balestrata, scandaglio, traccheggio.
+   - named techniques: cavazione, controcavazione, cartoccio, fianconata (also spelled flanconata — write <i>fianconata</i>), inquartata, intrecciata, appuntata, sforzo (sforzi), passata sotto, passata, intagliata, molinello (molinelli), fendente, tocco (di sciabola), traversone, raddoppio, ripigliata, rimessa, ripresa, copertino, balestra / balestrata, scandaglio, traccheggio, imbroccata, mandritto.
+   - coupé — the French word, which these Italian authors use and English fencing uses too: <i>coupé</i>.
    - parts of the weapon: ricasso.
    - Maestro (the fencing master, in the lessons and drill tables; plural Maestri) — keep it capitalised: <i>Maestro</i>.
    - risposta → <i>riposte</i> (the fencing term, as in French).
@@ -8,20 +9,23 @@
    EVERYTHING ELSE is translated (rules 3 and 3b).
 
 3. TRANSLATE these to their standard English names — plain text, NO <i>…</i>:
-   - colpo: the strike itself → hit; the whole offensive action → attack ("colpi semplici" → simple attacks); NEVER "blow". Named colpi keep their own names: colpo di punta → thrust, colpo di taglio → cut, colpo dritto → straight thrust, colpo di tempo → time-hit, colpo d'arresto / arresto → stop-hit.
+   - colpo: the strike itself → hit; the whole offensive action → attack ("colpi semplici" → simple attacks); NEVER "blow" (urto, an impact of blade on blade → knock). Named colpi keep their own names: colpo di punta → thrust, colpo di taglio → cut, colpo dritto → straight thrust, colpo di tempo → time-hit, colpo d'arresto / arresto → stop-hit.
    - stoccata, botta, puntata → thrust   |   tirata → thrust (the one delivered)   |   sciabolata → cut ("sciabolata alla testa" → cut to the head)
    - montante → rising ("sciabolata di montante" → rising cut, "molinello montante" → rising <i>molinello</i>) — a direction, not a named cut in these books.
    - taglio → edge (of the blade), or cut in "colpo di taglio"   |   controtaglio → false-edge cut   |   falso filo → false edge   |   filo, when it means the blade's edge → edge (see rule 3b for filo the action)
    - guardia → guard   |   misura → measure ("fuori misura" → out of measure)   |   a fondo, affondo, spaccata → lunge   |   allungo → extension
    - piè fermo / piede fermo → firm-footed   |   passo avanti / indietro → step forward / back   |   salto indietro → jump back
-   - parata → parry   |   parata di contro, contro di prima … → counter parry, counter of prima …   |   mezza contro → half-counter   |   parata di ceduta, ceduta → yielding parry
-   - circolata → circular ("finta di punta circolata" → circular feint of the point)   |   mezzo cerchio → half-circle
+   - parata → parry   |   parata di contro, contro di prima … → counter parry, counter of prima …   |   mezza contro, mezzo contro, mezzo-contro → half-counter   |   parata di ceduta, ceduta → yielding parry
+   - circolata → circular ("finta di punta circolata" → circular feint of the point)   |   mezzo cerchio, mezzocerchio → half-circle
    - finta → feint   |   doppia finta → double feint   |   finta dritta → straight feint   |   accennare → indicate (a feint or threat)
-   - battuta → beat   |   invito → invitation   |   presa di ferro → taking the blade   |   disarmo → disarm   |   opposizione → opposition
+   - battuta → beat (battuta del piede → stamp of the foot)   |   picchio, picco → beat ("picchio semplice" → simple beat, "picchio di cambiamento" → change beat)
+   - cambiamento → change ("cambiamento di legamento" → change of engagement)   |   legata (spada legata) → engaged   |   ingannare, inganno → deceive, deception
+   - attacco → attack   |   offesa → offense ("azioni d'offesa" → offensive actions)   |   vibrare → deliver ("vibrerà la sciabolata" → he will deliver the cut)
+   - invito → invitation   |   presa di ferro → taking the blade   |   disarmo → disarm   |   opposizione → opposition
    - tempo → tempo ("in tempo", "a tempo")   |   contraria → contrary   |   contrazione → contraction
-   - assalto → bout   |   lezione → lesson   |   allievo → student   |   tiratore, schermitore → fencer   |   avversario, nemico → opponent
+   - assalto → bout   |   saluto → salute   |   mancino → left-hander   |   linea direttrice → line of direction   |   lezione → lesson   |   allievo → student   |   tiratore, schermitore → fencer   |   avversario, nemico → opponent
    - spada → sword   |   sciabola → saber   |   fioretto → foil   |   ferro (the opponent's steel) → the blade   |   forte / debole → forte / foible
-   - targets: testa → head   |   figura → face ("figura interna / esterna" → inside / outside face)   |   petto → chest   |   fianco → flank   |   addome → abdomen   |   braccio → arm
+   - targets: testa → head   |   figura → face ("figura interna / esterna" → inside / outside face)   |   guancia → cheek   |   petto → chest   |   pancia → belly   |   fianco → flank   |   addome → abdomen   |   tronco → trunk   |   braccio → arm
 
 3b. TRANSLATE these too, and the FIRST time each one appears in the text you are given, write it as  English<fn>It. original</fn>  — a bare source reference, NOT an explanation, nothing added. Later occurrences: just the English.
    - legamento → engagement
@@ -32,6 +36,10 @@
    - deviamento → deviation
    - parata di picco → beat parry
    - controtempo → countertime
+   - controazione → counter-action
+   - circolazione → circling (of the blade)
+   - striscio, di striscio → graze, grazing (along the opponent's blade — not filo, which is glide)
+   - volante, volanti (an action made with no contact with the opponent's blade — "finta volante", "azioni volanti") → off the blade: "feint off the blade", "actions off the blade"
    Example:  "… with an engagement<fn>It. legamento</fn> of <i>terza</i> he closed the line."
    In a HEADING (rule 4) translate the term but omit the <fn> tag.
 

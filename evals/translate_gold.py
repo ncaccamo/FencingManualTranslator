@@ -73,6 +73,16 @@ def main():
     if not pos:
         sys.exit(__doc__)
     d = GOLD / pos[0]
+    # the book's own prompt, as step 2 would use it: the language comes
+    # from the gold pair's meta.json (src.lang), the prompt and the
+    # category-2 / kept-term lists follow it
+    global PROMPT
+    import json
+    lang = {"it": "Italian", "fr": "French"}.get(
+        json.loads((d / "meta.json").read_text(encoding="utf-8"))["src"].get("lang", "fr"), "French")
+    _ns["BOOK_LANG"] = lang
+    PROMPT = _ns["prompt_for_language"](lang)
+    print(f"source language: {lang}")
     pages = re.split(r"<!--p \d+-->", (d / "src.txt").read_text(encoding="utf-8"))
     pages = [p.strip() for p in pages if p.strip()]
     print(f"{d.name}: {len(pages)} pages to translate")
