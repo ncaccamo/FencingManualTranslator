@@ -53,7 +53,7 @@ def _ocr_page(img_b64: str) -> str:
                 f"{bc.ocr_base_url()}/v1/chat/completions",
                 headers={"Content-Type": "application/json", **bc.auth_headers()},
                 # the same model name step 1 sends (VLM_MODEL_NAME, e.g. the
-                # llama-swap key "bt-ocr"); a hard-coded "olmocr2" 404s there
+                # llama-swap key "fmt-ocr"); a hard-coded "olmocr2" 404s there
                 json={"model": _ns["VLM_MODEL_NAME"], "temperature": 0.1, "max_tokens": 4096,
                       "repeat_penalty": 1.12,
                       "messages": [{"role": "user", "content": [

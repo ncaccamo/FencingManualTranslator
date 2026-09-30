@@ -182,13 +182,28 @@ def apply_fixes(tr_pages: list, ov: dict) -> tuple:
         t = tr_pages[i]
         if "prepend" in f:
             # already there, in any case/punctuation (a retranslation may
-            # have produced "PLATE V" for a prepended "Plate V.")
+            # have produced "PLATE V" for a prepended "Plate V."). A
+            # multi-line prepend is compared over as many leading lines as
+            # it has -- comparing only the first line never matched, so
+            # every run added another copy (Jacob scan 49, six copies of
+            # "THE GAME OF THE ÉPÉE / INTRODUCTION"). Copies already
+            # stacked up are removed, keeping one.
             norm = lambda s: re.sub(r"[\W_]+", " ", re.sub(r"</?i>", "", s)).strip().lower()
-            first = next((l for l in t.split("\n") if l.strip()), "")
-            if norm(first).startswith(norm(f["prepend"])):
+            want = norm(f["prepend"])
+            k = len([l for l in f["prepend"].split("\n") if l.strip()])
+            lead, body = t[:len(t) - len(t.lstrip())], t.lstrip()
+            first, copies = None, 0
+            while True:                         # peel off leading copies
+                lines = body.split("\n")
+                idx = [j for j, l in enumerate(lines) if l.strip()][:k]
+                if len(idx) < k or not norm(" ".join(lines[j] for j in idx)).startswith(want):
+                    break
+                copies += 1
+                first = first or "\n".join(lines[:idx[-1] + 1])
+                body = "\n".join(lines[idx[-1] + 1:]).lstrip()
+            if copies == 1:
                 continue
-            lead = t[:len(t) - len(t.lstrip())]
-            tr_pages[i] = f"{lead}{f['prepend']}\n\n{t.lstrip()}"
+            tr_pages[i] = f"{lead}{first if copies else f['prepend']}\n\n{body}"
             applied += 1
         else:
             if f["find"] not in t:

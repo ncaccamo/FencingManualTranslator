@@ -19,7 +19,7 @@ from _rules import PIPELINE as _PIPELINE
 from _rules import match_dash_caps, apply_read_heads, match_case
 from _rules import (
     apply_always_translate, match_case, enforce_kept_terms,
-    enforce_cat3_footnotes, pull_footnotes, fix_subheading_spacing, is_toc_page,
+    enforce_footnoted_terms, pull_footnotes, fix_subheading_spacing, is_toc_page,
     repair_mangled_terms, contains_too_much_non_english,
     match_boundary_punctuation, deshout, _phrase_repairs,
     parse_figures_block, reconcile_page_numbers, _fold_caption_only_body,
@@ -247,9 +247,9 @@ def test_always_translate():
         assert apply_always_translate(src) == want, (src, apply_always_translate(src))
 
 
-def test_always_translate_leaves_prise_de_fer_for_cat3():
+def test_always_translate_leaves_prise_de_fer_for_footnoted():
     # apply_always_translate must NOT touch "prise de fer" -- it's Cat 3,
-    # handled (with the footnote) by enforce_cat3_footnotes.
+    # handled (with the footnote) by enforce_footnoted_terms.
     assert apply_always_translate("la prise de fer") == "la prise de fer"
 
 
@@ -429,22 +429,22 @@ def test_enforce_kept_terms_matches_surrounding_case():
     assert "<i>RIPOSTES</i>" in out
 
 
-def test_enforce_cat3_translates_and_footnotes_once():
+def test_enforce_footnoted_translates_and_footnotes_once():
     seen = set()
-    out = enforce_cat3_footnotes(
+    out = enforce_footnoted_terms(
         "a prise de fer, then a <i>liement</i>, then another liement", seen)
     assert out == ("a taking the blade<fn>French: prise de fer</fn>, then a "
                    "bind<fn>French: liement</fn>, then another bind"), out
     assert seen == {"prise de fer", "liement"}
 
 
-def test_enforce_cat3_caption_mode_no_footnote():
-    assert enforce_cat3_footnotes("PARADE DU DÉGAGEMENT", set(), footnote=False) \
+def test_enforce_footnoted_caption_mode_no_footnote():
+    assert enforce_footnoted_terms("PARADE DU DÉGAGEMENT", set(), footnote=False) \
         == "PARADE DU DISENGAGEMENT"
 
 
-def test_enforce_cat3_leaves_english_alone():
-    assert enforce_cat3_footnotes("a bind and a disengagement", set()) \
+def test_enforce_footnoted_leaves_english_alone():
+    assert enforce_footnoted_terms("a bind and a disengagement", set()) \
         == "a bind and a disengagement"
 
 
@@ -1831,7 +1831,7 @@ def test_interrupted_translation_resumes_with_state():
     with tempfile.TemporaryDirectory() as d:
         Path(d, "intermediate").mkdir()
         fps = ["a", "b", "c", "d"]
-        st = {"fn_seen": {"feinte"}, "cat3_seen": {"coulé"}, "fn_state": {"open": True}}
+        st = {"fn_seen": {"feinte"}, "footnoted_seen": {"coulé"}, "fn_state": {"open": True}}
         stamps = [["cbd42c1", "2026-09-29"], ["cbd42c1", "2026-09-30"]]
         save_partial(d, fps, ["p1", "p2"], ["Qwen3.8", "Qwen3.8"], st, stamps)
         done, models, st2, stamps2 = load_partial(d, fps)
@@ -2183,12 +2183,12 @@ def test_italian_cat2_new_terms_translated_and_noted_once():
     TX["BOOK_LANG"] = "Italian"
     try:
         seen = set()
-        out = TX["enforce_cat3_footnotes"]("A feint volante, then two feints volanti.", seen)
+        out = TX["enforce_footnoted_terms"]("A feint volante, then two feints volanti.", seen)
         assert "volant" not in out.replace("Italian: volante", ""), out
         assert out.count("off the blade") == 2 and out.count("<fn>Italian: volante</fn>") == 1, out
-        out = TX["enforce_cat3_footnotes"]("He hits di striscio.", seen)
+        out = TX["enforce_footnoted_terms"]("He hits di striscio.", seen)
         assert out == "He hits grazing<fn>Italian: striscio</fn>.", out
-        out = TX["enforce_cat3_footnotes"]("The controazioni of seconda.", seen)
+        out = TX["enforce_footnoted_terms"]("The controazioni of seconda.", seen)
         assert out == "The counter-actions<fn>Italian: controazione</fn> of seconda.", out
     finally:
         TX["BOOK_LANG"] = "French"
@@ -2216,6 +2216,159 @@ def test_italian_kept_terms_backstop():
         assert "RIPOSTES" in out and "RIPONSES" not in out, out
     finally:
         TX["BOOK_LANG"] = "French"
+
+
+def test_multiline_prepend_idempotent_and_heals_copies():
+    # Jacob scan 49: a two-line prepend compared only the first line, so
+    # every overrides run stacked another copy (six by 2026-09-30)
+    import _overrides
+    fx = {"fix": [{"scan": 1, "prepend": "THE GAME OF THE ÉPÉE\n\nINTRODUCTION"}], "pages": {}}
+    pages = ["Are there two kinds of fencing? Yes."]
+    _overrides.apply_fixes(pages, fx)
+    once = pages[0]
+    assert once == "THE GAME OF THE ÉPÉE\n\nINTRODUCTION\n\nAre there two kinds of fencing? Yes.", once
+    _overrides.apply_fixes(pages, fx)
+    assert pages[0] == once, pages[0]                   # second run: no change
+    stacked = ["THE GAME OF THE ÉPÉE\n\nINTRODUCTION\n\n" * 3 + "Are there two kinds of fencing? Yes."]
+    _overrides.apply_fixes(stacked, fx)
+    assert stacked[0] == once, stacked[0]               # copies collapse to one
+    one = {"fix": [{"scan": 1, "prepend": "Plate V."}], "pages": {}}
+    pl = ["PLATE V — caption text"]
+    _overrides.apply_fixes(pl, one)
+    assert pl[0] == "PLATE V — caption text", pl[0]      # single-line: unchanged behaviour
+
+
+def test_markdown_italics_rendered_markers_untouched():
+    # Vauresmont pdf 64: "*Inside line*" printed with its asterisks
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        R = importlib.import_module("_render")
+        f = R.markdown_italics
+    except (TypeError, AttributeError, ImportError):   # needs real PyMuPDF (in the image)
+        return
+    assert f("the weapon. — *Inside line*: the quarte") == "the weapon. — <i>Inside line</i>: the quarte"
+    assert f("*<i>Reprise</i>.* — Duration") == "<i>Reprise.</i> — Duration"
+    assert f("the authors of *Renée Mauperin* put") == "the authors of <i>Renée Mauperin</i> put"
+    for keep in ("parry of quarte (*).", "   * In the bout", "* * *", "*", "th the skill* one may"):
+        assert f(keep) == keep, keep
+
+
+def test_dehyphenate_across_page_past_footnote_and_margin():
+    # Kirchhoffer scan 12: "se mé-" then the author's footnote, "fier" on
+    # the next page (translated "smell of" as two fragments)
+    pages = [{"body": "tout le visage. Il faudra se mé-\n\n(1) Cette appellation vient du vieux français."},
+             {"body": "fier de certains masques de prix modéré."}]
+    dehyphenate_across_pages(pages)
+    assert pages[0]["body"] == "tout le visage. Il faudra se méfier\n\n(1) Cette appellation vient du vieux français.", pages[0]
+    assert pages[1]["body"] == "de certains masques de prix modéré.", pages[1]
+    # a margin note opening the next page is stepped over, kept
+    pages = [{"body": "en dedans, en pro-"},
+             {"body": "⟦MARGIN: La quinte.⟧\n\nnation, la pointe en dessus."}]
+    dehyphenate_across_pages(pages)
+    assert pages[0]["body"] == "en dedans, en pronation,", pages[0]
+    assert pages[1]["body"] == "⟦MARGIN: La quinte.⟧\n\nla pointe en dessus.", pages[1]
+
+
+def test_dehyphenate_plain_join_not_cut_by_numbered_paragraph():
+    # LaMarche scan 117: a "1." paragraph mid-page must not be taken for a
+    # footnote block -- the page still ends "mar-" and joins as before
+    pages = [{"body": "Premier point.\n\n1. Un apprentissage sévère et qui doit être mar-"},
+             {"body": "qué, même dès les premières leçons."}]
+    dehyphenate_across_pages(pages)
+    assert pages[0]["body"].endswith("doit être marqué,"), pages[0]
+    assert pages[1]["body"] == "même dès les premières leçons.", pages[1]
+
+
+def test_prose_indent_flush_left_structure_kept():
+    # LaMarche pp. 14-16: the OCR indents some paragraphs and not others;
+    # drills / braced groups / numbered lists keep their indent
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        R = importlib.import_module("_render")
+        lines = R.layout("    You will therefore be moderate, my little man; but there are two things for the defense of which\n"
+                         "Go straight { high\n      inside } on the hand, the arm.\n"
+                         "    3° Of a guard or solid steel cup, of a diameter of 0.12 approximately\n"
+                         "    Break.", 2000, 10)
+    except (TypeError, AttributeError, ImportError):   # needs real PyMuPDF (in the image)
+        return
+    first = lambda k: next(l for l in lines if not l.gap and "".join(t for t, _ in l.spans).strip().startswith(k))
+    assert first("You will").indent == 0
+    assert not any("".join(t for t, _ in l.spans).startswith(" ") for l in lines if not l.gap)
+    assert first("inside").indent > 0
+    assert first("3°").indent > 0
+    assert first("Break").indent > 0
+
+
+def test_review_report_italian_rules_only_on_italian_books():
+    # Italian glossary checks (2026-09-30). A French book has its own
+    # "volant" (LaMarche's garde volante) and quotes Italian titles (Gomard's
+    # bibliography): the Italian list must not reach it.
+    import importlib
+    import re
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        Q = importlib.import_module("quality_report")
+    except (OSError, ImportError, SystemExit):   # reads /app paths: runs in the image
+        return
+    rule = {r[2]: r for r in Q.TERM_RULES_IT}
+    assert all(r[2] not in rule for r in Q.TERM_RULES)
+    src, wrong, _ = rule["volante → off the blade"]
+    assert re.search(src, "una finta volante", re.I)
+    assert re.search(wrong, "a flying feint", re.I)
+    assert not re.search(wrong, "the flying <i>cartoccio</i>", re.I)       # Florio §65
+    src, wrong, _ = rule["misura → measure"]
+    assert re.search(src, "fuori misura", re.I)
+    assert not re.search(src, "la distanza ... fuori misura", re.I)         # the book says distance
+    assert Q.still_french("Di Antonio Manciolino, Bolognese, opera nova, dove sono tutti "
+                          "li documenti e vantaggi che si ponno avere nel mestier de l'armi")
+    assert not Q.still_french("The hit must reach the target before the opponent has "
+                              "completed his action, in the line of the parry.")
+
+
+def test_explained_terms_first_use_note_once():
+    # category 3: first italic use in the running text gets †N + the note;
+    # headings skipped; numbered after the page's own footnotes; plural
+    # forms found; a second run adds nothing
+    import _explained as X
+    terms = [(["cavazione", "cavazioni"], "A spiral movement of the point."),
+             (["croisé"], "A bind carried from high to low.")]
+    pages = ["\nOF THE <i>CAVAZIONE</i>\n\nNo term here.\n",
+             "\nThe gathering†1 and two <i>cavazioni</i> follow.\n\n___FOOTNOTES___\n†1 French: rassemblement\n",
+             "\nAnother <i>cavazione</i>, and a <i>croisé</i>.\n"]
+    assert X.add_notes(pages, terms) == 2
+    assert "<i>CAVAZIONE</i>\n" in pages[0]                       # heading untouched
+    assert "two <i>cavazioni</i>†2 follow" in pages[1], pages[1]
+    assert pages[1].endswith("†1 French: rassemblement\n†2 <i>cavazione</i>: A spiral movement of the point.\n"), pages[1]
+    assert "Another <i>cavazione</i>, and" in pages[2]            # only the first use
+    assert "<i>croisé</i>†1." in pages[2] and pages[2].endswith(
+        "___FOOTNOTES___\n†1 <i>croisé</i>: A bind carried from high to low.\n"), pages[2]
+    before = list(pages)
+    assert X.add_notes(pages, terms) == 0 and pages == before     # idempotent
+
+
+def test_explained_terms_respect_page_footnote_limit():
+    import _explained as X
+    full = "\nA†1 B†2 C†3 D†4 and <i>scandaglio</i>.\n\n___FOOTNOTES___\n†1 a\n†2 b\n†3 c\n†4 d\n"
+    pages = [full, "\nLater, <i>scandaglio</i> again.\n"]
+    assert X.add_notes(pages, [(["scandaglio"], "Probing movements.")]) == 1
+    assert pages[0] == full and "<i>scandaglio</i>†1" in pages[1]
+
+
+def test_explained_terms_skip_contents_margins_and_mark_after_plural():
+    # dry run on the French books (2026-09-30): notes landed in contents
+    # lines (LaMarche p. 19, Spinnewyn p. 28), a margin note (Gomard p. 56),
+    # and "<i>volte</i>†1s" (Prévost p. 238)
+    import _explained as X
+    pages = ["\n  <i>Tac-au-tac</i> ripostes ...... 106\n⟦MARGIN: the <i>volte</i>.⟧\n",
+             "\nthe passes, the <i>volte</i>s, and the <i>tac-au-tac</i> riposte.\n"]
+    X.add_notes(pages, [(["volte"], "An evasion."), (["tac-au-tac"], "Immediate riposte.")])
+    assert "†" not in pages[0], pages[0]
+    toc = ["\nCONTENTS\nThe guard . 12\nThe parries of the <i>croisé</i> . 73\nThe disarm 80\nThe lunge . 91\n"]
+    X.add_notes(toc, [(["croisé"], "A bind.")])
+    assert "†" not in toc[0], toc[0]                            # Spinnewyn p. 28
+    assert "<i>volte</i>s†1," in pages[1] and "<i>tac-au-tac</i>†2 riposte" in pages[1], pages[1]
 
 
 def _run_plain() -> int:

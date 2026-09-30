@@ -630,20 +630,36 @@ def salvage_leaked_folio_header(parsed: list, known_headers: set) -> None:
 def dehyphenate_across_pages(parsed: list) -> None:
     """A word hyphenated across a page break in the original ("...déjà pu-"
     | "bliés, on ...") is otherwise translated as two fragments. When page
-    i ends lowercase+hyphen and page i+1 starts lowercase, splice the
-    completion fragment (plus any punctuation glued to it) up to close the
-    word on page i. Capitalised continuations -- real hyphenated names like
-    Sainct-Didier / La Boëssière -- are left alone."""
+    i's text ends lowercase+hyphen and page i+1's starts lowercase, splice
+    the completion fragment (plus any punctuation glued to it) up to close
+    the word on page i. Capitalised continuations -- real hyphenated names
+    like Sainct-Didier / La Boëssière -- are left alone.
+    The author's footnotes at the foot of page i ("se mé-" then "(1) Cette
+    appellation...", Kirchhoffer scan 12) and margin notes at the top of
+    page i+1 (Gomard scan 82) sit between the two halves; they are stepped
+    over, not joined into."""
     for i in range(len(parsed) - 1):
         a = (parsed[i].get("body") or "").rstrip()
-        if not re.search(r"[a-zà-ÿ]-\Z", a):
-            continue
+        main, tail = a, ""
+        if not re.search(r"[a-zà-ÿ]-\Z", main):
+            # only then look past a footnote block closing the page
+            fn = _FOOTNOTE_TAIL.search(a)
+            main, tail = (a[:fn.start()].rstrip(), a[fn.start():]) if fn else (a, "")
+            if not re.search(r"[a-zà-ÿ]-\Z", main):
+                continue
         b = parsed[i + 1].get("body") or ""
-        m = re.match(r"([a-zà-ÿ]+[^\s\w]*)([\s\S]*)", b.lstrip())
+        lead = re.match(r"(?:\s*⟦MARGIN:[^⟧]*⟧)*\s*", b).group(0)
+        m = re.match(r"([a-zà-ÿ]+[^\s\w]*)([\s\S]*)", b[len(lead):])
         if not m:
             continue
-        parsed[i]["body"] = a[:-1] + m.group(1)
-        parsed[i + 1]["body"] = m.group(2).lstrip()
+        parsed[i]["body"] = main[:-1] + m.group(1) + tail
+        parsed[i + 1]["body"] = (lead.rstrip() + "\n\n" if lead.strip() else "") + m.group(2).lstrip()
+
+
+# The author's footnotes closing a page's text: a blank line, then "(1) " or
+# "* " -- everything from there to the end of the page. Not "1." -- that is
+# as often a numbered paragraph (LaMarche, Spinnewyn).
+_FOOTNOTE_TAIL = re.compile(r"\n[ \t]*\n[ \t]*(?:\(\d+\)|\*)[ \t](?:(?!\n[ \t]*\n[ \t]*[^(*\s])[\s\S])*\Z")
 
 
 _GBOOKS_MARKERS = (

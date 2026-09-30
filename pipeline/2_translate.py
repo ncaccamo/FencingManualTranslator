@@ -165,14 +165,14 @@ def _strip_accents(s: str) -> str:
                    if unicodedata.category(c) != "Mn")
 
 
-# Category-3 terms (see translation_prompt.txt): translate to the English
+# Footnoted terms (category 2) (see translation_prompt.txt): translate to the English
 # rendering, and on the FIRST occurrence in a book mark it as
 # "English<fn>Fr. <term></fn>" -- a bare source reference, never an
 # explanatory gloss. The model does this from the prompt;
-# enforce_cat3_footnotes() is the backstop for when it leaves the term in
+# enforce_footnoted_terms() is the backstop for when it leaves the term in
 # French or forgets the note. Plural before singular so the longer pattern
 # wins.
-_CAT3_FR = [
+_FOOTNOTED_FR = [
     ("prise de fer",   "taking the blade"),
     ("rassemblements", "gatherings of the feet"), ("rassemblement", "gathering of the feet"),
     ("rassemblant",    "gathering the feet"),     ("rassembler",   "to gather the feet"),
@@ -188,10 +188,10 @@ _CAT3_FR = [
     ("caver",          "to drop the point"),
 ]
 
-# Italian category-2 terms (translated, first use footnoted "It. <term>"),
+# Italian footnoted terms (category 2) (translated, first use footnoted "It. <term>"),
 # 2026-09-30. "filo" (glide) is left to the model -- as a bare word it also
 # means the blade's edge, so the backstop must not rewrite it.
-_CAT3_IT = [
+_FOOTNOTED_IT = [
     ("legamenti",       "engagements"),     ("legamento",   "engagement"),
     ("filo sottomesso", "forced glide"),
     ("trasporti",       "transports"),      ("trasporto",   "transport"),
@@ -204,16 +204,16 @@ _CAT3_IT = [
     ("di striscio",     "grazing"),         ("striscio",    "graze"),
     ("volanti",         "off the blade"),   ("volante",     "off the blade"),
 ]
-# accepted as source references in the model's <fn> notes, beyond _CAT3_IT
-_CAT3_IT_REFS = {"filo"}
+# accepted as source references in the model's <fn> notes, beyond _FOOTNOTED_IT
+_FOOTNOTED_IT_REFS = {"filo"}
 
 # canonical singular French for the "Fr. <term>" note, so a plural form
 # ("appels") doesn't produce a second note distinct from "Fr. appel".
-_CAT3_NOTE_IT = {"legamenti": "legamento", "trasporti": "trasporto",
+_FOOTNOTE_REF_IT = {"legamenti": "legamento", "trasporti": "trasporto",
                  "deviamenti": "deviamento", "controazioni": "controazione",
                  "circolazioni": "circolazione", "di striscio": "striscio",
                  "volanti": "volante"}
-_CAT3_NOTE = {
+_FOOTNOTE_REF_FR = {
     "rassemblements": "rassemblement", "rassemblant": "rassemblement",
     "rassembler": "rassemblement", "dérobements": "dérobement",
     "dégagements": "dégagement", "liements": "liement",
@@ -222,23 +222,23 @@ _CAT3_NOTE = {
 }
 
 # The book's source language (set per book with its prompt, see
-# prompt_for_book): picks the category-2 list, the "Fr."/"It." reference
+# prompt_for_book): picks the footnoted-term list, the "Fr."/"It." reference
 # and the kept-term backstop.
 BOOK_LANG = "French"
 _LANG_REF = {"French": ("fr", "French"), "Italian": ("it", "Italian")}
 
 
-def _cat3():
-    return _CAT3_IT if BOOK_LANG == "Italian" else _CAT3_FR
+def _footnoted():
+    return _FOOTNOTED_IT if BOOK_LANG == "Italian" else _FOOTNOTED_FR
 
 
-def _cat3_note():
-    return _CAT3_NOTE_IT if BOOK_LANG == "Italian" else _CAT3_NOTE
+def _footnote_ref():
+    return _FOOTNOTE_REF_IT if BOOK_LANG == "Italian" else _FOOTNOTE_REF_FR
 
 
 
-def enforce_cat3_footnotes(text: str, seen: set, footnote: bool = True) -> str:
-    """Backstop for Category-3 terms. Translate EVERY occurrence the model
+def enforce_footnoted_terms(text: str, seen: set, footnote: bool = True) -> str:
+    """Backstop for footnoted terms (category 2). Translate EVERY occurrence the model
     left in French (bare or italicised) to its English rendering, and on
     the FIRST one in a book append "<fn>Fr. <term></fn>". Case of the
     surrounding token is preserved. `<fn>...</fn>` spans already in the
@@ -255,18 +255,18 @@ def enforce_cat3_footnotes(text: str, seen: set, footnote: bool = True) -> str:
     text = re.sub(r"<fn>.*?</fn>", _mask, text, flags=re.DOTALL | re.IGNORECASE)
 
     label = _LANG_REF.get(BOOK_LANG, _LANG_REF["French"])[1]
-    for fr, en in _cat3():
+    for fr, en in _footnoted():
         pat = re.compile(r"(?:<i>\s*)?(?<![\w-])" + re.escape(fr)
                          + r"(?![\w-])(?:\s*</i>)?", re.I)
         first = [True]
-        note_fr = _cat3_note().get(fr, fr)
+        note_fr = _footnote_ref().get(fr, fr)
 
         def _sub(m, en=en, note_fr=note_fr, first=first):
             g = m.group(0)
             r = (en.upper() if g.isupper()
                  else en.capitalize() if g[:1].isupper() else en)
             if footnote and first[0] and note_fr not in seen:
-                # mask the tag we add too, so a later _CAT3 pass can't
+                # mask the tag we add too, so a later footnoted-term pass can't
                 # match the French term sitting inside it
                 masked.append(f"<fn>{label}: {note_fr}</fn>")
                 r += f"\x00{len(masked) - 1}\x00"
@@ -285,25 +285,25 @@ def pull_footnotes(text: str, source_text: str = "", seen: set = None):
     plus a trailing ___FOOTNOTES___ block (the header can't collide with
     the page separator). A note whose text was already used earlier in the
     book -- tracked in `seen` -- is dropped to its bare phrase, so a
-    Category-3 source reference like "Fr. liement" appears once per book.
+    footnoted-term source reference like "Fr. liement" appears once per book.
     `source_text` is unused; kept for call-site compatibility.
     Returns (text, n_notes)."""
     if seen is None:
         seen = set()
     numbered = []
 
-    _cat3_fr = {t for t, _ in _cat3()} | (_CAT3_IT_REFS if BOOK_LANG == "Italian" else set())
+    _footnoted_refs = {t for t, _ in _footnoted()} | (_FOOTNOTED_IT_REFS if BOOK_LANG == "Italian" else set())
     ab, label = _LANG_REF.get(BOOK_LANG, _LANG_REF["French"])
 
     def take(m):
         note = re.sub(r"</?fn>", "", re.sub(r"\s+", " ", m.group(1))).strip()
         # accept only a bare source reference ("Fr. liement" / "French:
-        # liement", "It. legamento") for a category-2 term -- the model
+        # liement", "It. legamento") for a footnoted term (category 2) -- the model
         # sometimes footnotes a kept term or puts the English in the note.
         ref = re.sub(rf"^(?:{ab}\.|{label.lower()}:)\s*", "", note, flags=re.I).lower().rstrip(".")
-        if not note or ref not in _cat3_fr:
+        if not note or ref not in _footnoted_refs:
             return ""                       # drop the tag, keep the phrase
-        ref = _cat3_note().get(ref, ref)
+        ref = _footnote_ref().get(ref, ref)
         note = f"{label}: {ref}"            # canonical rendered form
         key = _strip_accents(ref)
         if key in seen or len(numbered) >= FN_MAX_PER_PAGE:
@@ -413,7 +413,7 @@ def _phrase_repairs(text: str) -> str:
     return text
 
 
-# Category-2 "keep in the source language, italic" terms that the 7B
+# Kept terms (category 4): "keep in the source language, italic" that the 7B
 # drops the <i>...</i> off or mistranslates -- plate captions especially.
 # Only the tight retained set; riposte / remise / reprise / the parry
 # numbers the model handles on its own. Each entry: term -> English
@@ -459,8 +459,8 @@ def _keep_terms():
 
 
 # A source-language token the 7B reliably garbles. rassemblant is now a
-# Category-3 (translated) term, so snap the garble back to the BARE French
-# word -- enforce_cat3_footnotes() then translates it and adds the note.
+# footnoted (translated) term, so snap the garble back to the BARE French
+# word -- enforce_footnoted_terms() then translates it and adds the note.
 _MANGLE_PRONE = [(r"rassembl", "rassemblant")]
 
 
@@ -597,7 +597,7 @@ def fix_known_garbles(text: str, src: str = "") -> str:
 
 
 def enforce_kept_terms(text: str, src: str = "") -> str:
-    """Make sure a Category-2 term is present and italicised: repair a
+    """Make sure a kept term (category 4) is present and italicised: repair a
     known mistranslation, then wrap any bare occurrence in <i>...</i>
     (skipping what is already inside a tag), matching the case of
     whatever prompted the wrap."""
@@ -875,7 +875,7 @@ def fix_subheading_spacing(text: str) -> str:
     sub-heading, tight to the paragraph it introduces.
 
     NOTE: a stop-gap. Superseded once the heading-hierarchy feature lands
-    (docs/STATUS.md open item 9) -- that will space headings from a real
+    (docs/STATUS.md, "Heading hierarchy") -- that will space headings from a real
     signal instead of this all-caps heuristic. Guarded tight (line above
     ends a sentence, line below opens one) so a mis-fire can't glue two
     real paragraphs together."""
@@ -902,7 +902,7 @@ _DEF_ENTRY_RE = re.compile(
 
 def _capitalize_definition_entries(text: str) -> str:
     """A glossary / definition-list entry headword is capitalised in the
-    source ("Riposte. — ...", "Coup d'arrêt. — ..."). A Category-2 term
+    source ("Riposte. — ...", "Coup d'arrêt. — ..."). A kept term (category 4)
     kept lowercase-italic loses that capital ("<i>riposte</i>. — ...",
     Kirchhoffer TERMES TECHNIQUES). Restore it: upper-case the first
     letter of any line shaped "<short headword>. — <definition>",
@@ -991,7 +991,7 @@ _PARRY_WRONG = {
 
 
 def fix_parry_names(en: str, src: str) -> str:
-    """Numbered parries (prime..octave) are Category-2 -- kept, not
+    """Numbered parries (prime..octave) are kept terms (category 4) -- kept, not
     translated. When the source names one and the model turned it into an
     English ordinal, snap it back."""
     if not en or not re.search(
@@ -1513,11 +1513,11 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
                 cand = enforce_kept_terms(apply_always_translate(cand), cap)
                 cand = fix_parry_names(cand, cap)
                 # captions don't render a footnote block: translate the
-                # Category-3 terms but drop any <fn> marker (backstop's and
+                # footnoted terms but drop any <fn> marker (backstop's and
                 # a stray one from the model).
                 cand = re.sub(r"<fn>.*?</fn>|</?fn>", "", cand,
                               flags=re.DOTALL | re.IGNORECASE)
-                cand = enforce_cat3_footnotes(cand, set(), footnote=False)
+                cand = enforce_footnoted_terms(cand, set(), footnote=False)
                 if cand:
                     candidates.append(cand)
             if candidates:
@@ -1576,7 +1576,7 @@ def translate_headers(folder: str, force: bool = False) -> int:
             en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
             en = re.sub(r'</?i>', '', en)          # a header is plain text (rule 4)
             en = enforce_kept_terms(apply_always_translate(en), h)   # snap "RAPIER RAPIER" -> riposte
-            en = enforce_cat3_footnotes(en, set(), footnote=False)
+            en = enforce_footnoted_terms(en, set(), footnote=False)
             en = re.sub(r'</?i>', '', en)          # drop the <i> enforce_kept_terms added
             en = re.sub(r'\s*<fn>.*?</fn>|</?fn>|†\d*', '', en)   # a running head carries no note (Spinnewyn "BIND<fn>…")
             en = en.splitlines()[0].strip() if en else ""
@@ -1804,7 +1804,7 @@ def save_partial(folder: str, fps: list, done: list, models: list, st: dict,
         _json.dump({"version": 1, "fingerprints": fps, "pages": done, "models": models,
                     "stamps": stamps or [None] * len(done),
                     "state": {"fn_seen": sorted(st["fn_seen"]),
-                              "cat3_seen": sorted(st["cat3_seen"]),
+                              "footnoted_seen": sorted(st["footnoted_seen"]),
                               "fn_state": st["fn_state"]}}, fh, ensure_ascii=False)
     os.replace(p + ".tmp", p)
 
@@ -1822,7 +1822,9 @@ def load_partial(folder: str, fps: list):
         if len(old_fps) != len(fps) or old_fps[:len(done)] != fps[:len(done)]:
             return None
         s = d["state"]
-        st = {"fn_seen": set(s["fn_seen"]), "cat3_seen": set(s["cat3_seen"]),
+        # "cat3_seen": the key's name before 2026-09-30 (saved runs still resume)
+        st = {"fn_seen": set(s["fn_seen"]),
+              "footnoted_seen": set(s.get("footnoted_seen", s.get("cat3_seen", []))),
               "fn_state": dict(s["fn_state"])}
         return (done, list(d.get("models") or [""] * len(done)), st,
                 list(d.get("stamps") or [None] * len(done)))
@@ -1835,10 +1837,10 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
     Never raises and never returns nothing: a failed page comes back as a
     flagged fallback. `i` / `n` are 1-based position / page count (progress
     output only). `st` is the book-wide state that has to persist across
-    pages: fn_seen (dedupe <fn> notes), cat3_seen (Category-3 terms already
+    pages: fn_seen (dedupe <fn> notes), footnoted_seen (footnoted terms already
     footnoted), fn_state (the book's own footnote continuing onto the next
     page). Used by the whole-book loop and by `--pages` retranslation."""
-    fn_seen, cat3_seen, fn_state = st["fn_seen"], st["cat3_seen"], st["fn_state"]
+    fn_seen, footnoted_seen, fn_state = st["fn_seen"], st["footnoted_seen"], st["fn_state"]
     if not page_text.strip() or "VLM Error" in page_text:
         print(f"  Page {i}/{n} — empty / OCR error, passed through")
         return page_text
@@ -1972,8 +1974,8 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         # it would burn the once-per-book note), and skip the
         # heading re-translate pass (every entry looks like a
         # heading) to keep the "entry … NN" structure intact.
-        candidate = enforce_cat3_footnotes(
-            candidate, cat3_seen, footnote=not page_is_toc)
+        candidate = enforce_footnoted_terms(
+            candidate, footnoted_seen, footnote=not page_is_toc)
         candidate = _capitalize_definition_entries(candidate)
         if not page_is_toc:
             candidate = retranslate_stray_french_headings(candidate)
@@ -2136,12 +2138,12 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
         return
     # book-wide footnote state from every page NOT being redone, so a
     # redone page neither repeats a note nor loses its own first-use one
-    st = {"fn_seen": set(), "cat3_seen": set(), "fn_state": {}}
+    st = {"fn_seen": set(), "footnoted_seen": set(), "fn_state": {}}
     for k, t in enumerate(tr, 1):
         if k in targets:
             continue
         for ref in re.findall(r"(?m)^†\d+ French: (.+?)\s*$", t):
-            st["cat3_seen"].add(ref.strip().lower())
+            st["footnoted_seen"].add(ref.strip().lower())
             st["fn_seen"].add(_strip_accents(ref.strip().lower()))
     print(f"Retranslating {stem}: scan page(s) {targets}")
     # Saved after every page, and resumable: an interrupted run of the same
@@ -2233,8 +2235,8 @@ try:
         print(f"Translating: {Path(folder).name}")
         print(f"Pages: {len(pages)}\n")
         
-        # book-wide state: fn_seen dedupes <fn> note text, cat3_seen
-        # footnotes each Category-3 term once, fn_state carries the book's
+        # book-wide state: fn_seen dedupes <fn> note text, footnoted_seen
+        # footnotes each footnoted term once, fn_state carries the book's
         # own footnote across a page break
         resumed = load_partial(folder, cur_fp)
         if resumed:
@@ -2246,7 +2248,7 @@ try:
             if os.path.exists(_partial_path(folder)):
                 print("  (saved partial run is for different source text -- starting over)\n")
             translated_pages, page_models, page_stamps = [], [], []
-            _st = {"fn_seen": set(), "cat3_seen": set(), "fn_state": {}}
+            _st = {"fn_seen": set(), "footnoted_seen": set(), "fn_state": {}}
 
         for i in range(len(translated_pages) + 1, len(pages) + 1):
             calls = MODEL_CALLS

@@ -5,7 +5,7 @@
 of hard + control pages, and the results are scored and compared.
 
     # translate the set with a model (a llama-swap key in remote mode):
-    docker exec -e TRANSLATION_MODEL_NAME=bt-translate-qwen38 fmt-translator \\
+    docker exec -e TRANSLATION_MODEL_NAME=fmt-translate-qwen38 fmt-translator \\
         python3 /data/evals/translation_model_test.py run qwen38
     # the current translations as a no-GPU baseline:
     docker exec fmt-translator python3 /data/evals/translation_model_test.py current
@@ -109,7 +109,7 @@ def run(label, current=False):
             continue
         stem = os.path.basename(folder)[:-len("_translated")]
         ns["PROMPT_TEMPLATE"] = ns["prompt_for_book"](stem)   # language prompt + book terms, as step 2
-        st = {"fn_seen": set(), "cat3_seen": set(), "fn_state": {}}
+        st = {"fn_seen": set(), "footnoted_seen": set(), "fn_state": {}}
         t0 = time.time()
         out = ns["translate_page"](page, scan, 0, st)
         res["pages"][key] = {"text": out, "secs": round(time.time() - t0, 1)}

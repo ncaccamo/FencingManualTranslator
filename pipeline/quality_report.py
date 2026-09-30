@@ -44,11 +44,15 @@ _FR = set("le la les des du de et est sont qui que dans pour avec une un sur pas
           "elle au aux ce cette son sa ses leur leurs nous vous on en par plus".split())
 _EN = set("the and of to is are in that with for on it by as be this from his their which "
           "was were one an at or not but have has its".split())
+# Italian books: the same test against Italian function words (counted
+# separately -- the two lists share "la", "le", "un" -- and the larger wins)
+_IT = set("il lo la i gli le di da del della dei delle degli che non è sono per con una "
+          "un uno nel nella nei si ma come più anche questo questa quello essere al alla".split())
 
 
 def still_french(text: str, min_fr: int = 5) -> bool:
     w = [x.lower() for x in re.findall(r"[^\W\d_]+", re.sub(r"<i>.*?</i>|«[^»]*»|\"[^\"]*\"", " ", text))]
-    fr = sum(x in _FR for x in w)
+    fr = max(sum(x in _FR for x in w), sum(x in _IT for x in w))
     en = sum(x in _EN for x in w)
     return fr >= min_fr and fr > 2 * en
 
@@ -78,6 +82,23 @@ TERM_RULES = [
     (r"\bsoie\b", r"\bsilk\b(?=.{0,40}\b(?:blade|hilt|handle|guard|pommel|grip)\b)"
      r"|\b(?:blade|hilt|handle|guard|pommel|grip)\b.{0,40}\bsilk\b", "soie → tang"),
 ]
+# Italian books only (glossary 2026-09-30, translation_prompt_it.txt) -- a
+# French book has its own "volant" (garde volante) and quotes Italian titles
+# in its bibliography. colpo: the strike -> hit, the whole action ->
+# attack; never "blow" (same exceptions as coup)
+TERM_RULES_IT = [
+    (r"\bcolp[oi]\b|\burt[oi]\b", r"(?<!hammer )(?<!sharp )(?<!clean )(?<!light )\bblows?\b"
+     r"(?!\s+(?:of\s+(?:the\s+)?(?:hammer|horn|chance)|and\s+wounds))", "colpo → hit / attack"),
+    # misura -> measure; "distance" only where the book says distanza
+    (r"^(?![\s\S]*\bdistanz)[\s\S]*\bmisura\b", r"\bdistances?\b", "misura → measure"),
+    (r"\bsciabol", r"\bsabres?\b", "sciabola → saber (US spelling)"),
+    (r"\bsciabolat", r"\bsab(?:er|re)[- ](?:blows?|strokes?)\b", "sciabolata → cut"),
+    (r"\bpicch?i?o\b|\bpicco\b", r"\b(?:pecks?|knocks?|woodpeckers?)\b", "picchio → beat"),
+    (r"\bvolant[ei]\b", r"\bflying\b(?!\s+(?:<i>)?cartocc)", "volante → off the blade"),
+    (r"\bfil[oi]\b", r"\b(?:threads?|wires?)\b", "filo → glide / edge"),
+    (r"\brispost[ae]\b", r"\b(?:responses?|repl(?:y|ies)|answers?)\b(?!\s+to\s+(?:the|his|a)\s+letter)",
+     "risposta → riposte"),
+]
 # Misspellings the model has produced repeatedly (fix_known_garbles() repairs
 # new output; this catches output translated before the repair existed).
 # Book-wide consistency: a French phrase rendered several ways across the
@@ -89,7 +110,7 @@ CONSISTENCY = [
     ("botte (de quarte …)", r"\bbottes?\s+de\s+\w+",
      r"\b(hits?|thrusts?|lunges?|finish(?:es)?)\s+(?:of|in|to)\s+(?:prime|seconde|tierce|quarte|quinte|sixte|septime|octave)\b"),
 ]
-GARBLES = r"\b(?:thusts?|throughs|rapises?|rompers?|rippostes?|(?-i:[A-Z]{2,}[a-z]{2,}[A-Z]*))\b"
+GARBLES = r"\b(?:thusts?|throughs|rapises?|riponses?|rompers?|rippostes?|(?-i:[A-Z]{2,}[a-z]{2,}[A-Z]*))\b"
 META = re.compile(r"(?i)\b(?:here is the translation|translated text:|as an ai\b|"
                   r"i cannot translate|please provide the text|i'm sorry)")
 
@@ -192,7 +213,7 @@ def translation_issues(src: str, t: str) -> list:
     m = re.search(GARBLES, body, re.I)
     if m:
         out.append((CHECK, "wording", f"misspelling the model is known for: {m.group(0)!r}"))
-    for fr, wrong, rule in TERM_RULES:
+    for fr, wrong, rule in _rules:
         if re.search(fr, src, re.I):
             w = re.search(wrong, re.sub(r"<i>.*?</i>", "", body), re.I)
             if w:
@@ -200,7 +221,7 @@ def translation_issues(src: str, t: str) -> list:
     # leftover French: a whole paragraph the model didn't translate
     for para in re.split(r"\n\s*\n", body):
         if _words(para) >= 8 and still_french(para):
-            out.append((CHECK, "translation", "paragraph left (mostly) in French: "
+            out.append((CHECK, "translation", "paragraph left (mostly) untranslated: "
                 f"{para.strip()[:60]!r}"))
             break
     # length: an omission or a runaway, on pages with enough text to judge
@@ -253,7 +274,13 @@ def page_map(folder: str, n: int) -> dict:
     return out if scan == n else {}
 
 
+_rules = TERM_RULES      # the book's language's list, set by check_book()
+
+
 def check_book(folder: str) -> list:
+    global _rules
+    _rules = TERM_RULES_IT if _ns["book_language"](
+        os.path.basename(folder)[:-len("_translated")]) == "Italian" else TERM_RULES
     I = f"{folder}/intermediate"
     ex = _pageio.split_pages(open(f"{I}/extracted.txt", encoding="utf-8").read())
     tr = _pageio.split_pages(open(f"{I}/translation.txt", encoding="utf-8").read())
@@ -320,7 +347,17 @@ def check_book(folder: str) -> list:
         raw = _pageio.split_pages(open(f"{I}/raw_ocr.txt", encoding="utf-8").read())
         pages = [lay["pages"].get(str(i), {"boxes": []}) for i in range(len(ex))]
         band = _layout.header_band(pages)
+        # a page whose running head the reviewer set in the overrides file
+        # ([pages.N] header, "" = none) is decided -- not re-flagged (Jacob
+        # scan 49, La Boëssière scan 10: titles, not running heads)
+        try:
+            decided = {s for s, v in _overrides.load(os.path.basename(folder)[:-len("_translated")])
+                       ["pages"].items() if "header" in v}
+        except _overrides.OverridesError:
+            decided = set()
         for i, e in enumerate(ex):
+            if i + 1 in decided:
+                continue
             m = re.search(r"(?im)^[ \t]*HEADER[ \t]*:[ \t]*(.*)$", raw[i]) if i < len(raw) else None
             v = (m.group(1).strip().strip("[]") if m else "").lower()
             vlm_h = bool(v) and v not in ("none", "n/a", "-")
@@ -371,7 +408,7 @@ def check_book(folder: str) -> list:
         if g:
             add(scans[0], CHECK, "header", f"running head {en!r}: misspelling "
                 f"{g.group(0)!r} (on {len(scans)} page(s))")
-        for fr, wrong, rule in TERM_RULES:
+        for fr, wrong, rule in _rules:
             w = re.search(fr, h, re.I) and re.search(wrong, en, re.I)
             if w:
                 add(scans[0], CHECK, "header", f"running head {en!r}: {w.group(0)!r} "
@@ -380,7 +417,7 @@ def check_book(folder: str) -> list:
             more = f" (also on {len(scans) - 1} more page(s), through scan {scans[-1]})" \
                 if len(scans) > 1 else ""
             add(scans[0], CHECK, "header",
-                (f"running head {h!r} left in French: {en!r}" if en
+                (f"running head {h!r} left untranslated: {en!r}" if en
                  else f"running head {h!r} was never translated") + more
                 + " -- set its English under [headers] in the overrides file")
     return issues

@@ -94,10 +94,22 @@ def _font(name):
     return _FONTS[name]
 
 
+# The OCR model writes printed italics as markdown -- *Inside line*, *The
+# Adventuress* -- and the translation keeps the asterisks (21 places, 12 in
+# Vauresmont's glossary). Rendered as italics. Only a pair within one line
+# that opens on a letter/digit/quote and closes on a non-space, so a note
+# marker "(*)", a bullet "* In the bout", "* * *" or a lone "*" is untouched.
+_MD_ITALIC = re.compile(r"(?<![\w*])\*(?=[A-Za-zÀ-ÿ0-9<«\"“])([^*\n]{1,80}?)(?<=[^\s*(])\*(?![\w*])")
+
+
+def markdown_italics(s):
+    return _MD_ITALIC.sub(lambda m: "<i>" + re.sub(r"</?i>", "", m.group(1)) + "</i>", s)
+
+
 def _spans(s):
     """'a <i>b</i> c' -> [('a ', 0), ('b', 1), (' c', 0)]"""
     out, ital = [], 0
-    for part in _TAG.split(s):
+    for part in _TAG.split(markdown_italics(s)):
         if not part:
             continue
         low = part.lower()
@@ -153,6 +165,19 @@ NOTE_INDENT = 10.0
 NOTE_COLOR = (0.38, 0.38, 0.38)
 
 
+# Leading spaces are kept as indentation for structure -- drills, braced
+# command groups, lists (LaMarche pp. 82-83). The OCR also indents ordinary
+# paragraphs, but only some of them, so running prose came out randomly
+# indented (LaMarche pp. 14-16): a long prose line with no list marker and
+# no brace is set flush left.
+_LIST_START = re.compile(r"(?:[—–\-•*]|\d+\s*[°.)]|[a-zA-Z]\)|[IVXLC]+\.\s)")
+
+
+def _prose_indent(s):
+    return (len(s) >= 60 and "{" not in s and "}" not in s
+            and not _LIST_START.match(s) and bool(re.match(r"[\w“\"«(<]", s)))
+
+
 def layout(text, width, size):
     """text -> list[Line], pre-wrapped to `width` pt at `size`."""
     out = []
@@ -168,6 +193,8 @@ def layout(text, width, size):
                 out.append(Line(NOTE_INDENT, vline, note=True))
             continue
         n = len(raw) - len(raw.lstrip(" "))
+        if n and _prose_indent(raw[n:]):
+            raw, n = raw[n:], 0
         indent = n * _SPACE_PT
         avail = max(width - indent, _MIN_WRAP)
         for vline in _wrap(_spans(raw[n:]), avail, size):
