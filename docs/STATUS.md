@@ -15,9 +15,8 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 - **Italian: ten books OCR'd, not yet translated.** Own term glossary
   (`pipeline/translation_prompt_it.txt`, from a survey of every term in the
   ten books); 30-page sample test passed; evaluation against the published
-  Rosaroll and Pecoraro translations being rerun with it (the earlier
-  scores, 49.8 / 40.2 chrF++, were made with the French prompt). The full
-  translation waits for those scores.
+  Rosaroll and Pecoraro translations improved by 5-7 points over the French
+  prompt (open item 1).
 - **Term policy:** three categories (translated / footnoted / kept) —
   manual I.4, step 2. An "explained" category with notes was tried and
   dropped (`docs/model-quirks.md` 2.8).
@@ -28,8 +27,8 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
   and date behind each page (per revision after a partial retranslation).
 - **Public release prep:** AGPL-3.0-or-later licence, README rewritten,
   references to private sibling repos removed. The repo is still private.
-- **Remote GPU in use:** llama-swap on the Windows GPU system; keys being
-  renamed `bt-*` → `fmt-*` (old names kept as aliases).
+- **Remote GPU in use:** llama-swap on the Windows GPU system, keys
+  `fmt-ocr` / `fmt-translate` (the old `bt-*` names kept as aliases).
 - **OCR:** olmOCR-2-7B-1025 via llama-server (:11435 locally) is the only
   path; the Tesseract script is kept for reference, not used. A layout
   detector (Docling's `docling-layout-heron`, CPU) supplies running-head,
@@ -55,28 +54,36 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 
 ## Open items
 
-1. **Italian translation run.** Waiting on the evaluation rerun with the
-   Italian glossary (Rosaroll + Pecoraro against the published
-   translations). Then the ten books, ~35-60 h of GPU over several sessions.
-   Check first how the two-page-spread scans (Lambertini, Masiello 1902
-   *Fioretto*, Tiboldi) came through the OCR — the pipeline assumes one book
-   page per scan page.
+1. **Italian translation run — ready.** The evaluation with the Italian
+   glossary (2026-10-01, chrF++ against the published translations):
+   Rosaroll 49.8 → 54.7, Pecoraro 40.2 → 46.7 (median 45.6 → 54.6). Next:
+   the ten books, ~35-60 h of GPU over several sessions, after the sentence
+   join (item 4) is in place. Check first how the two-page-spread scans
+   (Lambertini, Masiello 1902 *Fioretto*, Tiboldi) came through the OCR —
+   the pipeline assumes one book page per scan page.
 2. **Glossary page — undecided.** A one-page glossary at the end of each
    PDF listing the kept terms that occur in that book, with one-line
    definitions (drafts exist in `review-notes/`, local). Book-independent,
    unlike the dropped per-use notes (model-quirks 2.8).
-3. **Page numbers the OCR missed or invented.** Neither the layout detector
-   nor the scans' text layer tells a printed-but-unread number from no
-   number (measured on the 9 French books: detector ~75% recall with false
-   hits; text layer ~35%). Plan: the OCR model reads just the top and
-   bottom strip of each uncertain page (~780 pages, 30-40 min GPU); show a
-   number only where one is printed.
-4. **Sentences split across a page break.** The hyphenated-word case is
-   handled (also past footnotes and margin notes). Whole sentences split
-   across ~1,060 page breaks in the French books translate as two
-   fragments, occasionally badly. Plan: give the model the neighbouring
-   pages' text as context; test on ~20 pages first, then use it for Italian
-   from the start and retranslate only French pages where it helps.
+3. **Page numbers the OCR missed or invented.** Built, not yet run:
+   `pipeline/read_folios.py` asks the OCR model what's printed in the
+   margins of each page whose number is hidden (~990 pages over 19 books,
+   ~1 h GPU); `apply_folio_witness()` then shows a hidden number only when
+   that reading names exactly the number the sequence predicts — it never
+   hides or changes one (the strip read alone was right 11/16 on test
+   pages). Still open after it: numbers the strip read misses (Baudry 150)
+   and invented ones (Jacob "I") — overrides.
+4. **Sentences split across a page break — built, waiting for review and
+   retranslation.** `join_split_sentences()` (step 1 / reprocess) puts every
+   split sentence on one page, moving the shorter fragment, so it is
+   translated whole (operator: no broken sentences at any length). Checked
+   on scratch copies of 19 books: no page number changes, no emptied pages;
+   ~65 splits left (tables across a break, margin notes inside a fragment),
+   which the review report now flags ("split"). Sample:
+   `review-notes/SENTENCE_JOIN_SAMPLE.md` (local). Applying it queues ~1,300
+   French pages for retranslation (~15-20 h GPU); Italian before its first run.
+   (A page-context alternative was tested and rejected: it leaked text
+   between pages.)
 5. **English-only PDF — deferred (2026-09-25).** Review has been
    side-by-side only; expect a backlog of layout problems. When it resumes,
    consider decoupling the English-only renderer from code shared with the
@@ -100,6 +107,15 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
    faster) or speculative decoding with a small draft model (often
    1.5-2x). Either needs a model selection test run first.
 9. **`rocm714` backend** — wired, not compiled; `docker/ROCM714_NOTES.md`.
+
+## Tools added 2026-10-01
+
+- `pipeline/reread_pages.py <stem> <pages>` — re-read pages with the OCR
+  model (a timeout, a misread, a page cut short), then re-derive the book;
+  keeps the previous raw OCR. Replaces resuming step 1 with a page marked
+  failed, which neither shortens repetition runs nor keeps the English
+  captions.
+- `pipeline/read_folios.py` — see open item 3.
 
 ## Not yet tested
 

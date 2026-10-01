@@ -511,6 +511,51 @@ def _romanize_runs(out: list) -> list:
     return out
 
 
+def apply_folio_witness(nums: list, strips: dict) -> list:
+    """Show a hidden page number ("[117]": worked out from the neighbours,
+    not confirmed by the OCR) when a second, separate reading -- the OCR
+    model on the page's margins alone (read_folios.py, stored in
+    intermediate/folio_strips.json) -- names exactly that number. Never
+    hides or changes a number: a reading that disagrees, or "NONE", leaves
+    the page as it was (the strip read alone is wrong too often to decide:
+    11 of 16 right on the test pages, 2026-10-01). Roman readings are shown
+    in roman, in the case of the neighbouring page numbers."""
+    out = list(nums)
+
+    def confirmed(k):
+        x = nums[k] if 0 <= k < len(nums) else ""
+        return None if not x or x.startswith("[") else _page_to_int(x)
+
+    for i, n in enumerate(nums):
+        if n.startswith("[") and n.endswith("]"):
+            want = _page_to_int(n.strip("[]"))
+        elif not n.strip():
+            # no number at all (Vauresmont scan 129, printed 117): the
+            # confirmed numbers on BOTH sides, within 3 pages, must form one
+            # consistent run -- that run predicts this page's number
+            prev = next(((k, confirmed(k)) for k in range(i - 1, i - 4, -1) if confirmed(k)), None)
+            nxt = next(((k, confirmed(k)) for k in range(i + 1, i + 4) if confirmed(k)), None)
+            if not (prev and nxt and nxt[1] - prev[1] == nxt[0] - prev[0]):
+                continue
+            want = prev[1] + (i - prev[0])
+        else:
+            continue
+        read = re.sub(r"[^0-9A-Za-z]", "", str(strips.get(str(i + 1), "")))
+        if not want or not read or read.upper() == "NONE":
+            continue
+        if read.isdigit():
+            if int(read) == want:
+                out[i] = str(want)
+            continue
+        if _roman_to_int(read) == want:
+            near = next((x for k in range(1, 6) for x in (nums[i - k] if i - k >= 0 else "",
+                                                          nums[i + k] if i + k < len(nums) else "")
+                         if re.fullmatch(r"[ivxlcdmIVXLCDM]+", x or "")), "")
+            r = _int_to_roman(want)
+            out[i] = r if near.isupper() else r.lower()
+    return out
+
+
 def _page_to_int(s: str):
     """Best-effort numeric value of a reported page-number string, accepting
     plain digits ('83'), digits embedded in noise, or a roman numeral
@@ -655,6 +700,91 @@ def dehyphenate_across_pages(parsed: list) -> None:
         parsed[i]["body"] = main[:-1] + m.group(1) + tail
         parsed[i + 1]["body"] = (lead.rstrip() + "\n\n" if lead.strip() else "") + m.group(2).lstrip()
 
+
+def join_split_sentences(parsed: list) -> int:
+    """A sentence split across a page break is otherwise translated as two
+    unrelated fragments, and a short fragment often comes out wrong: "Bien"
+    / "fermer alors la ligne" -> "Well" / "then close" (Spinnewyn 101/102),
+    "il deviendrait incomparable" -> "it" for the fencer (Jacob 26/27). Every
+    split sentence is joined on one page so it is translated whole (operator
+    decision 2026-10-01: no broken sentences, at any length).
+
+    A split: page i's running text (before its footnote block) ends without
+    sentence-final punctuation, and the next page with text (one blank or
+    plate page may sit between) starts lowercase, after any margin notes.
+    The SHORTER fragment moves -- the sentence's start forward onto the next
+    page, or its end back onto this one -- so the side-by-side drifts as
+    little as possible (median 8 words on the French books). A move that
+    would leave a page with no text goes the other way, or not at all (an
+    emptied page changes how its page number is worked out). Contents lines,
+    tables and fragments holding a margin note are left alone. Run after
+    margin notes are placed. Returns how many splits were joined."""
+    def text(p):
+        b = p.get("body") or ""
+        return "" if b.strip().lower() in ("", "none") else b
+
+    joined = 0
+    for i in range(len(parsed) - 1):
+        a = text(parsed[i]).rstrip()
+        if not a:
+            continue
+        fn = _FOOTNOTE_BLOCK.search(a)
+        main, foot = (a[:fn.start()].rstrip(), a[fn.start():]) if fn else (a, "")
+        # only . ! ? (or an ellipsis), optionally closed by a quote or bracket,
+        # end a sentence -- not ; or : ("ce petit prévôt, lui dis-je;" |
+        # "entre vos mains, il deviendrait..." is one sentence, Jacob 26/27)
+        if not main or re.search(r"[.!?\u2026][\u00bb\u201d\")\]\s]*\Z", main):
+            continue
+        last_line = main.rsplit("\n", 1)[-1]
+        # a contents line (dotted leader to a page number) or a table row --
+        # not an ellipsis in prose ("abbattimenti.... in voler essere")
+        if re.search(r"(?:\.\s*){3,}\s*[0-9ivxlcIVXLC]+\s*\Z|\u2026\s*\d+\s*\Z|<t[dhr]|</table", last_line):
+            continue
+        j = i + 1
+        if not text(parsed[j]).strip() and j + 1 < len(parsed):
+            j += 1                                   # across one blank / plate page
+        b = text(parsed[j])
+        lead = re.match(r"(?:\s*\u27e6MARGIN:[^\u27e7]*\u27e7)*\s*", b).group(0)
+        rest = b[len(lead):]
+        if not re.match(r"[a-z\u00e0-\u00ff]", rest):
+            continue
+        # the sentence's start on page i: after the last sentence end or paragraph break
+        cut = max([m.end() for m in re.finditer(r"[.!?\u2026][\u00bb\u201d\")\]]*\s+|\n\s*\n", main)] or [0])
+        tail = main[cut:].strip()
+        # its end on page j: up to the first sentence end or paragraph break
+        m = re.search(r"[.!?\u2026][\u00bb\u201d\")\]]*(?=\s|\Z)|\n\s*\n", rest)
+        head = rest[:m.end()].strip() if m else rest.strip()
+        if not tail or not head or "\u27e6" in tail + head or "<table" in tail + head:
+            continue
+        empties_i = not main[:cut].strip()
+        empties_j = not rest[len(head):].strip() if m else True
+        forward = len(tail.split()) <= len(head.split())
+        if forward and empties_i:
+            forward = False
+        if not forward and empties_j:
+            if empties_i:
+                continue
+            forward = True
+        # a word broken across the break ("av-" | "versario"): rejoin it,
+        # without the hyphen
+        broken = re.search(r"[a-z\u00e0-\u00ff]-\Z", tail)
+        glue = "" if broken else " "
+        if forward:                                  # sentence start -> next page
+            main = main[:cut].rstrip()
+            rest = (tail[:-1] if broken else tail) + glue + rest
+        else:                                        # sentence end -> this page
+            main = (main.rstrip()[:-1] if broken else main.rstrip()) + glue + head
+            rest = rest[m.end():].lstrip() if m else ""
+        parsed[i]["body"] = main + ("\n\n" + foot.lstrip("\n") if foot else "")
+        parsed[j]["body"] = (lead.rstrip() + "\n\n" if lead.strip() else "") + rest
+        joined += 1
+    return joined
+
+
+# For joining split sentences: the author's footnotes from "(1)" / "*" to the
+# end of the page, however many paragraphs (Florio's run to quotations and
+# comments). Broader than _FOOTNOTE_TAIL, which the hyphen join keeps.
+_FOOTNOTE_BLOCK = re.compile(r"\n[ \t]*\n[ \t]*(?:\(1\)|\*)[ \t][\s\S]*\Z")
 
 # The author's footnotes closing a page's text: a blank line, then "(1) " or
 # "* " -- everything from there to the end of the page. Not "1." -- that is
@@ -1528,6 +1658,46 @@ def drop_image_descriptions(parsed: list) -> None:
                 p["figures"] = [{"kind": "plate", "caption": ""}]
 
 
+_GREEK = {"alpha": "α", "beta": "β", "gamma": "γ", "delta": "δ", "epsilon": "ε",
+          "varepsilon": "ε", "theta": "θ", "lambda": "λ", "mu": "μ", "nu": "ν", "pi": "π",
+          "rho": "ρ", "sigma": "σ", "tau": "τ", "phi": "φ", "varphi": "φ", "omega": "ω",
+          "Delta": "Δ", "Omega": "Ω", "Sigma": "Σ", "Pi": "Π", "Phi": "Φ"}
+_MATH_WORDS = {**_GREEK, "cdot": "·", "times": "×", "prime": "′", "pm": "±",
+               "approx": "≈", "neq": "≠", "leq": "≤", "geq": "≥"}
+_SUB = str.maketrans("0123456789+-=()aeoxhklmnpstijruv", "₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₒₓₕₖₗₘₙₚₛₜᵢⱼᵣᵤᵥ")
+_SUP = str.maketrans("0123456789+-=()n", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿ")
+
+
+def _plain_math(expr: str):
+    """One LaTeX formula as plain printed text, or None if it can't be
+    rendered faithfully in plain text."""
+    e = expr.strip()
+    e = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"\1/\2", e)
+    e = re.sub(r"\\sqrt\{([^{}]+)\}", r"√\1", e)
+    e = re.sub(r"\\([A-Za-z]+)", lambda m: _MATH_WORDS.get(m.group(1), m.group(0)), e)
+    e = re.sub(r"\\[ ,;:!]", " ", e)                     # LaTeX spacing
+    e = e.replace("{}", "")
+    e = re.sub(r"_\{([0-9+\-=()aeoxhklmnpstijruv]+)\}|_([0-9aeoxhklmnpstijruv])", lambda m: (m.group(1) or m.group(2)).translate(_SUB), e)
+    e = re.sub(r"\^\{([0-9+\-=()n]+)\}|\^([0-9n])", lambda m: (m.group(1) or m.group(2)).translate(_SUP), e)
+    e = re.sub(r"\s+", " ", e).strip()
+    return None if re.search(r"[\\{}_^]", e) else e
+
+
+def plain_math(parsed: list) -> None:
+    """The OCR model writes letters and symbols set like a formula in LaTeX:
+    "\\( PF \\)" for the lever arm PF, "\\( \\omega'_2 \\)" (Masiello's
+    mechanics, ~245 places in his three books). Rewritten as plain printed
+    text -- PF, ω′₂, V² -- so the translation and the PDFs carry what the
+    book prints. A formula that has no faithful plain form is left as it
+    is (the review report lists it)."""
+    pat = re.compile(r"\\\((.+?)\\\)|\\\[(.+?)\\\]", re.S)
+    for p in parsed:
+        for key in ("body",):
+            t = p.get(key) or ""
+            if "\\(" in t or "\\[" in t:
+                p[key] = pat.sub(lambda m: _plain_math(m.group(1) or m.group(2)) or m.group(0), t)
+
+
 def postprocess_parsed_pages(parsed: list) -> None:
     """Run every Group-A structural salvage in order. Called once, right
     after parse_vlm_response() over the whole book. reconcile_headers() and
@@ -1540,6 +1710,7 @@ def postprocess_parsed_pages(parsed: list) -> None:
     drop_google_boilerplate(parsed)
     drop_scan_apparatus(parsed)
     drop_image_descriptions(parsed)
+    plain_math(parsed)
     mark_handwritten_inscriptions(parsed)
     recover_plate_captions(parsed)
 
@@ -2238,6 +2409,7 @@ try:
             _margins.apply_to_book(work_dir, parsed)
         except Exception as e:
             print(f"⚠ margin notes not inserted ({type(e).__name__}: {e})")
+        join_split_sentences(parsed)
         _is_plate = [any(f.get("kind") == "plate" for f in (p.get("figures") or []))
                      or is_plate_leaf(p.get("body"))
                      for p in parsed]
@@ -2245,6 +2417,10 @@ try:
             [p["page_raw"] for p in parsed], _is_plate, [p.get("body") for p in parsed],
             text_layer_folio_bands(ocr_pdf_path),
             [has_page_number_field(r) for r in extracted_pages])
+        # a second reading of the page's margins confirms a hidden number
+        _fs = f"{int_dir}/folio_strips.json"
+        if os.path.exists(_fs):
+            reconciled_nums = apply_folio_witness(reconciled_nums, json.load(open(_fs, encoding="utf-8")))
         # the reviewer's per-book decisions (books/<stem>.overrides.toml)
         # always win over the automatic reconciliation above
         reconciled_nums = _overrides.apply_extraction(

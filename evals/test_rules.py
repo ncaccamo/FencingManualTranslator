@@ -27,7 +27,7 @@ from _rules import (
     leaked_top_header, is_plate_leaf,
     extract_source_footnotes,
     _clean_caption, _capitalize_definition_entries, fix_parry_names,
-    salvage_leaked_folio_header, dehyphenate_across_pages,
+    salvage_leaked_folio_header, dehyphenate_across_pages, join_split_sentences, apply_folio_witness, plain_math,
     drop_google_boilerplate, mark_handwritten_inscriptions,
     drop_scan_apparatus, fold_caption_header_into_figure, reconcile_headers,
     recover_plate_captions, parse_vlm_response, clean_vlm_extraction,
@@ -2325,6 +2325,129 @@ def test_review_report_italian_rules_only_on_italian_books():
                           "li documenti e vantaggi che si ponno avere nel mestier de l'armi")
     assert not Q.still_french("The hit must reach the target before the opponent has "
                               "completed his action, in the line of the parry.")
+
+
+def test_page_context_off_by_default_and_body_only():
+    # PAGE_CONTEXT (experimental): off unless asked for; when on, the
+    # previous page's last words and the next page's first words, from
+    # the body only (no running head, footnotes or margin notes)
+    from _rules import TX
+    assert TX["PAGE_CONTEXT"] is False
+    assert TX["page_context_block"]({"context": {"prev": "x", "next": "y"}}) == ""
+    pages = ["PAGE_NUMBER: 6\nHEADER: FLEURET\nBODY_TEXT:\nprotéger tout le visage. Il faudra se mé-\n\n(1) Cette appellation vient du vieux français.",
+             "PAGE_NUMBER: 7\nHEADER: ENTRAINEMENT\nBODY_TEXT:\n⟦MARGIN: Les masques.⟧\n\nfier de certains masques de prix modéré.",
+             ""]
+    c = TX["neighbour_context"](pages, 1)
+    assert c["prev"].endswith("Il faudra se mé-") and "appellation" not in c["prev"] and "FLEURET" not in c["prev"], c
+    assert c["next"] == "", c
+    c0 = TX["neighbour_context"](pages, 0)
+    assert c0["prev"] == "" and c0["next"].startswith("fier de certains") and "MARGIN" not in c0["next"], c0
+    TX["PAGE_CONTEXT"] = True
+    try:
+        blk = TX["page_context_block"]({"context": c})
+        assert "do NOT translate" in blk and "se mé-" in blk and blk.endswith("\n\n")
+        assert TX["page_context_block"]({"context": {"prev": "", "next": ""}}) == ""
+    finally:
+        TX["PAGE_CONTEXT"] = False
+
+
+def test_join_split_sentences_moves_shorter_fragment():
+    # Spinnewyn 101/102: "Bien" | "fermer alors la ligne..." was translated
+    # "Well" / "then close"; the 1-word start moves onto the next page
+    pages = [{"body": "un seul instant le contact de l'épée adverse. Bien"},
+             {"body": "fermer alors la ligne de quarte et diriger la pointe en pleine poitrine.\n\nOBSERVATION"}]
+    assert join_split_sentences(pages) == 1
+    assert pages[0]["body"] == "un seul instant le contact de l'épée adverse."
+    assert pages[1]["body"].startswith("Bien fermer alors la ligne de quarte"), pages[1]
+    # the end is shorter: it comes back, before page 1's footnote block
+    pages = [{"body": "Le soir même je parlais de ce jeune prévôt à mon vieux professeur, qui\n\n(1) Grisier."},
+             {"body": "m'aimait tendrement. Il résista longtemps à mes prières répétées."}]
+    join_split_sentences(pages)
+    assert pages[0]["body"] == "Le soir même je parlais de ce jeune prévôt à mon vieux professeur, qui m'aimait tendrement.\n\n(1) Grisier.", pages[0]
+    assert pages[1]["body"] == "Il résista longtemps à mes prières répétées.", pages[1]
+
+
+def test_join_split_sentences_across_plate_and_margin_never_empties():
+    # one plate page between the halves; a margin note opening the next
+    # page stays first
+    pages = [{"body": "Le coup droit se fait en allongeant le bras, la main"},
+             {"body": ""},
+             {"body": "⟦MARGIN: Coup droit.⟧\n\nhaute, et en se fendant aussitôt. La suite vient ensuite."}]
+    assert join_split_sentences(pages) == 1
+    assert pages[0]["body"] == "Le coup droit se fait en allongeant le bras, la main haute, et en se fendant aussitôt.", pages[0]
+    assert pages[2]["body"] == "⟦MARGIN: Coup droit.⟧\n\nLa suite vient ensuite.", pages[2]
+    # moving the end back would empty page 2: the start goes forward
+    pages = [{"body": "Première phrase complète. Et la suite de cette longue phrase qui continue"},
+             {"body": "ici."}]
+    join_split_sentences(pages)
+    assert pages[0]["body"] == "Première phrase complète.", pages
+    assert pages[1]["body"] == "Et la suite de cette longue phrase qui continue ici.", pages
+
+
+def test_join_split_sentences_rejoins_broken_word_without_hyphen():
+    # Barbasetti 75: "il ferro av-" | "versario." became "av-versario"
+    pages = [{"body": "Il colpo è robusto, specialmente quando non incontrano il ferro av-"},
+             {"body": "⟦MARGIN: Nota.⟧\n\nversario. Poi segue il resto della pagina con altro testo."}]
+    join_split_sentences(pages)
+    assert pages[0]["body"].endswith("il ferro avversario."), pages[0]
+
+
+def test_join_split_sentences_past_long_footnote_and_prose_ellipsis():
+    # Florio 20/21: a footnote of several paragraphs (quotation, reference,
+    # comment) after the split; Florio 52: "abbattimenti.... in voler" is
+    # prose with an ellipsis, not a contents line
+    pages = [{"body": "una diversa loro velocità effetti\n\n(1) Arma antiqua manus.\n\nLucrez. De rer. nat. lib. v.\n\nRilevasi da questa citazione."},
+             {"body": "producevano più o meno vantaggiosi. Formò varie serie di movimenti."}]
+    assert join_split_sentences(pages) == 1
+    assert pages[0]["body"].startswith("una diversa loro velocità effetti producevano più o meno vantaggiosi.\n\n(1) Arma"), pages[0]
+    pages = [{"body": "in fare abbattimenti.... in voler essere insomma Cavaliere"},
+             {"body": "errante di tutto punto. Il resto della pagina segue qui."}]
+    assert join_split_sentences(pages) == 1
+
+
+def test_join_split_sentences_semicolon_does_not_end_sentence():
+    # Jacob 26/27: stopping at "lui dis-je;" left "il deviendrait" on the
+    # next page, apart from the prévôt it refers to
+    pages = [{"body": "C'était vous. — Vous devriez bien prendre ce petit prévôt,"},
+             {"body": "lui dis-je; entre vos mains, il deviendrait incomparable. Grisier résista longtemps."}]
+    join_split_sentences(pages)
+    whole = "Vous devriez bien prendre ce petit prévôt, lui dis-je; entre vos mains, il deviendrait incomparable."
+    assert any(whole in p["body"] for p in pages), pages        # one page has it all
+
+
+def test_join_split_sentences_leaves_complete_pages_contents_and_capitals():
+    for a, b in (("Une phrase finie.", "suite en minuscule."),           # complete page
+                 ("Le croisé . . . . . . . . 72", "parades . . . 73"),  # contents
+                 ("Et la parade", "Quarte. Un titre en capitale.")):    # next starts upper
+        pages = [{"body": a}, {"body": b}]
+        assert join_split_sentences(pages) == 0 and pages == [{"body": a}, {"body": b}], (a, b)
+
+
+def test_folio_witness_only_confirms_never_hides():
+    # strip-read test pages (2026-10-01): Vauresmont 117 unread by the OCR,
+    # La Boëssière xiij/xvj misread; a gathering mark "13", "NONE" on a
+    # printed page and a misread "vij" must change nothing
+    nums = ["xii", "[13]", "xiv", "[16]", "[8]", "90", "[193]", "[117]", "[150]"]
+    strips = {"2": "xiii", "4": "xvi", "5": "vij", "6": "NONE", "7": "13", "8": "117", "9": "NONE"}
+    assert apply_folio_witness(nums, strips) == ["xii", "xiii", "xiv", "xvi", "[8]", "90", "[193]", "117", "[150]"]
+    assert apply_folio_witness(["XII", "[13]"], {"2": "xiii"}) == ["XII", "XIII"]     # neighbours' case
+    # an unnumbered page inside a consistent run (Vauresmont 116, _, 118):
+    # the run predicts 117; the strip read must agree. Without a run on both
+    # sides, or with a gap that doesn't add up, nothing is shown.
+    assert apply_folio_witness(["116", "", "118"], {"2": "117"}) == ["116", "117", "118"]
+    assert apply_folio_witness(["116", "", "[118]"], {"2": "117"}) == ["116", "", "[118]"]
+    assert apply_folio_witness(["116", "", "120"], {"2": "117"}) == ["116", "", "120"]
+
+
+def test_plain_math_from_ocr_latex():
+    # Masiello's mechanics (~245 places): the OCR writes labelled points and
+    # symbols as LaTeX; plain printed text instead, unknown forms left alone
+    pages = [{"body": r"il braccio di leva sarà \( PF \), come nel caso; \( T = \frac{1}{2} M V^2 \) e \( \omega'_2 \)"},
+             {"body": r"si ha \( \frac{1}{2} M V'_i{}^2 \) e \( \int_0^1 x dx \)"}]
+    plain_math(pages)
+    assert pages[0]["body"] == "il braccio di leva sarà PF, come nel caso; T = 1/2 M V² e ω'₂", pages[0]
+    assert pages[1]["body"].startswith("si ha 1/2 M V'ᵢ² e "), pages[1]
+    assert r"\( \int_0^1 x dx \)" in pages[1]["body"]           # no faithful plain form: kept
 
 
 def _run_plain() -> int:

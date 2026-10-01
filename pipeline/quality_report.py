@@ -341,6 +341,32 @@ def check_book(folder: str) -> list:
             issues.append({"scan": 0, "level": "TERMS", "kind": name,
                            "detail": {k: sorted(set(v)) for k, v in seen.items()}})
 
+    # formula notation the OCR wrote in LaTeX and plain_math() (step 1) could
+    # not turn into plain text
+    for i, t in enumerate(tr):
+        m = re.search(r"\\[(\[].{0,40}", _body(t or ""))
+        if m:
+            add(i + 1, CHECK, "ocr", f"formula left in LaTeX notation: {m.group(0)!r}")
+
+    # a sentence still split across a page break in the English: the page
+    # ends mid-sentence and the next page with text continues in lowercase.
+    # Step 1 joins every split sentence onto one page (join_split_sentences);
+    # what's left -- a table across the break, a margin note inside the
+    # fragment -- is listed so nothing is translated as two halves unseen.
+    def _english(t):
+        b = re.sub(r"\u27e6MARGIN:[^\u27e7]*\u27e7", "", _body(t or ""))
+        b = re.sub(r"\[\[TABLE\]\]", "", b).strip()
+        return "" if b in ("", "[Empty page]") else b
+    eng = [_english(t) for t in tr]
+    for i in range(len(eng) - 1):
+        a = eng[i]
+        if not a or re.search(r"[.!?;:\u00bb\u201d\")\]\u2026*]\s*\Z", a):
+            continue
+        j = i + 1 if eng[i + 1] or i + 2 >= len(eng) else i + 2
+        if re.match(r"[a-z]", eng[j] or ""):
+            add(i + 1, CHECK, "split", f"sentence split across the page break: "
+                f"\u2026{a[-40:]!r} | {eng[j][:40]!r}\u2026")
+
     # running heads vs. the layout detector (intermediate/layout.json)
     lay = _layout.load(folder)
     if lay and os.path.exists(f"{I}/raw_ocr.txt"):

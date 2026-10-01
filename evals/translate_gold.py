@@ -85,7 +85,14 @@ def main():
     _ns["BOOK_LANG"] = lang
     PROMPT = _ns["prompt_for_language"](lang)
     print(f"source language: {lang}")
-    pages = re.split(r"<!--p \d+-->", (d / "src.txt").read_text(encoding="utf-8"))
+    # only the pages the reference covers (meta.json "src_pages"), as
+    # gold_report.py scores: translating the whole book and scoring against
+    # half of it misaligns every sentence (Rosaroll 2026-09-30: 22.8 chrF++
+    # instead of 54.7), and wastes the GPU time
+    from gold_align import page_range
+    meta_all = json.loads((d / "meta.json").read_text(encoding="utf-8"))
+    src_all = page_range((d / "src.txt").read_text(encoding="utf-8"), meta_all.get("src_pages"))
+    pages = re.split(r"<!--p \d+-->", src_all)
     pages = [p.strip() for p in pages if p.strip()]
     print(f"{d.name}: {len(pages)} pages to translate")
     if start_server() is None:

@@ -1832,6 +1832,45 @@ def load_partial(folder: str, fps: list):
         return None
 
 
+# Page context (experimental, off unless PAGE_CONTEXT=1): a sentence split
+# across a page break is otherwise translated as two unrelated fragments
+# (Kirchhoffer scan 12-13 "se mé-" / "fier" -> "smell of"; Spinnewyn
+# 101-102 "Bien" / "fermer..." -> "Well / then close"). The model is shown
+# the end of the previous page and the start of the next, marked as
+# context it must not translate. Callers put them in st["context"].
+PAGE_CONTEXT = os.environ.get("PAGE_CONTEXT", "").lower() in ("1", "true", "yes", "on")
+_CONTEXT_WORDS = 40
+
+
+def neighbour_context(pages: list, k: int) -> dict:
+    """{"prev": last words of page k-1, "next": first words of page k+1}
+    (k is 0-based), from the pages' body text without footnotes or margin
+    notes; empty strings at the book's ends or on blank pages."""
+    def body(j):
+        if not 0 <= j < len(pages) or not pages[j].strip():
+            return ""
+        t = clean_vlm_extraction(pages[j])
+        t = re.sub(r"⟦MARGIN:[^⟧]*⟧", " ", t)
+        t = re.split(r"\n\s*\n\s*(?:\(\d+\)|\*)\s", t)[0]       # author's footnotes
+        return " ".join(t.split())
+    prev, nxt = body(k - 1).split(), body(k + 1).split()
+    return {"prev": " ".join(prev[-_CONTEXT_WORDS:]), "next": " ".join(nxt[:_CONTEXT_WORDS])}
+
+
+def page_context_block(st: dict) -> str:
+    c = st.get("context") if PAGE_CONTEXT else None
+    if not c or not (c.get("prev") or c.get("next")):
+        return ""
+    lines = ["CONTEXT ONLY -- do NOT translate or repeat this; it is here so a sentence "
+             "split across a page break reads correctly. Translate only the text after "
+             "\"Text to translate:\", starting and ending exactly where it does."]
+    if c.get("prev"):
+        lines.append(f"The previous page ends: \u00ab\u2026{c['prev']}\u00bb")
+    if c.get("next"):
+        lines.append(f"The next page begins: \u00ab{c['next']}\u2026\u00bb")
+    return "\n".join(lines) + "\n\n"
+
+
 def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
     """Translate one extracted.txt page record -> its translation.txt entry.
     Never raises and never returns nothing: a failed page comes back as a
@@ -1922,15 +1961,16 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         # blunt instruction -- the 7B sometimes gets stuck echoing
         # the French source verbatim, and a hotter sample + the
         # extra line breaks it out.
+        ctx = page_context_block(st)
         if attempt == 0:
-            full_prompt = f"{PROMPT_TEMPLATE}\n\nText to translate:\n{clean_text}"
+            full_prompt = f"{PROMPT_TEMPLATE}\n\n{ctx}Text to translate:\n{clean_text}"
             temp = 0.3
         else:
             full_prompt = (f"{PROMPT_TEMPLATE}\n\nTranslate the following into "
                            f"fluent English. Do NOT repeat any of it in the "
                            f"original language. Match the capitalisation of the "
                            f"source; do NOT write the text in all capitals."
-                           f"\n\nText to translate:\n{clean_text}")
+                           f"\n\n{ctx}Text to translate:\n{clean_text}")
             temp = 0.3 + 0.25 * attempt
         candidate = translate_with_llama(full_prompt, temperature=temp)
 
@@ -2162,6 +2202,7 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
     for s_ in targets:
         if s_ in finished:
             continue
+        st["context"] = neighbour_context(ex, s_ - 1) if PAGE_CONTEXT else None
         tr[s_ - 1] = translate_page(ex[s_ - 1].strip(), s_, len(ex), st)
         done[str(s_)] = fp(ex[s_ - 1])
         fps[s_ - 1] = page_fingerprint(ex[s_ - 1])
@@ -2252,6 +2293,7 @@ try:
 
         for i in range(len(translated_pages) + 1, len(pages) + 1):
             calls = MODEL_CALLS
+            _st["context"] = neighbour_context(pages, i - 1) if PAGE_CONTEXT else None
             translated_pages.append(translate_page(pages[i - 1], i, len(pages), _st))
             # "-": no model reply (blank / marker page) -- the cover skips it
             page_models.append((LAST_MODEL or TRANSLATION_MODEL_NAME)

@@ -37,6 +37,8 @@ strip_leaked_headmatter = _ns["strip_leaked_headmatter"]
 tail_catchwords = _ns["tail_catchwords"]
 text_layer_folio_bands = _ns["text_layer_folio_bands"]
 settle_disputed_heads = _ns["settle_disputed_heads"]
+join_split_sentences = _ns["join_split_sentences"]
+apply_folio_witness = _ns["apply_folio_witness"]
 has_page_number_field = _ns["has_page_number_field"]
 apply_read_heads = _ns["apply_read_heads"]
 leaked_top_header = _ns["leaked_top_header"]
@@ -88,6 +90,8 @@ for folder in targets:
     reconcile_headers(parsed, _no_head)
     # margin notes as ⟦MARGIN: …⟧ lines, each before its paragraph (_margins.py)
     _m_placed, _m_lost = _margins.apply_to_book(folder, parsed)
+    # every sentence on one page, so it is translated whole (1_ocr_and_extract_vlm.py)
+    _joined = join_split_sentences(parsed)
     _is_plate = [any(f.get("kind") == "plate" for f in (p.get("figures") or []))
                  or is_plate_leaf(p.get("body"))
                  for p in parsed]
@@ -96,6 +100,10 @@ for folder in targets:
                                   [p.get("body") for p in parsed],
                                   text_layer_folio_bands(_pdfs[0]) if _pdfs else None,
                                   [has_page_number_field(r) for r in raw_pages])
+    # a second reading of the page's margins confirms a hidden number (read_folios.py)
+    _fs = f"{folder}/intermediate/folio_strips.json"
+    if os.path.exists(_fs):
+        nums = apply_folio_witness(nums, json.load(open(_fs, encoding="utf-8")))
     # the reviewer's per-book decisions always win (see _overrides.py)
     nums = _overrides.apply_extraction(
         parsed, nums, _overrides.load(os.path.basename(folder).replace("_translated", "")))
