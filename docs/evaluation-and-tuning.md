@@ -112,9 +112,10 @@ GPU.
 **Current model:** Qwen3.8-27B, 4-bit (`i1-Q4_K_S`, ~15.8 GB), chosen
 2026-09-25 by the translation model selection test: no flagged pages out
 of 37 hard pages, against 14 for Qwen2.5-14B, and the most accurate
-fencing terms. It doesn't fit in 16 GB of VRAM whole, so 46 of its 64
-layers go on the GPU (`TRANSLATION_GPU_LAYERS`; in remote mode the
-`--n-gpu-layers` of the llama-swap entry): ~40-50 s per page. The previous
+fencing terms. It doesn't fit in 16 GB of VRAM whole, so part of its 64
+layers go on the GPU: 46 locally (`TRANSLATION_GPU_LAYERS`), 42 on the
+shared Windows system (the `--n-gpu-layers` of the llama-swap entry;
+`docs/remote-gpu.md`): ~40-100 s per page, depending on page size. The previous
 model, Qwen2.5-14B-Instruct Q4_K_M (8.6 GB, fits whole), stays available
 as `fmt-translate-qwen25`. See `docs/remote-gpu.md` for the GPU memory
 limits on Windows.

@@ -2507,6 +2507,57 @@ def test_report_point_cut_and_cutting_blow():
     assert "colpo di punta → thrust" in hits(Q.TERM_RULES_IT, "colpo di punta", "a point cut")
 
 
+def test_translation_waits_out_a_server_outage():
+    # 2026-10-02: the GPU system lost power and 33 pages were kept untranslated
+    # within minutes. Remote mode now waits for the server and resends; a
+    # server that answers but errors still uses up the attempts (no endless loop).
+    import types, requests as real
+    from _rules import TX
+    saved = {k: TX[k] for k in ("requests", "bc", "time")}
+    calls = {"post": 0, "health": 0}
+    state = {"down_posts": 2, "health_down": 2}
+
+    class Resp:
+        def __init__(self, code, body=None):
+            self.status_code, self._b = code, body
+        def json(self):
+            return self._b
+    ok = Resp(200, {"choices": [{"message": {"content": "The thrust."}}], "model": "m.gguf"})
+
+    def post(*a, **k):
+        calls["post"] += 1
+        if state["down_posts"]:
+            state["down_posts"] -= 1
+            raise real.ConnectionError("refused")
+        return ok
+    def get(*a, **k):
+        calls["health"] += 1
+        if state["health_down"]:
+            state["health_down"] -= 1
+            raise real.ConnectionError("refused")
+        return Resp(200)
+    fake_req = types.SimpleNamespace(post=post, get=get, ConnectionError=real.ConnectionError,
+                                     exceptions=real.exceptions, RequestException=real.RequestException)
+    fake_bc = types.SimpleNamespace(is_remote=lambda: True, translate_base_url=lambda: "http://x",
+                                    auth_headers=lambda: {})
+    import time as _t
+    fake_time = types.SimpleNamespace(sleep=lambda s: None, time=_t.time, strftime=_t.strftime)
+    try:
+        TX.update(requests=fake_req, bc=fake_bc, time=fake_time)
+        # down for two requests (health down twice, then up): waited, then translated
+        assert TX["translate_with_llama"]("p") == "The thrust.", calls
+        # a server that answers /health but keeps failing: 3 attempts, then None
+        state["down_posts"] = 99
+        calls["post"] = 0
+        assert TX["translate_with_llama"]("p") is None and calls["post"] == 3, calls
+        # local mode never waits
+        fake_bc.is_remote = lambda: False
+        state["down_posts"], calls["post"] = 99, 0
+        assert TX["translate_with_llama"]("p") is None and calls["post"] == 3
+    finally:
+        TX.update(saved)
+
+
 def test_cover_page_counts_singular():
     # "87c136a, October 2, 2026 (1 pages)" on Gomard's cover, 2026-10-02
     C = _cover_module()

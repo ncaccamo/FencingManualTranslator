@@ -74,7 +74,7 @@ models:
     cmd: >
       llama-server -m models\Qwen3.8-27B.i1-Q4_K_S.gguf
       --host 127.0.0.1 --port ${PORT} --api-key ${LLAMA_API_KEY}
-      --ctx-size 6144 --n-gpu-layers 46 --parallel 1 --jinja --reasoning-budget 0
+      --ctx-size 6144 --n-gpu-layers 42 --parallel 1 --jinja --reasoning-budget 0
     ttl: 300
   fmt-translate-qwen25:          # previous model, kept for comparisons
     cmd: >
@@ -90,12 +90,18 @@ model selection test (`evals/translation_model_test.py`: 0 of 37 hard pages
 flagged, against 14 for Qwen2.5-14B, and the most accurate fencing
 terminology). Its flags, and why:
 
-- `--n-gpu-layers 46` (of 64): the ~15.8 GB file doesn't fit in 16 GB of
+- `--n-gpu-layers 42` (of 64): the ~15.8 GB file doesn't fit in 16 GB of
   VRAM, and on Windows the AMD driver gives one program only ~11.8 GB —
   past that it silently spills into shared system memory, which is far
-  slower than a deliberate split. 46 layers on the GPU, the rest on the
-  CPU: ~40 s per text page. Lower the number if Task Manager shows
-  "shared GPU memory" climbing during a run.
+  slower than a deliberate split. Each layer is ~0.25 GB: 42 layers is
+  ~11 GB with working memory, leaving room for whatever else is open on a
+  system used for other things too. 46 (~12.2 GB) ran fine on a clean
+  system (~40 s per page) but spilled 3 GB when other programs held GPU
+  memory, doubling the page time (2026-10-02); 36 avoided the spill but put
+  so much on the CPU that it was slower still. At 42: ~100 s for a dense
+  ~290-word page. In Task Manager → Performance → GPU, "shared GPU memory"
+  near 1.6 GB during a run is normal (transfer buffers); 3 GB is a spill —
+  lower the number.
 - `--parallel 1`: llama.cpp now defaults to 4 slots, i.e. 4× the context
   memory.
 - `--jinja --reasoning-budget 0`: use the model's own chat template, with
@@ -211,6 +217,6 @@ llama.cpp alongside the ROCm and Vulkan ones:
    driver and the NVIDIA Container Toolkit).
 
 Either way: with 24 GB or more of VRAM, raise `TRANSLATION_GPU_LAYERS`
-(default 46 of 64) so more of the translation model runs on the GPU --
+(default 46 of 64 locally, 42 on the Windows system) so more of the translation model runs on the GPU --
 all 64 layers fit, and translation gets considerably faster. Below 16 GB,
 lower it.

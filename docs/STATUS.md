@@ -24,9 +24,10 @@ the operator's business and is not tracked here.)
 - **Translation:** Qwen3.8-27B (i1-Q4_K_S, ~15.8 GB), chosen by the
   translation model selection test (`evals/translation_model_test.py`);
   llama-swap key `fmt-translate` remotely, :11434 locally. Too big for 16 GB
-  of VRAM whole: 46 of 64 layers on the GPU (`TRANSLATION_GPU_LAYERS`),
-  ~40-50 s/page. A page is never dropped; low-confidence output is flagged
-  inline.
+  of VRAM whole: part of its 64 layers on the GPU (46 locally,
+  `TRANSLATION_GPU_LAYERS`; 42 on the shared Windows system, see
+  `docs/remote-gpu.md`), ~40-100 s/page depending on page size. A page
+  is never dropped; low-confidence output is flagged inline.
 - **Page breaks:** a sentence split across a page break is joined onto one
   page before translation (`join_split_sentences()`, the shorter fragment
   moves), so it is translated whole. The review report flags any split left

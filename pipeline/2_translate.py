@@ -20,9 +20,11 @@ import _overrides
 PROMPT_FILE = "/app/translation_prompt.txt"
 TRANSLATION_MODEL = os.environ.get("TRANSLATION_MODEL_PATH", "/models/Qwen3.8-27B.i1-Q4_K_S.gguf")
 # Qwen3.8-27B 4-bit is ~15.8 GB: it doesn't fit whole in 16 GB of VRAM, so a
-# fixed number of its 64 layers go on the GPU and the rest on the CPU (46 =
-# the Windows setting, where the driver allows one program ~11.8 GB;
-# docs/remote-gpu.md). A smaller model can take 999 (= all).
+# fixed number of its 64 layers go on the GPU and the rest on the CPU. 46
+# fits a dedicated 16 GB card (local mode); the Windows GPU system uses 42
+# in its llama-swap entry, where the driver allows one program ~11.8 GB and
+# other programs share the card (docs/remote-gpu.md). A smaller model can
+# take 999 (= all).
 TRANSLATION_GPU_LAYERS = os.environ.get("TRANSLATION_GPU_LAYERS", "46")
 # Request "model" label. Ignored by a single-model llama-server (local /
 # simple remote); the routing key under llama-swap. Kept in sync with the
@@ -1423,7 +1425,8 @@ def translate_with_llama(prompt: str, temperature: float = 0.3) -> str:
     }
     if EVAL_DETERMINISTIC:
         body["seed"] = EVAL_SEED
-    for attempt in range(3):
+    attempt = 0
+    while attempt < 3:
         try:
             response = requests.post(
                 LLAMA_API_URL,
@@ -1431,7 +1434,8 @@ def translate_with_llama(prompt: str, temperature: float = 0.3) -> str:
                 json=body,
                 timeout=1800
             )
-            
+            if response.status_code in _SERVER_DOWN_STATUS and wait_for_remote_server():
+                continue                    # the server came back: same request again
             if response.status_code == 200:
                 result = response.json()
                 if "choices" in result and len(result["choices"]) > 0:
@@ -1452,11 +1456,54 @@ def translate_with_llama(prompt: str, temperature: float = 0.3) -> str:
             
             if attempt < 2:
                 time.sleep(5)
+        except (requests.ConnectionError, requests.exceptions.ConnectTimeout):
+            if wait_for_remote_server():
+                continue                    # the server came back: same request again
+            if attempt < 2:
+                time.sleep(10)
         except Exception:
             if attempt < 2:
                 time.sleep(10)
-    
+        attempt += 1
+
     return None
+
+
+# The remote GPU system unreachable (power cut, reboot, llama-swap restart)
+# is not a translation failure: wait for it and send the same request again,
+# instead of using up the page's attempts and keeping the original text --
+# which on 2026-10-02 marked 33 pages of a book "[translation unavailable]"
+# in a few minutes. Local mode doesn't wait: the pipeline owns that server,
+# and it won't come back by itself.
+_SERVER_DOWN_STATUS = (502, 503, 504)
+SERVER_WAIT_HOURS = float(os.environ.get("SERVER_WAIT_HOURS", "24"))
+
+
+def wait_for_remote_server(poll: int = 60) -> bool:
+    """Remote mode, server down: block until it answers /health again (True),
+    or give up after SERVER_WAIT_HOURS (False). Server up -- the error was
+    something else -- or local mode: False at once, so the caller counts it
+    as a failed attempt (no endless retry against a server that answers)."""
+    if not bc.is_remote():
+        return False
+    base = bc.translate_base_url()
+    def up():
+        try:
+            return requests.get(f"{base}/health", headers=bc.auth_headers(),
+                                timeout=10).status_code == 200
+        except requests.RequestException:
+            return False
+    if up():
+        return False
+    print(f"\n  [{time.strftime('%H:%M')}] GPU server not answering -- waiting "
+          f"(up to {SERVER_WAIT_HOURS:g} h)", flush=True)
+    deadline = time.time() + SERVER_WAIT_HOURS * 3600
+    while time.time() < deadline:
+        time.sleep(poll)
+        if up():
+            print(f"  [{time.strftime('%H:%M')}] GPU server back -- continuing", flush=True)
+            return True
+    return False
 
 
 def translate_figure_captions(folder: str, force: bool = False) -> int:
