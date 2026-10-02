@@ -78,7 +78,7 @@ def _translation_models(book):
     counts = Counter(label(m) for m in models).most_common()
     if len(counts) == 1:
         return counts[0][0]
-    return ", ".join(f"{m} ({n} pages)" for m, n in counts)
+    return ", ".join(f"{m} ({_pages(n)})" for m, n in counts)
 
 
 def _model_label(env_var):
@@ -123,6 +123,10 @@ def _date_range(isos):
 _MAX_REV_GROUPS = 3
 
 
+def _pages(n):
+    return f"{n} page" if n == 1 else f"{n} pages"
+
+
 def provenance_line(models, stamps):
     """The cover's translation line from step 2's per-page record: which
     pipeline revision translated the pages, and when. One revision -> no
@@ -162,10 +166,10 @@ def provenance_line(models, stamps):
                 f"Translated with FencingManualTranslator, {_date_range(groups[r])}")
     parts = []
     if folded:
-        parts.append(f"earlier revisions, {_date_range(folded)} ({n_folded} pages)")
-    parts += [f"{label(r)} ({count[r]} pages)" for r in order]
+        parts.append(f"earlier revisions, {_date_range(folded)} ({_pages(n_folded)})")
+    parts += [f"{label(r)} ({_pages(count[r])})" for r in order]
     if unrec:
-        parts.append(f"not recorded ({unrec} pages)")
+        parts.append(f"not recorded ({_pages(unrec)})")
     return "Translated with FencingManualTranslator: " + "; ".join(parts)
 
 

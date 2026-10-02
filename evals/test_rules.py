@@ -2133,7 +2133,7 @@ def test_cover_translation_line_partial_retranslation():
     line = C.provenance_line(models, stamps)
     assert line == ("Translated with FencingManualTranslator: "
                     "54806ab, September 29–30, 2026 (2 pages); "
-                    "cbd42c1, October 2, 2026 (1 pages); not recorded (3 pages)"), line
+                    "cbd42c1, October 2, 2026 (1 page); not recorded (3 pages)"), line
     assert C.provenance_line(["Q", "Q"], []) == \
         "Translated with FencingManualTranslator (revision and date not recorded)"
 
@@ -2149,7 +2149,7 @@ def test_cover_translation_line_filled_in_date_range():
         "Translated with FencingManualTranslator, September 25–29, 2026"
     assert C.provenance_line(["Q", "Q", "Q"], [fill, fill, ["cbd42c1", "2026-10-02"]]) == (
         "Translated with FencingManualTranslator: September 25–29, 2026 (2 pages); "
-        "cbd42c1, October 2, 2026 (1 pages)")
+        "cbd42c1, October 2, 2026 (1 page)")
 
 def test_cover_date_range_formats():
     C = _cover_module()
@@ -2505,6 +2505,12 @@ def test_report_point_cut_and_cutting_blow():
     assert not hits(Q.TERM_RULES, "Feinte de coup de pointe", "Feint of a thrust")
     assert "coup de taille → cut" in hits(Q.TERM_RULES, "de coup de taille", "of a cutting blow")
     assert "colpo di punta → thrust" in hits(Q.TERM_RULES_IT, "colpo di punta", "a point cut")
+
+
+def test_cover_page_counts_singular():
+    # "87c136a, October 2, 2026 (1 pages)" on Gomard's cover, 2026-10-02
+    C = _cover_module()
+    assert C._pages(1) == "1 page" and C._pages(2) == "2 pages"
 
 
 def test_cover_dates_first_published_and_edition():
