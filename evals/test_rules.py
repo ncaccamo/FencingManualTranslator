@@ -2490,6 +2490,23 @@ def test_report_running_head_spellings():
     assert len(out) == 1 and "3 spellings" in out[0][2] and out[0][1] == 7, out
 
 
+def test_report_point_cut_and_cutting_blow():
+    # Gomard pdf 43 / Vauresmont pdf 115: coup de pointe came out "point cut",
+    # coup de taille "cutting blow"
+    import importlib, re
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        Q = importlib.import_module("quality_report")
+    except (OSError, ImportError, SystemExit):   # reads /app paths: runs in the image
+        return
+    def hits(rules, fr, en):
+        return [r for f, w, r in rules if re.search(f, fr, re.I) and re.search(w, en, re.I)]
+    assert "coup de pointe → thrust" in hits(Q.TERM_RULES, "Feinte de coup de pointe", "Feint of a point cut")
+    assert not hits(Q.TERM_RULES, "Feinte de coup de pointe", "Feint of a thrust")
+    assert "coup de taille → cut" in hits(Q.TERM_RULES, "de coup de taille", "of a cutting blow")
+    assert "colpo di punta → thrust" in hits(Q.TERM_RULES_IT, "colpo di punta", "a point cut")
+
+
 def test_cover_dates_first_published_and_edition():
     # the cover places each book in time: first appearance, plus the scan's
     # edition when it is a later one (Jacob's scan is the 1896 fifth edition)

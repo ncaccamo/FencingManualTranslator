@@ -28,7 +28,8 @@ CRITICAL RULES — FOLLOW EXACTLY:
      receive a hit); NEVER "blow" — also in phrasings like "coup porté" → attack delivered, "coup paré" →
      parried attack, "coups pour coups" → hit for hit. A cut with the edge is a cut: "coup de taille",
      "coup de tranchant", "coup de sabre", "coup d'estramaçon" → cut ("coups de taille" → cuts), never
-     "cutting blow". Only where coup is not a fencing action does ordinary English stay: "coups et
+     "cutting blow". A hit with the point is a thrust: "coup de pointe" → thrust ("coups de pointe" →
+     thrusts), never "point cut". Only where coup is not a fencing action does ordinary English stay: "coups et
      blessures" → blows and wounds, "coup de marteau" → hammer blow. botte → thrust ("botte de quarte" → thrust in quarte). Named techniques
      keep their own names: coup droit → straight thrust, coup de temps → time-hit, coup d'arrêt → stop-thrust.
      Where the text DEFINES or CONTRASTS the two words as terms ("le coup est … ; la botte est …", "on ne
