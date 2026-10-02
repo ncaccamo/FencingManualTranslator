@@ -2450,6 +2450,61 @@ def test_plain_math_from_ocr_latex():
     assert r"\( \int_0^1 x dx \)" in pages[1]["body"]           # no faithful plain form: kept
 
 
+def test_join_split_sentences_past_section_break_and_quote_marks():
+    # LaMarche 43/44: a "* * *" section break is not a footnote marker -- it
+    # used to hide the split at the foot of the page
+    pages = [{"body": "Premier paragraphe.\n\n* * *\n\nLa surface doit être lisse.\n"
+                      "Enfin nous pensons qu'on doit renoncer absolument"},
+             {"body": "aux coquilles dont les bords sont relevés. Dans l'attaque, la pointe glisse."}]
+    assert join_split_sentences(pages) == 1
+    assert "renoncer absolument aux coquilles dont les bords sont relevés." in pages[0]["body"] \
+        or pages[1]["body"].startswith("Enfin nous pensons"), pages
+    # a real "* " footnote still closes the running text
+    pages = [{"body": "Le texte finit ici.\n\n* Note de l'auteur sans point"},
+             {"body": "suite qui ne continue rien."}]
+    assert join_split_sentences(pages) == 0
+    # Gomard 44/45: a quotation running on opens the next page with "«"
+    pages = [{"body": "puis la troisième; et enfin la dernière, portant"},
+             {"body": "« la main à droite, en dedans vers le genou, sera « la quatrième. Telles sont les gardes."}]
+    assert join_split_sentences(pages) == 1
+    joined = pages[0]["body"] + " | " + pages[1]["body"]
+    assert "portant la main à droite" in joined, joined
+
+
+def test_report_running_head_spellings():
+    # Masiello: one head read three ways; reported once, the reviewer picks
+    # the spelling (the commoner can be the misreading: Barbasetti)
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        Q = importlib.import_module("quality_report")
+    except (OSError, ImportError, SystemExit):   # reads /app paths: runs in the image
+        return
+    where = {"FERDINANDO MASIELLO": [3, 5], "FERDINANDO MASIEMLO": [7], "FERDINANDO MASIello": [9],
+             "INTRODUCTION": [11], "INTRODUCTION.": [12],             # punctuation only
+             "CAPITOLO QUARTO": [13], "CAPITOLO QUINTO": [14],         # different chapters
+             "CHAPITRE II": [15], "CHAPITRE III": [16],
+             "LUIGI BARBASSETTI": [17], "LUIGI BARBASETTI": [18]}
+    hmap = {"LUIGI BARBASSETTI": "LUIGI BARBASETTI", "LUIGI BARBASETTI": "LUIGI BARBASETTI"}
+    out = Q.head_variants(where, hmap)                                 # Barbasetti: decided
+    assert len(out) == 1 and "3 spellings" in out[0][2] and out[0][1] == 7, out
+
+
+def test_cover_dates_first_published_and_edition():
+    # the cover places each book in time: first appearance, plus the scan's
+    # edition when it is a later one (Jacob's scan is the 1896 fifth edition)
+    C = _cover_module()
+    assert C._dates({"year_first": "1845"}) == ["1845", ""]
+    assert C._dates({"year": "1845"}) == ["1845", ""]                     # old field still read
+    assert C._dates({"year_first": "1887", "year_edition": "1896", "edition": "fifth",
+                     "publisher": "Paul Ollendorff, Paris"}) == \
+        ["First published 1887", "This edition: fifth, Paul Ollendorff, Paris, 1896"]
+    assert C._dates({"year_first": "1887", "year_edition": "1902", "edition": "second",
+                     "first_as": "La scherma italiana"})[0] == "First published 1887 (as La scherma italiana)"
+    assert C._dates({"year_first": "1847", "edition": "second", "publisher": "Garnier"}) == \
+        ["1847", "This edition: second, Garnier"]
+
+
 def _run_plain() -> int:
     fns = sorted((n, f) for n, f in globals().items()
                  if n.startswith("test_") and callable(f))

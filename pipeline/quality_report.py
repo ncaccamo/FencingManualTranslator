@@ -277,6 +277,76 @@ def page_map(folder: str, n: int) -> dict:
 _rules = TERM_RULES      # the book's language's list, set by check_book()
 
 
+def _edits(a: str, b: str) -> int:
+    """Letters to change, add or drop to turn a into b."""
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+# numbers in words: heads that differ in one ("QUARTO" / "QUINTO", "FIFTH" /
+# "SIXTH") are different heads, not a misreading
+_ORDINALS = set("""PRIMO PRIMA SECONDO SECONDA TERZO TERZA QUARTO QUARTA QUINTO QUINTA
+SESTO SESTA SETTIMO SETTIMA OTTAVO OTTAVA NONO NONA DECIMO DECIMA UNDICESIMO DODICESIMO
+PREMIER PREMIÈRE PREMIERE DEUXIÈME DEUXIEME SECOND SECONDE TROISIÈME TROISIEME QUATRIÈME
+QUATRIEME CINQUIÈME CINQUIEME SIXIÈME SIXIEME SEPTIÈME SEPTIEME HUITIÈME HUITIEME NEUVIÈME
+NEUVIEME DIXIÈME DIXIEME FIRST THIRD FOURTH FIFTH SIXTH SEVENTH EIGHTH NINTH TENTH
+ELEVENTH TWELFTH ONE TWO THREE FOUR FIVE SIX SEVEN EIGHT NINE TEN UNO DUE TRE QUATTRO
+CINQUE SEI SETTE OTTO NOVE DIECI UN DEUX TROIS QUATRE CINQ SEPT HUIT NEUF DIX""".split())
+
+
+def head_variants(where: dict, hmap: dict) -> list:
+    """Running heads shown one or two letters apart are usually one head the
+    OCR misread: "FERDINANDO MASIEMLO" / "MASIELLO" / "MASIello". Compared
+    as shown in the English (headers.json), so a misreading the translation
+    already smoothed over is no issue, and punctuation-only differences
+    ("INTRODUCTION" / "INTRODUCTION.") are ignored; capitals are not (they
+    show). Which spelling is right
+    is the reviewer's call -- the commoner one can be the misreading
+    (Barbasetti: "BARBASSETTI" on 63 pages, right on 11) -- so this only
+    reports, once per group; the decision is a [headers] line in the
+    overrides file. Heads differing in a number are different heads."""
+    def norm(h):
+        h = h.replace("\u2019", "'").replace("\t", " ")
+        return re.sub(r"\s+", " ", re.sub(r"[.,:;!?]", "", h)).strip()
+    shown = defaultdict(list)                     # English as shown -> scans
+    for h, scans in where.items():
+        shown[(hmap.get(h) or h).strip()] += scans
+    by_norm = defaultdict(list)
+    for en, scans in shown.items():
+        by_norm[norm(en)] += scans
+    keys = sorted(by_norm, key=lambda k: -len(by_norm[k]))
+    def nums(h):                                  # numbers, in figures or words
+        return re.findall(r"\d+|\b[IVXLC]+\b", h) + \
+            [w for w in re.findall(r"[A-ZÀ-Ý]+", h.upper()) if w in _ORDINALS]
+    group = {k: k for k in keys}                  # each variant -> commonest
+    for x, k in enumerate(keys):
+        for c in keys[:x]:
+            if group[c] != c or len(min(k, c, key=len)) < 6 or nums(k) != nums(c):
+                continue
+            if k.upper() == c.upper() and not any(
+                    re.search(r"[A-Z]{2,}[a-z]|[a-z][A-Z]", x) for x in (k, c)):
+                continue                          # "THE ÉPÉE" / "The Épée": style, not a misreading
+            if abs(len(k) - len(c)) <= 2 and _edits(k.upper(), c.upper()) <= 2:
+                group[k] = c
+                break
+    out = []
+    for c in keys:
+        members = [k for k in keys if group[k] == c]
+        if len(members) < 2:
+            continue
+        variants = "; ".join(f"{k!r} ({len(by_norm[k])})" for k in members)
+        first = min(s for k in members[1:] for s in by_norm[k])
+        out.append((CHECK, first, f"running head shown in {len(members)} spellings: "
+                    f"{variants} -- likely one head, misread or translated two ways; "
+                    "set one English for every spelling under [headers]"))
+    return out
+
+
 def check_book(folder: str) -> list:
     global _rules
     _rules = TERM_RULES_IT if _ns["book_language"](
@@ -428,6 +498,8 @@ def check_book(folder: str) -> list:
         h = m.group(1).strip() if m else ""
         if h and h.lower() != "none":
             where[h].append(i + 1)
+    for level, scan, detail in head_variants(where, hmap):
+        add(scan, level, "header", detail)
     for h, scans in where.items():
         en = hmap.get(h, "")
         g = re.search(GARBLES, en, re.I)

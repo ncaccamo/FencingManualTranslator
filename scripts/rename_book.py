@@ -45,7 +45,7 @@ def _sub_stem(name: str, old: str, new: str) -> str:
 
 def plan_pair(old: str, new: str) -> None:
     # books/ pdf + sidecars
-    for ext in (".pdf", ".crop", ".lang", ".rotate", ".meta.json", ".overrides.toml"):
+    for ext in (".pdf", ".crop", ".rotate", ".split", ".meta.json", ".overrides.toml"):
         _mv(BOOKS / f"{old}{ext}", BOOKS / f"{new}{ext}")
 
     # processed dirs: the live one and any dated backups. NB: don't glob --

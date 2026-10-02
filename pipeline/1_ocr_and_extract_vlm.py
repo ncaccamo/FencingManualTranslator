@@ -746,6 +746,13 @@ def join_split_sentences(parsed: list) -> int:
         b = text(parsed[j])
         lead = re.match(r"(?:\s*\u27e6MARGIN:[^\u27e7]*\u27e7)*\s*", b).group(0)
         rest = b[len(lead):]
+        # a quotation running on: French books open each of its lines with
+        # "«" (Gomard, Baudry, Masiello; 23 pages, 2026-10-02), which the OCR
+        # sometimes reads as a straight '"' (Gomard 76/77) -- that mark is
+        # dropped where the two parts join, not a new sentence
+        cont = re.match(r"[\u00ab\"][ \u00a0]*(?=[a-z\u00e0-\u00ff])", rest)
+        if cont:
+            rest = rest[cont.end():]
         if not re.match(r"[a-z\u00e0-\u00ff]", rest):
             continue
         # the sentence's start on page i: after the last sentence end or paragraph break
@@ -784,7 +791,10 @@ def join_split_sentences(parsed: list) -> int:
 # For joining split sentences: the author's footnotes from "(1)" / "*" to the
 # end of the page, however many paragraphs (Florio's run to quotations and
 # comments). Broader than _FOOTNOTE_TAIL, which the hyphen join keeps.
-_FOOTNOTE_BLOCK = re.compile(r"\n[ \t]*\n[ \t]*(?:\(1\)|\*)[ \t][\s\S]*\Z")
+# A "* * *" section break is not a footnote marker: taking it for one hid
+# the real split at the foot of the page (LaMarche, Spinnewyn, Tiboldi;
+# 15 pages, 2026-10-02).
+_FOOTNOTE_BLOCK = re.compile(r"\n[ \t]*\n[ \t]*(?:\(1\)|\*(?![ \t]*\*))[ \t][\s\S]*\Z")
 
 # The author's footnotes closing a page's text: a blank line, then "(1) " or
 # "* " -- everything from there to the end of the page. Not "1." -- that is

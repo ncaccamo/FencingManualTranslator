@@ -35,15 +35,17 @@ DISCLOSURE = (
     "study. It is not a replacement for a scholarly human translation."
 )
 METHOD = (
-    "Page images were transcribed, then translated page by page under a "
-    "fixed prompt; figures and layout are carried from the scan."
+    "Each page was transcribed from the scan and translated separately; "
+    "figures and layout follow the original."
 )
 CONVENTIONS = (
-    "Italic words are technical terms kept in the original language. Where "
-    "the English rendering is a judgement call, the original term is given "
-    "in a footnote."
+    "Italic words are technical terms left in the original language. Where "
+    "no English term fits exactly, a footnote gives the original."
 )
-RIGHTS = "This translation is released under CC0 1.0 (public domain dedication)."
+# The terms the translation is shared under. No name: the tool is credited
+# and linked above, and other operators' runs carry this line too.
+RIGHTS = ("This translation may be shared and adapted for non-commercial use, "
+          "with credit, under the same terms (CC BY-NC-SA 4.0).")
 
 _DEFAULT_ORIG_RIGHTS = "The original work is in the public domain."
 _VENDOR_PREFIXES = ("allenai_", "bartowski_", "TheBloke_", "Qwen_")
@@ -189,6 +191,27 @@ def _join(sep, *parts):
     return sep.join(p for p in (str(x).strip() for x in parts) if p and p != "None")
 
 
+def _dates(meta):
+    """The byline's date part, for placing the book in time: the year the
+    work first appeared, and -- when the scan is a later edition -- which
+    edition it is. meta.json: year_first, year_edition, edition, first_as,
+    publisher (the scan's edition's publisher); the old single `year` field
+    is still read when year_first is missing."""
+    first = str(meta.get("year_first") or meta.get("year") or "").strip()
+    ed_year = str(meta.get("year_edition", "")).strip()
+    label = str(meta.get("edition", "")).strip()
+    pub = str(meta.get("publisher", "")).strip()
+    first_as = str(meta.get("first_as", "")).strip()
+    if ed_year and ed_year != first:
+        head = f"First published {first}" if first else ""
+        if head and first_as:
+            head += f" (as {first_as})"
+        return [head, "This edition: " + _join(", ", label, pub, ed_year)]
+    if label:
+        return [first, "This edition: " + _join(", ", label, pub)]
+    return [first, pub]
+
+
 def render(doc, stem, *, page_w, page_h, margin):
     """Append one cover page to `doc` for book `stem`."""
     meta = _meta(stem)
@@ -214,8 +237,20 @@ def render(doc, stem, *, page_w, page_h, margin):
     page.insert_text((x0, y[0]), meta.get("title") or stem,
                      fontsize=17, fontname=_render.BOLD)
     y[0] += 26
-    byline = _join("  ·  ", meta.get("author"), meta.get("year"),
-                   meta.get("publisher"))
+    # the title in English, for people to refer to the book by (meta.json
+    # title_en, hand-written: the title page itself is often abbreviated)
+    if str(meta.get("title_en", "")).strip():
+        y[0] -= 8
+        block(meta["title_en"].strip(), 13, gap_after=12)
+    # the full title as printed on the title page, and in English, when it
+    # says more than the short title above (meta.json title_full, _en)
+    if str(meta.get("title_full", "")).strip():
+        block(meta["title_full"].strip(), 9.5, italic=True, gap_after=6)
+        if str(meta.get("title_full_en", "")).strip():
+            block(meta["title_full_en"].strip(), 9.5, gap_after=12)
+        else:
+            y[0] += 9
+    byline = _join("  ·  ", meta.get("author"), *_dates(meta))
     if byline:
         block(byline, 10.5, italic=True, gap_after=16)
     else:
@@ -262,7 +297,7 @@ def render(doc, stem, *, page_w, page_h, margin):
 
     # --- rights / contributions -------------------------------------
     block(RIGHTS, 9, gap_after=3)
-    block(GITHUB_URL + "  —  corrections and issues welcome", 9, gap_after=0)
+    block(GITHUB_URL, 9, gap_after=0)
 
     # --- footer id ------------------------------------------------------
     page.insert_text((x0, page_h - margin + 6), "pipeline id: " + stem,

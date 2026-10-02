@@ -94,9 +94,9 @@ Drop a sidecar file next to the PDF in `books/`, named with the same stem:
 | File | Content | Effect |
 |---|---|---|
 | `<stem>.overrides.toml` | your review decisions | Page numbers, headers, header wording, book terms, caption fixes and fixes to the English; re-applied on every run. See III.5b. |
-| `<stem>.meta.json` | title / author / year / publisher / rights / source | The cover page's bibliographic block. Generate it from `books/library.md` with `scripts/make_book_meta.py`, then hand-edit. |
+| `<stem>.meta.json` | title (short, English, full as printed) / author / first-published year / the scan's edition, publisher and year / rights / source / language | The cover page's bibliographic block; `language` also picks the translation prompt. Generate it from `books/library.md` with `scripts/make_book_meta.py`, then check it against the scan's title page. `year_first` is the year in the stem, so stems sort as a timeline. |
 | `<stem>.crop` | `left,top,right,bottom` — fractions, e.g. `0.06,0.04,0.06,0.08` | Trims that fraction off each page image before OCR. Use it to cut a dark scanner-bed border or a gutter shadow that the vision model keeps transcribing as noise. |
-| `<stem>.lang` | Tesseract language codes, e.g. `fra+lat` | Only used by the legacy non-VLM `1_ocr_and_extract.py`. The default VLM path ignores it. |
+| `<stem>.split` | `140: 0.512` (cut at that share of the width) or `66-95: whole`, one per line | Corrections for `pipeline/split_spreads.py`, which cuts a scan of two-page spreads (an open book photographed flat) into single pages before step 1. |
 | `<stem>.rotate` | `cw` / `ccw` / `180` (every plate), or page lists: `cw: 35, 39, 55-229` and `ccw: 241` | Turns sideways-printed plates upright in both PDFs. Page lists are for books whose plates face different ways. See `docs/pdf-layout.md`. |
 
 ## III.4 — What lands in `processed/<stem>_translated/`
@@ -448,9 +448,7 @@ All in `scripts/`, run from anywhere.
 | `compact_docker_storage.sh` | Remove dangling images and unused build cache. Monthly housekeeping. Frees 2-10 GB. |
 | `full_cleanup.sh` | Nuclear: every container, image, volume, and the overlay2 tree. Requires typing `YES`. Keeps `~/llm_models`, `books/`, `processed/`. Rebuild is ~20 min afterward (no model re-download). |
 
-> Note: `debug_vlm.sh` and `test_translation.sh` still reference the old
-> Qwen2-VL model path and are stale — use `check_gpu_usage.sh` and the
-> server logs instead.
+| `test_translation.sh` | Local mode only: start the translation server by hand and send one test request. For diagnosing a server that won't start. |
 
 ## III.9 — Switching inference backend
 

@@ -1,165 +1,166 @@
 # Evaluation & tuning
 
-**Maintainer-facing.** None of this is needed to run the pipeline — it is
-the scaffolding for changing it safely: regression-checking prompt/rule
-edits, comparing models, and (later) fine-tuning. The end-user path is
-`setup/MANUAL_SECTION_III_USAGE.md`; this document is the other audience.
+**For maintainers.** None of this is needed to run the pipeline; it is
+what makes changing it safe: checking that a prompt or rule change didn't
+break a book already reviewed, scoring translations against published
+ones, and choosing or (later) fine-tuning a model. To run the pipeline,
+see `setup/MANUAL_SECTION_III_USAGE.md`.
 
-All of it operates on the operator's own books, which never enter the
-repo (`books/`, `processed/`, `evals/gold/`, `evals/baselines/`,
-`evals/reports/` are git-ignored). The harness *code* is tracked; the
-data it works on is not.
+Everything here works on the operator's own books, which never enter the
+repo: `books/`, `processed/`, `evals/gold/`, `evals/baselines/` and
+`evals/reports/` are git-ignored. The tools are tracked; the data is not.
 
 ---
 
-## 1. The regression harness  (`evals/`)  — implemented
+## 1. Regression checks  (`evals/`)
 
-Prompt and rule changes are global; review is per-book. Without a net, a
-regex you broaden for book B silently damages book A that you already
-signed off. The harness is that net.
+Prompt and rule changes apply to every book; review happens one book at a
+time. Without a check, a pattern widened for book B quietly damages book A
+that was already signed off.
 
-| tool | what |
+| tool | what it does |
 |---|---|
-| `evals/test_rules.py` | frozen input→output cases for the deterministic helpers (`apply_always_translate`, `match_case`, `reconcile_page_numbers`, `parse_figures_block`, `enforce_kept_terms`, …). One per bug ever fixed. Run with or without pytest. **Must stay green.** |
-| `evals/freeze.py <stem>` | snapshot a book's accepted `translation.txt` / `extracted.txt` / `figures.json` / `headers.json` / `page_numbers.txt` (read from `processed/<stem>_translated/intermediate/`) into `evals/baselines/<stem>/` + a `MANIFEST.json` (git commit, timestamp). The baseline copy itself stays flat, no `intermediate/` subfolder — only the live `processed/` side has one. |
-| `evals/check.py [stem] [--quiet]` | diff current pipeline output vs every baseline — pages changed (with unified diff), folio labels changed, figure rows changed, headers changed — plus a baseline→current **metrics** table. Exit ≠ 0 on any change. Writes `evals/reports/<ts>.md`. |
-| `evals/metrics.py` | per-book health counts (French-residue pages, all-caps pages, untrusted folios, figure rows, italic spans, footnote markers). No model calls. |
-| `evals/_rules.py` | loads the pure helpers out of the two pipeline scripts without running their `main` (they aren't importable). Breaks loudly if those files are restructured. |
-
-**Loop:**
+| `evals/test_rules.py` | frozen input → output cases for the code that doesn't call a model (page numbers, running heads, sentence join, term enforcement, cover lines, …): one per bug ever fixed. Runs with or without pytest. **Run after every change; must stay green.** |
+| `evals/freeze.py <stem>` | snapshot a reviewed book's `translation.txt`, `extracted.txt`, `figures.json`, `headers.json` and `page_numbers.txt` into `evals/baselines/<stem>/`, with a `MANIFEST.json` (commit, time) |
+| `evals/check.py [stem] [--quiet]` | compare the current output with every baseline: pages, page numbers, figures and headers that changed (with diffs), plus a before/after health table. Exits non-zero on any change; writes `evals/reports/<time>.md` |
+| `evals/metrics.py` | per-book health counts (pages with French left in, all-caps pages, unconfirmed page numbers, figures, italics, footnotes). No model calls |
+| `evals/_rules.py` | loads the helper functions out of the pipeline scripts without running them (the scripts aren't importable). Fails loudly if the scripts are restructured |
 
 ```bash
-python3 evals/freeze.py <stem>                       # after a book's PDFs pass review
-# ...change a prompt/rule, re-run reprocess+translate+render for frozen books...
-python3 evals/test_rules.py                          # deterministic layer
-python3 evals/check.py                               # "these N pages of book X moved"
-python3 evals/freeze.py <stem> --force               # if the change is an improvement you accept
+python3 evals/freeze.py <stem>              # after a book's PDFs pass review
+# ...change a prompt or rule, rerun the affected steps on frozen books...
+python3 evals/test_rules.py                 # the frozen cases
+python3 evals/check.py                      # "these N pages of book X changed"
+python3 evals/freeze.py <stem> --force      # accept a change as an improvement
 ```
 
-**Nondeterminism:** at the production `temp 0.3` the model rewords every
-page slightly, so a plain re-run diff of `translation.txt` is noise. For
-an eval run set **`EVAL_DETERMINISTIC=1`** (optionally `EVAL_SEED=<n>`,
-default 1234) — `2_translate.py::translate_with_llama` then forces
-`temperature 0` + that seed on every request, so an unchanged book
-reproduces byte-for-byte and a `check.py` page-diff is a real change.
-The retry ladder still runs but every attempt is the same greedy decode
-(a failing page fails identically). Use it for `check.py`; leave it off
-for production. The deterministic sidecars (`figures.json`,
-`page_numbers.txt`, `headers.json`, `extracted.txt`) don't need it.
+**Same input, same output.** At the production temperature (0.3) the
+model rewords every page slightly, so a plain rerun diff is noise. For a
+check run set `EVAL_DETERMINISTIC=1` (optionally `EVAL_SEED=<n>`, default
+1234): step 2 then uses temperature 0 and that seed on every request, so
+an unchanged book reproduces exactly and every difference `check.py`
+reports is real. Retries still run, but each attempt is the same, so a
+failing page fails the same way. Leave it off for production. The files
+step 1 writes are already deterministic.
 
 ```bash
 docker exec -e EVAL_DETERMINISTIC=1 fmt-translator \
   python3 /app/2_translate.py       # then steps 3-4, then check.py
 ```
 
+**Baselines are out of date.** The two that exist (Gomard, Kirchhoffer)
+were frozen on 2026-08-29, before the change of translation model and the
+sentence join, so `check.py` will report most of their pages. Refreeze
+each book once its current review passes.
+
 ---
 
-## 2. Gold references & scoring  (`evals/gold/`)  — partially built
+## 2. Scoring against published translations  (`evals/gold/`)
 
-A public-domain original + a published translation lets you score the
-pipeline's output, not just diff it against itself.
+A public-domain original paired with a published translation lets the
+pipeline's English be scored, not just compared with itself.
 
 ```
 evals/gold/<stem>/
-  src.pdf  ref.pdf        # original + published translation (operator supplies)
-  src.txt  ref.txt        # OCR'd (olmOCR-2 handles English too)
-  aligned.jsonl           # {src, ref} pairs after sentence/paragraph alignment
+  src.pdf  ref.pdf     # original + published translation (supplied by the operator)
+  src.txt  ref.txt     # their text (from the PDF's text layer, or OCR)
+  aligned.jsonl        # sentence pairs {src, ref}
+  hyp.txt              # the pipeline's translation of src
+  meta.json            # language, and src_pages / ref_pages: the part the reference covers
+  report.md
 ```
 
-- **Alignment** is the hard part — a published translation is not
-  sentence-aligned to the original (merged/split sentences, dropped
-  clauses, different pagination). Coarse (by heading) is enough for
-  glossary mining and picking few-shot examples; sentence-level needs
-  `hunalign` (length + dictionary) or `vecalign` (multilingual
-  embeddings).
-- **Metrics**: `chrF++` (immediate), `COMET` (needs `unbabel-comet` +
-  a ~2 GB model — semantic, tolerates free translation and register
-  drift better than n-gram metrics).
-- **Register mismatch**: a Victorian-era translation scores low on
-  surface metrics against a modern-English target even when the MT is
-  correct. Options: lean on COMET; or have a frontier model lightly
-  modernise the reference's diction (meaning fixed) to match the target.
-- **Choosing a gold book**: a drill-heavy technique manual exercises the
-  pipeline's hard cases (command lists, terse instruction, dense
-  terminology); a literary treatise mostly tests prose translation, which
-  is both the pipeline's weakest area and the least representative.
-- **Also yields**: a term-authority table (how the professional
-  translator handled `prise de fer`, `liement`, …) feeding rules 2/3 and
-  the prompt's term rules (2 / 3 / 3b); hand-picked few-shot passages for its
-  EXAMPLES block.
-- **Copyright**: originals are public domain; translations may not be.
-  Private use as an eval reference / glossary source / local-model SFT
-  data is defensible; redistributing the reference text or a model that
-  memorised it is not. `evals/gold/` is git-ignored for this reason.
+| tool | what it does |
+|---|---|
+| `gold_extract.py <stem> [src\|ref]` | text from a PDF that already has a usable text layer: strips running heads, joins hyphenated words, reflows paragraphs, marks each source page |
+| `ocr_gold.py <stem> [src\|ref] [--pages a-b]` | OCR with olmOCR-2 when there is no text layer (plain transcription, not the book scaffold) |
+| `gold_align.py <stem>` | sentence alignment by length (Gale & Church; no model). How often sentences pair one-to-one tells you whether the translation is close or free |
+| `translate_gold.py <stem> [--model …]` | translate the `src_pages` range with the real step 2 (same prompt for the book's language, retries and checks) into `hyp.txt` |
+| `gold_report.py <stem>` | how close the reference is, how it renders fencing terms, and chrF++ of `hyp.txt` against it, over the matching page ranges |
+
+Current scores (chrF++, 2026-10-01): Rosaroll 54.7, Pecoraro 46.7.
+
+- **Only score the part the reference covers.** Translating the whole book
+  but scoring a page range misaligns the comparison (Rosaroll scored 22.8
+  instead of 54.7 that way); `translate_gold.py` translates only
+  `src_pages`.
+- **Free translations score low.** A loose or reworked translation (such
+  as Barbasetti's own 1936 English) scores low even when the pipeline is
+  right. Use those for terminology, not for the score. COMET, which
+  measures meaning and tolerates rewording, would help; it isn't set up
+  (needs `unbabel-comet` and a ~2 GB model).
+- **Pick drill-heavy books.** Technique manuals exercise the hard cases
+  (command lists, terse instructions, dense terminology); a literary
+  treatise mostly tests general prose.
+- **Also useful for terms:** how the human translator rendered `prise de
+  fer`, `liement`, `cavazione` … feeds the prompts' term lists.
+- **Copyright:** the originals are public domain; the translations
+  usually aren't. Private use as a scoring reference or term source is
+  defensible; redistributing the reference text, or a model trained to
+  reproduce it, is not. This is why `evals/gold/` is git-ignored.
 
 ---
 
-## 3. Swapping the translation model  — procedure
+## 3. Choosing the translation model
 
-The translation model is chosen by `TRANSLATION_MODEL_PATH` (env), default
-in `docker-compose.yml` (`MODEL_PATH`) and `2_translate.py`. OCR and
-translation load sequentially — each gets the whole GPU — so a bigger
-translation model doesn't have to coexist with olmOCR. `TRANSLATION_GPU_LAYERS`
-(default 46) sets how many layers go on the GPU in local mode; a model that
-fits whole takes `999`. In remote mode the same setting is the
-`--n-gpu-layers` in the llama-swap entry.
+The model is set by `TRANSLATION_MODEL_PATH` locally (default in
+`docker-compose.yml` and `2_translate.py`) or by the llama-swap key in
+remote mode (`fmt-translate`; `TRANSLATION_MODEL_NAME` to pick another
+key). OCR and translation run one after the other, so each has the whole
+GPU.
 
-16 GB budget, 8k context:
+**Current model:** Qwen3.8-27B, 4-bit (`i1-Q4_K_S`, ~15.8 GB), chosen
+2026-09-25 by the translation model selection test: no flagged pages out
+of 37 hard pages, against 14 for Qwen2.5-14B, and the most accurate
+fencing terms. It doesn't fit in 16 GB of VRAM whole, so 46 of its 64
+layers go on the GPU (`TRANSLATION_GPU_LAYERS`; in remote mode the
+`--n-gpu-layers` of the llama-swap entry): ~40-50 s per page. The previous
+model, Qwen2.5-14B-Instruct Q4_K_M (8.6 GB, fits whole), stays available
+as `fmt-translate-qwen25`. See `docs/remote-gpu.md` for the GPU memory
+limits on Windows.
 
-| model | quant | ~weights | fits |
-|---|---|---|---|
-| **default** | Qwen3.8-27B i1-Q4_K_S | 15.8 GB | no — split, 46 of 64 layers on the GPU (`TRANSLATION_GPU_LAYERS`, `docs/remote-gpu.md`) |
-| previous | Qwen2.5-14B-Instruct Q4_K_M | 8.6 GB | yes (~11 GB total; set `TRANSLATION_GPU_LAYERS=999`) |
-| alternative | Qwen2.5-7B-Instruct Q6_K | 6.3 GB | yes |
-| — | 14B Q5_K_M | 10 GB | tight |
-| — | 14B Q6_K / 32B any | — | no |
-
-**A/B without touching the default:**
+**Testing a candidate:** `evals/translation_model_test.py` translates a
+fixed set of hard and control pages with each model and scores them side
+by side, without touching any book:
 
 ```bash
-docker exec -e TRANSLATION_MODEL_PATH=/models/<new>.gguf \
-  fmt-translator python3 /app/2_translate.py     # then steps 3-4
+docker exec -e TRANSLATION_MODEL_NAME=<llama-swap key> fmt-translator \
+  python3 /data/evals/translation_model_test.py run <label>
+docker exec fmt-translator python3 /data/evals/translation_model_test.py current
+docker exec fmt-translator python3 /data/evals/translation_model_test.py compare current <label> ...
 ```
 
-Save the incumbent's `intermediate/translation.txt` /
-`intermediate/figures.json` / `intermediate/headers.json` as `*.7b` first;
-then delete `intermediate/translation.txt` for the book(s) you want
-re-translated (step 2 otherwise only redoes pages whose source changed). Compare with `check.py` metrics + a
-manual read of the known-hard pages. Make it the default only by editing
-`docker-compose.yml`.
-
-**Observed (14B Q4_K_M vs 7B Q6_K, one book):** no speed penalty;
-fewer quality-gate failures; markedly better figure captions and rule-2
-term compliance; body prose more *accurate* but occasionally more literal;
-still fabricates over a fragmentary page start. A real but modest upgrade.
+Follow up with `translate_gold.py` + `gold_report.py` on a gold book or
+two (§2). Make a model the default only by changing `docker-compose.yml`
+(locally) or the llama-swap entry (remotely); a full retranslation of
+every book is then a deliberate, scheduled run.
 
 ---
 
-## 4. Fine-tuning  — planned, not started
+## 4. Fine-tuning  (not started)
 
-Consumes pretrained models; no training in the pipeline itself.
+The pipeline only runs pretrained models; training would happen outside
+it.
 
-- **Method**: QLoRA SFT (only thing that trains a 7–14B in 16 GB), then
-  optionally DPO. Realistically, run the training job on a rented cloud
-  GPU (a few hours, ~$5–20 for a 7B QLoRA), merge the adapter, quantise
-  to GGUF, drop it in for local inference.
-- **Data (80% of the work)**: ~1k instruction examples —
-  `{system: <translation_prompt.txt>, user: <french page>, assistant:
-  <english page>}`. Targets from (a) distilling a frontier model over
-  ~800 pages then spot-fixing, and/or (b) the operator's own
-  review-passed pages, and/or (c) aligned gold pairs (§2) — human gold
-  beats distilled. Overweight the hard cases (drills, plate captions,
-  cross-page fragments, term-dense passages). Hold out ~15% and score it
-  with §1 + §2 before/after.
-- **DPO pairs**: (gold or corrected = chosen, raw 7B output = rejected)
-  to sharpen the register and convention adherence.
-- **Payoff**: mostly *consistency* — conventions baked in instead of
-  hoped-for, sharp drop in catastrophic failures. Does not raise the
-  reasoning ceiling (subtle meaning errors, name hallucinations largely
-  survive). Tune the 14B, not the 7B, on the same set.
-- **Other languages**: the language-specific pieces are small — the
-  stop-word set + elision detector (`contains_too_much_non_english`),
-  `_ALWAYS_TRANSLATE`'s term list, and the prompt's term rules/examples.
-  Extract those into a per-language module (`lang/fr.py`, `lang/it.py`)
-  selected by `<stem>.lang` when a non-French book arrives; the rest of
-  the pipeline is language-agnostic.
+- **Method:** QLoRA fine-tuning on examples, optionally followed by
+  preference tuning (DPO). In practice, train on a rented cloud GPU (a few
+  hours, roughly $5-20 for a 7B model, more for larger), merge, convert
+  to GGUF, and run it locally like any other model.
+- **Data is most of the work:** ~1,000 examples of `{prompt, source page,
+  English page}`. English from (a) reviewed pages of the operator's own
+  books, (b) aligned gold pairs (§2; human translations beat
+  model-written ones) and/or (c) a stronger model's output, corrected.
+  Overweight the hard cases (drills, plate captions, pages that start
+  mid-sentence, term-dense passages). Hold back ~15% and score them with
+  §1 and §2 before and after.
+- **Preference pairs:** a reviewed or human translation (preferred)
+  against the model's raw output (rejected), to fix tone and conventions.
+- **What to expect:** mostly consistency (conventions learned instead of
+  prompted, fewer badly failed pages). It won't fix subtle meaning errors.
+
+**Languages.** French and Italian are both handled: the book's
+`meta.json` `language` selects the prompt (`translation_prompt.txt` or
+`translation_prompt_it.txt`), and the review report uses language-specific
+term checks. Adding a language means a prompt, its kept-term and
+always-translate lists, and the review report's checks for it; the rest
+of the pipeline doesn't depend on the language.

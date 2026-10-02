@@ -197,13 +197,13 @@ What it shows and where each piece comes from:
 
 | Block | Source |
 |---|---|
-| title · author · year · publisher | `books/<stem>.meta.json` (falls back to the bare stem) |
+| title · English title · full title + English (when longer) · author · first published · this edition (when later) | `books/<stem>.meta.json` (`title_en`, `title_full`, `title_full_en`, `year_first`, `year_edition`, `edition`, `first_as`, `publisher` hand-checked against the scan; `year_first` is also the stem's year, so stems sort as a timeline) |
 | "The original work is in the public domain." + digitisation source/URL | `meta.json` (`rights`, `source`, `source_id`, `source_url`, `source_terms`) |
 | disclosure sentence, method, reading-conventions | constants in `_cover.py` |
 | OCR / translation model names | OCR: live from `VLM_MODEL_PATH` (label drops the quant tag). Translation: step 2's per-page record (`intermediate/translated_from.json`), with page counts if models were mixed; pages with no record (translated before 2026-09-25) are credited to Qwen2.5-14B-Instruct-Q4_K_M |
 | `Translated with FencingManualTranslator <sha>, <date>` | step 2's per-page record (`translated_from.json` `stamps`: revision + date each page was translated). After a partial retranslation it lists each revision with its dates and page count; pages translated before 2026-09-30 show as "not recorded" |
 | `PDF generated <date> with FencingManualTranslator <sha>` | render time. The revision (`pipeline/_version.py`) comes from `PIPELINE_VERSION`, else the repo's `.git` mounted read-only at `/data/git`; omitted if neither is reachable. Commit before a run you want to keep -- uncommitted changes aren't flagged |
-| CC0 line + GitHub URL | constants |
+| licence line (CC BY-NC-SA 4.0) + GitHub URL | constants |
 | `pipeline id: <stem>` footer | the stem, for traceability back to `processed/` |
 
 `books/<stem>.meta.json` is generated from `books/library.md` by

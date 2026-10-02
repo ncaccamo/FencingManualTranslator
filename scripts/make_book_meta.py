@@ -10,7 +10,10 @@ books/library.md, for the PDF cover page (see pipeline/_cover.py).
 
 books/ is git-ignored (private corpus); so are the sidecars this writes.
 The generator only fills what the registry table carries reliably --
-`publisher` is almost always left "" for you to hand-add where it matters.
+`publisher` is almost always left "" for you to hand-add where it matters,
+and `title_en` (the short title in English), `title_full` (the title page's
+full title) and `title_full_en` are always hand-written -- all on the cover;
+--force keeps hand-added fields.
 """
 import json
 import re
@@ -76,8 +79,17 @@ def parse_rows():
         meta = {
             "stem": stem,
             "title": _clean(row.get("title", "")),
+            "title_en": "",
+            "title_full": "",
+            "title_full_en": "",
             "author": _clean(row.get("author(s)", row.get("author", ""))),
-            "year": _clean(row.get("year", "")),
+            # first appearance of the work (the timeline date; also the
+            # year in the stem). A later edition's year, label and
+            # publisher are hand-added: year_edition, edition, first_as
+            "year_first": (re.search(r"\d{4}", _clean(row.get("year", ""))) or
+                           re.search("", "")).group(),
+            "year_edition": "",
+            "edition": "",
             "publisher": "",
             "language": lang,
             "source": source if source not in ("", "-", "—") else "",
@@ -86,7 +98,7 @@ def parse_rows():
             "source_terms": ("Gallica digitisation — free for non-commercial reuse"
                              if "gallica" in source.lower() else ""),
         }
-        ym = re.match(r"\d{4}", meta["year"])
+        ym = re.match(r"\d{4}", meta["year_first"])
         if ym and int(ym.group()) >= 1930:
             meta["rights"] = ("The original may still be under copyright — "
                               "verify before distributing.")
@@ -104,6 +116,14 @@ def main():
         if dest.exists() and not force:
             skipped += 1
             continue
+        if dest.exists():
+            # --force: hand-added fields survive (title_en, publisher,
+            # source_changes ...): anything this generator leaves empty or
+            # doesn't produce at all
+            old = json.loads(dest.read_text(encoding="utf-8"))
+            for k, v in old.items():
+                if v and not meta.get(k):
+                    meta[k] = v
         dest.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n",
                         encoding="utf-8")
         print(f"  wrote {dest.relative_to(ROOT)}")

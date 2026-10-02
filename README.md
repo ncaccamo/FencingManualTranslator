@@ -141,8 +141,9 @@ same license with their source.
 - **Models** are downloaded at setup, not included here, and each keeps
   its own license (see the model pages).
 - **Translations** the pipeline produces are machine output; the cover
-  page of each PDF dedicates it to the public domain (CC0 1.0). The
-  source books are your own scans of public-domain works.
+  page of each PDF shares it under CC BY-NC-SA 4.0 (non-commercial, with
+  credit, same terms). The source books are your own scans of
+  public-domain works.
 
 ## Documentation
 

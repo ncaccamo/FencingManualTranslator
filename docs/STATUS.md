@@ -5,121 +5,99 @@ worth not re-litigating. Session-by-session narrative lives in `git log`.
 
 ---
 
-## Current state (2026-09-30)
+## Current state
 
-- **French: nine books translated and in review** (Gomard, LaMarche, Jacob,
-  Prévost, Baudry, Spinnewyn, Kirchhoffer, Vauresmont, La Boëssière), all
-  with Qwen3.8-27B. La Boëssière is finished and moved to `books/_skip/`
-  (Crawley's 2018 translation is in print); it stays the French gold pair.
-  Review state per book: `review-notes/REVIEW_CHECKLIST_3.md` (local only).
-- **Italian: ten books OCR'd, not yet translated.** Own term glossary
-  (`pipeline/translation_prompt_it.txt`, from a survey of every term in the
-  ten books); 30-page sample test passed; evaluation against the published
-  Rosaroll and Pecoraro translations improved by 5-7 points over the French
-  prompt (open item 1).
-- **Term policy:** three categories (translated / footnoted / kept) —
-  manual I.4, step 2. An "explained" category with notes was tried and
-  dropped (`docs/model-quirks.md` 2.8).
-- **Review loop:** each run writes a review report (French and Italian
-  checks); decisions go in `books/<stem>.overrides.toml` and are re-applied
-  on every run; only pages whose source text changed are retranslated.
-- **Provenance:** the cover records the models and the pipeline revision
-  and date behind each page (per revision after a partial retranslation).
-- **Public release prep:** AGPL-3.0-or-later licence, README rewritten,
-  references to private sibling repos removed. The repo is still private.
-- **Remote GPU in use:** llama-swap on the Windows GPU system, keys
-  `fmt-ocr` / `fmt-translate` (the old `bt-*` names kept as aliases).
+What the pipeline does today. (How far any particular corpus has got is
+the operator's business and is not tracked here.)
+
+- **Languages:** French and Italian, each with its own term glossary
+  (`pipeline/translation_prompt.txt`, `translation_prompt_it.txt`),
+  selected by the book's `meta.json` `language`. Italian was checked
+  against published translations before use (`docs/evaluation-and-tuning.md`
+  §2).
+- **Term policy:** three categories (translated / footnoted / kept): manual
+  I.4, step 2. An "explained" category with notes was tried and dropped
+  (`docs/model-quirks.md` 2.8).
 - **OCR:** olmOCR-2-7B-1025 via llama-server (:11435 locally) is the only
-  path; the Tesseract script is kept for reference, not used. A layout
-  detector (Docling's `docling-layout-heron`, CPU) supplies running-head,
-  figure and margin-note boxes (`intermediate/layout.json`).
+  path. A layout detector (Docling's `docling-layout-heron`, CPU) supplies
+  running-head, figure and margin-note boxes (`intermediate/layout.json`).
 - **Translation:** Qwen3.8-27B (i1-Q4_K_S, ~15.8 GB), chosen by the
   translation model selection test (`evals/translation_model_test.py`);
   llama-swap key `fmt-translate` remotely, :11434 locally. Too big for 16 GB
   of VRAM whole: 46 of 64 layers on the GPU (`TRANSLATION_GPU_LAYERS`),
-  ~40-50 s/page. Qwen2.5-14B-Instruct, the previous model, stays on the GPU
-  system as `fmt-translate-qwen25`. A page is never dropped; low-confidence
-  output is flagged inline.
+  ~40-50 s/page. A page is never dropped; low-confidence output is flagged
+  inline.
+- **Page breaks:** a sentence split across a page break is joined onto one
+  page before translation (`join_split_sentences()`, the shorter fragment
+  moves), so it is translated whole. The review report flags any split left
+  (tables across a break, mostly). A page-context alternative was tested
+  and rejected: it leaked text between pages.
+- **Page numbers:** shown only when corroborated by the sequence; a hidden
+  number is confirmed by a second, margin-only read
+  (`pipeline/read_folios.py`, `apply_folio_witness()`), which never hides
+  or changes one. Misses and invented numbers left after that are fixed by
+  override.
+- **Scans:** two-page-spread photographs are cut into single pages first
+  (`pipeline/split_spreads.py`, per-book `.split` corrections); single
+  pages can be re-read (`pipeline/reread_pages.py`) or patched in from
+  another copy (`pipeline/patch_scan.py`).
+- **Review loop:** each run writes a review report (French and Italian
+  checks); decisions go in `books/<stem>.overrides.toml` and are re-applied
+  on every run; only pages whose source text changed are retranslated.
+- **Cover page:** title (original, English, full title as printed), author,
+  first-published year and the scan's edition, source and its terms, the
+  models and the pipeline revision and date behind each page, and the
+  translation's licence (CC BY-NC-SA 4.0).
 - **PDFs:** side-by-side (scan left, translation right) is the primary
-  output; English-only is deferred (open item 5). Both render through
+  output; English-only is deferred (open item 2). Both render through
   `pipeline/_render.py`: italics, drill/brace indentation, footnote blocks,
   margin notes. Details: `docs/pdf-layout.md`.
 - **Backends:** `backend.env` switches local (`vulkan` | `rocm7` | `rocm714`)
-  vs. remote (LAN llama-server / llama-swap). See `docs/remote-gpu.md`.
+  vs. remote (LAN llama-server / llama-swap, keys `fmt-ocr` /
+  `fmt-translate`, old `bt-*` names kept as aliases). See
+  `docs/remote-gpu.md`.
 - **Outputs:** `processed/<stem>_translated/` holds the two PDFs and the
   review report; everything intermediate is in `intermediate/`.
-- **Regression net:** `python3 evals/test_rules.py` — 170+ frozen
-  input→output tests, one per bug fixed. Run it after any pipeline change;
-  a failure means a fix broke a different book.
+- **Regression net:** `python3 evals/test_rules.py`: frozen input → output
+  tests, one per bug fixed. Run it after any pipeline change; a failure
+  means a fix broke a different book.
 
 ## Open items
 
-1. **Italian translation run — ready.** The evaluation with the Italian
-   glossary (2026-10-01, chrF++ against the published translations):
-   Rosaroll 49.8 → 54.7, Pecoraro 40.2 → 46.7 (median 45.6 → 54.6). Next:
-   the ten books, ~35-60 h of GPU over several sessions, after the sentence
-   join (item 4) is in place. Check first how the two-page-spread scans
-   (Lambertini, Masiello 1902 *Fioretto*, Tiboldi) came through the OCR —
-   the pipeline assumes one book page per scan page.
-2. **Glossary page — undecided.** A one-page glossary at the end of each
+1. **Glossary page — undecided.** A one-page glossary at the end of each
    PDF listing the kept terms that occur in that book, with one-line
-   definitions (drafts exist in `review-notes/`, local). Book-independent,
-   unlike the dropped per-use notes (model-quirks 2.8).
-3. **Page numbers the OCR missed or invented.** Built, not yet run:
-   `pipeline/read_folios.py` asks the OCR model what's printed in the
-   margins of each page whose number is hidden (~990 pages over 19 books,
-   ~1 h GPU); `apply_folio_witness()` then shows a hidden number only when
-   that reading names exactly the number the sequence predicts — it never
-   hides or changes one (the strip read alone was right 11/16 on test
-   pages). Still open after it: numbers the strip read misses (Baudry 150)
-   and invented ones (Jacob "I") — overrides.
-4. **Sentences split across a page break — built, waiting for review and
-   retranslation.** `join_split_sentences()` (step 1 / reprocess) puts every
-   split sentence on one page, moving the shorter fragment, so it is
-   translated whole (operator: no broken sentences at any length). Checked
-   on scratch copies of 19 books: no page number changes, no emptied pages;
-   ~65 splits left (tables across a break, margin notes inside a fragment),
-   which the review report now flags ("split"). Sample:
-   `review-notes/SENTENCE_JOIN_SAMPLE.md` (local). Applying it queues ~1,300
-   French pages for retranslation (~15-20 h GPU); Italian before its first run.
-   (A page-context alternative was tested and rejected: it leaked text
-   between pages.)
-5. **English-only PDF — deferred (2026-09-25).** Review has been
+   definitions. Book-independent, unlike the dropped per-use notes
+   (model-quirks 2.8).
+2. **English-only PDF — deferred (2026-09-25).** Review has been
    side-by-side only; expect a backlog of layout problems. When it resumes,
    consider decoupling the English-only renderer from code shared with the
    side-by-side, so fixes to one stop regressing the other. Content
    difference: book titles in bibliographies are translated, which suits
    the side-by-side (the original is on the facing scan); English-only
    should keep them in the original language.
-6. **Heading hierarchy — future work.** The renderer has a running head and
+3. **Heading hierarchy — future work.** The renderer has a running head and
    one body size; a part / chapter / section title in the body reads as one
    more prose line. The fix is a per-book heading scheme with levels in
    `_render.py` (sizes and spacing per level). Supersedes the
    `fix_subheading_spacing()` stop-gap. A `TITLE:` field in the OCR prompt
    was tested and not adopted (2026-09-25, 20/25 pages right); the layout
    detector is the better signal (23/25).
-7. **Known translation soft spots** (see `docs/model-quirks.md`): braced
-   command groups sometimes flatten; literary prose (LaMarche) leaves a few
+4. **Running heads with OCR typos** ("FIORETTTO", "MASIEMLO") are kept as
+   read; for now an override per book (`[headers]`). Seen in four books,
+   enough to consider a rule that corrects a head one or two letters off
+   the book's dominant one.
+5. **Known translation soft spots** (see `docs/model-quirks.md`): braced
+   command groups sometimes flatten; literary prose leaves a few
    `[low-confidence]` pages partly untranslated.
-8. **Translation speed — options, not planned.** Operator preference is the
-   current light GPU load for unattended runs. If that changes: 8-bit
-   context memory (`-ctk q8_0 -ctv q8_0`, ~3 more GPU layers, ~10-15%
-   faster) or speculative decoding with a small draft model (often
-   1.5-2x). Either needs a model selection test run first.
-9. **`rocm714` backend** — wired, not compiled; `docker/ROCM714_NOTES.md`.
-
-## Tools added 2026-10-01
-
-- `pipeline/reread_pages.py <stem> <pages>` — re-read pages with the OCR
-  model (a timeout, a misread, a page cut short), then re-derive the book;
-  keeps the previous raw OCR. Replaces resuming step 1 with a page marked
-  failed, which neither shortens repetition runs nor keeps the English
-  captions.
-- `pipeline/read_folios.py` — see open item 3.
+6. **Translation speed — options, not planned.** The current light GPU
+   load suits unattended runs. If that changes: 8-bit context memory
+   (`-ctk q8_0 -ctv q8_0`, ~3 more GPU layers, ~10-15% faster) or
+   speculative decoding with a small draft model (often 1.5-2x). Either
+   needs a model selection test run first.
+7. **`rocm714` backend** — wired, not compiled; `docker/ROCM714_NOTES.md`.
 
 ## Not yet tested
 
-- A photographed (not scanned) book; phone scans (vFlat).
 - The local-mode launch of the 46-layer Qwen3.8 split under Linux (all
   Qwen3.8 runs so far were remote).
 - NVIDIA GPUs (`docs/remote-gpu.md` §5 outlines both routes).
