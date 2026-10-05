@@ -45,10 +45,5 @@ if __name__ == "__main__":
     margins = "--margins" in args
     heads = "--heads" in args
     args = [a for a in args if a not in ("--margins", "--heads")]
-    if not args:
-        sys.exit(__doc__)
-    if args == ["--all"]:
-        main(sorted(os.path.basename(f)[:-len("_translated")]
-                    for f in glob.glob("/data/processed/*_translated")), margins, heads)
-    else:
-        main(args, margins, heads)
+    import _books
+    main([_books.stem_of(n) for n in _books.select(args, __doc__)], margins, heads)

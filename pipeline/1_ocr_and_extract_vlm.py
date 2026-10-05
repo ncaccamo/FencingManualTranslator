@@ -672,6 +672,34 @@ def salvage_leaked_folio_header(parsed: list, known_headers: set) -> None:
         p["body"] = rest.lstrip("\n")
 
 
+def _book_compounds(parsed: list) -> set:
+    """Hyphenated words the book prints whole somewhere ("contre-dégagement",
+    "procès-verbal"), lowercased: a word broken across a page break at that
+    hyphen keeps it. Measured 2026-10-05: the four compounds the joins below
+    had glued (La Boëssière contre-dégagement 37x elsewhere, Jacob
+    procès-verbal 32x, Masiello Sciabola scapolo-omerale 3x) all appear
+    hyphenated in their book; the line-break splits (pronation 90x,
+    avversario 266x) never do. The hyphenated form must also outnumber
+    the joined one: a line-break hyphen the OCR left inside a page makes a
+    stray "scia-bola" (Bruno) or "del-l'" (Barbasetti) beside hundreds of
+    "sciabola"."""
+    from collections import Counter
+    text = "\n".join(p.get("body") or "" for p in parsed)
+    hy = Counter(m.lower() for m in re.findall(r"\b\w+-\w+\b", text))
+    whole = Counter(w.lower() for w in re.findall(r"\w+", text))
+    return {k for k, n in hy.items() if n > whole[k.replace("-", "")]}
+
+
+def _glue_broken(left: str, right: str, compounds: set) -> str:
+    """`left` ends "<word>-" at a page break, `right` continues the word:
+    one word, without the hyphen unless the book prints it as a compound."""
+    lw = re.search(r"(\w+)-\Z", left)
+    rw = re.match(r"\w+", right)
+    if lw and rw and f"{lw.group(1)}-{rw.group(0)}".lower() in compounds:
+        return left + right
+    return left[:-1] + right
+
+
 def dehyphenate_across_pages(parsed: list) -> None:
     """A word hyphenated across a page break in the original ("...déjà pu-"
     | "bliés, on ...") is otherwise translated as two fragments. When page
@@ -682,7 +710,9 @@ def dehyphenate_across_pages(parsed: list) -> None:
     The author's footnotes at the foot of page i ("se mé-" then "(1) Cette
     appellation...", Kirchhoffer scan 12) and margin notes at the top of
     page i+1 (Gomard scan 82) sit between the two halves; they are stepped
-    over, not joined into."""
+    over, not joined into. A compound the book prints elsewhere keeps its
+    hyphen (_book_compounds)."""
+    compounds = _book_compounds(parsed)
     for i in range(len(parsed) - 1):
         a = (parsed[i].get("body") or "").rstrip()
         main, tail = a, ""
@@ -697,7 +727,7 @@ def dehyphenate_across_pages(parsed: list) -> None:
         m = re.match(r"([a-zà-ÿ]+[^\s\w]*)([\s\S]*)", b[len(lead):])
         if not m:
             continue
-        parsed[i]["body"] = main[:-1] + m.group(1) + tail
+        parsed[i]["body"] = _glue_broken(main, m.group(1), compounds) + tail
         parsed[i + 1]["body"] = (lead.rstrip() + "\n\n" if lead.strip() else "") + m.group(2).lstrip()
 
 
@@ -724,6 +754,7 @@ def join_split_sentences(parsed: list) -> int:
         return "" if b.strip().lower() in ("", "none") else b
 
     joined = 0
+    compounds = _book_compounds(parsed)
     for i in range(len(parsed) - 1):
         a = text(parsed[i]).rstrip()
         if not a:
@@ -773,14 +804,14 @@ def join_split_sentences(parsed: list) -> int:
                 continue
             forward = True
         # a word broken across the break ("av-" | "versario"): rejoin it,
-        # without the hyphen
+        # without the hyphen -- unless it is a compound the book prints
+        # hyphenated elsewhere ("contre-" | "dégagement", La Boëssière)
         broken = re.search(r"[a-z\u00e0-\u00ff]-\Z", tail)
-        glue = "" if broken else " "
         if forward:                                  # sentence start -> next page
             main = main[:cut].rstrip()
-            rest = (tail[:-1] if broken else tail) + glue + rest
+            rest = _glue_broken(tail, rest, compounds) if broken else tail + " " + rest
         else:                                        # sentence end -> this page
-            main = (main.rstrip()[:-1] if broken else main.rstrip()) + glue + head
+            main = _glue_broken(main.rstrip(), head, compounds) if broken else main.rstrip() + " " + head
             rest = rest[m.end():].lstrip() if m else ""
         parsed[i]["body"] = main + ("\n\n" + foot.lstrip("\n") if foot else "")
         parsed[j]["body"] = (lead.rstrip() + "\n\n" if lead.strip() else "") + rest
@@ -1763,6 +1794,23 @@ def _plausible_misread(read: int, value: int) -> bool:
     return len(a) == len(b) and sum(x != y for x, y in zip(a, b)) == 1
 
 
+def strip_fieldless_folio(body: str, raw: str) -> str:
+    """A page the detector is sure prints no running head keeps its body
+    as the OCR gave it -- except the page number, when the reply had no
+    fields at all and the folio came out as the body's first line (Bruno
+    scans 30, 196, 236; Lambertini 34, 90, 118: always the page's own
+    number, 2026-10-05). Arabic only: a roman "III." there is a section
+    number (Marchionni scan 9, Florio 217); and not a year -- "1898" heads
+    LaMarche's dedication (scan 14)."""
+    if has_page_number_field(raw):
+        return body
+    lines = body.lstrip("\n").split("\n")
+    top = lines[0].strip() if lines else ""
+    if re.fullmatch(r"\d{1,4}", top) and not re.fullmatch(r"1[5-9]\d\d", top):
+        return "\n".join(lines[1:]).lstrip("\n")
+    return body
+
+
 def has_page_number_field(raw: str) -> bool:
     """Did the OCR answer the PAGE_NUMBER question at all? A malformed reply
     (plain text, no fields) says nothing about whether a number is printed
@@ -2246,16 +2294,17 @@ vlm_proc = None
 try:
     # new books, plus any whose OCR run was interrupted (the folder exists,
     # the saved partial run does, raw_ocr.txt doesn't yet)
-    # PDF_ONLY=stem[,stem...] limits step 1 to those books (as in steps 3/4)
-    _only = set(os.environ.get("PDF_ONLY", "").replace(",", " ").split())
-    input_pdfs = [
-        f for f in glob.glob("/data/books/*.pdf")
-        if not _only or Path(f).stem in _only
-    ]
+    # the books named on the command line, or --all (_books.py)
     # BOOK_PDF=/path/to/<stem>.pdf reads that one file instead -- e.g. a
     # temporary evaluation copy kept in evals/gold/, never in books/
     if os.environ.get("BOOK_PDF"):
         input_pdfs = [os.environ["BOOK_PDF"]]
+    else:
+        import _books
+        input_pdfs = [f"/data/books/{_books.stem_of(n)}.pdf" for n in _books.select(
+            sys.argv[1:], "usage: python3 /app/1_ocr_and_extract_vlm.py <stem> [<stem> ...] | --all\n"
+            "  OCR + extraction of books/<stem>.pdf (a book already done is skipped)",
+            source="pdf")]
     input_pdfs = [
         f for f in input_pdfs
         if not os.path.exists(f"/data/processed/{Path(f).stem}_translated")
@@ -2306,6 +2355,8 @@ try:
             # on page 1 is picked up again next run
             save_ocr_partial(int_dir, total_pages, crop, [])
 
+        import _progress
+        _progress.start(stem, "OCR", total_pages - sum(p is not None for p in (saved or [])))
         for i in range(total_pages):
             if i < len(saved) and saved[i] is not None:
                 extracted_pages.append(saved[i])
@@ -2346,9 +2397,11 @@ try:
                 error_msg = result.get("error", "Unknown") if result else "No response"
                 extracted_pages.append(f"[VLM Error: {error_msg}]")
             save_ocr_partial(int_dir, total_pages, crop, extracted_pages)
+            _progress.page(i + 1)
 
             time.sleep(2)
 
+        _progress.finish()
         doc.close()
         print()
 
@@ -2403,6 +2456,7 @@ try:
             _no_head, _disputed = set(), set()
         for i, p in enumerate(parsed):
             if i in _no_head:
+                p["body"] = strip_fieldless_folio(p["body"], extracted_pages[i])
                 continue
             own = (p.get("header") or "").strip()   # the VLM's own, pre-promotion
             if not (p.get("header") or "").strip():

@@ -1,8 +1,17 @@
 #!/bin/bash
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Nicholas A. Caccamo
+# Runs steps 1-4 and the review report on the books you name:
+#   scripts/run_full_pipeline.sh <stem> [<stem> ...]     (books/<stem>.pdf)
+#   scripts/run_full_pipeline.sh --all                   (every book; a book
+#                                    marked finished is left alone)
 WORKDIR=~/FencingManualTranslator
 cd "$WORKDIR" || exit 1
+if [ $# -eq 0 ]; then
+    echo "usage: $0 <stem> [<stem> ...] | --all"
+    echo "  books available:"; ls "$WORKDIR/books"/*.pdf 2>/dev/null | xargs -n1 basename | sed 's/\.pdf$//; s/^/    /'
+    exit 2
+fi
 
 # Stamp the cover page with the pipeline revision. `docker exec` does not
 # inherit host env, so pass it explicitly on the steps that build PDFs.
@@ -43,7 +52,7 @@ echo "  → This step loads olmOCR-2-7B-1025 (vision model)"
 echo "  → Extracts text and structure from PDF pages"
 echo "  → Time: ~5-10 seconds per page"
 echo ""
-docker exec fmt-translator python3 /app/1_ocr_and_extract_vlm.py
+docker exec fmt-translator python3 /app/1_ocr_and_extract_vlm.py "$@"
 OCR_EXIT=$?
 if [ $OCR_EXIT -ne 0 ]; then
     echo ""
@@ -61,18 +70,18 @@ echo "  → Translates extracted text to English"
 echo "  → Preserves technical fencing terms"
 echo "  → Time: ~10-20 seconds per page"
 echo ""
-docker exec fmt-translator python3 /app/2_translate.py
+docker exec fmt-translator python3 /app/2_translate.py "$@"
 echo ""
 
 echo "[4/4] PDF Generation..."
 echo "────────────────────────────────────────────────────────"
-docker exec -e PIPELINE_VERSION fmt-translator python3 /app/3_english_only_pdf.py
-docker exec -e PIPELINE_VERSION fmt-translator python3 /app/4_side_by_side_pdf.py
+docker exec -e PIPELINE_VERSION fmt-translator python3 /app/3_english_only_pdf.py "$@"
+docker exec -e PIPELINE_VERSION fmt-translator python3 /app/4_side_by_side_pdf.py "$@"
 echo ""
 
 echo "Review reports (pages worth checking, by pdf page)..."
 echo "────────────────────────────────────────────────────────"
-docker exec fmt-translator python3 /app/quality_report.py --all
+docker exec fmt-translator python3 /app/quality_report.py "$@"
 echo ""
 
 echo "╔═══════════════════════════════════════════════════════╗"

@@ -43,8 +43,9 @@ def main():
     spec = sys.argv[sys.argv.index("--pages") + 1] if "--pages" in sys.argv else None
     if spec:
         args.remove(spec)
-    if not args:
-        sys.exit(__doc__)
+    import _books
+    args = [_books.stem_of(n) for n in _books.select(
+        args + [a for a in sys.argv[1:] if a.startswith("--")], __doc__)]
     src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "1_ocr_and_extract_vlm.py"),
                encoding="utf-8").read()
     ns = {"__name__": "_folios"}

@@ -108,12 +108,15 @@ bash scripts/setup.sh          # checks the host, builds the image (~20-30 min)
                                # (--remote for a host without a GPU)
                                # local mode: the first start downloads ~13 GB of models
 
-# put scans in ./books/ as <author>_<year>_<short-title>.pdf, then:
-scripts/run_full_pipeline.sh
+# put scans in ./books/ as <author>_<year>_<short-title>.pdf, then name them:
+scripts/run_full_pipeline.sh smith_1875_fencing
+scripts/progress.sh            # in another terminal: pages done, speed, ETA
 ```
 
 Running steps individually, reviewing a book, and troubleshooting:
 [`setup/MANUAL_SECTION_III_USAGE.md`](setup/MANUAL_SECTION_III_USAGE.md).
+Every per-book setting and correction, including hand edits:
+[`docs/per-book-files.md`](docs/per-book-files.md).
 
 ## Status
 
@@ -150,7 +153,8 @@ same license with their source.
 - **User manual:**
   [overview](setup/MANUAL_SECTION_I_OVERVIEW.md) ·
   [host setup](setup/MANUAL_SECTION_II_HOST_PREREQUISITES.md) ·
-  [usage](setup/MANUAL_SECTION_III_USAGE.md)
+  [usage](setup/MANUAL_SECTION_III_USAGE.md) ·
+  [per-book settings and corrections](docs/per-book-files.md)
 - **How it works:** [model failure modes and fixes](docs/model-quirks.md) ·
   [PDF layout](docs/pdf-layout.md) · [remote GPU](docs/remote-gpu.md)
 - **For contributors:** [current status](docs/STATUS.md) ·

@@ -9,8 +9,9 @@ BODY_TEXT parsing and the page-number reconciliation in
 parse/reconcile to an already-OCR'd book without paying the OCR cost again.
 
 Usage:
-    python3 reprocess_extracted.py                 # every *_translated with raw_ocr.txt
-    python3 reprocess_extracted.py <folder> ...    # only these
+    python3 reprocess_extracted.py <stem> ...      # these books (or their folders)
+    python3 reprocess_extracted.py --all           # every book with a raw_ocr.txt
+    (a book marked finished is skipped without --unlock -- _books.py)
 """
 import glob
 import json
@@ -40,6 +41,7 @@ settle_disputed_heads = _ns["settle_disputed_heads"]
 join_split_sentences = _ns["join_split_sentences"]
 apply_folio_witness = _ns["apply_folio_witness"]
 has_page_number_field = _ns["has_page_number_field"]
+strip_fieldless_folio = _ns["strip_fieldless_folio"]
 apply_read_heads = _ns["apply_read_heads"]
 leaked_top_header = _ns["leaked_top_header"]
 is_plate_leaf = _ns["is_plate_leaf"]
@@ -50,10 +52,9 @@ fold_caption_header_into_figure = _ns["fold_caption_header_into_figure"]
 reconcile_headers = _ns["reconcile_headers"]
 known_headmatter = _ns["known_headmatter"]
 
-targets = sys.argv[1:] or [
-    d for d in glob.glob("/data/processed/*_translated")
-    if os.path.isfile(os.path.join(d, "intermediate", "raw_ocr.txt"))
-]
+import _books
+targets = [_books.folder_of(n) for n in _books.select(
+    sys.argv[1:], "usage: python3 /app/reprocess_extracted.py <stem or folder> [...] | --all")]
 
 for folder in targets:
     int_dir = os.path.join(folder, "intermediate")
@@ -77,6 +78,7 @@ for folder in targets:
     _catch = tail_catchwords(parsed)
     for i, p in enumerate(parsed):
         if i in _no_head:
+            p["body"] = strip_fieldless_folio(p["body"], raw_pages[i])
             continue
         own = (p.get("header") or "").strip()   # the VLM's own, pre-promotion
         if not (p.get("header") or "").strip():

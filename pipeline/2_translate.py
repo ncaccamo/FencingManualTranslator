@@ -16,6 +16,7 @@ from pathlib import Path
 import backend_config as bc
 import _pageio
 import _overrides
+import _progress
 
 PROMPT_FILE = "/app/translation_prompt.txt"
 TRANSLATION_MODEL = os.environ.get("TRANSLATION_MODEL_PATH", "/models/Qwen3.8-27B.i1-Q4_K_S.gguf")
@@ -1497,11 +1498,14 @@ def wait_for_remote_server(poll: int = 60) -> bool:
         return False
     print(f"\n  [{time.strftime('%H:%M')}] GPU server not answering -- waiting "
           f"(up to {SERVER_WAIT_HOURS:g} h)", flush=True)
-    deadline = time.time() + SERVER_WAIT_HOURS * 3600
+    t0 = time.time()
+    _progress.waiting(True)
+    deadline = t0 + SERVER_WAIT_HOURS * 3600
     while time.time() < deadline:
         time.sleep(poll)
         if up():
             print(f"  [{time.strftime('%H:%M')}] GPU server back -- continuing", flush=True)
+            _progress.waiting(False, since=t0)
             return True
     return False
 
@@ -1746,9 +1750,17 @@ def apply_book_overrides(folder: str, fixes: bool = True) -> None:
         if applied:
             with open(tp, "w", encoding="utf-8") as fh:
                 fh.write(_pageio.join_pages(tr))
+        missing = [m for m in missing if m not in _overrides.load_edits(stem)]   # page edited by hand
         if missing:
             print(f"  ⚠ overrides: [[fix]] text not found on scan page(s) {missing} "
                   f"-- obsolete after a retranslation? Review {_overrides.path_for(stem)}")
+    # hand edits of whole pages (books/<stem>.edits/) win over everything above
+    edits = _overrides.load_edits(stem)
+    if fixes and edits and os.path.exists(tp):
+        tr = _pageio.split_pages(open(tp, encoding="utf-8").read())
+        if _overrides.apply_edits(tr, edits):
+            with open(tp, "w", encoding="utf-8") as fh:
+                fh.write(_pageio.join_pages(tr))
     gp = f"{I}/figures.json"
     if fixes and os.path.exists(gp):
         fmap = _json.load(open(gp, encoding="utf-8"))
@@ -2162,6 +2174,23 @@ print("\n" + "="*60)
 print("STEP 2: AI TRANSLATION")
 print("="*60)
 
+import _books
+_USAGE = """usage: python3 /app/2_translate.py <stem> [<stem> ...] | --all
+         python3 /app/2_translate.py --pages <stem> <scan pages>   e.g. 12,40-42
+         python3 /app/2_translate.py --captions <stem> [<stem> ...] | --all
+  translates new books, and the pages whose source changed since translation"""
+# which books, before any server starts (_books.py: names or --all; a
+# book marked finished is left alone without --unlock)
+if len(sys.argv) > 1 and sys.argv[1] == "--pages":
+    if len(sys.argv) < 3:
+        sys.exit(_USAGE)
+    _books.check_unlocked(sys.argv[2], sys.argv)
+    _BOOK_FOLDERS = []
+elif len(sys.argv) > 1 and sys.argv[1] == "--captions":
+    _BOOK_FOLDERS = [_books.folder_of(n) for n in _books.select(sys.argv[2:], _USAGE)]
+else:
+    _BOOK_FOLDERS = [_books.folder_of(n) for n in _books.select(sys.argv[1:], _USAGE)]
+
 translation_proc = start_translation_server()
 
 if translation_proc is None:
@@ -2169,10 +2198,10 @@ if translation_proc is None:
     exit(1)
 
 # `2_translate.py --captions` re-runs only the figure captions AND running
-# headers (all books), without touching the page bodies -- for iterating.
+# headers of the named books, without touching the page bodies -- for iterating.
 if len(sys.argv) > 1 and sys.argv[1] == "--captions":
     try:
-        for folder in glob.glob("/data/processed/*_translated"):
+        for folder in _BOOK_FOLDERS:
             print(f"captions/headers: {Path(folder).name}")
             PROMPT_TEMPLATE = prompt_for_book(Path(folder).name.replace("_translated", ""))
             translate_figure_captions(folder, force=True)
@@ -2246,6 +2275,7 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
     if finished:
         print(f"Resuming: {len(finished)} of {len(targets)} page(s) already done")
     fps = load_fingerprints(folder) or [page_fingerprint(p) for p in ex]
+    _progress.start(stem, "translation", len([t for t in targets if t not in finished]))
     for s_ in targets:
         if s_ in finished:
             continue
@@ -2262,6 +2292,8 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
         with open(prog_p + ".tmp", "w", encoding="utf-8") as fh:
             _json.dump({"targets": targets, "done": sorted(finished)}, fh)
         os.replace(prog_p + ".tmp", prog_p)
+        _progress.page(s_)
+    _progress.finish()
     if os.path.exists(prog_p):
         os.remove(prog_p)
     translate_figure_captions(folder)      # only captions not yet translated
@@ -2282,11 +2314,7 @@ if len(sys.argv) > 2 and sys.argv[1] == "--pages":
     sys.exit(0)
 
 try:
-    # PDF_ONLY=stem[,stem...] limits the run to those books (as in steps 1, 3, 4)
-    _only = set(os.environ.get("PDF_ONLY", "").replace(",", " ").split())
-    for folder in glob.glob("/data/processed/*_translated"):
-        if _only and Path(folder).name.replace("_translated", "") not in _only:
-            continue
+    for folder in _BOOK_FOLDERS:
         src = f"{folder}/intermediate/extracted.txt"
         dst = f"{folder}/intermediate/translation.txt"
         
@@ -2338,6 +2366,8 @@ try:
             translated_pages, page_models, page_stamps = [], [], []
             _st = {"fn_seen": set(), "footnoted_seen": set(), "fn_state": {}}
 
+        _progress.start(Path(folder).name[:-len("_translated")], "translation",
+                        len(pages) - len(translated_pages))
         for i in range(len(translated_pages) + 1, len(pages) + 1):
             calls = MODEL_CALLS
             _st["context"] = neighbour_context(pages, i - 1) if PAGE_CONTEXT else None
@@ -2347,6 +2377,8 @@ try:
                                if MODEL_CALLS != calls else "-")
             page_stamps.append(run_stamp())
             save_partial(folder, cur_fp, translated_pages, page_models, _st, page_stamps)
+            _progress.page(i)
+        _progress.finish()
 
         with open(dst, "w", encoding="utf-8") as f:
             f.write(_pageio.join_pages(translated_pages))

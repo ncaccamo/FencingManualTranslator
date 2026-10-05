@@ -59,6 +59,9 @@ no ROCm/Vulkan). `scripts/setup.sh --remote` + `docker-compose.override.yml`
   `setup/MANUAL_SECTION_II_HOST_PREREQUISITES.md`,
   `setup/MANUAL_SECTION_III_USAGE.md` — user manual (overview / host
   setup / day-to-day operation).
+- `docs/per-book-files.md` — every per-book file in `books/` and every
+  overrides setting (`[book]`, `[pages.N]`, `[headers]`, `[terms]`,
+  `[[fix]]`), hand edits (`<stem>.edits/`, `edit_page.py`), what to rerun.
 - `docs/model-quirks.md` — catalogue of every OCR / translation model
   failure mode on this corpus + its prompt/code fix. Read before touching
   `vlm_ocr_prompt.txt` or `translation_prompt.txt`.
@@ -73,6 +76,12 @@ no ROCm/Vulkan). `scripts/setup.sh --remote` + `docker-compose.override.yml`
   tool, not tied to a specific corpus.
 - `docker/ROCM714_NOTES.md` — why the ROCm 7.14 backend is parked.
 - Session history: `git log` (HANDOFF.md / MANIFEST.md retired 2026-08-27).
+
+- Every script takes the books to work on by name, or `--all`
+  (`pipeline/_books.py`); none runs on the whole folder by default. A book
+  with `[book] final = true` is skipped by anything that writes to it,
+  unless `--unlock`. Keep it that way: finished books must not be
+  reprocessed by accident.
 
 ## Workflow notes
 - Ask for my input on decisions you think need it.

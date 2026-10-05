@@ -18,6 +18,9 @@ What comes from where:
     (intermediate/translated_from.json "stamps"): a partial retranslation
     leaves the other pages on the revision and date they were made with.
   * PDF revision + date -- at render time (_version.pipeline_version()).
+  * hand corrections -- pages a person changed ([[fix]] in the overrides
+    file, whole-page edits in books/<stem>.edits/), and meta.json
+    "edited_by" when the editor wants to be named.
 """
 import json
 import os
@@ -173,6 +176,19 @@ def provenance_line(models, stamps):
     return "Translated with FencingManualTranslator: " + "; ".join(parts)
 
 
+def _hand_corrections(book, meta):
+    """The disclosure that a person changed the machine English: how many
+    pages ([[fix]] edits and whole-page edits, _overrides.py), and by whom
+    when meta.json names an editor ("edited_by"). "" when nobody did."""
+    import _overrides
+    n = len(_overrides.hand_corrected_pages(book))
+    if not n:
+        return ""
+    who = str(meta.get("edited_by", "")).strip()
+    return (f"Corrected by hand on {n} page{'s' if n != 1 else ''}"
+            + (f", edited by {who}." if who else "."))
+
+
 def _translation_provenance(book):
     p = f"/data/processed/{book}_translated/intermediate/translated_from.json"
     try:
@@ -184,11 +200,12 @@ def _translation_provenance(book):
 
 def _meta(stem):
     books_dir = os.environ.get("BOOKS_DIR", "/data/books")
-    try:
-        return json.loads(
-            (Path(books_dir) / f"{stem}.meta.json").read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    for d in (Path(books_dir), Path(books_dir) / "_skip"):     # _skip: kept after its run
+        try:
+            return json.loads((d / f"{stem}.meta.json").read_text(encoding="utf-8"))
+        except Exception:
+            continue
+    return {}
 
 
 def _join(sep, *parts):
@@ -289,6 +306,9 @@ def render(doc, stem, *, page_w, page_h, margin):
           9, gap_after=3)
 
     block(_translation_provenance(stem), 9, gap_after=3)
+    hand = _hand_corrections(stem, meta)
+    if hand:
+        block(hand, 9, gap_after=3)
     ver = _pipeline_version()
     today = datetime.now().strftime("%B %-d, %Y")
     block(f"PDF generated {today} with FencingManualTranslator {ver}" if ver

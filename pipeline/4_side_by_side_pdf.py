@@ -23,6 +23,7 @@ plain flow.
 """
 import fitz
 import os
+import sys
 import json
 from pathlib import Path
 import glob
@@ -212,14 +213,11 @@ def new_spread(doc, src, src_idx, struct, *, cont=False, rotate=0):
 
 created_count = 0
 
-# PDF_ONLY=stem[,stem...] limits the rebuild to those books (comma or
-# space separated). Handy after a cover / layout tweak.
-_only = set(os.environ.get("PDF_ONLY", "").replace(",", " ").split())
-
-for folder in [f for f in glob.glob("/data/processed/*_translated") if os.path.isdir(f)]:
-    book = Path(folder).name.replace("_translated", "")
-    if _only and book not in _only:
-        continue
+# the books named on the command line, or --all (_books.py; PDF_ONLY= still read)
+import _books
+for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
+               "usage: python3 /app/4_side_by_side_pdf.py <stem> [<stem> ...] | --all")]:
+    book = _books.stem_of(folder)
 
     int_dir = f"{folder}/intermediate"
 

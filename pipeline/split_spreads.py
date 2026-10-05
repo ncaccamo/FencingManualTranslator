@@ -128,6 +128,9 @@ def main():
         sys.exit(__doc__)
     stem = args[0]
     apply = "--apply" in sys.argv
+    if apply:
+        import _books
+        _books.check_unlocked(stem, sys.argv)
     src_path = f"/data/books/{stem}.pdf"
     orig = f"/data/books/_alt/{stem}_original.pdf"
     if os.path.exists(orig):

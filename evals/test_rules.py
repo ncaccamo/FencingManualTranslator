@@ -23,7 +23,7 @@ from _rules import (
     repair_mangled_terms, contains_too_much_non_english,
     match_boundary_punctuation, deshout, _phrase_repairs,
     parse_figures_block, reconcile_page_numbers, _fold_caption_only_body,
-    strip_leaked_headmatter, tail_catchwords,
+    strip_leaked_headmatter, strip_fieldless_folio, tail_catchwords, dehyphenate_across_pages,
     leaked_top_header, is_plate_leaf,
     extract_source_footnotes,
     _clean_caption, _capitalize_definition_entries, fix_parry_names,
@@ -2578,6 +2578,160 @@ def test_cover_dates_first_published_and_edition():
     assert C._dates({"year_first": "1847", "edition": "second", "publisher": "Garnier"}) == \
         ["1847", "This edition: second, Garnier"]
 
+
+
+def test_no_running_heads_setting():
+    # Florio / Bruno / Lambertini print only a page number at the top; the
+    # layout detector calls it a running head (185 / 156 / 27 false flags,
+    # and Florio's chapter title "CAPO II." carried onto 22 pages). The
+    # reviewer's [book] running_heads = false takes the detector's
+    # page_header boxes out of the running-head decision.
+    import tempfile
+    ov = _load_overrides_module()
+    L = _layout_mod()
+    with tempfile.TemporaryDirectory() as d:
+        open(f"{d}/b.overrides.toml", "w").write("[book]\nrunning_heads = false\n")
+        assert ov.load("b", d)["book"] == {"running_heads": False}
+        assert L.no_running_heads("/data/processed/b_translated", d)
+        assert not L.no_running_heads("/data/processed/c_translated", d)   # no file
+        for bad in ('[book]\nrunning_heads = "no"\n', "[book]\nrunningheads = false\n"):
+            open(f"{d}/c.overrides.toml", "w").write(bad)
+            try:
+                ov.load("c", d); assert False, bad
+            except ov.OverridesError:
+                pass
+    assert ov.load("missing", "/nonexistent")["book"] == {}
+
+
+def test_strip_fieldless_folio_on_no_head_page():
+    # Bruno scan 196 / Lambertini 118: the OCR reply had no fields and the
+    # page number came out as the first body line, on a page the detector
+    # says prints no running head -- the line blocked the sentence join.
+    assert strip_fieldless_folio("194\n\nposizione di partenza, compiendo", "194\n\nposizione") \
+        == "posizione di partenza, compiendo"
+    # a reply WITH fields answered the page-number question: body kept
+    assert strip_fieldless_folio("194\nx", "PAGE_NUMBER: none\nBODY_TEXT:\n194\nx") == "194\nx"
+    # a roman section number (Marchionni 9) and a year (LaMarche 14, the
+    # dedication's "1898") are content
+    assert strip_fieldless_folio("III.\n\nDel duello", "III.") == "III.\n\nDel duello"
+    assert strip_fieldless_folio("1898\n\nA mon grand Georges", "1898") == "1898\n\nA mon grand Georges"
+
+
+def test_report_spots_page_number_taken_for_running_head():
+    # Measured 2026-10-05: on small header boxes the OCR reads no head on
+    # 86-94% of pages in the page-number-only books, at most 66% (LaMarche)
+    # in books with real running heads.
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        Q = importlib.import_module("quality_report")
+    except (OSError, ImportError, SystemExit):   # reads /app paths: runs in the image
+        return
+    folio = ["page_header", 0.9, [0.47, 0.067, 0.50, 0.082]]          # Bruno "19"
+    page = {"w": 1000, "h": 1600, "boxes": [folio]}
+    none_ = "PAGE_NUMBER: 19\nHEADER: none\nBODY_TEXT:\nx"
+    head = "PAGE_NUMBER: 19\nHEADER: PARTE II.\nBODY_TEXT:\nx"
+    assert Q.folio_shaped_heads([page] * 30, [none_] * 27 + [head] * 3) == (27, 30)
+    assert Q.folio_shaped_heads([page] * 30, [none_] * 20 + [head] * 10) == ()   # 67%
+    assert Q.folio_shaped_heads([page] * 10, [none_] * 10) == ()                 # too few
+    wide = {"w": 1000, "h": 1600, "boxes": [["page_header", 0.9, [0.2, 0.06, 0.8, 0.08]]]}
+    assert Q.folio_shaped_heads([wide] * 30, [none_] * 30) == ()
+
+
+def _books_mod():
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    return importlib.import_module("_books")
+
+
+def test_books_named_or_all_and_final_lock():
+    # 2026-10-05: no script runs on "every book" by default any more, and a
+    # book marked [book] final = true is left alone without --unlock.
+    import os, tempfile
+    B = _books_mod()
+    with tempfile.TemporaryDirectory() as d:
+        B.PROCESSED, B.BOOKS = f"{d}/processed", f"{d}/books"
+        for stem in ("a_1900_x", "b_1901_y"):
+            os.makedirs(f"{d}/processed/{stem}_translated")
+            os.makedirs(f"{d}/books", exist_ok=True)
+            open(f"{d}/books/{stem}.pdf", "w").close()
+        open(f"{d}/books/b_1901_y.overrides.toml", "w").write("[book]\nfinal = true\n")
+        os.environ.pop("PDF_ONLY", None)
+        for argv in ([], ["--unlock"]):
+            try:
+                B.select(argv, "usage", books_dir=f"{d}/books"); assert False, "no books named"
+            except SystemExit as e:
+                assert e.code == 2
+        assert B.select(["a_1900_x"], "u", books_dir=f"{d}/books") == ["a_1900_x"]
+        assert B.select(["--all"], "u", books_dir=f"{d}/books") == ["a_1900_x"]      # b is final
+        assert B.select(["--all", "--unlock"], "u", books_dir=f"{d}/books") == ["a_1900_x", "b_1901_y"]
+        assert B.select(["b_1901_y"], "u", writes=False, books_dir=f"{d}/books") == ["b_1901_y"]
+        assert B.select(["--all"], "u", source="pdf", books_dir=f"{d}/books") == ["a_1900_x"]
+        try:
+            B.select(["b_1901_y"], "u", books_dir=f"{d}/books"); assert False, "final, named"
+        except SystemExit as e:
+            assert e.code == 1
+        try:
+            B.select(["nope"], "u", books_dir=f"{d}/books"); assert False, "unknown book"
+        except SystemExit:
+            pass
+        os.environ["PDF_ONLY"] = "a_1900_x"                     # the older form still works
+        try:
+            assert B.select([], "u", books_dir=f"{d}/books") == ["a_1900_x"]
+        finally:
+            del os.environ["PDF_ONLY"]
+        # a folder (reprocess_extracted.py, scratch copies) is taken as given
+        f = f"{d}/elsewhere/a_1900_x_translated"
+        assert B.select([f], "u", books_dir=f"{d}/books") == [f]
+        assert B.stem_of(f) == "a_1900_x" and B.folder_of(f) == f
+
+
+def test_hand_edits_replace_the_page_and_count_on_the_cover():
+    # edit_page.py writes books/<stem>.edits/scan-NNNN.txt; the English
+    # below the rule replaces the page on every run; the cover counts the
+    # pages a person changed ([[fix]] + edits).
+    import os, tempfile
+    ov = _load_overrides_module()
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(f"{d}/b.edits")
+        text = ov.edit_file_text("b", 2, "abc123", "Old <i>English</i>\n\n---\nrule-like line kept",
+                                 original="CAPO II.\n\nDella guardia del corpo.")
+        assert "#   Della guardia del corpo." in text
+        open(f"{d}/b.edits/scan-0002.txt", "w").write(text.replace("Old", "New"))
+        e = ov.load_edits("b", d)
+        assert e == {2: {"text": "New <i>English</i>\n\n---\nrule-like line kept", "source": "abc123"}}
+        tr = ["p1", "machine p2"]
+        assert ov.apply_edits(tr, e) == 1 and tr[1].startswith("New") and ov.apply_edits(tr, e) == 0
+        open(f"{d}/b.overrides.toml", "w").write('[[fix]]\nscan = 1\nfind = "a"\nreplace = "b"\n'
+                                                 '[[fix]]\nscan = 2\nfind = "c"\nreplace = "d"\n')
+        assert ov.hand_corrected_pages("b", d) == [1, 2]
+        open(f"{d}/b.edits/scan-0003.txt", "w").write("no rule line")
+        try:
+            ov.load_edits("b", d); assert False, "an edit without its rule line"
+        except ov.OverridesError:
+            pass
+    assert ov.load_edits("missing", "/nonexistent") == {}
+
+
+def test_page_break_keeps_a_compound_hyphen():
+    # La Boëssière "contre-" | "dégagement" became "contredégagement"; Jacob
+    # "procès-verbal", Masiello Sciabola "scapolo-omerale" the same. The book
+    # prints them hyphenated elsewhere -> the hyphen stays. A line-break
+    # split ("av-" | "versario") is joined; so is one whose stray hyphenated
+    # form is outnumbered by the whole word (Bruno "scia-bola" once,
+    # "sciabola" everywhere).
+    def run(pages):
+        parsed = [{"body": b} for b in pages]
+        dehyphenate_across_pages(parsed)
+        return parsed[0]["body"]
+    assert run(["suivre du contre-", "dégagement et de tous.", "le contre-dégagement."]) \
+        .endswith("du contre-dégagement")
+    assert run(["contre son av-", "versario. Ensuite.", "l'avversario."]).endswith("son avversario.")
+    assert run(["la scia-", "bola dritta.", "scia-bola; sciabola, sciabola."]).endswith("la sciabola")
+    p = [{"body": "il faut faire suivre du contre-"}, {"body": "dégagement et de tous les coups."},
+         {"body": "Le contre-dégagement se fait."}]
+    join_split_sentences(p)
+    assert "contre-dégagement" in p[0]["body"] + p[1]["body"]
 
 def _run_plain() -> int:
     fns = sorted((n, f) for n, f in globals().items()

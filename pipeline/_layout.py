@@ -92,6 +92,34 @@ def load(folder: str):
     return json.load(open(path, encoding="utf-8")) if os.path.exists(path) else None
 
 
+def no_running_heads(folder: str, books_dir: str = "/data/books") -> bool:
+    """The reviewer's [book] running_heads = false (_overrides.py): the
+    book prints none, and the detector's page_header box on its pages is
+    the page number (Florio's "~ 3 ~", Bruno's "19", Lambertini's corner
+    folio -- scan-checked 2026-10-05)."""
+    import _overrides
+    try:
+        ov = _overrides.load(os.path.basename(folder.rstrip("/")).replace("_translated", ""),
+                             books_dir)
+    except _overrides.OverridesError:
+        return False
+    return ov["book"].get("running_heads") is False
+
+
+def head_pages(folder: str, n: int):
+    """The n pages' layout entries for the running-head decision, or None
+    without a layout.json. In a book set to print no running heads the
+    page_header boxes (its page numbers) are left out, so only the OCR's
+    own HEADER says a page has a head."""
+    lay = load(folder)
+    if not lay:
+        return None
+    pages = [lay["pages"].get(str(i), {"boxes": []}) for i in range(n)]
+    if no_running_heads(folder):
+        pages = [dict(p, boxes=[b for b in p["boxes"] if b[0] != "page_header"]) for p in pages]
+    return pages
+
+
 # ---- decisions -------------------------------------------------------------
 
 def _yc(b): return (b[2][1] + b[2][3]) / 2
@@ -121,10 +149,9 @@ def no_head_pages(folder: str, own_headers: list) -> set:
     disagreements on Gomard / Kirchhoffer / Prévost were the pipeline's own
     additions: chapter titles, plates, title pages -- scan-checked). Empty
     when the book has no layout.json."""
-    lay = load(folder)
-    if not lay:
+    pages = head_pages(folder, len(own_headers))
+    if pages is None:
         return set()
-    pages = [lay["pages"].get(str(i), {"boxes": []}) for i in range(len(own_headers))]
     band = header_band(pages)
     out = set()
     for i, own in enumerate(own_headers):
@@ -143,10 +170,9 @@ def disputed_heads(folder: str, own_headers: list) -> set:
     """Page indices where the OCR reported a running head but the detector
     sees none on the page (its "unsure" case: only the OCR's word says
     printed). See settle_disputed_heads() in 1_ocr_and_extract_vlm.py."""
-    lay = load(folder)
-    if not lay:
+    pages = head_pages(folder, len(own_headers))
+    if pages is None:
         return set()
-    pages = [lay["pages"].get(str(i), {"boxes": []}) for i in range(len(own_headers))]
     band = header_band(pages)
     out = set()
     for i, own in enumerate(own_headers):

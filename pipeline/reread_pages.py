@@ -36,6 +36,9 @@ if len(sys.argv) < 3:
     sys.exit(__doc__)
 stem, spec = sys.argv[1], sys.argv[2]
 dry = "--dry-run" in sys.argv
+import _books  # noqa: E402
+if not dry:
+    _books.check_unlocked(stem, sys.argv)
 
 # step 1's definitions only (rendering, OCR call, server start) -- its main
 # code runs at module level, below the STEP 1 banner
@@ -99,7 +102,7 @@ with open(f"{I}/raw_ocr.txt", "w", encoding="utf-8") as fh:
 print(f"✓ re-read {done}; previous raw OCR kept as raw_ocr.before-reread-{stamp}.txt")
 
 old_ex = _pageio.split_pages(open(f"{I}/extracted.txt", encoding="utf-8").read())
-subprocess.run([sys.executable, os.path.join(HERE, "reprocess_extracted.py"), folder], check=True)
+subprocess.run([sys.executable, os.path.join(HERE, "reprocess_extracted.py"), folder, "--unlock"], check=True)  # lock checked above
 new_ex = _pageio.split_pages(open(f"{I}/extracted.txt", encoding="utf-8").read())
 changed = [k + 1 for k, (a, b) in enumerate(zip(old_ex, new_ex)) if a != b]
 print(f"extracted text changed on scan page(s): {changed or 'none'}")

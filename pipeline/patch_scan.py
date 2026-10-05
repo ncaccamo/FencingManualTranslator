@@ -219,7 +219,7 @@ def finish(stem: str) -> None:
         os.replace(f"{I}/figures.patched.json", f"{I}/figures.json")
     import subprocess
     subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "reprocess_extracted.py"),
-                    f"{PROCESSED}/{stem}_translated"], check=True)
+                    f"{PROCESSED}/{stem}_translated", "--unlock"], check=True)  # lock checked in main()
     # pages to translate: the new ones, and any kept page whose text the
     # re-parse changed (e.g. a running head settled differently next to a
     # new page)
@@ -242,6 +242,9 @@ def main() -> None:
     if len(args) != 2:
         sys.exit(__doc__)
     stem, plan_path = args
+    if "--apply" in sys.argv or "--finish" in sys.argv:
+        import _books
+        _books.check_unlocked(stem, sys.argv)
     if "--finish" in sys.argv:
         finish(stem)
         return

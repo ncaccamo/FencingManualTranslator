@@ -11,6 +11,15 @@ Pages are SCAN pages: the 1-based page number in the source scan PDF. (The
 side-by-side PDF's own numbering shifts whenever a page overflows onto a
 continuation sheet, so it can't key anything durable.)
 
+    [book]               book-wide settings:
+        running_heads    false -> the book prints no running heads: the line
+                         the layout detector takes for one is the page
+                         number (Florio, Bruno, Lambertini). Only the
+                         OCR's own HEADER counts; no head is carried onto
+                         a page from its neighbours.
+        final            true -> the book is finished: scripts that would
+                         change it skip it unless run with --unlock
+                         (_books.py). The review report still runs.
     [headers]            running head (French, exactly as in extracted.txt)
                          -> English, overriding the model's translation
     [terms]              book-specific glossary appended to the translation
@@ -35,21 +44,38 @@ continuation sheet, so it can't key anything durable.)
                          prepend = "..." (added as the first line unless the
                          page already starts with it) or find = "..." +
                          replace = "..." (a no-op if find isn't there).
+
+Hand edits of whole pages live beside it, in books/<stem>.edits/: one file
+per page, scan-0091.txt, made by edit_page.py. Everything below the file's
+"---" line replaces the page's English after every translation run (after
+the [[fix]] edits). The header records the source text's fingerprint when
+the edit was made, so the review report can say when the page's source has
+changed since. Delete the file to go back to the machine translation.
 """
 import os
 import re
 import tomllib
 
 _PAGE_KEYS = {"page_number", "header", "retranslate", "note", "caption", "caption_en", "figure"}
-_TOP_KEYS = {"headers", "terms", "pages", "fix"}
+_TOP_KEYS = {"book", "headers", "terms", "pages", "fix"}
+_BOOK_KEYS = {"running_heads": bool, "final": bool}
 
 
 class OverridesError(ValueError):
     pass
 
 
+def _here_or_skip(books_dir: str, name: str) -> str:
+    """books/<name>, or books/_skip/<name> when only that exists: a book
+    moved to _skip after its run (an English translation exists; it is kept
+    as an evaluation pair -- La Boëssière, Rossi) keeps its decisions."""
+    p = os.path.join(books_dir, name)
+    skip = os.path.join(books_dir, "_skip", name)
+    return skip if not os.path.exists(p) and os.path.exists(skip) else p
+
+
 def path_for(stem: str, books_dir: str = "/data/books") -> str:
-    return os.path.join(books_dir, f"{stem}.overrides.toml")
+    return _here_or_skip(books_dir, f"{stem}.overrides.toml")
 
 
 def load(stem: str, books_dir: str = "/data/books") -> dict:
@@ -58,7 +84,7 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
     decision is the failure this file exists to prevent."""
     p = path_for(stem, books_dir)
     if not os.path.exists(p):
-        return {"headers": {}, "terms": {}, "pages": {}, "fix": []}
+        return {"book": {}, "headers": {}, "terms": {}, "pages": {}, "fix": []}
     try:
         with open(p, "rb") as fh:
             raw = tomllib.load(fh)
@@ -83,11 +109,18 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
         if has_prepend == has_find or (has_find and "replace" not in f):
             raise OverridesError(f"{p}: [[fix]] #{n} (scan {f['scan']}) needs either "
                                  f"prepend, or find + replace")
+    book = raw.get("book") or {}
+    for k, v in book.items():
+        if k not in _BOOK_KEYS:
+            raise OverridesError(f"{p}: [book] unknown key {k!r}")
+        if not isinstance(v, _BOOK_KEYS[k]):
+            raise OverridesError(f"{p}: [book] {k} must be {_BOOK_KEYS[k].__name__}")
     for sec in ("headers", "terms"):
         for k, v in (raw.get(sec) or {}).items():
             if not isinstance(v, str):
                 raise OverridesError(f"{p}: [{sec}] {k!r} must be a string")
-    return {"headers": dict(raw.get("headers") or {}), "terms": dict(raw.get("terms") or {}),
+    return {"book": dict(book),
+            "headers": dict(raw.get("headers") or {}), "terms": dict(raw.get("terms") or {}),
             "pages": pages, "fix": list(fixes)}
 
 
@@ -231,3 +264,77 @@ def parse_page_spec(spec: str) -> list:
 def retranslate_pages(ov: dict) -> list:
     """Scan pages marked retranslate = true, ascending."""
     return sorted(s for s, v in ov["pages"].items() if v.get("retranslate"))
+
+
+# ---- hand edits of whole pages (books/<stem>.edits/scan-NNNN.txt) ---------
+
+EDIT_RULE = "---"
+
+
+def edits_dir(stem: str, books_dir: str = "/data/books") -> str:
+    """books/<stem>.edits -- or under books/_skip/ for a book whose scan
+    is there (_here_or_skip)."""
+    d = _here_or_skip(books_dir, f"{stem}.edits")
+    if not os.path.exists(d) and os.path.exists(os.path.join(books_dir, "_skip", f"{stem}.pdf")):
+        d = os.path.join(books_dir, "_skip", f"{stem}.edits")
+    return d
+
+
+def edit_file_text(stem: str, scan: int, source_fp: str, english: str,
+                   original: str = "") -> str:
+    """A new edit file: a short header (with the page's original text, for
+    reference), the rule, then the English to edit."""
+    ref = "".join(f"#   {l}\n" if l.strip() else "#\n" for l in original.strip().split("\n")) \
+        if original.strip() else ""
+    return (f"# Hand edit of {stem}, scan page {scan}.\n"
+            f"# Everything below the {EDIT_RULE} line replaces this page's English on every\n"
+            f"# run (keep <i>, <fn> and other markup as it is). Delete the file to undo.\n"
+            f"# source: {source_fp}\n"
+            + (f"#\n# The original, for reference:\n{ref}" if ref else "")
+            + f"{EDIT_RULE}\n{english.strip()}\n")
+
+
+def load_edits(stem: str, books_dir: str = "/data/books") -> dict:
+    """{scan: {"text": English, "source": fingerprint or ""}}. A file with
+    no rule line is an error: its header would otherwise end up printed."""
+    d = edits_dir(stem, books_dir)
+    out = {}
+    if not os.path.isdir(d):
+        return out
+    for name in sorted(os.listdir(d)):
+        m = re.fullmatch(r"scan-0*(\d+)\.txt", name)
+        if not m:
+            continue
+        raw = open(os.path.join(d, name), encoding="utf-8").read()
+        head, rule, text = raw.partition(f"\n{EDIT_RULE}\n")
+        if not rule:
+            raise OverridesError(f"{d}/{name}: no '{EDIT_RULE}' line between the header "
+                                 f"and the English")
+        src = re.search(r"(?m)^# source: *(\S*)", head)
+        out[int(m.group(1))] = {"text": text.strip(), "source": src.group(1) if src else ""}
+    return out
+
+
+def apply_edits(tr_pages: list, edits: dict) -> int:
+    """translation.txt pages (in place): each edited page takes its edit.
+    Returns how many pages changed."""
+    n = 0
+    for scan, e in edits.items():
+        if scan > len(tr_pages):
+            raise OverridesError(f"hand edit scan-{scan}: past the end of the book "
+                                 f"({len(tr_pages)} pages)")
+        if tr_pages[scan - 1].strip() != e["text"]:
+            tr_pages[scan - 1] = e["text"]
+            n += 1
+    return n
+
+
+def hand_corrected_pages(stem: str, books_dir: str = "/data/books") -> list:
+    """Scan pages whose English a person changed: a [[fix]] or a page edit
+    (for the cover's disclosure line)."""
+    try:
+        ov = load(stem, books_dir)
+        edits = load_edits(stem, books_dir)
+    except OverridesError:
+        return []
+    return sorted({f["scan"] for f in ov["fix"]} | set(edits))

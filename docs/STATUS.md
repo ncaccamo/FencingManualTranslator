@@ -59,6 +59,10 @@ the operator's business and is not tracked here.)
   `docs/remote-gpu.md`.
 - **Outputs:** `processed/<stem>_translated/` holds the two PDFs and the
   review report; everything intermediate is in `intermediate/`.
+- **Unattended runs:** step 2 saves progress after every page and resumes
+  where it stopped; in remote mode a translation request that finds the GPU
+  server unreachable waits for it (up to `SERVER_WAIT_HOURS`, default 24)
+  and resends, instead of keeping the original text.
 - **Regression net:** `python3 evals/test_rules.py`: frozen input → output
   tests, one per bug fixed. Run it after any pipeline change; a failure
   means a fix broke a different book.

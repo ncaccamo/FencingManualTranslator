@@ -18,9 +18,16 @@ cd ~/FencingManualTranslator
 bash scripts/setup.sh                    # ~20-30 min first build
 
 # every run:
-cp "/path/to/My Fencing Book (1875).pdf" books/
-scripts/run_full_pipeline.sh
+cp "/path/to/smith_1875_fencing.pdf" books/
+scripts/run_full_pipeline.sh smith_1875_fencing
 ```
+
+Every script works on the books you **name** (the file name without
+`.pdf`, its *stem*), or on every book with `--all`. Nothing runs on the
+whole `books/` folder by default, so a finished book is never reprocessed
+because a new one was added. A book marked finished (`[book] final = true`
+in its overrides file) is left alone even under `--all`, unless the run is
+given `--unlock`. See `docs/per-book-files.md`.
 
 `scripts/setup.sh` is the first-run path (see Section II for the host
 steps it checks). After that, `startup_docker.sh` / `run_full_pipeline.sh`
@@ -34,7 +41,7 @@ with llama-swap on the GPU system, `run_full_pipeline.sh` works unchanged;
 the GPU system's console instead).
 
 When it finishes, the two PDFs are in
-`processed/My Fencing Book (1875)_translated/`.
+`processed/smith_1875_fencing_translated/`.
 
 `run_full_pipeline.sh` recreates the container, then runs steps 1→2→3→4 in
 order, then prints a summary and waits for Enter. If step 1 fails it stops
@@ -48,13 +55,15 @@ framing. Run them one at a time when you're iterating.
 ```bash
 docker compose up -d       # container must be up; comes up idle
 
-docker exec fmt-translator python3 /app/1_ocr_and_extract_vlm.py
-docker exec fmt-translator python3 /app/2_translate.py
-docker exec fmt-translator python3 /app/3_english_only_pdf.py
-docker exec fmt-translator python3 /app/4_side_by_side_pdf.py
+docker exec fmt-translator python3 /app/1_ocr_and_extract_vlm.py <stem>
+docker exec fmt-translator python3 /app/2_translate.py <stem>
+docker exec fmt-translator python3 /app/3_english_only_pdf.py <stem>
+docker exec fmt-translator python3 /app/4_side_by_side_pdf.py <stem>
 ```
 
-Each step decides for itself which books to act on:
+Name one or more books, or `--all`. With no book named, a step prints its
+usage and does nothing. (`PDF_ONLY=<stem>,<stem>`, the older form, still
+works.) Within the named books, each step decides what still needs doing:
 
 | Step | Acts on a book when… | To force a re-run |
 |---|---|---|
@@ -93,11 +102,15 @@ Drop a sidecar file next to the PDF in `books/`, named with the same stem:
 
 | File | Content | Effect |
 |---|---|---|
-| `<stem>.overrides.toml` | your review decisions | Page numbers, headers, header wording, book terms, caption fixes and fixes to the English; re-applied on every run. See III.5b. |
+| `<stem>.overrides.toml` | your review decisions | Page numbers, headers, header wording, book terms, caption fixes and fixes to the English, book-wide settings (`[book]`); re-applied on every run. See III.5b. |
+| `<stem>.edits/` | whole pages of English edited by hand | Made by `pipeline/edit_page.py`; each replaces its page's English on every run. See III.5b. |
 | `<stem>.meta.json` | title (short, English, full as printed) / author / first-published year / the scan's edition, publisher and year / rights / source / language | The cover page's bibliographic block; `language` also picks the translation prompt. Generate it from `books/library.md` with `scripts/make_book_meta.py`, then check it against the scan's title page. `year_first` is the year in the stem, so stems sort as a timeline. |
 | `<stem>.crop` | `left,top,right,bottom` — fractions, e.g. `0.06,0.04,0.06,0.08` | Trims that fraction off each page image before OCR. Use it to cut a dark scanner-bed border or a gutter shadow that the vision model keeps transcribing as noise. |
 | `<stem>.split` | `140: 0.512` (cut at that share of the width) or `66-95: whole`, one per line | Corrections for `pipeline/split_spreads.py`, which cuts a scan of two-page spreads (an open book photographed flat) into single pages before step 1. |
 | `<stem>.rotate` | `cw` / `ccw` / `180` (every plate), or page lists: `cw: 35, 39, 55-229` and `ccw: 241` | Turns sideways-printed plates upright in both PDFs. Page lists are for books whose plates face different ways. See `docs/pdf-layout.md`. |
+
+Every file and every setting, with real examples and what to rerun after
+changing it: **`docs/per-book-files.md`**.
 
 ## III.4 — What lands in `processed/<stem>_translated/`
 
@@ -131,12 +144,9 @@ applied to a book OCR'd before it existed — rebuild the two derived files
 without paying for OCR again:
 
 ```bash
-# every book that has a raw_ocr.txt:
-docker exec fmt-translator python3 /app/reprocess_extracted.py
-
-# or just some:
-docker exec fmt-translator python3 /app/reprocess_extracted.py \
-  /data/processed/<stem>_translated
+docker exec fmt-translator python3 /app/reprocess_extracted.py <stem> [<stem> ...]
+# or every book that has a raw_ocr.txt (finished books are skipped):
+docker exec fmt-translator python3 /app/reprocess_extracted.py --all
 ```
 
 Then re-run steps 2→4. This does **not** re-apply the OCR *prompt* —
@@ -268,6 +278,10 @@ at 1. (The side-by-side PDF's numbering shifts when a page overflows onto a
 continuation sheet, so it can't key a durable decision.)
 
 ```toml
+[book]                           # book-wide settings
+running_heads = false            # the book prints none: the line the layout detector
+                                 # takes for one is the page number (rerun step 1 after)
+
 [headers]                        # running head (French, as extracted) -> English
 "DES COUPS SIMPLES." = "OF SIMPLE THRUSTS."
 
@@ -299,7 +313,7 @@ the PDFs:
 
 ```bash
 docker exec fmt-translator python3 /app/apply_overrides.py <stem>
-docker exec -e PDF_ONLY=<stem> fmt-translator python3 /app/4_side_by_side_pdf.py
+docker exec fmt-translator python3 /app/4_side_by_side_pdf.py <stem>
 ```
 
 Step 1, `reprocess_extracted.py` and step 2 apply the same file themselves.
@@ -352,10 +366,13 @@ second sheet there). The review report lists pages as scan pages.
 | The problem | The fix | Where it's described |
 |---|---|---|
 | A word or sentence in the English is wrong | `[[fix]]` find/replace in `<stem>.overrides.toml` | III.5b |
+| A paragraph or page needs rewriting, or a line is missing | `python3 pipeline/edit_page.py <stem> N` (on the host), edit `books/<stem>.edits/scan-NNNN.txt` | below |
+| A book is finished and must not change by accident | `[book] final = true` | III.1 |
 | A heading / running head is translated badly | `[headers]` in the overrides file | III.5b |
 | A term should always be rendered a certain way in this book | `[terms]` in the overrides file (then retranslate the pages that use it) | III.5b |
 | A page number is misread, or shown where none is printed | `[pages.N] page_number = "…"` | III.5b |
 | A running head is wrong, or shouldn't be there | `[pages.N] header = "…"` | III.5b |
+| The report says "probably the page number" under *About this book* (the book prints no running heads) | `[book] running_heads = false`, then `reprocess_extracted.py` | III.5b |
 | A plate caption is misread (engraved script, damage) | `[pages.N] caption = "…"` (the printed text, corrected), optionally `caption_en` | III.5b |
 | A page's translation is poor and should be redone | `2_translate.py --pages <stem> N` or `[pages.N] retranslate = true` | III.5b |
 | Plates are printed sideways | `<stem>.rotate` | III.3 |
@@ -369,7 +386,8 @@ run again before you see it:
 
 | Correction | Read by | To see it | GPU? |
 |---|---|---|---|
-| `[headers]`, `[[fix]]`, `caption_en` | end of step 2; `apply_overrides.py` | `apply_overrides.py`, rebuild PDFs | no |
+| `[headers]`, `[[fix]]`, `caption_en`, page edits (`<stem>.edits/`) | end of step 2; `apply_overrides.py` | `apply_overrides.py`, rebuild PDFs | no |
+| `[book] running_heads` | step 1 / `reprocess_extracted.py` | `reprocess_extracted.py`, `2_translate.py <stem>` (changed pages only), rebuild PDFs | yes, changed pages |
 | `<stem>.rotate` | steps 3 and 4 | rebuild PDFs | no |
 | `source_changes` in `<stem>.meta.json` (cover note) | steps 3 and 4 | rebuild PDFs | no |
 | `[pages.N]` `page_number`, `header` | step 1 / `reprocess_extracted.py` (after the automatic logic, so the decision wins) | `apply_overrides.py`, rebuild PDFs | no |
@@ -387,8 +405,8 @@ After editing the overrides file:
 X="docker exec fmt-translator python3"
 $X /app/apply_overrides.py <stem>                   # writes the decisions in (no model, seconds)
 $X /app/2_translate.py --pages <stem> <pages>       # only if English is needed: [terms], retranslate, a new caption
-docker exec -e PDF_ONLY=<stem> fmt-translator python3 /app/3_english_only_pdf.py
-docker exec -e PDF_ONLY=<stem> fmt-translator python3 /app/4_side_by_side_pdf.py
+$X /app/3_english_only_pdf.py <stem>
+$X /app/4_side_by_side_pdf.py <stem>
 $X /app/quality_report.py <stem>                    # confirm the page no longer shows up
 ```
 
@@ -396,6 +414,28 @@ $X /app/quality_report.py <stem>                    # confirm the page no longer
 caption without `caption_en`, for example). A typo'd key or malformed file
 stops the run with a message naming it; a `[[fix]]` whose text no longer
 matches (the page was retranslated since) is reported so you can update it.
+
+### Editing a page by hand
+
+When a book is down to its last few errors, fixing them by hand can beat
+another rerun. A `[[fix]]` suits a word or a sentence; for a paragraph, a
+whole page, or a line the OCR dropped, edit the page:
+
+```bash
+python3 pipeline/edit_page.py <stem> 91        # on the host: books/ is read-only in the container
+# edit books/<stem>.edits/scan-0091.txt below its --- line, save, then:
+$X /app/apply_overrides.py <stem>
+$X /app/3_english_only_pdf.py <stem>
+$X /app/4_side_by_side_pdf.py <stem>
+```
+
+The file shows the page's original text for reference above the `---`
+line. The edit replaces the machine English on every later run. If the
+page's source text changes afterwards, the review report lists the edit
+as possibly out of date. Delete the file to go back to the machine
+translation. The cover counts every page a person changed (`[[fix]]` and
+page edits): *"Corrected by hand on 14 pages."* Set `"edited_by"` in
+`<stem>.meta.json` to be named there.
 
 **Keep corrections few.** If the same kind of mistake shows up on many
 pages or in several books, it's a pipeline rule to improve, not a list of
@@ -406,9 +446,10 @@ its one odd heading.
 
 ## III.6 — Processing several books at once
 
-Put them all in `books/` and run the pipeline once. Each step walks every
-PDF / every `*_translated` folder that it hasn't already handled, so a
-second book added later doesn't disturb the first.
+Name them all: `scripts/run_full_pipeline.sh <stem> <stem> …`, or one step
+at a time with the same list. Each named book goes through each step in
+turn. `--all` takes every book in `books/` (step 1) or `processed/` (the
+other steps), skipping books marked finished.
 
 Step 2 leaves already-translated books alone unless their source text
 changed. It retranslates only the changed pages, and skips a book with
@@ -417,8 +458,26 @@ the others.
 
 ## III.7 — Long runs: watching progress
 
-A 350-page book is a few hours, most of it in step 1. Both steps print
-per-page progress to the `docker exec` stdout. In separate terminals:
+A 350-page book is several hours. Steps 1 and 2 record their progress
+after every page in `processed/_status/progress.json`: the book, the step,
+pages done and left, the speed over the last 10 pages (time spent waiting
+for the GPU server left out) and an estimated finish time.
+
+```bash
+scripts/progress.sh              # live view, refreshed every 5 s (Ctrl-C to quit)
+scripts/progress.sh --once       # once, e.g. over ssh
+scripts/progress.sh --history    # the speed of past runs, per book and step
+```
+
+The view says **STALLED?** when a "running" step hasn't finished a page
+in 15 minutes: the process may have died without saying so. Each finished
+step adds a line to `processed/_status/history.jsonl` (pages, minutes,
+seconds per page, model), the measured basis for estimating the next run.
+The same file can feed a dashboard: the homelab's Homepage tile reads it
+(see the homelab repo).
+
+Both steps also print per-page progress to the `docker exec` stdout. In
+separate terminals:
 
 ```bash
 # live GPU: util should spike 50-90%, SCLK 1500-2500 MHz, VRAM 60-80%
@@ -438,7 +497,8 @@ All in `scripts/`, run from anywhere.
 
 | Script | Purpose |
 |---|---|
-| `run_full_pipeline.sh` | Recreate container, run 1→2→3→4, print summary. The normal entry point. |
+| `run_full_pipeline.sh <stem> …` | Recreate container, run 1→2→3→4 and the review report on the named books (`--all` for every book), print summary. The normal entry point. |
+| `progress.sh` | Live view of the running step: book, pages done/left, speed, ETA (III.7). |
 | `startup_docker.sh` | `systemctl start docker` + `docker compose up -d`. Start-of-session. |
 | `shutdown_docker.sh` | Stop the container and the Docker service — frees all VRAM/RAM for other use (e.g. gaming). Keeps images, volumes, data. |
 | `monitor_gpu.sh` | `watch`-based live GPU + container-resource display. Ctrl-C to stop. |

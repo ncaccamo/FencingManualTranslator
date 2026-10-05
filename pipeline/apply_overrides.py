@@ -8,7 +8,8 @@ no reprocess. Run after editing the overrides file, then rebuild the PDFs:
     PDF_ONLY=<stem> python3 /app/4_side_by_side_pdf.py   (and 3_ for English-only)
 
 Page-level decisions (page_number, header) are written into extracted.txt /
-page_numbers.txt; [headers] into headers.json; [[fix]] into translation.txt.
+page_numbers.txt; [headers] into headers.json; [[fix]] and the hand edits in
+books/<stem>.edits/ (edit_page.py) into translation.txt.
 Step 1 / reprocess_extracted.py / 2_translate.py apply the same file on every
 run, so nothing here is lost when a book is regenerated.
 """
@@ -70,10 +71,11 @@ def main(stems):
                 print(f"  ⚠ header {h!r} has no English: add it under [headers] "
                       f"in {_overrides.path_for(stem)}")
         apply_book_overrides(folder)
-        print(f"✓ {stem}: {n} page setting(s) applied")
+        edited = len(_overrides.load_edits(stem))
+        print(f"✓ {stem}: {n} page setting(s) applied"
+              + (f"; {edited} page(s) edited by hand (books/{stem}.edits/)" if edited else ""))
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        sys.exit(__doc__)
-    main(sys.argv[1:])
+    import _books
+    main([_books.stem_of(n) for n in _books.select(sys.argv[1:], __doc__)])

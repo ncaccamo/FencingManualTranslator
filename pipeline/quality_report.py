@@ -353,6 +353,31 @@ def head_variants(where: dict, hmap: dict) -> list:
     return out
 
 
+def _ocr_head(raw_page: str) -> bool:
+    m = re.search(r"(?im)^[ \t]*HEADER[ \t]*:[ \t]*(.*)$", raw_page or "")
+    v = (m.group(1).strip().strip("[]") if m else "").lower()
+    return bool(v) and v not in ("none", "n/a", "-")
+
+
+def folio_shaped_heads(pages: list, raw: list) -> tuple:
+    """(pages, of) when the book looks like one that prints no running heads
+    and the detector's page_header box is its page number; () otherwise.
+    Counted over pages whose confident head boxes are all at most ~3
+    characters wide (pixel width <= 5x height): the OCR reads no head on
+    at least 80% of them. Measured 2026-10-05 over 19 books: Bruno 94%,
+    Florio 90%, Lambertini 86% (all print only page numbers, scan-checked);
+    every book with real running heads 66% or less (LaMarche)."""
+    small = none = 0
+    for i, p in enumerate(pages):
+        st = [b for b in p["boxes"] if b[0] == "page_header" and b[1] >= 0.5 and _layout._horiz(b)]
+        if not st or i >= len(raw) or not p.get("w"):
+            continue
+        if all(_layout._wid(b) * p["w"] <= 5 * _layout._hgt(b) * p["h"] for b in st):
+            small += 1
+            none += not _ocr_head(raw[i])
+    return (none, small) if small >= 20 and none >= 0.8 * small else ()
+
+
 def check_book(folder: str) -> list:
     global _rules
     _rules = TERM_RULES_IT if _ns["book_language"](
@@ -444,11 +469,21 @@ def check_book(folder: str) -> list:
                 f"\u2026{a[-40:]!r} | {eng[j][:40]!r}\u2026")
 
     # running heads vs. the layout detector (intermediate/layout.json)
+    # (not in a book set to print none -- [book] running_heads = false: the
+    # detector's head there is the page number, so it has no say)
     lay = _layout.load(folder)
-    if lay and os.path.exists(f"{I}/raw_ocr.txt"):
+    if lay and os.path.exists(f"{I}/raw_ocr.txt") and not _layout.no_running_heads(folder):
         raw = _pageio.split_pages(open(f"{I}/raw_ocr.txt", encoding="utf-8").read())
         pages = [lay["pages"].get(str(i), {"boxes": []}) for i in range(len(ex))]
         band = _layout.header_band(pages)
+        folio_heads = folio_shaped_heads(pages, raw)
+        if folio_heads:
+            add(0, "BOOK", "running heads", f"on {folio_heads[0]} of {folio_heads[1]} pages "
+                "the detector's running head is only a few characters wide and the OCR "
+                "reads no head there: it is probably the page number. If the book prints "
+                "no running heads, add `[book]` `running_heads = false` to the overrides "
+                "file and rerun step 1 (`reprocess_extracted.py`); until then those pages "
+                "are not listed below.")
         # a page whose running head the reviewer set in the overrides file
         # ([pages.N] header, "" = none) is decided -- not re-flagged (Jacob
         # scan 49, La Boëssière scan 10: titles, not running heads)
@@ -473,7 +508,8 @@ def check_book(folder: str) -> list:
                 # a plate's printed plate number ("Pl. 6.") reads as a page
                 # head to the detector; a plate page shows no running head
                 # (La Boëssière's 18 plates)
-                if not any(f.get("kind") == "plate" for f in figs.get(str(i), [])):
+                if not any(f.get("kind") == "plate" for f in figs.get(str(i), [])) \
+                        and not folio_heads:
                     add(i + 1, CHECK, "layout", "the page prints a running head, but none is shown")
             elif shown and not printed:
                 add(i + 1, CHECK, "layout", f"running head {h.replace(chr(9), ' / ')!r} is "
@@ -524,6 +560,24 @@ def check_book(folder: str) -> list:
                 (f"running head {h!r} left untranslated: {en!r}" if en
                  else f"running head {h!r} was never translated") + more
                 + " -- set its English under [headers] in the overrides file")
+
+    # hand-edited pages (books/<stem>.edits/, edit_page.py): a person has
+    # read them, so the machine checks are dropped -- unless the page's
+    # source text changed after the edit was made
+    try:
+        edits = _overrides.load_edits(os.path.basename(folder)[:-len("_translated")])
+    except _overrides.OverridesError as e:
+        add(0, "BOOK", "hand edits", str(e))
+        edits = {}
+    if edits:
+        fp = _ns["page_fingerprint"]
+        stale = {s for s, e in edits.items()
+                 if s <= len(ex) and e["source"] and e["source"] != fp(ex[s - 1])}
+        issues[:] = [x for x in issues if x["scan"] not in edits or x["level"] in ("TERMS", "BOOK")]
+        for s in sorted(stale):
+            add(s, CHECK, "hand edit", f"the page's source text changed after it was edited "
+                f"by hand -- compare books/{os.path.basename(folder)[:-len('_translated')]}"
+                f".edits/scan-{s:04d}.txt with the page")
     return issues
 
 
@@ -535,7 +589,8 @@ def write_report(folder: str, stem: str, issues: list) -> str:
     ov = _overrides.load(stem)
     by_page = defaultdict(list)
     terms = [x for x in issues if x["level"] == "TERMS"]
-    issues = [x for x in issues if x["level"] != "TERMS"]
+    book = [x for x in issues if x["level"] == "BOOK"]
+    issues = [x for x in issues if x["level"] not in ("TERMS", "BOOK")]
     for x in issues:
         by_page[x["scan"]].append(x)
     n_check = sum(1 for x in issues if x["level"] == CHECK)
@@ -556,6 +611,8 @@ def write_report(folder: str, stem: str, issues: list) -> str:
     if not pmap:
         L += ["*The side-by-side PDF is missing or out of date, so pdf page numbers "
               "are not shown — rebuild it and rerun this report.*", ""]
+    if book:
+        L += ["## About this book", ""] + [f"- **{x['kind']}**: {x['detail']}" for x in book] + [""]
     if kinds:
         L += ["| Kind | Checks |", "|---|---|"] + [f"| {k} | {n} |" for k, n in kinds.most_common()] + [""]
     if terms:
@@ -602,10 +659,5 @@ def main(stems):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        sys.exit(__doc__)
-    if sys.argv[1:] == ["--all"]:
-        main(sorted(os.path.basename(f)[:-len("_translated")]
-                    for f in glob.glob("/data/processed/*_translated")))
-    else:
-        main(sys.argv[1:])
+    import _books
+    main([_books.stem_of(n) for n in _books.select(sys.argv[1:], __doc__, writes=False)])
