@@ -466,8 +466,23 @@ for the GPU server left out) and an estimated finish time.
 ```bash
 scripts/progress.sh              # live view, refreshed every 5 s (Ctrl-C to quit)
 scripts/progress.sh --once       # once, e.g. over ssh
+scripts/progress.sh --every 15   # a slower refresh
 scripts/progress.sh --history    # the speed of past runs, per book and step
 ```
+
+Below the run, the view shows the inference backend, following
+`BACKEND_MODE` in `backend.env`:
+
+- **local:** whether the OCR (`:11435`) and translation (`:11434`) servers
+  are loaded, and the GPU's busy %, VRAM, temperature and power, read from
+  the amdgpu kernel files (no ROCm needed on the host).
+- **remote:** whether the GPU system answers, and which model its
+  llama-swap has loaded, with how many layers are on its GPU. Seeing the
+  model needs `REMOTE_API_KEY` when llama-swap has one.
+
+Every check is read-only. The view never sends a model request, so it
+can't load a model or reset llama-swap's idle timer. It needs only
+`python3` on the host.
 
 The view says **STALLED?** when a "running" step hasn't finished a page
 in 15 minutes: the process may have died without saying so. Each finished
@@ -498,7 +513,7 @@ All in `scripts/`, run from anywhere.
 | Script | Purpose |
 |---|---|
 | `run_full_pipeline.sh <stem> …` | Recreate container, run 1→2→3→4 and the review report on the named books (`--all` for every book), print summary. The normal entry point. |
-| `progress.sh` | Live view of the running step: book, pages done/left, speed, ETA (III.7). |
+| `progress.sh` | Live view of the running step (book, pages done/left, speed, ETA) and of the local GPU or remote GPU system (III.7). |
 | `startup_docker.sh` | `systemctl start docker` + `docker compose up -d`. Start-of-session. |
 | `shutdown_docker.sh` | Stop the container and the Docker service — frees all VRAM/RAM for other use (e.g. gaming). Keeps images, volumes, data. |
 | `monitor_gpu.sh` | `watch`-based live GPU + container-resource display. Ctrl-C to stop. |
