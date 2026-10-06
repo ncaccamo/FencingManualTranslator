@@ -560,6 +560,11 @@ def fix_known_garbles(text: str, src: str = "") -> str:
     # after an English article -- French kept in a translation ("je ne
     # parle pas du tac au tac", LaMarche scan 128) must stay as it is
     text = re.sub(r"\b(the|a|an)\s+du\s+((?:<i>)?tac[- ]au[- ]tac)", r"\1 \2", text, flags=re.I)
+    # a French book title with its *escrime* turned into English by the
+    # glossary: "Traité d'Fencing pratique" (Joseph-Renaud scan 35),
+    # "Bibliographie de l'Fencing" (Barbasetti). English never writes
+    # "d'Fencing" / "l'Fencing", so it is always such a title.
+    text = re.sub(r"(\b[dl][’'])Fencing\b", r"\1Escrime", text)
     # "RIPOSTES AT THE <i>TAC-AU-TAC</i>." (Gomard scans 242, 246): the
     # idiom read as a place. Only "at the" -- "of the" can be a real noun
     # use ("the speed of the tac-au-tac")

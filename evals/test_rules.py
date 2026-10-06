@@ -2733,6 +2733,40 @@ def test_page_break_keeps_a_compound_hyphen():
     join_split_sentences(p)
     assert "contre-dégagement" in p[0]["body"] + p[1]["body"]
 
+
+def test_french_title_keeps_escrime():
+    # Joseph-Renaud scan 35 "Traité d'Fencing pratique", Barbasetti
+    # "(Bibliographie de l'Fencing)": a French title half translated
+    fix = _rules_mod_fix()
+    assert fix("his Traité d'Fencing pratique") == "his Traité d'Escrime pratique"
+    assert fix("(Bibliographie de l’Fencing).") == "(Bibliographie de l’Escrime)."
+    assert fix("Fencing and the duel; the art of fencing") == "Fencing and the duel; the art of fencing"
+
+
+def _rules_mod_fix():
+    from _rules import TX
+    return TX["fix_known_garbles"]
+
+
+def test_render_paragraph_indent_and_star_divider():
+    # Joseph-Renaud pdf 54: paragraphs separated by single line breaks ran
+    # together; a paragraph after a finished sentence now starts indented.
+    # Lists, capital headings and lines after a colon are left flush; a line
+    # of stars ("★★", the OCR's section divider) is not drawn.
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        R = importlib.import_module("_render")
+    except ImportError:                     # needs PyMuPDF: runs in the image
+        return
+    ind = lambda text: [round(l.indent) for l in R.layout(text, 400, 9) if not l.gap]
+    assert ind("He will return to guard.\nNo attacks yet.") == [0, round(9 * R.PARA_INDENT_EM)]
+    assert ind("For example:\nfor the challenge, loss of office;") == [0, 0]
+    assert ind("The lesson ends.\nCHAPTER II") == [0, 0]
+    assert ind("The lesson ends.\n1° Lunge.\n2° Recover.") == [0, 0, 0]
+    assert ind("Orchid, Dancer\nThe Golden Waltz") == [0, 0]
+    assert ind("First part.\n\n★★\n\nSecond part.") == [0, 0]
+
 def _run_plain() -> int:
     fns = sorted((n, f) for n, f in globals().items()
                  if n.startswith("test_") and callable(f))

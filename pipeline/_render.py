@@ -126,15 +126,16 @@ def _w(txt, ital, size):
     return _font(ITALIC if ital else ROMAN).text_length(txt, fontsize=size)
 
 
-def _wrap(spans, width, size):
-    """Greedy word-wrap (text, ital) spans into visual lines."""
-    lines, cur, cur_w = [], [], 0.0
+def _wrap(spans, width, size, first_indent=0.0):
+    """Greedy word-wrap (text, ital) spans into visual lines; the first
+    line is `first_indent` pt narrower (a paragraph's first-line indent)."""
+    lines, cur, cur_w = [], [], first_indent
     for text, ital in spans:
         for tok in re.findall(r"\S+\s*|\s+", text):
             w = _w(tok, ital, size)
             if cur and tok.strip() and cur_w + w > width:
                 lines.append(cur)
-                cur, cur_w = [], 0.0
+                cur, cur_w = [], 0.0          # later lines: full width
                 tok = tok.lstrip()
                 w = _w(tok, ital, size)
             if not tok:
@@ -173,6 +174,30 @@ NOTE_COLOR = (0.38, 0.38, 0.38)
 _LIST_START = re.compile(r"(?:[—–\-•*]|\d+\s*[°.)]|[a-zA-Z]\)|[IVXLC]+\.\s)")
 
 
+# A paragraph that follows another with no blank line between them -- the
+# OCR often separates paragraphs with a single line break (every book; most
+# in LaMarche, Joseph-Renaud, Masiello 1887) -- gets a first-line indent, as
+# printed books do; without it the page reads as one dense block
+# (Joseph-Renaud pdf 50, 54; 2026-10-06 review). Only prose after a line
+# that ends a sentence: list items, drills and verse keep their own layout.
+PARA_INDENT_EM = 1.5
+_SENT_END = re.compile(r"[.!?…»”\")](?:</i>)?\s*$")   # not ":" -- a list follows it (Masiello 1887 scan 120)
+# a section divider of stars on its own line (Joseph-Renaud's "★★") is not
+# drawn: the OCR caught it on some pages only (2026-10-06 review); the blank
+# lines around it still leave the gap
+_STARS = re.compile(r"^\s*[★☆⁂✶✱]+(?:\s*[★☆⁂✶✱]+)*\s*$")
+
+
+def _para_line(s):
+    """A line of running text (any length): starts with a word or a quote,
+    isn't a list item, part of a braced group, or a heading in capitals."""
+    letters = [c for c in re.sub(r"<[^>]+>", "", s) if c.isalpha()]
+    if letters and sum(c.isupper() for c in letters) > 0.7 * len(letters):
+        return False
+    return ("{" not in s and "}" not in s and not _LIST_START.match(s)
+            and bool(re.match(r"[\w“\"«(<]", s)))
+
+
 def _prose_indent(s):
     return (len(s) >= 60 and "{" not in s and "}" not in s
             and not _LIST_START.match(s) and bool(re.match(r"[\w“\"«(<]", s)))
@@ -181,24 +206,33 @@ def _prose_indent(s):
 def layout(text, width, size):
     """text -> list[Line], pre-wrapped to `width` pt at `size`."""
     out = []
+    para_end = False            # the line before ended a prose sentence
     for raw in (text or "").split("\n"):
+        if _STARS.match(raw):
+            continue
         if not raw.strip():
             out.append(Line(gap=True))
+            para_end = False
             continue
         m = _MARGIN_RE.match(raw)
         if m:
+            para_end = False
             # the note is italic throughout; an <i> term inside it stays italic
             note = re.sub(r"</?i>", "", m.group(1))
             for vline in _wrap([(note, 1)], max(width - NOTE_INDENT, _MIN_WRAP), size):
                 out.append(Line(NOTE_INDENT, vline, note=True))
             continue
         n = len(raw) - len(raw.lstrip(" "))
-        if n and _prose_indent(raw[n:]):
+        prose = _prose_indent(raw[n:])
+        if n and prose:
             raw, n = raw[n:], 0
         indent = n * _SPACE_PT
         avail = max(width - indent, _MIN_WRAP)
-        for vline in _wrap(_spans(raw[n:]), avail, size):
-            out.append(Line(indent, vline))
+        text_line = n == 0 and _para_line(raw)
+        first = size * PARA_INDENT_EM if text_line and para_end else 0.0
+        for k, vline in enumerate(_wrap(_spans(raw[n:]), avail, size, first)):
+            out.append(Line(indent + (first if k == 0 else 0.0), vline))
+        para_end = text_line and bool(_SENT_END.search(raw))
     return out
 
 
