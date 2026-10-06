@@ -28,3 +28,6 @@ review-notes/
 # Host-specific compose override (remote/GPU-less). .example is tracked.
 docker-compose.override.yml
 build.log
+
+# shareable copies of finished PDFs (scripts/release.py)
+release/

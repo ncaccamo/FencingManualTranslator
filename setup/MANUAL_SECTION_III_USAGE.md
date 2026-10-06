@@ -513,6 +513,7 @@ All in `scripts/`, run from anywhere.
 | Script | Purpose |
 |---|---|
 | `run_full_pipeline.sh <stem> …` | Recreate container, run 1→2→3→4 and the review report on the named books (`--all` for every book), print summary. The normal entry point. |
+| `release.py <stem>` | Copy a finished book's PDFs to `release/` under readable names (`Florio-1844-The-Science-of-Fencing-Explained-English.pdf`); `--dry-run` to preview. See `docs/per-book-files.md`. |
 | `progress.sh` | Live view of the running step (book, pages done/left, speed, ETA) and of the local GPU or remote GPU system (III.7). |
 | `startup_docker.sh` | `systemctl start docker` + `docker compose up -d`. Start-of-session. |
 | `shutdown_docker.sh` | Stop the container and the Docker service — frees all VRAM/RAM for other use (e.g. gaming). Keeps images, volumes, data. |

@@ -157,6 +157,8 @@ The cover's bibliographic block. Generate it from `books/library.md` with
 | `title`, `title_en` | short title as printed, and in English |
 | `title_full`, `title_full_en` | the full title-page wording, when it says more |
 | `author` | as it should appear on the cover |
+| `author_short` | the author as shared file names give it, when the stem runs it together: `"Joseph-Renaud"`, `"La Marche"`, `"Kirchhoffer et al."` (`scripts/release.py`) |
+| `title_short_en` | the English title for shared file names, when `title_en` cut at its first colon or full stop reads badly |
 | `year_first` | first published (the year in the stem, so stems sort as a timeline) |
 | `year_edition`, `edition`, `publisher`, `first_as` | the edition this scan is |
 | `language` | `French` / `Italian`: picks the translation prompt and term lists |
@@ -208,3 +210,27 @@ III.5a). The original is kept in `books/_alt/`.
 in several books, it is a pipeline rule to improve, not a list of
 corrections to maintain. The corrections files are for what is genuinely
 particular to one book.
+
+---
+
+## Sharing a finished book: `scripts/release.py`
+
+```bash
+python3 scripts/release.py <stem> --dry-run     # show the names
+python3 scripts/release.py <stem>               # copy the PDFs to release/<Name>/
+```
+
+Copies the two PDFs under readable names (author, year, short English
+title, edition), in plain ASCII so they survive URLs and chat uploads:
+
+```
+release/Florio-1844-The-Science-of-Fencing-Explained/
+    Florio-1844-The-Science-of-Fencing-Explained-English.pdf
+    Florio-1844-The-Science-of-Fencing-Explained-Parallel-Italian-English.pdf
+```
+
+The names come from `author_short` (or the stem), the year in the stem, and
+`title_short_en` / `title_en`. It warns when the book isn't marked
+`final`, its review report still lists pages to check, or a PDF is older
+than the translation. `processed/` keeps the pipeline's own names.
+
