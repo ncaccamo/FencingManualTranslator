@@ -2799,6 +2799,26 @@ def test_refusal_ready_to_translate():
     assert is_ref("Please provide the source text you would like translated.")
     assert not is_ref("I am ready, said the fencer, to translate theory into practice.")
 
+
+def test_verify_captions_verdicts():
+    # 2026-10-07: step 1 sometimes recorded the OCR model's description of a
+    # picture as its caption. The second reading's answer decides:
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    V = importlib.import_module("verify_captions")
+    # Masiello Sciabola scan 32: a description; the book prints another caption
+    assert V.verdicts(["Immagine di una mano impugnando una sciabola in posizione normale"],
+                      ["Modo normale d'impugnare la sciabola."]) == ["different"]
+    # Barbasetti: a description on a page with no printed caption
+    assert V.verdicts(["Two fencers demonstrating a half-circle movement"], []) == ["not printed"]
+    # Tiboldi scan 44: printed, read again with small differences
+    assert V.verdicts(["Fig. 20. — Diagramma delle parate semplici orizzontali."],
+                      ["Fig. 20. - Diagramma delle parate semplici orizzontali"]) == ["printed"]
+    # a caption read in part still agrees; two figures on one page
+    assert V.verdicts(["Fig. 3. — Épée à pointe d'arrêt.", "Fig. 4. — Le masque."],
+                      ["Fig. 3. Épée à pointe", "Fig. 4. — Le masque."]) == ["printed", "printed"]
+    assert V._lines("NONE") == [] and V._lines("Fig. 1.\nFig. 2.") == ["Fig. 1.", "Fig. 2."]
+
 def _run_plain() -> int:
     fns = sorted((n, f) for n, f in globals().items()
                  if n.startswith("test_") and callable(f))
