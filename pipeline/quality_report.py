@@ -386,8 +386,8 @@ def check_book(folder: str) -> list:
     ex = _pageio.split_pages(open(f"{I}/extracted.txt", encoding="utf-8").read())
     tr = _pageio.split_pages(open(f"{I}/translation.txt", encoding="utf-8").read())
     pn = open(f"{I}/page_numbers.txt", encoding="utf-8").read().split("\n")
-    hmap = json.load(open(f"{I}/headers.json", encoding="utf-8")) \
-        if os.path.exists(f"{I}/headers.json") else {}
+    import _render
+    hmap = _render.header_map(I)          # with two-part heads either way round
     figs = json.load(open(f"{I}/figures.json", encoding="utf-8")) \
         if os.path.exists(f"{I}/figures.json") else {}
     issues = []

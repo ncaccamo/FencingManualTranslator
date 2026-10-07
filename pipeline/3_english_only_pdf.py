@@ -360,10 +360,8 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
             fig_map = json.load(f)
     use_vlm_figs = bool(fig_map) or os.path.exists(f"{int_dir}/figures.json")
 
-    header_map = {}
-    if os.path.exists(f"{int_dir}/headers.json"):
-        with open(f"{int_dir}/headers.json", encoding="utf-8") as f:
-            header_map = json.load(f)
+    # headers.json, plus two-part heads printed the other way round (_render)
+    header_map = _render.header_map(int_dir)
 
     src_doc = None
     ocr_pdf = next((os.path.join(int_dir, f) for f in os.listdir(int_dir)

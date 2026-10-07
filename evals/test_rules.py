@@ -1048,7 +1048,9 @@ def test_reconcile_headers_reorders_swapped_two_part():
     # the two-part head order-swapped and without the tab
     # ("LA MISE EN GARDE FLEURET" instead of "FLEURET\tLA MISE EN
     # GARDE"). FLEURET is confirmed (repeats dozens of times) elsewhere
-    # in the book; reorder onto the canonical root-first form.
+    # in the book. 2026-10-07 review, scans 16/17: the book PRINTS the
+    # halves on alternate sides (left-hand pages "LA MISE EN GARDE ...
+    # FLEURET"), so the head is split at the root but keeps its order.
     parsed = (
         [{"header": "FLEURET", "body": "p" + str(i), "figures": []} for i in range(4)]
         + [{"header": "FLEURET\tLA MISE EN GARDE", "body": "", "figures": []},
@@ -1056,7 +1058,7 @@ def test_reconcile_headers_reorders_swapped_two_part():
     )
     reconcile_headers(parsed)
     assert parsed[4]["header"] == "FLEURET\tLA MISE EN GARDE"
-    assert parsed[5]["header"] == "FLEURET\tLA MISE EN GARDE"
+    assert parsed[5]["header"] == "LA MISE EN GARDE\tFLEURET"
 
 
 def test_reconcile_headers_reorders_even_when_swap_repeats_identically():
@@ -1070,8 +1072,9 @@ def test_reconcile_headers_reorders_even_when_swap_repeats_identically():
            {"header": "LA MISE EN GARDE FLEURET", "body": "", "figures": []}]
     )
     reconcile_headers(parsed)
-    assert parsed[6]["header"] == "FLEURET\tLA MISE EN GARDE"
-    assert parsed[7]["header"] == "FLEURET\tLA MISE EN GARDE"
+    # split at the root, in the printed order (see the test above)
+    assert parsed[6]["header"] == "LA MISE EN GARDE\tFLEURET"
+    assert parsed[7]["header"] == "LA MISE EN GARDE\tFLEURET"
 
 
 def test_reconcile_headers_swap_reorder_skips_bare_title_leaf():
@@ -2741,6 +2744,8 @@ def test_french_title_keeps_escrime():
     assert fix("his Traité d'Fencing pratique") == "his Traité d'Escrime pratique"
     assert fix("(Bibliographie de l’Fencing).") == "(Bibliographie de l’Escrime)."
     assert fix("Fencing and the duel; the art of fencing") == "Fencing and the duel; the art of fencing"
+    # Kirchhoffer: "Parades." came out "Parrhes." three times
+    assert fix("Parrhes. — How to take them. Principal parrhes.") == "Parries. — How to take them. Principal parries."
 
 
 def _rules_mod_fix():
@@ -2766,6 +2771,33 @@ def test_render_paragraph_indent_and_star_divider():
     assert ind("The lesson ends.\n1° Lunge.\n2° Recover.") == [0, 0, 0]
     assert ind("Orchid, Dancer\nThe Golden Waltz") == [0, 0]
     assert ind("First part.\n\n★★\n\nSecond part.") == [0, 0]
+
+
+def test_header_map_covers_two_part_heads_either_way_round():
+    # Kirchhoffer prints "LA MISE EN GARDE / FLEURET" on left-hand pages:
+    # the reversed head reuses the stored English, halves swapped
+    import importlib, json, tempfile
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        R = importlib.import_module("_render")
+    except ImportError:
+        return
+    with tempfile.TemporaryDirectory() as d:
+        json.dump({"FLEURET\tLA MISE EN GARDE": "FOIL\tON-GUARD POSITION", "ESCRIME.": "FENCING."},
+                  open(f"{d}/headers.json", "w"))
+        h = R.header_map(d)
+        assert h["LA MISE EN GARDE\tFLEURET"] == "ON-GUARD POSITION\tFOIL"
+        assert h["ESCRIME."] == "FENCING." and len(h) == 3
+
+
+def test_refusal_ready_to_translate():
+    # Rossi gold run: the whole reply on a near-empty page was the model
+    # asking for text -- it must count as "nothing translated"
+    from _rules import TX
+    is_ref = TX["looks_like_refusal"]
+    assert is_ref("I am ready to translate the text. Please provide the source text")
+    assert is_ref("Please provide the source text you would like translated.")
+    assert not is_ref("I am ready, said the fencer, to translate theory into practice.")
 
 def _run_plain() -> int:
     fns = sorted((n, f) for n, f in globals().items()

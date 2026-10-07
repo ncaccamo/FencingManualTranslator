@@ -81,6 +81,8 @@ def ocr_side(stem: str, side: str, rng, force: bool) -> None:
     lo, hi = rng or (0, len(doc))
     hi = min(hi, len(doc))
     chunks, t0 = [], time.time()
+    import _progress                     # the live view / Homepage tile (pipeline/_progress.py)
+    _progress.start(f"{stem} ({side}, gold)", "OCR", hi - lo)
     for i in range(lo, hi):
         pix = doc[i].get_pixmap(matrix=fitz.Matrix(300 / 72, 300 / 72))
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
@@ -95,6 +97,8 @@ def ocr_side(stem: str, side: str, rng, force: bool) -> None:
             print(f"  {stem}/{side}: {done}/{hi - lo}  ({rate:.1f}s/pg, "
                   f"~{rate * (hi - i - 1) / 60:.0f} min left)")
         out.write_text("\n\n".join(chunks) + "\n", encoding="utf-8")  # incremental
+        _progress.page(i + 1)
+    _progress.finish()
     words = sum(len(c.split()) for c in chunks)
     print(f"  {stem}/{side}: DONE {len(chunks)} pages, {words} words -> {out}")
 

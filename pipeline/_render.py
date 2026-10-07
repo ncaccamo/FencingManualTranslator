@@ -29,6 +29,23 @@ import fitz
 _DEG = {"cw": 270, "ccw": 90, "90": 270, "-90": 90, "180": 180}
 
 
+def header_map(int_dir):
+    """intermediate/headers.json (running head -> English), plus each
+    two-part head the other way round: a book that prints the halves on
+    alternate sides ("LA MISE EN GARDE / FLEURET" on a left-hand page,
+    "FLEURET / LA MISE EN GARDE" on a right-hand one -- Kirchhoffer) uses
+    the same English, halves swapped, without translating it twice."""
+    import json
+    p = os.path.join(int_dir, "headers.json")
+    hmap = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    for k, v in list(hmap.items()):
+        if "\t" in k and "\t" in v:
+            a, b = k.split("\t", 1)
+            ea, eb = v.split("\t", 1)
+            hmap.setdefault(f"{b}\t{a}", f"{eb}\t{ea}")
+    return hmap
+
+
 def _rotate_file(folder):
     stem = Path(folder).name.replace("_translated", "")
     for base in (f"/data/books/{stem}.rotate", f"{folder}/{stem}.rotate"):

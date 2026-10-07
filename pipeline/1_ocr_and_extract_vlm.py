@@ -1262,7 +1262,11 @@ def reconcile_headers(parsed: list, no_head: set = frozenset()) -> None:
             if norm_words[:n] == root_words and _looks_like_section_title(" ".join(words[n:])):
                 return f"{display}\t{' '.join(words[n:])}"
             if norm_words[-n:] == root_words and _looks_like_section_title(" ".join(words[:-n])):
-                return f"{display}\t{' '.join(words[:-n])}"
+                # printed with the section name on the RIGHT (a left-hand
+                # page): keep that order -- Kirchhoffer alternates sides
+                # (scan 16 "LA MISE EN GARDE ... FLEURET", scan 17
+                # "FLEURET ... LA MISE EN GARDE"; 2026-10-07 review)
+                return f"{' '.join(words[:-n])}\t{display}"
         return None
 
     for i, p in enumerate(parsed):

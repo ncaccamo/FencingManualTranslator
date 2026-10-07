@@ -99,14 +99,18 @@ def main():
         sys.exit("no translation server")
     try:
         out, t0 = [], time.time()
+        import _progress                 # the live view / Homepage tile (pipeline/_progress.py)
+        _progress.start(f"{d.name} (gold)", "translation", len(pages))
         for i, fr in enumerate(pages):
             out.append(translate_page(fr))
+            _progress.page(i + 1)
             if (i + 1) % 10 == 0 or i == len(pages) - 1:
                 r = (time.time() - t0) / (i + 1)
                 print(f"  {i + 1}/{len(pages)}  ({r:.1f}s/pg, "
                       f"~{r * (len(pages) - i - 1) / 60:.0f} min left)")
                 (d / "hyp.txt").write_text("\n\n".join(out) + "\n", encoding="utf-8")
         (d / "hyp.txt").write_text("\n\n".join(out) + "\n", encoding="utf-8")
+        _progress.finish()
         print(f"-> {d / 'hyp.txt'}")
     finally:
         _ns["subprocess"].run(["pkill", "-f", "llama-server.*11434"])

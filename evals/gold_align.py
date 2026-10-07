@@ -101,13 +101,17 @@ def align(src: list[str], tgt: list[str]):
 def page_range(text: str, rng) -> str:
     """Keep only the <!--p N--> chunks with lo <= N <= hi (meta.json
     "src_pages"/"ref_pages", inclusive) -- e.g. to leave out a translator's
-    own preface, or the untranslated rest of a partly scanned book."""
+    own preface, or the untranslated rest of a partly scanned book. Several
+    spans as a list of pairs, [[14, 103], [147, 228]]: Rossi's reference
+    prints its synoptic tables as images, so the prose on either side is
+    paired and the tables left out on both sides."""
     if not rng:
         return text
-    lo, hi = rng
+    spans = rng if isinstance(rng[0], (list, tuple)) else [rng]
     chunks = re.split(r"(?=<!--p \d+-->)", text)
     return "".join(c for c in chunks
-                   if (m := re.match(r"<!--p (\d+)-->", c)) and lo <= int(m[1]) <= hi)
+                   if (m := re.match(r"<!--p (\d+)-->", c))
+                   and any(lo <= int(m[1]) <= hi for lo, hi in spans))
 
 
 def main():

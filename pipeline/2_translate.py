@@ -556,6 +556,10 @@ def fix_known_garbles(text: str, src: str = "") -> str:
     # (Masiello 1902, sample 2026-09-30), already italicised. Not a word in
     # any of the languages here, so safe to fix anywhere.
     text = re.sub(r"\briponses?\b", lambda m: _case(m, "riposte"), text, flags=re.I)
+    # "Parrhes" for parades (Kirchhoffer scans 22, 105 -- three times, the
+    # same way). Not a word in any of the languages here.
+    text = re.sub(r"\bparrhes\b", lambda m: "PARRIES" if m.group(0).isupper()
+                  else "Parries" if m.group(0)[0].isupper() else "parries", text, flags=re.I)
     # "the du tac-au-tac riposte": the French article left in front. Only
     # after an English article -- French kept in a translation ("je ne
     # parle pas du tac au tac", LaMarche scan 128) must stay as it is
@@ -1257,7 +1261,10 @@ _PREAMBLE_RE = re.compile(
 # refused -- never a usable page, not even as a low-confidence fallback.
 _REFUSAL_RE = re.compile(
     r"^\s*" + _LEAD_POLITE + r"(?:"
-    r"please provide (?:the|some) (?:text|content)\b|"
+    r"please provide (?:the|some) (?:source )?(?:text|content)\b|"
+    # "I am ready to translate the text. Please provide the source text"
+    # (Rossi gold run, 2026-10-07: a page with nothing to translate)
+    r"i(?: am|'m) ready to translate\b|"
     r"(?:the\s+)?(?:text|content)\s+(?:you\s+)?provided\s+(?:does\s+not|doesn't|is\s+not)\b|"
     r"there (?:is|was) no (?:text|content)\b|"
     r"it (?:seems|appears) (?:that )?(?:there is|no) \b|"

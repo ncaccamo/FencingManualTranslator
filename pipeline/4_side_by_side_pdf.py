@@ -239,10 +239,8 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
     if os.path.exists(f"{int_dir}/figures.json"):
         with open(f"{int_dir}/figures.json", encoding="utf-8") as f:
             fig_map = json.load(f)
-    header_map = {}
-    if os.path.exists(f"{int_dir}/headers.json"):
-        with open(f"{int_dir}/headers.json", encoding="utf-8") as f:
-            header_map = json.load(f)
+    # headers.json, plus two-part heads printed the other way round (_render)
+    header_map = _render.header_map(int_dir)
 
     src = fitz.open(ocr_pdf)
     n = min(len(src), len(translations))
