@@ -17,7 +17,9 @@ progress.json:
      "sec_per_page": mean of the last 10 pages, time waiting for the GPU
                      server left out,
      "pages_per_hour": ..., "eta": "HH:MM" local, "eta_minutes": ...,
-     "started": "...", "updated": "...", "updated_unix": seconds,
+     "started": "...", "updated": "...", in the system's clock (UTC in the
+     container), and as seconds: "started_unix", "updated_unix", "eta_unix"
+     -- readers convert these to their own time zone (progress.sh: DISPLAY_TZ),
      "last": the last page's scan number}
 
 A reader should treat a "running" file whose updated_unix is more than a
@@ -53,7 +55,8 @@ def _write():
            "pages_per_hour": round(3600 / spp) if spp else None,
            "eta": time.strftime("%H:%M", time.localtime(time.time() + left * spp)) if spp else None,
            "eta_minutes": eta_min, "started": r["started"], "updated": _now(),
-           "updated_unix": int(time.time()), "last": r["last"]}
+           "started_unix": int(r["t0"]), "updated_unix": int(time.time()),
+           "eta_unix": int(time.time() + left * spp) if spp else None, "last": r["last"]}
     try:
         os.makedirs(DIR, exist_ok=True)
         tmp = f"{DIR}/progress.json.tmp"

@@ -16,11 +16,15 @@ which depends on BACKEND_MODE in backend.env:
     scripts/progress.sh --every 15      refresh every 15 s
     scripts/progress.sh --history       the speed of past runs
 
+Times are shown in DISPLAY_TZ from backend.env when it is set ("14:39
+Eastern (18:39 UTC)", with DISPLAY_TZ_LABEL as the zone's name), else UTC.
+
 The run part reads processed/_status/progress.json, written by steps 1 and
 2 after every page (pipeline/_progress.py). Standard library only. Every
 check is read-only and passive: it never sends a model request, so it can't
 load a model or reset llama-swap's idle timer.
 """
+import calendar
 import glob
 import json
 import os
@@ -61,6 +65,47 @@ def get(url: str, key: str = "", timeout: float = 3):
         return None, ""
 
 
+# ---- times -----------------------------------------------------------------
+
+def _clock(env: dict):
+    """unix seconds -> "14:39 Eastern (18:39 UTC)" in DISPLAY_TZ (plain UTC
+    without it); a day other than today gets its weekday."""
+    from datetime import datetime, timezone
+    zone, label = None, ""
+    if env.get("DISPLAY_TZ"):
+        try:
+            from zoneinfo import ZoneInfo
+            zone = ZoneInfo(env["DISPLAY_TZ"])
+        except Exception:                      # unknown zone name: stay in UTC
+            zone = None
+    def fmt(ts):
+        if ts is None:
+            return "—"
+        u = datetime.fromtimestamp(ts, timezone.utc)
+        today_u = datetime.now(timezone.utc).date()
+        utc = u.strftime("%H:%M UTC") + ("" if u.date() == today_u else u.strftime(" %a"))
+        if zone is None:
+            return utc
+        l = u.astimezone(zone)
+        name = env.get("DISPLAY_TZ_LABEL") or l.tzname()
+        day = "" if l.date() == datetime.now(zone).date() else l.strftime("%a ")
+        return f"{day}{l.strftime('%H:%M')} {name} ({utc})"
+    return fmt
+
+
+def _unix(p: dict, key: str):
+    """A time from progress.json as unix seconds (older files have only the
+    text, in the container's clock -- UTC)."""
+    if p.get(f"{key}_unix") is not None:
+        return p[f"{key}_unix"]
+    if key == "eta" and p.get("eta_minutes") is not None:
+        return p.get("updated_unix", time.time()) + 60 * p["eta_minutes"]
+    try:
+        return calendar.timegm(time.strptime(p[key], "%Y-%m-%d %H:%M:%S"))
+    except (KeyError, ValueError, TypeError):
+        return None
+
+
 # ---- the run ---------------------------------------------------------------
 
 def run_lines() -> list:
@@ -80,10 +125,12 @@ def run_lines() -> list:
            + (f"   (last: scan {p['last']})" if p.get("last") else "")]
     if p.get("sec_per_page"):
         out.append(f"speed    {p['sec_per_page']} s/page  ({p['pages_per_hour']} pages/h, last 10 pages)")
+    clock = _clock(backend_env())
     if p.get("eta") and p["state"] in ("running", "waiting for GPU"):
         h, m = divmod(p["eta_minutes"], 60)
-        out.append(f"ETA      {p['eta']}  (in {h} h {m} min)" if h else f"ETA      {p['eta']}  (in {m} min)")
-    out.append(f"started  {p['started']}   updated {p['updated']}")
+        out.append(f"ETA      {clock(_unix(p, 'eta'))}  (in {h} h {m} min)" if h
+                   else f"ETA      {clock(_unix(p, 'eta'))}  (in {m} min)")
+    out.append(f"started  {clock(_unix(p, 'started'))}   updated {clock(_unix(p, 'updated'))}")
     return out
 
 

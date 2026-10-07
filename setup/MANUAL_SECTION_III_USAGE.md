@@ -484,6 +484,10 @@ Every check is read-only. The view never sends a model request, so it
 can't load a model or reset llama-swap's idle timer. It needs only
 `python3` on the host.
 
+Times are shown in your own time zone when `DISPLAY_TZ` is set in
+`backend.env` (e.g. `DISPLAY_TZ=America/New_York`, `DISPLAY_TZ_LABEL=Eastern`
+→ "14:39 Eastern (18:39 UTC)"); without it, in UTC, like the logs.
+
 The view says **STALLED?** when a "running" step hasn't finished a page
 in 15 minutes: the process may have died without saying so. Each finished
 step adds a line to `processed/_status/history.jsonl` (pages, minutes,
