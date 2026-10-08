@@ -29,6 +29,68 @@ import fitz
 _DEG = {"cw": 270, "ccw": 90, "90": 270, "-90": 90, "180": 180}
 
 
+# ---- figure captions ---------------------------------------------------------
+# Step 1 records a caption per picture; sometimes the OCR model wrote a
+# description of the picture instead of the printed caption, or left a piece
+# of its own prompt on the end. Checked on all 455 recorded captions,
+# 2026-10-07 (review-notes/CAPTION_CHECK_SAMPLE.md).
+_CAPTION_JUNK = [
+    # "Fig. 11 -- the picture is essentially the whole page (little or no
+    # running text)": the OCR prompt's own wording (Edom x4, Masiello 1887 x6)
+    re.compile(r"\s*-{1,2}\s*the picture (?:is essentially|sits on)\b.*$", re.I | re.S),
+    # an image tag: "— ![Notre garde ...](../images/page_127.png)" (Dubois
+    # 82), mid-caption with text after it (Rossi 213), or cut off at the
+    # end: "... Rossi. — ![Vel" (Rossi 285)
+    re.compile(r"\s*[—–-]*\s*!\[[^\]]*\]\([^)]*\)"),
+    re.compile(r"\s*[—–-]*\s*!\[[^\]\n]*$"),
+]
+_PRINTED_SHAPE = re.compile(r"(?i)^(?:fig(?:ura|ure)?\.?|tav(?:ola)?\.?|pl(?:anche)?\.?)\s*[\divxlc]+\b")
+_DESCRIBES = re.compile(
+    r"(?i)^(?:immagine|figura che|disegno (?:di|che)|due figure mostranti|"
+    r"diagram (?:of|showing)|photograph of|illustration of|image of|picture of|drawing of)\b"
+    r"|\b(?:che mostra|mostranti|raffigurante|con etichette|labell?ed|drawing of|depicting|demonstrating)\b")
+_ENGLISH = re.compile(r"(?i)\b(?:the|of a|with (?:his|her|a|the)|and the|in a|is|are|showing|holding|"
+                      r"wearing|person|man|fencers?)\b")
+
+
+def clean_caption(text):
+    """A recorded caption without the OCR prompt's fragments / image tags."""
+    t = text or ""
+    for rx in _CAPTION_JUNK:
+        t = rx.sub("", t)
+    return t.strip()
+
+
+def describes_picture(text):
+    """True when a recorded caption is the OCR model's description of the
+    picture, not a caption the book prints: "Two fencers demonstrating a
+    parry and counterattack", "Immagine di una mano che impugna la spada",
+    "Diagram showing a triangle with labeled points". A caption shaped like
+    a printed one ("Fig. 55. — Figure théorique. — Montrant que ...") is
+    kept unless it says it is a drawing / image of something."""
+    t = clean_caption(text)
+    if not t:
+        return False
+    if _PRINTED_SHAPE.match(t) and not re.search(r"(?i)\b(?:drawing|image|photograph|picture) of\b", t):
+        return False
+    if _DESCRIBES.search(t):
+        return True
+    return len({m.group(0).lower() for m in _ENGLISH.finditer(t)}) >= 2
+
+
+def figure_caption(fig):
+    """The caption to print for a figures.json record ("" = none): the
+    reviewer's always; otherwise the recorded one, cleaned, unless it is a
+    description of the picture rather than a printed caption."""
+    en = (fig.get("caption_en") or "").strip()
+    src = (fig.get("caption") or "").strip()
+    if fig.get("decided"):
+        return en or src
+    if describes_picture(src) or describes_picture(en if not src else ""):
+        return ""
+    return clean_caption(en or src)
+
+
 def header_map(int_dir):
     """intermediate/headers.json (running head -> English), plus each
     two-part head the other way round: a book that prints the halves on

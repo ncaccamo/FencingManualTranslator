@@ -227,7 +227,7 @@ def missing_captions(figs, body):
     text = norm(body)
     out = []
     for f in figs:
-        cap = (f.get("caption_en") or f.get("caption") or "").strip()
+        cap = _render.figure_caption(f)
         if f.get("decided") and cap and " ".join(norm(cap).split()[:5]) not in text:
             out.append(cap)
     return out
@@ -319,9 +319,8 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
             # render just that -- the plate is on the facing scan, so a
             # "see facing page" pointer would only be noise. No caption ->
             # say whether the original page is blank.
-            caps = [f.get("caption_en") or f.get("caption")
-                    for f in fig_map.get(str(i), [])
-                    if f.get("caption_en") or f.get("caption")]
+            # cleaned; a description of the picture is not a caption (_render)
+            caps = [c for c in (_render.figure_caption(f) for f in fig_map.get(str(i), [])) if c]
             if caps:
                 yy = y + 4
                 for c in caps:

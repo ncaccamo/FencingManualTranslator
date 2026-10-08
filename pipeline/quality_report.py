@@ -428,7 +428,12 @@ def check_book(folder: str) -> list:
             add(s, NOTE, "ocr", f"{src.count('[?]')} illegible spots marked by the OCR")
         for f in figs.get(str(i), []):
             cap = (f.get("caption") or "").strip()
-            if cap and not (f.get("caption_en") or "").strip():
+            if cap and not f.get("decided") and _render.describes_picture(cap):
+                # not printed: the OCR model described the picture. The PDFs
+                # leave it out; if the book does print a caption here, set it
+                add(s, NOTE, "caption", f"recorded caption left out -- it describes the "
+                    f"picture ({cap[:50]!r}); if a caption is printed, set [pages.{s}] caption")
+            elif cap and not (f.get("caption_en") or "").strip():
                 add(s, CHECK, "caption", f"plate caption not translated: {cap[:50]!r}")
 
     # terminology consistency (book level, reported separately)

@@ -2819,6 +2819,36 @@ def test_verify_captions_verdicts():
                       ["Fig. 3. Épée à pointe", "Fig. 4. — Le masque."]) == ["printed", "printed"]
     assert V._lines("NONE") == [] and V._lines("Fig. 1.\nFig. 2.") == ["Fig. 1.", "Fig. 2."]
 
+
+def test_caption_descriptions_dropped_and_junk_cleaned():
+    # 2026-10-07: step 1 sometimes recorded the OCR model's description of a
+    # picture as its caption, or left its prompt / an image tag on a caption
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        R = importlib.import_module("_render")
+    except ImportError:
+        return
+    for d in ("Two fencers demonstrating a parry and counterattack",          # Barbasetti
+              "Due fencers demonstrating the fourth parry",
+              "Immagine di una mano impugnando una sciabola in posizione normale",  # Masiello
+              "Diagram showing a triangle with labeled points P, F', and F",
+              "Figure 1: A drawing of a person in a fencing stance",          # Robaglia
+              "A man in a fencing stance with his right leg forward and left leg back"):
+        assert R.describes_picture(d), d
+    for c in ("Fig. 55. — Figure théorique. — Montrant que dans la fente",   # Dubois: printed
+              "Molinello di testa a sinistra", "Le gant", "Veste. Masque.",
+              "PREMIER MOUVEMENT DE LA MISE EN GARDE.",
+              "Fig. 87. — Application de notre technique par deux de mes élèves",
+              "Due schermatori in posizione di legamento"):   # ambiguous: kept, not guessed
+        assert not R.describes_picture(c), c
+    assert R.clean_caption("Fig. 11 -- the picture is essentially the whole page (little or no running text)") == "Fig. 11"
+    assert R.clean_caption("FIG. 35. Velocimetro schermistico Rossi. — ![Vel") == "FIG. 35. Velocimetro schermistico Rossi."
+    assert R.clean_caption("bassa. — ![x](a.png) — (1) Chiamasi") == "bassa. — (1) Chiamasi"
+    assert R.figure_caption({"caption": "Two fencers demonstrating a parry", "caption_en": "Two fencers…"}) == ""
+    assert R.figure_caption({"caption": "Two fencers demonstrating x", "decided": True}) == "Two fencers demonstrating x"
+    assert R.figure_caption({"caption": "Le gant", "caption_en": "The glove"}) == "The glove"
+
 def _run_plain() -> int:
     fns = sorted((n, f) for n, f in globals().items()
                  if n.startswith("test_") and callable(f))

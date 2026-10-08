@@ -137,7 +137,7 @@ def band_for_figure(fig, src_page, body_words=0):
     substantial translated body, in which case a small drawing/vignette
     isn't worth blanketing the (untranslated) source scan over the reading:
     skip it (the side-by-side PDF still shows the original)."""
-    cap = (fig.get("caption_en") or fig.get("caption") or "").strip()
+    cap = _render.figure_caption(fig)     # cleaned; "" for a description of the picture
     if src_page is None:
         return None, cap
     prof = find_figure_band(src_page)
@@ -411,9 +411,7 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
                 if caption_only_page and not is_empty:
                     cap = tr
                 else:
-                    cap = " ".join(
-                        (f.get("caption_en") or f.get("caption") or "").strip()
-                        for f in figs_here).strip()
+                    cap = " ".join(_render.figure_caption(f) for f in figs_here).strip()
                 bf = band_for_figure(figs_here[0], src_page,
                                      0 if is_empty else len(tr.split()))
                 # F8b: don't let a decorative vignette on a text page swallow
