@@ -1,31 +1,31 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Nicholas A. Caccamo
-"""A second look at figure captions: is the caption step 1 recorded for a
-picture really printed in the book, or did the OCR model describe the
-picture instead? Asks the OCR model, page by page, for the captions printed
-with the page's pictures -- and nothing else -- and compares.
+"""A second reading of figure captions, for the review report: what caption
+is actually printed with each picture?
 
     python3 /app/verify_captions.py <stem> [<stem> ...]       (or --all)
     python3 /app/verify_captions.py <stem> --pages 32,75
     python3 /app/verify_captions.py <stem> [...] --summary    what was found
 
-Why: step 1's prompt asks for "that picture's own caption, transcribed
-exactly as printed", or "no caption"; sometimes the model writes a
-description instead ("Two fencers demonstrating a half-circle movement",
-"Immagine di una mano che impugna la spada" -- Barbasetti, Masiello;
-2026-10-07). The English-only PDF printed those as captions.
+Step 1 records a caption per picture, but sometimes misses a printed one
+(read as running text, then lost -- Kirchhoffer scan 75), garbles it, or
+writes a description of the picture instead. This reads only the small
+areas where a caption can be -- each caption box the layout detector
+found next to a picture, and the space around a recorded picture with no
+caption box -- turned upright when the box is tall and narrow (a sideways
+caption on a sideways plate, Masiello 1887 scan 487). Reading the whole
+page let the model drift into the running text (first version,
+2026-10-07: right in 3 of 12 sample cases).
 
-Answers go to intermediate/caption_check.json:
-    {scan: {"read": [caption lines as printed] | [] for none,
-            "figures": [{"recorded": ..., "verdict": ...}, ...]}}
-verdict: "printed"     the second reading agrees with the recorded caption
-         "not printed" the second reading found no caption on the page
-         "different"   it found a caption, but not the recorded one
-Pages already checked are skipped. This only records; nothing in the book
-changes. (A second reading is a witness, not proof: read_folios.py's was
-right 11 times in 16. Agreement is what makes a caption trustworthy.)
-Captions decided in the overrides file are not checked -- a person set them.
+Answers go to intermediate/caption_read.json:
+    {scan: {"crops": [{"kind": "caption" | "around picture", "read": text}],
+            "recorded": [...], "verdicts": ["printed" | "unconfirmed", ...],
+            "found": [printed caption text no recorded caption matches]}}
+Pages already read are skipped. It only records; the review report lists
+what to fix by hand ("caption printed here but not recorded", "recorded
+caption differs from the printed one"). Captions set in the overrides file
+are not read -- a person set them.
 """
 import difflib
 import json
@@ -36,13 +36,13 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _overrides  # noqa: E402
 
-PROMPT = ("This is one page of an old printed book. It has one or more pictures on it "
-          "(engravings, photographs, diagrams). For each picture, transcribe the caption that "
-          "is PRINTED with it -- the line or lines directly below or above the picture that "
-          "name or explain it, often starting with Fig., Pl., Planche, Schéma, Figura or Tav. "
-          "-- exactly as printed, in the book's own language. Write one caption per line, top "
-          "to bottom. Do not describe the pictures and do not copy the page's running text. "
-          "If no caption is printed with any picture, answer exactly: NONE")
+PROMPT = ("This image is a small part of a printed book page. If it contains printed caption "
+          "text -- the line or lines that name or explain a picture, for example \"Fig. 3. — "
+          "...\", \"Pl. 2\", \"Le gant.\" -- transcribe that text exactly as printed, in the "
+          "book's own language, one line per caption. Do not describe any picture. If there is "
+          "no printed text, answer exactly: NONE")
+PIC_MIN, CAP_MIN = 0.6, 0.5          # layout detector scores
+AROUND_ABOVE, AROUND_BELOW = 0.06, 0.10   # page-height share read around a picture
 
 
 def _norm(s: str) -> str:
@@ -63,14 +63,43 @@ def same_caption(recorded: str, read: str) -> bool:
 
 
 def verdicts(recorded: list, read: list) -> list:
+    """Per recorded caption: "printed" when a reading of the page matches it
+    (a whole reading, or the lines of one joined -- Edom 39's labels),
+    else "unconfirmed"."""
+    pool = list(read) + [" ".join(read)] if read else []
+    return ["printed" if any(same_caption(r, x) for x in pool) else "unconfirmed" for r in recorded]
+
+
+def _lines(answer: str) -> list:
+    if re.fullmatch(r"\W*none\W*", answer or "", re.I):
+        return []
+    return [l.strip(" -*•") for l in answer.split("\n")
+            if l.strip(" -*•") and not re.fullmatch(r"none\.?", l.strip(), re.I)]
+
+
+def _dedupe(boxes: list) -> list:
     out = []
-    for r in recorded:
-        if not read:
-            out.append("not printed")
-        elif any(same_caption(r, x) for x in read):
-            out.append("printed")
-        else:
-            out.append("different")
+    for b in boxes:
+        x0, y0, x1, y1 = b[2]
+        if not any(abs(x0 - o[2][0]) < .02 and abs(y0 - o[2][1]) < .02 and
+                   abs(x1 - o[2][2]) < .02 and abs(y1 - o[2][3]) < .02 for o in out):
+            out.append(b)
+    return out
+
+
+def regions(page_layout: dict, has_record: bool) -> list:
+    """[(kind, (x0, y0, x1, y1) fractions)] to read on one page."""
+    bx = page_layout.get("boxes", [])
+    pics = _dedupe([b for b in bx if b[0] == "picture" and b[1] >= PIC_MIN])
+    caps = _dedupe([b for b in bx if b[0] == "caption" and b[1] >= CAP_MIN])
+    if not pics and not has_record:
+        return []
+    out = [("caption", tuple(b[2])) for b in caps]
+    if not caps and has_record:
+        for b in pics:
+            x0, y0, x1, y1 = b[2]
+            out.append(("around picture", (max(0, x0 - .05), max(0, y0 - AROUND_ABOVE),
+                                           min(1, x1 + .05), min(1, y1 + AROUND_BELOW))))
     return out
 
 
@@ -80,7 +109,7 @@ def _ask(ns, img):
     try:
         r = requests.post(f"{bc.ocr_base_url()}/v1/chat/completions",
                           headers={"Content-Type": "application/json", **bc.auth_headers()},
-                          json={"model": ns["VLM_MODEL_NAME"], "temperature": 0, "max_tokens": 300,
+                          json={"model": ns["VLM_MODEL_NAME"], "temperature": 0, "max_tokens": 200,
                                 "messages": [{"role": "user", "content": [
                                     {"type": "text", "text": PROMPT},
                                     {"type": "image_url",
@@ -91,28 +120,35 @@ def _ask(ns, img):
         return None
 
 
-def _lines(answer: str) -> list:
-    if re.fullmatch(r"\W*none\W*", answer, re.I):
-        return []
-    return [l.strip(" -*•") for l in answer.split("\n") if l.strip(" -*•") and not re.fullmatch(r"none\.?", l.strip(), re.I)]
+def read_region(ns, page_img, box):
+    """Read one area; a tall, narrow one is read turned both ways and the
+    answer with more letters kept (sideways caption)."""
+    W, H = page_img.size
+    x0, y0, x1, y1 = box
+    pad = 0.012
+    crop = page_img.crop((int(max(0, x0 - pad) * W), int(max(0, y0 - pad) * H),
+                          int(min(1, x1 + pad) * W), int(min(1, y1 + pad) * H)))
+    if crop.height > 1.5 * crop.width:
+        answers = [_ask(ns, crop.rotate(a, expand=True)) for a in (90, 270)]
+        answers = [a for a in answers if a is not None]
+        if not answers:
+            return None
+        return max(answers, key=lambda a: len(re.findall(r"[^\W\d_]", "\n".join(_lines(a)))))
+    return _ask(ns, crop)
 
 
 def summary(stem: str) -> None:
-    I = f"/data/processed/{stem}_translated/intermediate"
-    p = f"{I}/caption_check.json"
+    p = f"/data/processed/{stem}_translated/intermediate/caption_read.json"
     if not os.path.exists(p):
-        print(f"{stem}: not checked yet")
+        print(f"{stem}: not read yet")
         return
     from collections import Counter
     data = json.load(open(p, encoding="utf-8"))
-    c = Counter(f["verdict"] for v in data.values() for f in v["figures"])
-    print(f"{stem}: {sum(c.values())} caption(s) on {len(data)} page(s): " +
-          ", ".join(f"{n} {k}" for k, n in c.most_common()))
-    for s in sorted(data, key=int):
-        for f in data[s]["figures"]:
-            if f["verdict"] != "printed":
-                print(f"   scan {s}: {f['verdict']}: recorded {f['recorded'][:60]!r}"
-                      f" | read {' / '.join(data[s]['read'])[:60]!r}")
+    c = Counter(v for d in data.values() for v in d["verdicts"])
+    found = sum(1 for d in data.values() if d["found"])
+    print(f"{stem}: {len(data)} page(s) read; recorded captions: " +
+          (", ".join(f"{n} {k}" for k, n in c.most_common()) or "none") +
+          f"; pages with a printed caption not recorded: {found}")
 
 
 def main():
@@ -135,38 +171,57 @@ def main():
     if ns["start_vlm_server"]() is None:
         sys.exit("✗ cannot reach / start the OCR server")
     import _progress
+    import _pageio
     for stem in stems:
         I = f"/data/processed/{stem}_translated/intermediate"
-        fp = f"{I}/figures.json"
-        if not os.path.exists(fp):
-            print(f"{stem}: no figures.json")
+        if not os.path.exists(f"{I}/layout.json") or not os.path.exists(f"{I}/extracted.txt"):
+            print(f"{stem}: no layout.json / extracted.txt -- run step 1 first")
             continue
-        figs = json.load(open(fp, encoding="utf-8"))
+        lay = json.load(open(f"{I}/layout.json", encoding="utf-8"))["pages"]
+        figs = json.load(open(f"{I}/figures.json", encoding="utf-8")) if os.path.exists(f"{I}/figures.json") else {}
+        ex = _pageio.split_pages(open(f"{I}/extracted.txt", encoding="utf-8").read())
         decided = {s for s, v in _overrides.load(stem)["pages"].items() if "caption" in v}
-        pages = {int(k) + 1: [f.get("caption") for f in v if f.get("caption")]
-                 for k, v in figs.items() if any(f.get("caption") for f in v)}
-        pages = {s: c for s, c in pages.items() if s not in decided}
+        todo_all = {}
+        for k, pl in lay.items():
+            s = int(k) + 1
+            if s in decided:
+                continue
+            reg = regions(pl, bool(figs.get(k)))
+            if reg:
+                todo_all[s] = reg
         if spec:
-            pages = {s: c for s, c in pages.items() if s in set(_overrides.parse_page_spec(spec))}
-        out_p = f"{I}/caption_check.json"
+            want = set(_overrides.parse_page_spec(spec))
+            todo_all = {s: r for s, r in todo_all.items() if s in want}
+        out_p = f"{I}/caption_read.json"
         out = json.load(open(out_p, encoding="utf-8")) if os.path.exists(out_p) else {}
-        todo = [s for s in sorted(pages) if str(s) not in out]
-        print(f"{stem}: {len(todo)} page(s) with captions to check ({len(pages) - len(todo)} already)")
+        todo = [s for s in sorted(todo_all) if str(s) not in out]
+        print(f"{stem}: {len(todo)} page(s) to read ({len(todo_all) - len(todo)} already)")
         if not todo:
             continue
         doc = fitz.open(f"{I}/{stem}_OCR.pdf")
-        _progress.start(f"{stem} (caption check)", "OCR", len(todo))
+        _progress.start(f"{stem} (caption reading)", "OCR", len(todo))
         for s in todo:
             pix = doc[s - 1].get_pixmap(matrix=fitz.Matrix(300 / 72, 300 / 72))
-            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-            ans = _ask(ns, ns["preprocess_for_ocr"](img))
-            if ans is None:
-                print(f"  scan {s}: no answer (kept unchecked)")
+            img = ns["preprocess_for_ocr"](Image.frombytes("RGB", [pix.width, pix.height], pix.samples))
+            crops, failed = [], False
+            for kind, box in todo_all[s]:
+                ans = read_region(ns, img, box)
+                if ans is None:
+                    failed = True
+                    break
+                crops.append({"kind": kind, "box": [round(x, 4) for x in box], "read": "\n".join(_lines(ans))})
+            if failed:
+                print(f"  scan {s}: no answer (kept unread)")
                 continue
-            read = _lines(ans)
-            v = verdicts(pages[s], read)
-            out[str(s)] = {"read": read, "figures": [{"recorded": r, "verdict": x} for r, x in zip(pages[s], v)]}
-            print(f"  scan {s}: {', '.join(v)}", flush=True)
+            read = [c["read"] for c in crops if c["read"]]
+            recorded = [f.get("caption") for f in figs.get(str(s - 1), []) if f.get("caption")]
+            body = _norm(ex[s - 1].split("BODY_TEXT:", 1)[-1]) if s <= len(ex) else ""
+            # printed text no recorded caption matches -- and not already in the
+            # page's own text (a caption box can also be running text)
+            found = [r for r in read if not any(same_caption(c, r) for c in recorded)
+                     and " ".join(_norm(r).split()[:5]) not in body]
+            out[str(s)] = {"crops": crops, "recorded": recorded,
+                           "verdicts": verdicts(recorded, read), "found": found}
             with open(out_p, "w", encoding="utf-8") as fh:
                 json.dump(out, fh, ensure_ascii=False, indent=1)
             _progress.page(s)

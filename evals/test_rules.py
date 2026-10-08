@@ -2801,23 +2801,29 @@ def test_refusal_ready_to_translate():
 
 
 def test_verify_captions_verdicts():
-    # 2026-10-07: step 1 sometimes recorded the OCR model's description of a
-    # picture as its caption. The second reading's answer decides:
+    # 2026-10-07: the second, caption-only reading confirms a recorded caption
+    # when one of its readings (or its lines joined) names the same caption
     import importlib
     sys.path.insert(0, str(_PIPELINE))
     V = importlib.import_module("verify_captions")
-    # Masiello Sciabola scan 32: a description; the book prints another caption
+    # Masiello Sciabola scan 32: a description vs the printed caption
     assert V.verdicts(["Immagine di una mano impugnando una sciabola in posizione normale"],
-                      ["Modo normale d'impugnare la sciabola."]) == ["different"]
-    # Barbasetti: a description on a page with no printed caption
-    assert V.verdicts(["Two fencers demonstrating a half-circle movement"], []) == ["not printed"]
+                      ["Modo normale d'impugnare la sciabola."]) == ["unconfirmed"]
+    assert V.verdicts(["Two fencers demonstrating a half-circle movement"], []) == ["unconfirmed"]
     # Tiboldi scan 44: printed, read again with small differences
     assert V.verdicts(["Fig. 20. — Diagramma delle parate semplici orizzontali."],
                       ["Fig. 20. - Diagramma delle parate semplici orizzontali"]) == ["printed"]
-    # a caption read in part still agrees; two figures on one page
+    # Edom scan 39: the labels of one figure, read one per line
+    assert V.verdicts(["Prime — Tierce — Seconde — Quinte"], ["Prime", "Tierce", "Seconde", "Quinte"]) == ["printed"]
     assert V.verdicts(["Fig. 3. — Épée à pointe d'arrêt.", "Fig. 4. — Le masque."],
                       ["Fig. 3. Épée à pointe", "Fig. 4. — Le masque."]) == ["printed", "printed"]
     assert V._lines("NONE") == [] and V._lines("Fig. 1.\nFig. 2.") == ["Fig. 1.", "Fig. 2."]
+    # where to read: caption boxes; around a recorded picture with none
+    page = {"boxes": [["picture", 0.96, [0.2, 0.4, 0.4, 0.7]], ["caption", 0.7, [0.26, 0.72, 0.37, 0.74]],
+                      ["caption", 0.5, [0.26, 0.72, 0.37, 0.74]]]}
+    assert V.regions(page, True) == [("caption", (0.26, 0.72, 0.37, 0.74))]
+    assert V.regions({"boxes": [["picture", 0.9, [0.2, 0.4, 0.4, 0.7]]]}, True)[0][0] == "around picture"
+    assert V.regions({"boxes": [["text", 0.9, [0, 0, 1, 1]]]}, False) == []
 
 
 def test_caption_descriptions_dropped_and_junk_cleaned():

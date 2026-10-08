@@ -436,6 +436,31 @@ def check_book(folder: str) -> list:
             elif cap and not (f.get("caption_en") or "").strip():
                 add(s, CHECK, "caption", f"plate caption not translated: {cap[:50]!r}")
 
+    # the second, caption-only reading of the page (verify_captions.py):
+    # a printed caption step 1 didn't record, or recorded differently
+    _cr = f"{I}/caption_read.json"
+    if os.path.exists(_cr):
+        try:
+            _dec = {p for p, v in _overrides.load(os.path.basename(folder)[:-len("_translated")])
+                    ["pages"].items() if "caption" in v}
+        except _overrides.OverridesError:
+            _dec = set()
+        for s_, d in json.load(open(_cr, encoding="utf-8")).items():
+            s_ = int(s_)
+            if s_ in _dec:
+                continue
+            kept = [r for r in d.get("recorded", []) if not _render.describes_picture(r)]
+            for f_ in d.get("found", []):
+                one = " ".join(f_.split())
+                if kept:
+                    # usually the recorded one is wrong (Masiello 1887 scan 487:
+                    # "Ensuite de lever" for the sideways "Invito di terza")
+                    add(s_, CHECK, "caption", f"recorded caption {kept[0][:45]!r} differs from the "
+                        f"printed {one[:60]!r} -- set [pages.{s_}] caption to the printed one")
+                else:
+                    add(s_, CHECK, "caption", f"caption printed here but not recorded: {one[:70]!r} "
+                        f"-- set [pages.{s_}] caption if it belongs to the picture")
+
     # terminology consistency (book level, reported separately)
     for name, fr, en in CONSISTENCY:
         seen = defaultdict(list)
