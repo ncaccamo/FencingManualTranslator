@@ -77,6 +77,22 @@ def _lines(answer: str) -> list:
             if l.strip(" -*•") and not re.fullmatch(r"none\.?", l.strip(), re.I)]
 
 
+# text a caption area can hold that is not a caption: the scanner's
+# watermark, library stamps and bookplates, a bare number (2026-10-08 run:
+# most of Edom's / Prévost's / Gomard's "found" were these)
+_NOISE = re.compile(r"(?i)digiti[sz]ed by|google|biblioth[eèé]que nationale|\bbnf\b|library|"
+                    r"universit[yàé]|ex[ -]?libris|librairie|\bstamp\b")
+
+
+def is_noise(text: str, header: str = "") -> bool:
+    t = " ".join((text or "").split())
+    letters, digits = len(re.findall(r"[^\W\d_]", t)), len(re.findall(r"\d", t))
+    if letters < 4 or _NOISE.search(t) or digits > letters:   # "V. 8 39004 FOEG": a shelfmark
+        return True
+    h = _norm(header)
+    return bool(h) and h != "none" and (_norm(t) in h or h in _norm(t))
+
+
 def _dedupe(boxes: list) -> list:
     out = []
     for b in boxes:
@@ -218,8 +234,9 @@ def main():
             body = _norm(ex[s - 1].split("BODY_TEXT:", 1)[-1]) if s <= len(ex) else ""
             # printed text no recorded caption matches -- and not already in the
             # page's own text (a caption box can also be running text)
+            head = (re.search(r"(?m)^HEADER: (.*)$", ex[s - 1]) or [None, ""])[1] if s <= len(ex) else ""
             found = [r for r in read if not any(same_caption(c, r) for c in recorded)
-                     and " ".join(_norm(r).split()[:5]) not in body]
+                     and " ".join(_norm(r).split()[:5]) not in body and not is_noise(r, head)]
             out[str(s)] = {"crops": crops, "recorded": recorded,
                            "verdicts": verdicts(recorded, read), "found": found}
             with open(out_p, "w", encoding="utf-8") as fh:

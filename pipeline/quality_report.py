@@ -440,6 +440,7 @@ def check_book(folder: str) -> list:
     # a printed caption step 1 didn't record, or recorded differently
     _cr = f"{I}/caption_read.json"
     if os.path.exists(_cr):
+        import verify_captions as _vc
         try:
             _dec = {p for p, v in _overrides.load(os.path.basename(folder)[:-len("_translated")])
                     ["pages"].items() if "caption" in v}
@@ -450,16 +451,22 @@ def check_book(folder: str) -> list:
             if s_ in _dec:
                 continue
             kept = [r for r in d.get("recorded", []) if not _render.describes_picture(r)]
-            for f_ in d.get("found", []):
-                one = " ".join(f_.split())
-                if kept:
-                    # usually the recorded one is wrong (Masiello 1887 scan 487:
-                    # "Ensuite de lever" for the sideways "Invito di terza")
-                    add(s_, CHECK, "caption", f"recorded caption {kept[0][:45]!r} differs from the "
-                        f"printed {one[:60]!r} -- set [pages.{s_}] caption to the printed one")
-                else:
-                    add(s_, CHECK, "caption", f"caption printed here but not recorded: {one[:70]!r} "
-                        f"-- set [pages.{s_}] caption if it belongs to the picture")
+            head = (re.search(r"(?m)^HEADER: (.*)$", ex[s_ - 1]) or [None, ""])[1] if s_ <= len(ex) else ""
+            found = [" ".join(f_.split()) for f_ in d.get("found", []) if not _vc.is_noise(f_, head)]
+            if not found:
+                continue
+            # one item per page: a plate with several captioned figures
+            # (Enrichetti scan 143) is one thing to fix, not eight
+            shown = " | ".join(found)
+            shown = shown if len(shown) <= 110 else shown[:107] + "..."
+            if kept:
+                # usually the recorded one is wrong (Masiello 1887 scan 487:
+                # "Ensuite de lever" for the sideways "Invito di terza")
+                add(s_, CHECK, "caption", f"recorded caption {kept[0][:45]!r} differs from what "
+                    f"is printed: {shown!r} -- set [pages.{s_}] caption to the printed one")
+            else:
+                add(s_, CHECK, "caption", f"caption printed here but not recorded: {shown!r} "
+                    f"-- set [pages.{s_}] caption if it belongs to the picture")
 
     # terminology consistency (book level, reported separately)
     for name, fr, en in CONSISTENCY:
