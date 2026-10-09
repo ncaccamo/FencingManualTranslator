@@ -443,7 +443,7 @@ def check_book(folder: str) -> list:
         import verify_captions as _vc
         try:
             _dec = {p for p, v in _overrides.load(os.path.basename(folder)[:-len("_translated")])
-                    ["pages"].items() if "caption" in v}
+                    ["pages"].items() if "caption" in v or "caption_en" in v}   # either is a decision
         except _overrides.OverridesError:
             _dec = set()
         for s_, d in json.load(open(_cr, encoding="utf-8")).items():

@@ -196,7 +196,7 @@ def main():
         lay = json.load(open(f"{I}/layout.json", encoding="utf-8"))["pages"]
         figs = json.load(open(f"{I}/figures.json", encoding="utf-8")) if os.path.exists(f"{I}/figures.json") else {}
         ex = _pageio.split_pages(open(f"{I}/extracted.txt", encoding="utf-8").read())
-        decided = {s for s, v in _overrides.load(stem)["pages"].items() if "caption" in v}
+        decided = {s for s, v in _overrides.load(stem)["pages"].items() if "caption" in v or "caption_en" in v}
         todo_all = {}
         for k, pl in lay.items():
             s = int(k) + 1
