@@ -2189,10 +2189,42 @@ print("="*60)
 import _books
 _USAGE = """usage: python3 /app/2_translate.py <stem> [<stem> ...] | --all
          python3 /app/2_translate.py --pages <stem> <scan pages>   e.g. 12,40-42
+         python3 /app/2_translate.py --flagged <stem> <words> [--list]   e.g. risposta, or kind:split
          python3 /app/2_translate.py --captions <stem> [<stem> ...] | --all
-  translates new books, and the pages whose source changed since translation"""
+  translates new books, and the pages whose source changed since translation;
+  --flagged retranslates the pages whose review-report checks mention <words>
+  (or are of that kind) -- after a prompt or [terms] fix for that mistake"""
+
+
+def _flagged_pages(stem: str, words: str) -> str:
+    """Scan pages whose review-report CHECKs match: "kind:<kind>", or words
+    found in the item's text (case ignored) -- e.g. "risposta" for the
+    "'answer' against the glossary (risposta → riposte)" items."""
+    import json as _json
+    p = f"/data/processed/{stem}_translated/intermediate/quality_report.json"
+    if not os.path.exists(p):
+        sys.exit(f"✗ {stem}: no review report yet -- run quality_report.py {stem}")
+    items = [x for x in _json.load(open(p, encoding="utf-8")) if x.get("level") == "CHECK"]
+    if words.startswith("kind:"):
+        hit = [x for x in items if x["kind"] == words[5:]]
+    else:
+        hit = [x for x in items if words.lower() in (x["kind"] + " " + x["detail"]).lower()]
+    pages = sorted({x["scan"] for x in hit if x["scan"] > 0})
+    if not pages:
+        sys.exit(f"⊘ {stem}: no review-report check matches {words!r}")
+    print(f"{stem}: {len(pages)} page(s) flagged for {words!r}: {','.join(map(str, pages))}")
+    return ",".join(map(str, pages))
+
+
 # which books, before any server starts (_books.py: names or --all; a
 # book marked finished is left alone without --unlock)
+if len(sys.argv) > 1 and sys.argv[1] == "--flagged":
+    if len(sys.argv) < 4:
+        sys.exit(_USAGE)
+    _fl = _flagged_pages(sys.argv[2], sys.argv[3])
+    if "--list" in sys.argv:              # show the pages only, translate nothing
+        sys.exit(0)
+    sys.argv = [sys.argv[0], "--pages", sys.argv[2], _fl] + sys.argv[4:]
 if len(sys.argv) > 1 and sys.argv[1] == "--pages":
     if len(sys.argv) < 3:
         sys.exit(_USAGE)
