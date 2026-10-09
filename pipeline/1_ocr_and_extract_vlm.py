@@ -731,6 +731,16 @@ def dehyphenate_across_pages(parsed: list) -> None:
         parsed[i + 1]["body"] = (lead.rstrip() + "\n\n" if lead.strip() else "") + m.group(2).lstrip()
 
 
+# a page whose text ends on a title before a name ("M.", "MM.", "Mme.") ends
+# mid-sentence: the name is on the next page
+_HONORIFIC_END = r"(?:^|[\s(«\u201c])(?:M|MM|Mme|Mmes|Mlle|Mlles|Me|Mgr|Dr|St|Ste|Sig|Sigg|Sig\.ra)\.\Z"
+
+
+def _not_after_title(text, m):
+    """A sentence-end match that isn't the full stop of a title ("MM. Anatole")."""
+    return not (m.group(0).startswith(".") and re.search(_HONORIFIC_END[:-2] + r"\Z", text[:m.start() + 1]))
+
+
 def join_split_sentences(parsed: list) -> int:
     """A sentence split across a page break is otherwise translated as two
     unrelated fragments, and a short fragment often comes out wrong: "Bien"
@@ -763,8 +773,11 @@ def join_split_sentences(parsed: list) -> int:
         main, foot = (a[:fn.start()].rstrip(), a[fn.start():]) if fn else (a, "")
         # only . ! ? (or an ellipsis), optionally closed by a quote or bracket,
         # end a sentence -- not ; or : ("ce petit prévôt, lui dis-je;" |
-        # "entre vos mains, il deviendrait..." is one sentence, Jacob 26/27)
-        if not main or re.search(r"[.!?\u2026][\u00bb\u201d\")\]\s]*\Z", main):
+        # "entre vos mains, il deviendrait..." is one sentence, Jacob 26/27).
+        # Nor a title before a name: "... le poids, MM." | "Anatole de La Forge
+        # et Ranc." (Jacob 25/26; 13 such breaks in 11 books, 2026-10-09)
+        honorific = re.search(_HONORIFIC_END, main) if main else None
+        if not main or (re.search(r"[.!?\u2026][\u00bb\u201d\")\]\s]*\Z", main) and not honorific):
             continue
         last_line = main.rsplit("\n", 1)[-1]
         # a contents line (dotted leader to a page number) or a table row --
@@ -784,13 +797,15 @@ def join_split_sentences(parsed: list) -> int:
         cont = re.match(r"[\u00ab\"][ \u00a0]*(?=[a-z\u00e0-\u00ff])", rest)
         if cont:
             rest = rest[cont.end():]
-        if not re.match(r"[a-z\u00e0-\u00ff]", rest):
+        if not re.match(r"[a-z\u00e0-\u00ff]", rest) and not (honorific and re.match(r"[A-Z\u00c0-\u00de]", rest)):
             continue
         # the sentence's start on page i: after the last sentence end or paragraph break
-        cut = max([m.end() for m in re.finditer(r"[.!?\u2026][\u00bb\u201d\")\]]*\s+|\n\s*\n", main)] or [0])
+        cut = max([m.end() for m in re.finditer(r"[.!?\u2026][\u00bb\u201d\")\]]*\s+|\n\s*\n", main)
+                   if _not_after_title(main, m)] or [0])
         tail = main[cut:].strip()
         # its end on page j: up to the first sentence end or paragraph break
-        m = re.search(r"[.!?\u2026][\u00bb\u201d\")\]]*(?=\s|\Z)|\n\s*\n", rest)
+        m = next((x for x in re.finditer(r"[.!?\u2026][\u00bb\u201d\")\]]*(?=\s|\Z)|\n\s*\n", rest)
+                  if _not_after_title(rest, x)), None)
         head = rest[:m.end()].strip() if m else rest.strip()
         if not tail or not head or "\u27e6" in tail + head or "<table" in tail + head:
             continue

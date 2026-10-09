@@ -2855,6 +2855,19 @@ def test_caption_descriptions_dropped_and_junk_cleaned():
     assert R.figure_caption({"caption": "Two fencers demonstrating x", "decided": True}) == "Two fencers demonstrating x"
     assert R.figure_caption({"caption": "Le gant", "caption_en": "The glove"}) == "The glove"
 
+
+def test_join_across_an_honorific():
+    # Jacob 25/26: "... qui m'en diminueront le poids, MM." | "Anatole de La
+    # Forge et Ranc. A trois ..." -- "MM." is not a full stop; 13 such breaks
+    # in 11 books (Baudry 61 "nous dit M." | "Lafaugère ...")
+    p = [{"body": "si je ne le partageais avec deux hommes qui m'en diminueront le poids, MM."},
+         {"body": "Anatole de La Forge et Ranc.\nA trois on peut faire ce que seul on n'oserait pas."}]
+    assert join_split_sentences(p) == 1
+    assert "MM. Anatole de La Forge et Ranc." in p[0]["body"] + p[1]["body"]
+    # a real sentence end before a capital is still left alone
+    p = [{"body": "Il tirait au corps."}, {"body": "Anatole arriva."}]
+    assert join_split_sentences(p) == 0
+
 def _run_plain() -> int:
     fns = sorted((n, f) for n, f in globals().items()
                  if n.startswith("test_") and callable(f))
