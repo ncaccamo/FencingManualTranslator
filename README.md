@@ -111,6 +111,9 @@ bash scripts/setup.sh          # checks the host, builds the image (~20-30 min)
 # put scans in ./books/ as <author>_<year>_<short-title>.pdf, then name them:
 scripts/run_full_pipeline.sh smith_1875_fencing
 scripts/progress.sh            # in another terminal: pages done, speed, ETA
+
+# several books, unattended, in order (pause / stop / reorder any time):
+scripts/queue.py add book smith_1875_fencing jones_1880_sabre && scripts/queue.py start
 ```
 
 Running steps individually, reviewing a book, and troubleshooting:
