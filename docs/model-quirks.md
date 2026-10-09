@@ -80,6 +80,20 @@ legible, so the model guesses.
   a real "20 21 22" corroborates itself regardless of a later offset.
 - `page_numbers.txt` records the result, one line per page; `[n]` means
   "inferred, not a printed number".
+- *2026-10-09, roman numerals and the second read:* the model confuses
+  numeral strokes with digits on a small, worn folio — Jacob-André "II" →
+  "12", a stamped "III" → "103" — and in a margin-only read still misses
+  by one stroke (XIII for XII, viii for ix). The margin-only read
+  (`read_folios.py`) also had a crop bug: a fixed share of the image
+  height stopped above the head line on photographed pages. Now cut from
+  the layout detector's printed area; on 137 labelled pages
+  (`evals/folio_choice_test.py`) it confirms 40/47 printed numbers with
+  none wrong or invented. In a margin it also names chapter numbers
+  ("CHAPITRE VIII"), dates ("1883"), shelf marks ("267") and embossed
+  prices ("300") — the rule that a reading counts only if it equals the
+  sequence's number is what keeps those out. **Don't** ask a choice
+  question ("II, III or IV?"): it picks an offered value even when none is
+  printed (8 of 90 blank margins) or all are wrong.
 
 - *2026-09-18:* a plate leaf's OWN engraver's plate number could still
   get trusted as if it were a real folio, when it happened to match

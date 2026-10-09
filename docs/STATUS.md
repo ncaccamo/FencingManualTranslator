@@ -100,6 +100,20 @@ the operator's business and is not tracked here.)
    speculative decoding with a small draft model (often 1.5-2x). Either
    needs a model selection test run first.
 7. **`rocm714` backend** — wired, not compiled; `docker/ROCM714_NOTES.md`.
+8. **Page numbers: re-read hidden numbers with the margin crop — code in,
+   re-read pending (2026-10-09).** A page number step 1 couldn't confirm is
+   hidden ("[13]"); `read_folios.py` asks the OCR model about the margins
+   alone and `apply_folio_witness()` shows the number only if a margin names
+   exactly it. Its old full-width strip could stop above the head line on
+   photographed pages (Jacob-André scan 14 "II" missed); the margins are
+   now cut from the layout detector's printed area, top and bottom read
+   separately. Measured with `evals/folio_choice_test.py` (137 labelled
+   pages): 40/47 printed numbers confirmed, 0 wrong, 0 invented on 90
+   pages that print none; misses are one-stroke misreads (XIII for XII,
+   viii for ix) and a numeral under a stamp. A choice question ("II, III or
+   IV?") was rejected: 8 invented numbers, and it picks wrong values when
+   only wrong ones are offered. Next: re-read the hidden pages
+   (`read_folios.py --all`, ~1-1.5 h GPU), then `read_folios.py --apply`.
 
 ## Not yet tested
 

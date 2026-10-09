@@ -518,7 +518,9 @@ def apply_folio_witness(nums: list, strips: dict) -> list:
     intermediate/folio_strips.json) -- names exactly that number. Never
     hides or changes a number: a reading that disagrees, or "NONE", leaves
     the page as it was (the strip read alone is wrong too often to decide:
-    11 of 16 right on the test pages, 2026-10-01). Roman readings are shown
+    11 of 16 right on the test pages, 2026-10-01; with the margin crops of
+    2026-10-09 it still names chapter numbers, dates and shelf marks --
+    evals/folio_choice_test.py). Roman readings are shown
     in roman, in the case of the neighbouring page numbers."""
     out = list(nums)
 
@@ -540,14 +542,18 @@ def apply_folio_witness(nums: list, strips: dict) -> list:
             want = prev[1] + (i - prev[0])
         else:
             continue
-        read = re.sub(r"[^0-9A-Za-z]", "", str(strips.get(str(i + 1), "")))
-        if not want or not read or read.upper() == "NONE":
+        # a reading is one string (the old full-width strip) or a list of
+        # the top and bottom margins read separately (read_folios.py since
+        # 2026-10-09): either margin naming exactly the number confirms it
+        got = strips.get(str(i + 1), "")
+        reads = [re.sub(r"[^0-9A-Za-z]", "", str(g)) for g in (got if isinstance(got, list) else [got])]
+        reads = [r for r in reads if r and r.upper() != "NONE"]
+        if not want or not reads:
             continue
-        if read.isdigit():
-            if int(read) == want:
-                out[i] = str(want)
+        if any(r.isdigit() and int(r) == want for r in reads):
+            out[i] = str(want)
             continue
-        if _roman_to_int(read) == want:
+        if any(not r.isdigit() and _roman_to_int(r) == want for r in reads):
             near = next((x for k in range(1, 6) for x in (nums[i - k] if i - k >= 0 else "",
                                                           nums[i + k] if i + k < len(nums) else "")
                          if re.fullmatch(r"[ivxlcdmIVXLCDM]+", x or "")), "")

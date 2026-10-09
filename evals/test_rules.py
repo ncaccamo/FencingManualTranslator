@@ -2440,6 +2440,15 @@ def test_folio_witness_only_confirms_never_hides():
     assert apply_folio_witness(["116", "", "118"], {"2": "117"}) == ["116", "117", "118"]
     assert apply_folio_witness(["116", "", "[118]"], {"2": "117"}) == ["116", "", "[118]"]
     assert apply_folio_witness(["116", "", "120"], {"2": "117"}) == ["116", "", "120"]
+    # per-margin readings [top, bottom] (2026-10-09): either margin naming
+    # the number confirms it (Jacob-André scan 14 "II"); a chapter number,
+    # date or shelf mark in a margin (evals/folio_choice_test.py) and a
+    # one-stroke misread ("XIII" for XII) change nothing
+    assert apply_folio_witness(["I", "[2]", "[3]"], {"2": ["II", "NONE"], "3": ["NONE", "NONE"]}) == ["I", "II", "[3]"]
+    assert apply_folio_witness(["XI", "[12]", "[81]", "[12]"],
+                               {"2": ["XIII", "NONE"], "3": ["VIII", "NONE"], "4": ["1883", "267"]}) \
+        == ["XI", "[12]", "[81]", "[12]"]
+    assert apply_folio_witness(["449", "[450]"], {"2": ["NONE", "450"]}) == ["449", "450"]
 
 
 def test_plain_math_from_ocr_latex():
