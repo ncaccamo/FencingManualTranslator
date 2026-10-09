@@ -223,8 +223,26 @@ def backend_lines() -> list:
 
 # ---- views -----------------------------------------------------------------
 
+def queue_lines() -> list:
+    """The work queue (scripts/queue.py), when one is in use."""
+    q = os.path.join(STATUS, "queue.txt")
+    if not os.path.exists(q):
+        return []
+    jobs = [l.strip() for l in open(q, encoding="utf-8") if l.strip() and not l.startswith("#")]
+    try:
+        st = json.load(open(os.path.join(STATUS, "queue_state.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        st = {}
+    if st.get("current"):
+        nxt = [j for j in jobs if j != st["current"]]
+        return [f"queue    running: {st['current']}", f"         then {len(nxt)} more"
+                + (f": {', '.join(nxt[:3])}{' ...' if len(nxt) > 3 else ''}" if nxt else "")]
+    return [f"queue    not running; {len(jobs)} job(s) waiting (scripts/queue.py start)"] if jobs else []
+
+
 def screen() -> str:
-    return "\n".join(run_lines() + [""] + backend_lines())
+    q = queue_lines()
+    return "\n".join(run_lines() + ([""] + q if q else []) + [""] + backend_lines())
 
 
 def history() -> str:
