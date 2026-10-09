@@ -340,6 +340,19 @@ retranslate = true
 docker exec fmt-translator python3 /app/2_translate.py --pages <stem>
 ```
 
+**Pages the review report flags.** After fixing a mistake at its source (a
+prompt rule, a `[terms]` entry), retranslate just the pages the report
+flags for it:
+
+```bash
+docker exec fmt-translator python3 /app/2_translate.py --flagged <stem> risposta --list   # which pages
+docker exec fmt-translator python3 /app/2_translate.py --flagged <stem> risposta          # retranslate them
+```
+
+`<words>` is matched against the report's check text ("'answer' against the
+glossary (risposta → riposte)"), or `kind:<kind>` takes every check of that
+kind (`kind:split`). The queue has the same job: `queue.py add flagged …`.
+
 Marked pages are done once per version of their source text
 (`intermediate/retranslated.json` keeps a fingerprint), so the flag can stay
 in the file: rerunning costs nothing until that page's extracted text
@@ -347,6 +360,21 @@ changes. Only the named pages change. Footnote first-use is worked out from
 the rest of the book, and the header/title harmonization and your overrides
 are re-applied afterwards. Rebuild the PDFs as above. GPU cost is about 10–30
 seconds per page.
+
+### Looking at one page
+
+To see why a page is flagged, look at what the pipeline had for it, not at a
+similar page from another book:
+
+```bash
+docker exec fmt-translator python3 /app/show_page.py <stem> <scan page>
+```
+
+prints the OCR's raw reply, what step 1 made of it (page number, running
+head, text), the English, the page's figures and captions (and what the
+caption reading found), the layout detector's boxes, the review report's
+items and your decisions for that page, and writes two pictures to
+`processed/_audit/show/`: the scan page and the side-by-side sheet as built.
 
 ## III.5c — Manual corrections: which tool for which problem
 
@@ -444,17 +472,70 @@ adding dozens of `[[fix]]` entries. The corrections file is for what is
 genuinely particular to one book: its engraved captions, its print damage,
 its one odd heading.
 
-## III.6 — Processing several books at once
+## III.5d — Reviewing a book, start to finish
 
-Name them all: `scripts/run_full_pipeline.sh <stem> <stem> …`, or one step
-at a time with the same list. Each named book goes through each step in
-turn. `--all` takes every book in `books/` (step 1) or `processed/` (the
-other steps), skipping books marked finished.
+1. **Report and checklist.** After the book's run, its review report is in
+   `processed/<stem>_translated/<stem> — Review Report.md`. For a checklist to
+   tick off and write your own findings in:
+   `docker exec fmt-translator python3 /app/review_sheet.py <stem>` (paste it
+   where you keep your notes).
+2. **Book-wide settings first.** If the report's *About this book* says the
+   running head is probably the page number, check two pages and set
+   `[book] running_heads = false` (`docs/per-book-files.md`), then queue
+   `reprocess <stem>` and `book <stem>` (the changed pages are retranslated).
+3. **Terms.** A word the book uses in its own sense, or that came out wrong
+   throughout: `[terms]` in the overrides file, then `flagged <stem> <word>`
+   or `pages <stem> …` in the queue.
+4. **Page by page.** For each check: `show_page.py <stem> <scan>`, then the
+   fix from III.5c — an override (page number, running head, caption), a
+   `[[fix]]`, or a hand edit (`edit_page.py`). For captions,
+   `review_sheet.py <stem> --captions` prints the entries to fill in.
+5. **Read.** About 15 pages spread through the book, side by side, plus front
+   matter and plates. What you find goes in your checklist; a problem on many
+   pages or in several books is a pipeline issue to report, not a list of fixes.
+6. **Apply and rebuild:** `apply_overrides.py <stem>`, then queue `pdfs <stem>`
+   (or run steps 3 and 4). Check the report again: decided pages drop off.
+7. **Finish:** `[book] final = true` in the overrides file (nothing changes the
+   book by accident after this), then `python3 scripts/release.py <stem>` for
+   the files to share.
 
-Step 2 leaves already-translated books alone unless their source text
-changed. It retranslates only the changed pages, and skips a book with
-none (III.2), so adding or reprocessing one book never costs GPU time on
-the others.
+## III.6 — Processing several books: the work queue
+
+For more than one book, or for fixes while books run, use the queue. It runs
+unattended, one job after another, and can be paused, stopped, reordered and
+added to while it runs:
+
+```bash
+scripts/queue.py add book smith_1875_fencing jones_1880_sabre   # whole books, in this order
+scripts/queue.py add flagged smith_1875_fencing risposta --front # an urgent fix goes first
+scripts/queue.py start                                           # runs in the background
+scripts/queue.py list                                            # running / queued / last finished
+scripts/progress.sh                                              # the page-by-page view (III.7)
+scripts/queue.py pause      # stop after the current job
+scripts/queue.py stop       # stop now -- the job stays first and resumes on the next start
+scripts/queue.py move 3 1   # reorder;  scripts/queue.py remove 2
+```
+
+| Job | What it does |
+|---|---|
+| `book <stem>` | OCR a new book (step 1) -- or re-derive the text of one already read, with the current code -- then the caption reading, translation (only pages new or whose text changed), a second try for pages that failed, PDFs and the review report |
+| `pages <stem> 12,40-42` | retranslate those scan pages, then PDFs + report |
+| `flagged <stem> <words>` | retranslate the pages the review report flags for `<words>` (or `kind:split`), then PDFs + report (III.5b) |
+| `pdfs <stem>` | rebuild the PDFs and the report |
+| `captions <stem>` | the caption reading, then the report |
+| `reprocess <stem>` | re-derive step 1's text (no GPU), then the report |
+
+The queue is the file `processed/_status/queue.txt` (one job per line, top
+first; you can edit it by hand). Finished jobs are listed in
+`queue_done.txt`, the steps' output is in `queue.log`. PDFs are built only
+from committed code (the cover records the revision): with uncommitted
+changes under `pipeline/`, a job's PDFs are skipped and logged -- commit, then
+queue `pdfs <stem>`. A book marked finished is refused (its job is logged as
+failed). In remote mode the queue waits for the GPU system to answer before
+each GPU step; step 2 also waits out an outage mid-page.
+
+`scripts/run_full_pipeline.sh <stem> …` still runs steps 1→4 once, in the
+foreground, for a quick single run.
 
 ## III.7 — Long runs: watching progress
 
@@ -517,6 +598,8 @@ All in `scripts/`, run from anywhere.
 | Script | Purpose |
 |---|---|
 | `run_full_pipeline.sh <stem> …` | Recreate container, run 1→2→3→4 and the review report on the named books (`--all` for every book), print summary. The normal entry point. |
+| `queue.py` | The work queue: `add` books and fixes, `start`, `pause`, `stop`, `list`, `move`, `remove` (III.6). |
+| `dry_run.py <stem> … / --all` | Before reprocessing for real after a change to step 1's code: what re-deriving would change in each book (pages, page numbers, running heads, words) — no GPU, books untouched. See `docs/evaluation-and-tuning.md`. |
 | `release.py <stem>` | Copy a finished book's PDFs to `release/` under readable names (`Florio-1844-The-Science-of-Fencing-Explained-English.pdf`); `--dry-run` to preview. See `docs/per-book-files.md`. |
 | `progress.sh` | Live view of the running step (book, pages done/left, speed, ETA) and of the local GPU or remote GPU system (III.7). |
 | `startup_docker.sh` | `systemctl start docker` + `docker compose up -d`. Start-of-session. |

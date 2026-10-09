@@ -1034,6 +1034,54 @@ other 16, so the transcribed caption (`[pages.N] caption` /
 `caption_en`) shows. Where a reviewer has set a plate's caption, an OCR
 copy of it in the text is always wrong — a rule candidate if it recurs.
 
+### 1.14 A description of the picture recorded as its caption (2026-10-07)
+
+**Seen:** the prompt asks for a picture's caption "transcribed exactly as
+printed", or "no caption"; sometimes the model writes what it sees instead —
+"Two fencers demonstrating a parry and counterattack", "Due fencers
+demonstrating the fourth parry", "Immagine di una mano impugnando una
+sciabola", "Diagram showing a triangle with labeled points P, F', and F"
+(36 of 455 recorded captions, mostly Barbasetti's phone scan and the
+Masiello books). The English-only PDF printed them as captions. Also seen:
+a piece of the prompt stuck to a real caption ("Fig. 11 -- the picture is
+essentially the whole page (little or no running text)", Edom ×4,
+Masiello 1887 ×6) and an image tag ("— ![Vel…", Rossi 285).
+**Fix:** `_render.figure_caption()` — the one place both PDFs take a caption
+from — drops a caption worded as a description (English describing words
+in a French/Italian book, "che mostra", "diagram showing", "labeled" …;
+a printed shape like "Fig. 55. — …" is kept) and strips the prompt
+fragments and image tags. The review report notes each dropped one, in
+case the book does print a caption there. A reviewer's caption always wins.
+
+### 1.15 Missing and garbled captions: a second, caption-only reading (2026-10-08)
+
+**Seen:** a printed caption read as running text and then lost (Kirchhoffer
+pdf 76), captions garbled (Masiello 1887's sideways "Invito di terza" as
+"Ensuite de lever"), figure numbers dropped (Tiboldi "Fig. 22. —").
+**Fix:** `verify_captions.py` reads only the caption boxes the layout
+detector marks next to pictures, and the space around a recorded picture
+without one, turned upright when the box is tall and narrow. A first
+version read whole pages and drifted into the running text (right in 3 of
+12 sample cases) — crops fixed that. It only records; the review report
+lists "caption printed but not recorded" / "recorded caption differs" as
+checks for the reviewer to set, after filtering what a caption box can also
+hold: "Digitized by Google", library stamps, bookplates, shelfmarks, bare
+numbers, the running head.
+
+### 1.16 The page number taken for a running head (2026-10-05)
+
+**Seen:** in books that print only a page number at the top (Florio's
+"~ 3 ~", Bruno's centred "19", Lambertini's corner folio; later Descalzi,
+Blengini, Enrichetti, Robaglia), the layout detector labels the number
+`page_header`: "the page prints a running head, but none is shown" on
+nearly every page, and a chapter title the OCR filed as a header was carried
+onto the following pages (Florio "CAPO II." on 22 pages).
+**Fix:** `[book] running_heads = false` in the overrides file; the review
+report spots the pattern (small head boxes where the OCR reads no head, on
+80 % or more of them, at least 20 pages) and says so under *About this
+book*. Robaglia (19 such pages) fell just under the threshold — check the
+scan when a book's report shows many "running head, but none is shown".
+
 ## Part 2 — Translation (Qwen3.8-27B i1-Q4_K_S, port 11434)
 
 Qwen3.8-27B is the default since 2026-09-25 (translation model selection
@@ -1545,6 +1593,26 @@ entries and rerun a page of that book so they're retranslated.
 "the épée". Decided: "The Épée" (overrides file). Only when the word stands
 alone — longer heads keep the article.
 
+### 2.13 *risposta* as "answer" / "response" (2026-10-09)
+
+**Seen:** 98 pages in 11 Italian books: "RESPONSES THAT CAN BE EXECUTED
+FROM THE FINAL PARRY", "one will answer with the glide of *seconda*". The
+glossary rule was there but named only the noun.
+**Fix:** the Italian prompt's rule now covers the plural, headings and the
+verb (*rispondere* → riposte), and says when "answer" is right (a reply to
+a letter or a challenge — Marchionni's dueling rules keep it). Pages
+retranslated with `2_translate.py --flagged <stem> risposta`.
+
+### 2.14 Repeatable misspellings and chatter (2026-10-07)
+
+- "Parrhes" for *parades* (Kirchhoffer, 3 times) → `fix_known_garbles()`.
+- A French book title half translated: "Traité d'Fencing pratique"
+  (Joseph-Renaud), "Bibliographie de l'Fencing" (Barbasetti) — the glossary
+  turned *escrime* into "Fencing" inside a title. `fix_known_garbles()`
+  restores "Escrime" after d' / l'.
+- "I am ready to translate the text. Please provide the source text" as the
+  whole reply on a near-empty page → counted as a refusal (2.2).
+
 ## Part 3 — shared / architectural
 
 - **Page separator** — `pipeline/_pageio.py::PAGE_SEP` (U+001E). Every
@@ -1580,5 +1648,14 @@ alone — longer heads keep the article.
 - **The review report respects reviewer decisions.** A running head set in
   the overrides file (`[pages.N] header`) is not re-flagged against the
   layout detector — the decision is the answer.
-- **`books/_skip/` is not read by anything.** A finished or out-of-scope
-  book moves there; to work on it again, move it back to `books/`.
+- **`books/_skip/`** holds books with an English translation in print. Their
+  overrides, meta and page edits are still found there (a book moved after
+  its run keeps its decisions — La Boëssière); step 1 doesn't pick up a scan
+  from there.
+- **Page breaks, three more cases (2026-10-05..09).** A word broken at a
+  hyphen across a page break keeps the hyphen when the book prints that
+  compound whole elsewhere ("contre-dégagement", "procès-verbal"); a title
+  before a name doesn't end a sentence ("… le poids, MM." | "Anatole de La
+  Forge et Ranc.", 13 breaks in 11 books); the reorder of a two-part
+  running head keeps the printed order (Kirchhoffer alternates sides:
+  "LA MISE EN GARDE … FLEURET" on left-hand pages).

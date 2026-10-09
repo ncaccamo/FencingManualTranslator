@@ -21,10 +21,18 @@ that was already signed off.
 | tool | what it does |
 |---|---|
 | `evals/test_rules.py` | frozen input → output cases for the code that doesn't call a model (page numbers, running heads, sentence join, term enforcement, cover lines, …): one per bug ever fixed. Runs with or without pytest. **Run after every change; must stay green.** |
+| `scripts/dry_run.py <stem> … / --all` | **before reprocessing for real after a change to step 1's code** (parsing, running heads, page numbers, sentence join, captions): re-derives copies of the books with the current code and reports, per book, the pages, page numbers and running heads that would change, and whether text only *moved* across a page break or words were added / removed. Seconds per book, no GPU, books untouched; `processed/_audit/dry_run/report.md` |
 | `evals/freeze.py <stem>` | snapshot a reviewed book's `translation.txt`, `extracted.txt`, `figures.json`, `headers.json` and `page_numbers.txt` into `evals/baselines/<stem>/`, with a `MANIFEST.json` (commit, time) |
 | `evals/check.py [stem] [--quiet]` | compare the current output with every baseline: pages, page numbers, figures and headers that changed (with diffs), plus a before/after health table. Exits non-zero on any change; writes `evals/reports/<time>.md` |
 | `evals/metrics.py` | per-book health counts (pages with French left in, all-caps pages, unconfirmed page numbers, figures, italics, footnotes). No model calls |
 | `evals/_rules.py` | loads the helper functions out of the pipeline scripts without running them (the scripts aren't importable). Fails loudly if the scripts are restructured |
+
+A change to step 1's code goes: `test_rules.py` green → `dry_run.py --all`
+→ read every book's changes (each should be what the fix intends; "words
+added / removed" in a book you didn't mean to touch is the warning) →
+`reprocess_extracted.py` the affected books → the queue's `book <stem>`
+retranslates only the pages whose text changed. Every fix in this file's
+history that skipped the dry run broke a book that had been signed off.
 
 ```bash
 python3 evals/freeze.py <stem>              # after a book's PDFs pass review

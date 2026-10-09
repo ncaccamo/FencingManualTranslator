@@ -83,6 +83,12 @@ no ROCm/Vulkan). `scripts/setup.sh --remote` + `docker-compose.override.yml`
   unless `--unlock`. Keep it that way: finished books must not be
   reprocessed by accident.
 
+- Tools for running and reviewing without ad-hoc scripts: `scripts/queue.py`
+  (the work queue — use it instead of one-off shell loops), `pipeline/show_page.py`
+  (one page's data), `2_translate.py --flagged`, `scripts/dry_run.py` (what a
+  step-1 code change would do to every book — run it before reprocessing),
+  `pipeline/review_sheet.py` (checklist section / caption entries).
+
 ## Workflow notes
 - Ask for my input on decisions you think need it.
 - Make changes freely based on feedback.
