@@ -121,8 +121,9 @@ the operator's business and is not tracked here.)
    IV?") was rejected: 8 invented numbers, and it picks wrong values when
    only wrong ones are offered. Re-read all books (~2,300 pages, 1 h
    GPU): 69 numbers in 20 books confirmed and shown, each checked against
-   the scan first; none wrong. New books get it by running
-   `read_folios.py <stem>` then `--apply` after step 1.
+   the scan first; none wrong. The queue's book job now runs it after
+   step 1 (`scripts/queue.py`); by hand: `read_folios.py <stem>`, then
+   `--apply`.
 
 ## Not yet tested
 

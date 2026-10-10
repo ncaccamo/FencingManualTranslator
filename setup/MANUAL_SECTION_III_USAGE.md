@@ -518,7 +518,7 @@ scripts/queue.py move 3 1   # reorder;  scripts/queue.py remove 2
 
 | Job | What it does |
 |---|---|
-| `book <stem>` | OCR a new book (step 1) -- or re-derive the text of one already read, with the current code -- then the caption reading, translation (only pages new or whose text changed), a second try for pages that failed, PDFs and the review report |
+| `book <stem>` | OCR a new book (step 1) -- or re-derive the text of one already read, with the current code -- then the caption reading, a second read of the page numbers step 1 couldn't confirm (`read_folios.py`, shown only where it names exactly the expected number), translation (only pages new or whose text changed), a second try for pages that failed, PDFs and the review report |
 | `pages <stem> 12,40-42` | retranslate those scan pages, then PDFs + report |
 | `flagged <stem> <words>` | retranslate the pages the review report flags for `<words>` (or `kind:split`), then PDFs + report (III.5b) |
 | `pdfs <stem>` | rebuild the PDFs and the report |

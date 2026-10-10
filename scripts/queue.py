@@ -22,7 +22,8 @@ the system doing the run. Runs on the host (it drives the container).
 
 A "book" job: OCR (step 1) for a new book -- or, for a book already read,
 its text re-derived with the current code (reprocess_extracted.py; seconds,
-no GPU) -- then the caption reading, translation (only pages new or whose
+no GPU) -- then the caption reading, the second read of unconfirmed page
+numbers (read_folios.py; pages already read are skipped), translation (only pages new or whose
 text changed), a second try for pages that failed (OCR errors, untranslated
 pages -- up to 2 rounds each), the PDFs and the review report.
 
@@ -193,6 +194,11 @@ class Runner:
                     return False
             self.heal_ocr(stem)
             self.run("verify_captions.py", stem, gpu=True)
+            # second look at the page numbers step 1 couldn't confirm (margins
+            # only), then show the ones it confirms -- page numbers aren't part
+            # of a page's fingerprint, so this never causes a retranslation
+            if self.run("read_folios.py", stem, gpu=True) == 0:
+                self.run("read_folios.py", stem, "--apply")
             if self.run("2_translate.py", stem, gpu=True) and self.run("2_translate.py", stem, gpu=True):
                 return False
             self.heal_translation(stem)
