@@ -42,9 +42,11 @@ python3 evals/check.py                      # "these N pages of book X changed"
 python3 evals/freeze.py <stem> --force      # accept a change as an improvement
 ```
 
-**Same input, same output.** At the production temperature (0.3) the
-model rewords every page slightly, so a plain rerun diff is noise. For a
-check run set `EVAL_DETERMINISTIC=1` (optionally `EVAL_SEED=<n>`, default
+**Same input, same output.** Production translates each page's first
+try at temperature 0 (since 2026-10-10; it was 0.3), so a rerun mostly
+reproduces itself (35 of 36 test pages word for word) -- but retries run
+hotter and the model server isn't bit-exact, so for a check run set
+`EVAL_DETERMINISTIC=1` (optionally `EVAL_SEED=<n>`, default
 1234): step 2 then uses temperature 0 and that seed on every request, so
 an unchanged book reproduces exactly and every difference `check.py`
 reports is real. Retries still run, but each attempt is the same, so a

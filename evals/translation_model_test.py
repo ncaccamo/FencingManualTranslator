@@ -100,7 +100,14 @@ def _pages():
 def run(label, current=False):
     os.makedirs(OUT, exist_ok=True)
     ns = None if current else _load_tx()
-    res = {"label": label, "model": os.environ.get("TRANSLATION_MODEL_NAME", ""), "pages": {}}
+    first_temp = os.environ.get("FIRST_TEMP")
+    if ns and first_temp:
+        # test another first-try temperature (step 2's FIRST_TRY_TEMPERATURE);
+        # the hotter retries (0.55, 0.8) stay as they are
+        ns["FIRST_TRY_TEMPERATURE"] = float(first_temp)
+        ns["translate_with_llama"].__defaults__ = (float(first_temp),)
+    res = {"label": label, "model": os.environ.get("TRANSLATION_MODEL_NAME", ""),
+           "first_temp": first_temp or "step 2 default", "pages": {}}
     for prefix, folder, scan, why, page in _pages():
         key = f"{prefix}:{scan}"
         if current:

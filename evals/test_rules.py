@@ -2519,6 +2519,21 @@ def test_report_point_cut_and_cutting_blow():
     assert "colpo di punta → thrust" in hits(Q.TERM_RULES_IT, "colpo di punta", "a point cut")
 
 
+def test_first_try_at_temperature_zero():
+    # 2026-10-10: the first try (and the single-shot heading / table / oversized
+    # calls, which use the default) runs at temperature 0 -- repeatable wording,
+    # scored no worse than 0.3 against published translations. Retries stay hotter.
+    import inspect
+    from _rules import TX
+    assert TX["FIRST_TRY_TEMPERATURE"] == 0.0
+    assert inspect.signature(TX["translate_with_llama"]).parameters["temperature"].default == 0.0
+    import os
+    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline", "2_translate.py"),
+               encoding="utf-8").read()
+    page = src[src.index("def translate_page("):]
+    assert "temp = FIRST_TRY_TEMPERATURE" in page and "temp = 0.3 + 0.25 * attempt" in page
+
+
 def test_translation_waits_out_a_server_outage():
     # 2026-10-02: the GPU system lost power and 33 pages were kept untranslated
     # within minutes. Remote mode now waits for the server and resends; a

@@ -35,9 +35,19 @@ TRANSLATION_MODEL_NAME = (os.environ.get("TRANSLATION_MODEL_NAME")
                           or Path(TRANSLATION_MODEL).stem)
 LLAMA_API_URL = f"{bc.translate_base_url()}/v1/chat/completions"
 
+# First try at temperature 0 (2026-10-10, was 0.3 since the 7B days): the
+# model's most likely translation, so a retranslated page keeps its wording
+# (35 of 36 test pages repeat word for word) and terms don't drift by chance.
+# Scored against published translations (evals/gold_passages.py, 60
+# passages): 46.49 chrF++ at 0 vs 46.31 / 46.22 for two runs at 0.3 -- no
+# loss, a small consistent gain. Retries stay hotter (0.55, 0.8) to break a
+# failed answer; the 3-sample majority votes for headers and captions keep
+# their own temperatures (they need samples that can differ).
+FIRST_TRY_TEMPERATURE = 0.0
+
 # Deterministic mode for the eval harness: temp 0 + a fixed seed so a
 # re-run of an unchanged book reproduces byte-for-byte and `evals/check.py`
-# page-diffs mean something. Off by default (production uses temp 0.3 with
+# page-diffs mean something. Off by default (production: first try at temp 0, see above, with
 # the 3-try retry ladder).
 EVAL_DETERMINISTIC = os.environ.get("EVAL_DETERMINISTIC", "").lower() in (
     "1", "true", "yes", "on")
@@ -1423,7 +1433,7 @@ LAST_MODEL = ""   # model file of the last reply (set by translate_with_llama)
 MODEL_CALLS = 0   # replies so far -- tells a page that used the model from one skipped as blank
 
 
-def translate_with_llama(prompt: str, temperature: float = 0.3) -> str:
+def translate_with_llama(prompt: str, temperature: float = FIRST_TRY_TEMPERATURE) -> str:
     body = {
         "model": TRANSLATION_MODEL_NAME,
         "messages": [
@@ -2035,7 +2045,7 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         ctx = page_context_block(st)
         if attempt == 0:
             full_prompt = f"{PROMPT_TEMPLATE}\n\n{ctx}Text to translate:\n{clean_text}"
-            temp = 0.3
+            temp = FIRST_TRY_TEMPERATURE
         else:
             full_prompt = (f"{PROMPT_TEMPLATE}\n\nTranslate the following into "
                            f"fluent English. Do NOT repeat any of it in the "
