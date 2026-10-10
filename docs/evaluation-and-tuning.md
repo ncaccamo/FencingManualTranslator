@@ -87,8 +87,12 @@ evals/gold/<stem>/
 | `gold_align.py <stem>` | sentence alignment by length (Gale & Church; no model). How often sentences pair one-to-one tells you whether the translation is close or free |
 | `translate_gold.py <stem> [--model …]` | translate the `src_pages` range with the real step 2 (same prompt for the book's language, retries and checks) into `hyp.txt` |
 | `gold_report.py <stem>` | how close the reference is, how it renders fencing terms, and chrF++ of `hyp.txt` against it, over the matching page ranges |
+| `gold_passages.py sample \| run <label> \| score <label> ...` | compare translation *settings* (temperature, server flags): ~60 page-sized passages of aligned sentences, scored per passage (paired) against the reference; two runs of one setting give the noise floor. Writes `reports/gold-passages/score.md` + `score.html` (side by side, largest disagreement first) |
 
 Current scores (chrF++, 2026-10-01): Rosaroll 54.7, Pecoraro 46.7.
+Settings test (2026-10-10, `gold_passages.py`, 60 passages): temperature 0
+46.49, temperature 0.3 46.31 / 46.22, MTP at 0 46.34 -- see `docs/STATUS.md`.
+La Boëssière's alignment pairs unrelated passages; leave it out of scoring.
 
 - **Only score the part the reference covers.** Translating the whole book
   but scoring a page range misaligns the comparison (Rosaroll scored 22.8
@@ -142,7 +146,14 @@ docker exec fmt-translator python3 /data/evals/translation_model_test.py compare
 ```
 
 Follow up with `translate_gold.py` + `gold_report.py` on a gold book or
-two (§2). Make a model the default only by changing `docker-compose.yml`
+two (§2).
+
+**Testing a server setting** (speculative decoding, quantized context, …)
+rather than a model: run the set twice with `EVAL_DETERMINISTIC=1`, with
+and without the setting, and compare the text word for word -- plus one
+repeat of the unchanged setting, so differences can be told from rounding
+noise. Then `gold_passages.py` for accuracy. `FIRST_TEMP=<t>` tries
+another first-try temperature. Make a model the default only by changing `docker-compose.yml`
 (locally) or the llama-swap entry (remotely); a full retranslation of
 every book is then a deliberate, scheduled run.
 

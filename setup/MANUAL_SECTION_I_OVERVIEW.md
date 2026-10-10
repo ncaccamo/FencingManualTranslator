@@ -66,8 +66,8 @@ The two models load **one at a time**, not together, to fit in 16 GB:
   returns structured text.
 - **Translation** — `Qwen3.8-27B` (i1-Q4_K_S, ~15.8 GB). Translates the
   extracted text. It doesn't fit whole in 16 GB, so it runs partly on the
-  CPU (46 of 64 layers on the GPU, `TRANSLATION_GPU_LAYERS`; 42 on a Windows
-  GPU system shared with other programs; ~40–100 s/page);
+  CPU (46 of 64 layers on the GPU, `TRANSLATION_GPU_LAYERS`; 38 on a Windows
+  GPU system shared with other programs, ~60–160 s/page there);
   it was chosen for accuracy on fencing terminology (`docs/remote-gpu.md`).
 
 The OCR step (step 1) loads the vision model on port 11435 and unloads it

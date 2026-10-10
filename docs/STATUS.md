@@ -25,9 +25,11 @@ the operator's business and is not tracked here.)
   translation model selection test (`evals/translation_model_test.py`);
   llama-swap key `fmt-translate` remotely, :11434 locally. Too big for 16 GB
   of VRAM whole: part of its 64 layers on the GPU (46 locally,
-  `TRANSLATION_GPU_LAYERS`; 42 on the shared Windows system, see
-  `docs/remote-gpu.md`), ~40-100 s/page depending on page size. A page
-  is never dropped; low-confidence output is flagged inline.
+  `TRANSLATION_GPU_LAYERS`; 38 on the shared Windows system, see
+  `docs/remote-gpu.md`), ~0.5-0.6 s per source word there (60-160 s/page
+  depending on page size). First try at temperature 0 (repeatable
+  wording; retries hotter). A page is never dropped; low-confidence output
+  is flagged inline.
 - **Page breaks:** a sentence split across a page break is joined onto one
   page before translation (`join_split_sentences()`, the shorter fragment
   moves), so it is translated whole. The review report flags any split left
@@ -94,14 +96,19 @@ the operator's business and is not tracked here.)
 5. **Known translation soft spots** (see `docs/model-quirks.md`): braced
    command groups sometimes flatten; literary prose leaves a few
    `[low-confidence]` pages partly untranslated.
-6. **Translation speed — options, not planned.** The current light GPU
-   load suits unattended runs. If that changes: 8-bit context memory
-   (`-ctk q8_0 -ctv q8_0`, ~3 more GPU layers, ~10-15% faster) or
-   speculative decoding with a small draft model (often 1.5-2x). Either
-   needs a model selection test run first.
+6. **Translation speed — MTP tested, adoption undecided (2026-10-10).**
+   More GPU layers is ruled out: the Windows system has other uses, so 38
+   is the setting that holds up. Speculative decoding with Qwen3.8's
+   built-in draft head (MTP, `--spec-type draft-mtp`) is **2.2x faster**
+   at no extra VRAM (37 layers + the head) and scores like the previous
+   production setting against published translations, but not word for
+   word like the normal entry -- details under "Non-obvious decisions".
+   The llama-swap entry `fmt-translate-mtp` exists, unused; adopting it is
+   the reviewer's call. Still untested: 8-bit context memory (`-ctk q8_0
+   -ctv q8_0`, ~3 more layers).
 7. **`rocm714` backend** — wired, not compiled; `docker/ROCM714_NOTES.md`.
-8. **Page numbers: re-read hidden numbers with the margin crop — code in,
-   re-read pending (2026-10-09).** A page number step 1 couldn't confirm is
+8. **Page numbers: hidden numbers re-read with the margin crop — done
+   (2026-10-09).** A page number step 1 couldn't confirm is
    hidden ("[13]"); `read_folios.py` asks the OCR model about the margins
    alone and `apply_folio_witness()` shows the number only if a margin names
    exactly it. Its old full-width strip could stop above the head line on
@@ -112,8 +119,10 @@ the operator's business and is not tracked here.)
    pages that print none; misses are one-stroke misreads (XIII for XII,
    viii for ix) and a numeral under a stamp. A choice question ("II, III or
    IV?") was rejected: 8 invented numbers, and it picks wrong values when
-   only wrong ones are offered. Next: re-read the hidden pages
-   (`read_folios.py --all`, ~1-1.5 h GPU), then `read_folios.py --apply`.
+   only wrong ones are offered. Re-read all books (~2,300 pages, 1 h
+   GPU): 69 numbers in 20 books confirmed and shown, each checked against
+   the scan first; none wrong. New books get it by running
+   `read_folios.py <stem>` then `--apply` after step 1.
 
 ## Not yet tested
 
@@ -126,6 +135,32 @@ the operator's business and is not tracked here.)
   the side-by-side falls back to plain flow for the whole book.
 
 ## Non-obvious decisions / don't-retry-this
+
+- **Translation temperature 0 for the first try (2026-10-10; was 0.3).**
+  0.3 dated from the 7B model and was never chosen for Qwen3.8. At 0 the
+  normal entry repeats itself (35 of 36 test pages word for word; two runs
+  at 0.3 share only ~5), so a retranslated page keeps its reviewed wording
+  and `[[fix]]` entries keep matching. Against published translations
+  (`evals/gold_passages.py`, 60 passages from Bazancourt, Rosaroll,
+  Pecoraro; chrF++): 0 → 46.49, 0.3 → 46.31 / 46.22 (two runs; their gap,
+  0.09, is the noise floor). 0.1 was also tried: it changed 24 of 36 pages
+  against 0, giving back most of the repeatability. Retries stay at 0.55 /
+  0.8 (they exist to break a failed answer) and the 3-sample header /
+  caption votes keep their temperatures.
+- **Speculative decoding (MTP): faster, not identical (2026-10-10).** The
+  GGUF carries a draft head (`qwen35.nextn_predict_layers = 1`,
+  `blk.64.nextn.*`); llama.cpp b11182 runs it with `--spec-type draft-mtp
+  --spec-draft-n-max 3`. ~90% of drafted tokens accepted, 2.17-2.18x per
+  page at temperature 0 and 0.3, ~0.3 GB VRAM (37 layers instead of 38;
+  11.2 GB dedicated). In principle it can't change the output; measured at
+  temperature 0 it does: 23 of 36 test pages / 35 of 60 gold passages
+  identical, the rest small rewordings ("evident" for "obvious", one lost
+  `<i>sixte</i>`, one fixed "RIPOSTES"). The normal entry's own repeat run
+  differed on 1 page, so this is not noise -- MTP or the one-layer change
+  (not separated). Gold score 46.34 vs 46.49 for normal at 0: equal to the
+  old 0.3 production, slightly below the best. `/props` reports
+  `speculative.types: none` even when it is on -- check a completion's
+  `timings.draft_n` instead.
 
 - **Page separator: now U+001E, was `\n---\n`.** All stages join / split
   the multi-page files (`raw_ocr.txt`, `extracted.txt`, `translation.txt`)
