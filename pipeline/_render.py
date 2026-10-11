@@ -181,6 +181,50 @@ def _font(name):
 _MD_ITALIC = re.compile(r"(?<![\w*])\*(?=[A-Za-zÀ-ÿ0-9<«\"“])([^*\n]{1,80}?)(?<=[^\s*(])\*(?![\w*])")
 
 
+# The French lines / parries are kept in French and italicised, like riposte
+# (translation_prompt.txt rule 2) -- but only the model applied that, and it
+# mostly didn't: across the French books ~95% came out roman ("parry of quarte"),
+# while the Italian books italicise terza / quarta 99% of the time. Applied here,
+# at drawing time, every book gets it on a PDF rebuild, no retranslation
+# (reviewer's decision, 2026-10-11). Words that are never English are always
+# italicised; "prime" only where it is the fencing term -- not "past his prime",
+# "prime importance"; "octave" not beside verse or music. Text already inside <i>..</i> (a whole italic running head,
+# a kept phrase) is left alone; a plural keeps a roman "s", as <i>volte</i>s; in
+# a compound only the line name is italic: counter-<i>quarte</i>, <i>tierce</i>-<i>prime</i>.
+_LINE_NAMES = re.compile(r"(?<![\w>/])(seconde|tierce|quarte|quinte|sixte|septime|octave|prime)(s?)(?![\w<])",
+                         re.IGNORECASE)
+_PRIME_ENGLISH_BEFORE = re.compile(r"\b(?:his|her|their|its|my|your|one's|of\s+(?:the\s+)?first)\s+$", re.IGNORECASE)
+_PRIME_ENGLISH_AFTER = re.compile(
+    r"^\s+(?:importance|minister|example|reason|cause|object|objective|necessity|condition|"
+    r"quality|mover|number|numbers|motive|consideration|concern|purpose|target\s+of\s+criticism)\b", re.IGNORECASE)
+# "octave" as verse or music ("sung in such beautiful octaves by Poliziano")
+_OCTAVE_ENGLISH = re.compile(r"\b(?:sung|sing|song|verse|stanza|rhym|poet|poem|music|note|chord|tone)", re.IGNORECASE)
+
+
+def line_name_italics(s):
+    if not s or not _LINE_NAMES.search(s):
+        return s
+    out, depth = [], 0
+    for part in re.split(r"(</?i>)", s):
+        low = part.lower()
+        if low == "<i>":
+            depth += 1
+        elif low == "</i>":
+            depth = max(0, depth - 1)
+        elif depth == 0 and part:
+            def sub(m, part=part):
+                w = m.group(1).lower()
+                if w == "prime" and (_PRIME_ENGLISH_BEFORE.search(part[:m.start()])
+                                     or _PRIME_ENGLISH_AFTER.match(part[m.end():])):
+                    return m.group(0)
+                if w == "octave" and _OCTAVE_ENGLISH.search(part[max(0, m.start() - 60):m.end() + 60]):
+                    return m.group(0)
+                return f"<i>{m.group(1)}</i>{m.group(2)}"
+            part = _LINE_NAMES.sub(sub, part)
+        out.append(part)
+    return "".join(out)
+
+
 def markdown_italics(s):
     return _MD_ITALIC.sub(lambda m: "<i>" + re.sub(r"</?i>", "", m.group(1)) + "</i>", s)
 
@@ -286,6 +330,7 @@ def layout(text, width, size):
     """text -> list[Line], pre-wrapped to `width` pt at `size`."""
     out = []
     para_end = False            # the line before ended a prose sentence
+    text = line_name_italics(text)
     for raw in (text or "").split("\n"):
         if _STARS.match(raw):
             continue

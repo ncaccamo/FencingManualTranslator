@@ -2519,6 +2519,42 @@ def test_report_point_cut_and_cutting_blow():
     assert "colpo di punta → thrust" in hits(Q.TERM_RULES_IT, "colpo di punta", "a point cut")
 
 
+def test_line_names_italic_at_render():
+    # 2026-10-11: the French lines / parries are italic like riposte, applied when the
+    # PDF is drawn (_render.line_name_italics) -- the model left ~95% roman. "prime"
+    # only as the fencing term, "octave" not as verse; already-italic text untouched.
+    import os, re
+    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline", "_render.py"),
+               encoding="utf-8").read()
+    ns = {"re": re}
+    exec(src[src.index("_LINE_NAMES = "):src.index("def markdown_italics")], ns)
+    f = ns["line_name_italics"]
+    assert f("parry of quarte and sixte") == "parry of <i>quarte</i> and <i>sixte</i>"
+    assert f("<i>PARRY OF QUARTE</i>") == "<i>PARRY OF QUARTE</i>"          # an italic running head
+    assert f("<i>contre de quarte</i> then quarte") == "<i>contre de quarte</i> then <i>quarte</i>"
+    assert f("prime, seconde, tierce") == "<i>prime</i>, <i>seconde</i>, <i>tierce</i>"
+    assert f("to our prime, seconde") == "to our <i>prime</i>, <i>seconde</i>"  # Gomard
+    assert f("already a little past his prime, and") == "already a little past his prime, and"  # Prévost 1886
+    assert f("of prime importance") == "of prime importance"
+    assert f("the quartes") == "the <i>quarte</i>s"
+    assert f("a counter-quarte; tierce-prime") == "a counter-<i>quarte</i>; <i>tierce</i>-<i>prime</i>"
+    assert f("SIXTE.") == "<i>SIXTE</i>."
+    assert f("sung in such beautiful octaves by Poliziano") == "sung in such beautiful octaves by Poliziano"
+    assert f("The octave is formed from right to left") == "The <i>octave</i> is formed from right to left"
+    assert f("in quarta and terza") == "in quarta and terza"                  # Italian lines: the model's job
+
+
+def test_prompt_translates_closely():
+    # 2026-10-11: rule 0 (closeness to the author's words, with its three guards) is in
+    # the prompt shared by French and Italian -- the reviewer prefers literal to paraphrase.
+    import os
+    p = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline", "translation_prompt.txt"),
+             encoding="utf-8").read()
+    assert "0. Translate closely" in p and "avvertenza → note" in p and "thrust by <i>cavazione</i>" in p
+    assert "rule 0 never overrides rules 2-3" in p and "into clear, modern English" not in p
+    assert p.index("0. Translate closely") < p.index("1. Translate EVERYTHING") < p.index("2. KEEP")
+
+
 def test_first_try_at_temperature_zero():
     # 2026-10-10: the first try (and the single-shot heading / table / oversized
     # calls, which use the default) runs at temperature 0 -- repeatable wording,

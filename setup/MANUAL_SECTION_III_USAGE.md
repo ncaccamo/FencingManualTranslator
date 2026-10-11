@@ -514,6 +514,8 @@ scripts/progress.sh                                              # the page-by-p
 scripts/queue.py pause      # stop after the current job
 scripts/queue.py stop       # stop now -- the job stays first and resumes on the next start
 scripts/queue.py move 3 1   # reorder;  scripts/queue.py remove 2
+scripts/queue.py hold "model test"   # something else needs the GPU: start refuses ...
+scripts/queue.py release             # ... until released (stop the queue as well)
 ```
 
 | Job | What it does |

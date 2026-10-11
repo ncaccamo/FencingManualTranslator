@@ -153,7 +153,9 @@ rather than a model: run the set twice with `EVAL_DETERMINISTIC=1`, with
 and without the setting, and compare the text word for word -- plus one
 repeat of the unchanged setting, so differences can be told from rounding
 noise. Then `gold_passages.py` for accuracy. `FIRST_TEMP=<t>` tries
-another first-try temperature. Make a model the default only by changing `docker-compose.yml`
+another first-try temperature. A prompt change is tried the same way without editing
+the prompt file: add it to `evals/_prompt_variants.py` and run with
+`PROMPT_VARIANT=<name>`. Make a model the default only by changing `docker-compose.yml`
 (locally) or the llama-swap entry (remotely); a full retranslation of
 every book is then a deliberate, scheduled run.
 

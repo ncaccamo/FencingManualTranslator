@@ -17,6 +17,9 @@ the system doing the run. Runs on the host (it drives the container).
     scripts/queue.py pause                             stop after the current job
     scripts/queue.py stop                              stop now (the job stays first and
                                                        resumes: steps 1 and 2 save every page)
+    scripts/queue.py hold <reason>                     the GPU is in use by something else (a
+                                                       test): start refuses until release
+    scripts/queue.py release                           end the hold
     scripts/queue.py move <n> <m>                      move job n to position m (1 = next)
     scripts/queue.py remove <n>
 
@@ -53,6 +56,11 @@ DONE = os.path.join(STATUS, "queue_done.txt")
 LOG = os.path.join(STATUS, "queue.log")
 STATE = os.path.join(STATUS, "queue_state.json")
 PAUSE = os.path.join(STATUS, "queue.pause")
+# A hold: something else owns the GPU for a while (an evaluation run). start
+# refuses while it exists, so a script or another session can't restart the
+# queue under it (2026-10-10: a restart 81 s after a test stopped the queue
+# swapped the OCR and translation models on every request for 35 minutes).
+HOLD = os.path.join(STATUS, "queue.hold")
 CONTAINER = "fmt-translator"
 _stopping = False          # set by SIGTERM (queue.py stop): start nothing new
 ACTIONS = {"book": 0, "pages": 1, "flagged": 1, "pdfs": 0, "captions": 0, "reprocess": 0}
@@ -312,7 +320,8 @@ def cmd_list():
         print(f"RUNNING since {st.get('started')}: {st.get('current') or '(starting)'}"
               + (f"\n   now: {st['current_cmd']}" if st.get("current_cmd") else ""))
     else:
-        print("not running" + (" (will pause after the current job)" if os.path.exists(PAUSE) else ""))
+        print("not running" + (" (will pause after the current job)" if os.path.exists(PAUSE) else "")
+              + (f" -- ON HOLD: {open(HOLD, encoding='utf-8').read().strip()}" if os.path.exists(HOLD) else ""))
     print(f"\n{len(jobs)} job(s) queued:" if jobs else "\nqueue empty")
     for n, j in enumerate(jobs, 1):
         mark = "  <- running" if st and st.get("current") == j and n == 1 else ""
@@ -377,6 +386,8 @@ def cmd_remove(a):
 def cmd_start():
     if state():
         sys.exit("✗ already running")
+    if os.path.exists(HOLD):
+        sys.exit(f"✗ on hold: {open(HOLD, encoding='utf-8').read().strip()} (scripts/queue.py release to end it)")
     if not read_jobs():
         sys.exit("✗ nothing queued (scripts/queue.py add ...)")
     if os.path.exists(PAUSE):
@@ -420,6 +431,15 @@ def main(argv):
             os.remove(PAUSE)
     elif c == "stop":
         cmd_stop()
+    elif c == "hold" and rest:
+        os.makedirs(STATUS, exist_ok=True)
+        with open(HOLD, "w", encoding="utf-8") as fh:
+            fh.write(f"{' '.join(rest)} (since {_now()})\n")
+        print(f"on hold: {' '.join(rest)}" + (" -- the queue is still running; stop it too" if state() else ""))
+    elif c == "release":
+        if os.path.exists(HOLD):
+            os.remove(HOLD)
+        print("hold released")
     elif c == "move" and len(rest) == 2:
         cmd_move(*rest)
     elif c == "remove" and len(rest) == 1:

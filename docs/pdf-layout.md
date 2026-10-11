@@ -65,7 +65,13 @@ Text → a list of `Line` objects. A `Line` has:
   Wrapping widths use `fitz.Font(...).text_length()` so accented and
   italic glyphs advance correctly (an earlier version summed
   `get_text_length()` and words like `DEUXIÈME` collided with the next
-  word).
+  word). It first applies `line_name_italics()`: the French lines /
+  parries (*prime* … *octave*) are italicised here, at drawing time, like
+  *riposte* -- the translation mostly left them roman. "prime" only as the
+  fencing term ("past his prime" stays), "octave" not beside verse or
+  music; text already in `<i>…</i>` (an italic running head) is untouched;
+  in a compound only the line name: counter-*quarte*. A PDF rebuild applies
+  it to every book; no retranslation. Footnotes are not passed through it.
 - **`draw(page, rect, lines, size, *, dry=False) -> (leftover, y_end)`** —
   draws as many `Line`s as fit in `rect`, using a `fitz.TextWriter` (one
   batched write, correct glyph metrics). **Returns the lines that didn't

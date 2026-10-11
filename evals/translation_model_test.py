@@ -100,6 +100,11 @@ def _pages():
 def run(label, current=False):
     os.makedirs(OUT, exist_ok=True)
     ns = None if current else _load_tx()
+    variant = ""
+    if ns:
+        sys.path.insert(0, "/data/evals")
+        import _prompt_variants
+        variant = _prompt_variants.apply(ns)
     first_temp = os.environ.get("FIRST_TEMP")
     if ns and first_temp:
         # test another first-try temperature (step 2's FIRST_TRY_TEMPERATURE);
@@ -107,7 +112,7 @@ def run(label, current=False):
         ns["FIRST_TRY_TEMPERATURE"] = float(first_temp)
         ns["translate_with_llama"].__defaults__ = (float(first_temp),)
     res = {"label": label, "model": os.environ.get("TRANSLATION_MODEL_NAME", ""),
-           "first_temp": first_temp or "step 2 default", "pages": {}}
+           "first_temp": first_temp or "step 2 default", "prompt_variant": variant, "pages": {}}
     for prefix, folder, scan, why, page in _pages():
         key = f"{prefix}:{scan}"
         if current:

@@ -137,6 +137,17 @@ the operator's business and is not tracked here.)
 
 ## Non-obvious decisions / don't-retry-this
 
+- **Literal translation (2026-10-11).** The reviewer prefers the author's
+  words to paraphrase even where both read fine. Rule 0 of the prompt asks
+  for it, with three guards found by testing (false friends, *di*/*de* of
+  means → "by", kept terms keep their italics) -- `docs/model-quirks.md`
+  2.15. Judge prompt changes by closeness to the *source* as well as the
+  published translations: those are mostly free and reward paraphrase.
+- **French line names italic at drawing time (2026-10-11).** *prime* …
+  *octave* in italics like *riposte* (the reviewer's choice; the Italian
+  books already did it); enforced in `_render.py`, not left to the model,
+  which left ~95% roman.
+
 - **Translation temperature 0 for the first try (2026-10-10; was 0.3).**
   0.3 dated from the 7B model and was never chosen for Qwen3.8. At 0 the
   normal entry repeats itself (35 of 36 test pages word for word; two runs

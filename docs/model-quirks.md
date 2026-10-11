@@ -1627,6 +1627,28 @@ retranslated with `2_translate.py --flagged <stem> risposta`.
 - "I am ready to translate the text. Please provide the source text" as the
   whole reply on a near-empty page → counted as a refusal (2.2).
 
+### 2.15 Literal over paraphrase; line names left roman (2026-10-11)
+
+- **Paraphrase.** The prompt asked for "clear, modern English" and nothing
+  kept the model close to the author: "mutual" for *réciproque*, "the task
+  of correcting" for *rettificare*. Rule 0 now asks for the author's words,
+  structure and order, a slightly foreign phrasing being fine. Its first
+  version made new errors -- false friends ("WARNING" for *avvertenza*,
+  "guarantee" for *garantir*, "at last" for *enfin*), "a thrust **of**
+  *cavazione*" for *di cavazione* (means: "by"), and a dropped
+  *<i>volte</i>* -- so the rule names those traps. Tested with
+  `evals/gold_passages.py` (closeness to the source 30.54% → 31.32% of
+  content words with a source look-alike, published-translation score
+  46.49 → 46.35, i.e. noise against these free translations; 0 review
+  flags on the 36 hard pages). Candidate prompts are tried through
+  `evals/_prompt_variants.py` before they go into the prompt file.
+- **Line names roman.** Rule 2 keeps *prime* … *octave* in French italics,
+  but only the model applied it, and in the French books ~95% came out
+  roman (*quarte* 207 italic vs 6,086 roman) while the Italian books
+  italicise *terza* / *quarta* ~99%. A literal-leaning prompt dropped them
+  further on drill lists (Spinnewyn scan 116). Fixed at drawing time
+  (`_render.line_name_italics`, `docs/pdf-layout.md`), not by the prompt.
+
 ## Part 3 — shared / architectural
 
 - **Page separator** — `pipeline/_pageio.py::PAGE_SEP` (U+001E). Every
