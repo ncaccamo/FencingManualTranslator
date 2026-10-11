@@ -1649,6 +1649,24 @@ retranslated with `2_translate.py --flagged <stem> risposta`.
   further on drill lists (Spinnewyn scan 116). Fixed at drawing time
   (`_render.line_name_italics`, `docs/pdf-layout.md`), not by the prompt.
 
+### 2.16 One line name copied over another (2026-10-11)
+
+The model sometimes writes another line name from the same page in place
+of the right one: *la riposte droite après quarte* → "after tierce", three
+times on one page (Kirchhoffer scan 52); *sixte* → *septime* eight times
+(Joseph-Renaud scan 178). A wrong line is a wrong action. Not new with
+temperature 0: the 0.3 translations had it too (Joseph-Renaud scans 81,
+140, 243; Jacob 173; Gomard 190, 265). `line_names_swapped()` in step 2
+compares the lines the source names with the lines the English names, and
+a try that names a line the source never does, or loses one while another
+grows, is retried hotter (kept with the low-confidence banner if every try
+has it). An English ordinal counts for its line (*la seconde fois* → "the
+second time"), and old or abbreviated source spellings are read as the line
+(*quart*, *carte*, *quarté*, *septième*; Italian *3.ª*). Across all
+translated pages (10,719, both generations) it flags 14, every one a real
+swap. Found by `evals/retranslation_compare.py`, which compares a
+retranslation page by page with the one before.
+
 ## Part 3 — shared / architectural
 
 - **Page separator** — `pipeline/_pageio.py::PAGE_SEP` (U+001E). Every

@@ -1207,6 +1207,66 @@ def has_wrong_script(text: str) -> bool:
         text))
 
 
+# The numbered lines / parries. At temperature 0 the model can copy another
+# line name from the same page in place of the right one -- "la riposte
+# droite après quarte" -> "after tierce", three times on one page (Kirchhoffer
+# scan 52), sixte -> septime eight times (Joseph-Renaud scans 49, 178), each
+# time a name that also appears on the page; the 0.3 translations had it too
+# (Joseph-Renaud scans 81, 140, 243; Gomard 190, 265; Prévost 96). A wrong
+# line is a wrong action, so such a try is rejected like a too-short one.
+_LINE_NAMES_FR = ("prime", "seconde", "tierce", "quarte", "quinte", "sixte", "septime", "octave")
+_LINE_NAMES_IT = ("prima", "seconda", "terza", "quarta", "quinta", "sesta", "settima", "ottava")
+# the English ordinal a source word may rightly become ("la seconde fois" ->
+# "the second time", "prima" -> "before"): counted with the line name, so it
+# isn't taken for a line that went missing
+_LINE_ORDINALS = {"prime": "first", "seconde": "second", "tierce": "third", "quarte": "fourth",
+                  "quinte": "fifth", "sixte": "sixth", "septime": "seventh", "octave": "eighth",
+                  "prima": "first|before|earlier", "seconda": "second|according", "terza": "third",
+                  "quarta": "fourth", "quinta": "fifth", "sesta": "sixth", "settima": "seventh",
+                  "ottava": "eighth"}
+# source spellings of the same lines: old French "quart" / "carte" / OCR
+# "quarté", "septième" (Gomard scans 82, 87; Danet 300); Italian "3.a" for
+# terza, and "diterza" with the space lost (Enrichetti 81, Masiello 381)
+_LINE_SPELLINGS_FR = [(r"(?<!\w)(?:quart|quarté|carte)(s?)(?!\w)", r"quarte\1"),
+                      (r"(?<!\w)septième(s?)(?!\w)", r"septime\1")]
+_LINE_SPELLINGS_IT = [(rf"(?<![\w.]){n}\s?(?:\.?\s?[aª])(?!\w)", w)
+                      for n, w in zip(range(1, 9), _LINE_NAMES_IT)] + [
+                     (r"(?<!\w)di(?=(?:prima|seconda|terza|quarta|quinta|sesta|settima|ottava)(?!\w))", "di ")]
+
+
+def _line_name_counts(text: str, source: bool = False, ordinals: bool = False) -> dict:
+    italian = BOOK_LANG == "Italian"
+    names = _LINE_NAMES_IT if italian else _LINE_NAMES_FR
+    text = re.sub(r"</?i>", "", text).lower()
+    if source:
+        for pat, rep in (_LINE_SPELLINGS_IT if italian else _LINE_SPELLINGS_FR):
+            text = re.sub(pat, rep, text)
+    out = {}
+    for w in names:
+        alt = f"{w}|{_LINE_ORDINALS[w]}" if ordinals else w
+        out[w] = len(re.findall(rf"(?<!\w)(?:{alt})s?(?!\w)", text))
+    return out
+
+
+def line_names_swapped(text: str, src: str) -> str:
+    """'' if the English names the same lines as the source; otherwise what
+    went wrong: a line the source never names (twice or more, so one stray
+    word can't trip it), or a line the source names that is gone -- not even
+    as an English ordinal -- while another line's count went up: the swap.
+    "prime" / "prima" never count as extra ("prime importance")."""
+    s = _line_name_counts(src, source=True)
+    t = _line_name_counts(text)
+    extra = [w for w in t if t[w] >= 2 and s[w] == 0 and w not in ("prime", "prima")]
+    if extra:
+        return "names " + ", ".join(extra) + " (not in the source)"
+    t_ord = _line_name_counts(text, ordinals=True)
+    gone = [w for w in s if s[w] >= 1 and t_ord[w] == 0]
+    grew = [w for w in t if t[w] > s[w]]
+    if gone and grew:
+        return f"{', '.join(gone)} -> {', '.join(grew)}"
+    return ""
+
+
 def contains_too_much_non_english(text: str) -> bool:
     # Technical terms the prompt instructs the model to KEEP in the source
     # language are wrapped in <i>...</i> -- those are correct output, not a
@@ -2152,6 +2212,15 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         if src_words >= 25 and len(candidate.split()) < 0.5 * src_words:
             print(" → too short")
             time.sleep(8)
+            continue
+
+        # a line / parry named wrongly -- quarte became tierce (Kirchhoffer
+        # scan 52). Retried hotter; if every try has it, the best one is kept
+        # with the low-confidence banner for a person to check.
+        swap = line_names_swapped(candidate, clean_text)
+        if swap:
+            print(f" → line names changed ({swap})")
+            time.sleep(2)
             continue
 
         candidate = match_boundary_punctuation(candidate, clean_text)

@@ -2570,6 +2570,54 @@ def test_first_try_at_temperature_zero():
     assert "temp = FIRST_TRY_TEMPERATURE" in page and "temp = 0.3 + 0.25 * attempt" in page
 
 
+def test_line_name_swap_rejected():
+    # 2026-10-11: a try that names the wrong line is rejected (retried hotter).
+    # Swaps from real pages; and correct pages that must pass: an ordinal
+    # seconde, old spellings (quarté, septième), Italian 3.ª and a lost space.
+    from _rules import TX
+    f = TX["line_names_swapped"]
+    # Kirchhoffer scan 52: quarte -> tierce
+    src = ("Défaut plus grave, la riposte droite après quarte expose fort à la remise. "
+           "quarte a valu plus de remises; si on sent une parade, quarte, par exemple, "
+           "riposter. Contre de tierce.")
+    bad = ("the straight <i>riposte</i> after tierce exposes one greatly to the <i>remise</i>. "
+           "tierce has brought more remises; if one feels a parry, tierce for example, "
+           "to riposte. Counter of tierce.")
+    assert f(bad, src) == "quarte -> tierce", f(bad, src)
+    assert f(bad.replace("tierce", "quarte").replace("Counter of quarte", "Counter of tierce"), src) == ""
+    # Joseph-Renaud scan 178: sixte -> septime
+    assert f("then come in septime forward; take a counter in septime, two counters in septime",
+             "puis venez en sixte en avant; reprendre un contre de sixte, deux contres de sixte; "
+             "parez septime") == "sixte -> septime"
+    # Spinnewyn scan 65: "la ligne de seconde ou de sixte basse" -> "high sixte or low quarte"
+    assert f("The line of high <i>sixte</i> or low <i>quarte</i>. The line of high <i>prime</i> or <i>quarte</i>",
+             "La ligne de seconde ou de sixte basse. La ligne de prime ou de quarte haute") \
+        == "seconde -> quarte"
+    # correct pages
+    assert f("The second. After the parry of quarte, feint.",
+             "La seconde. Il faut, après la parade de quarte, feindre") == ""      # Lafaugère 68
+    assert f("the line of quarte and the line of tierce; hand of tierce, hand of quarte",
+             "la ligne de quarté et la ligne de tierce; main de tierce, main de quarté") == ""  # Gomard 87
+    assert f("The name of septime given for the first time. <i>septime</i> or demi-cercle",
+             "Le nom de septième donné pour la première fois. septième ou demi-cercle") == ""  # Gomard 82
+    TX["BOOK_LANG"] = "Italian"
+    try:
+        f = TX["line_names_swapped"]
+        assert f("in the attack of <i>terza</i>; a glide in <i>terza</i>",
+                 "nell'attacco di 3.ª; un filo di spada in 3.ª") == ""                # Enrichetti 111
+        assert f("ON THE FIRST EXIT; counter-action of <i>terza</i>, transport in <i>terza</i>",
+                 "SULLA PRIMA USCITA; controazione diterza, trasporto in terza") == ""  # Masiello 381
+        assert f("parry of <i>terza</i>, then <i>terza</i>", "parata di quarta, poi quarta") \
+            == "names terza (not in the source)"
+    finally:
+        TX["BOOK_LANG"] = "French"
+    import os
+    page = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline", "2_translate.py"),
+                encoding="utf-8").read()
+    page = page[page.index("def translate_page("):]
+    assert "line_names_swapped(candidate, clean_text)" in page
+
+
 def test_translation_waits_out_a_server_outage():
     # 2026-10-02: the GPU system lost power and 33 pages were kept untranslated
     # within minutes. Remote mode now waits for the server and resends; a
