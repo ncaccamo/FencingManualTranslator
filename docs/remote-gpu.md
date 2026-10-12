@@ -74,14 +74,14 @@ models:
     cmd: >
       llama-server -m models\Qwen3.8-27B.i1-Q4_K_S.gguf
       --host 127.0.0.1 --port ${PORT} --api-key ${LLAMA_API_KEY}
-      --ctx-size 6144 --n-gpu-layers 37 --parallel 1 --jinja --reasoning-budget 0
+      --ctx-size 8192 --n-gpu-layers 37 --parallel 1 --jinja --reasoning-budget 0
       --spec-type draft-mtp --spec-draft-n-max 3
     ttl: 300
   fmt-translate-plain:           # the same model without MTP: fallback, and word probabilities
     cmd: >
       llama-server -m models\Qwen3.8-27B.i1-Q4_K_S.gguf
       --host 127.0.0.1 --port ${PORT} --api-key ${LLAMA_API_KEY}
-      --ctx-size 6144 --n-gpu-layers 38 --parallel 1 --jinja --reasoning-budget 0
+      --ctx-size 8192 --n-gpu-layers 38 --parallel 1 --jinja --reasoning-budget 0
     ttl: 300
   fmt-translate-qwen25:          # previous model, kept for comparisons
     cmd: >
@@ -111,6 +111,10 @@ terminology). Its flags, and why:
   than the speed (~0.5-0.6 s per source word). In Task Manager → Performance → GPU, "shared GPU memory"
   near 1.6 GB during a run is normal (transfer buffers); 3 GB is a spill —
   lower the number.
+- `--ctx-size 8192` (6144 until 2026-10-12): the window holds the prompt,
+  the source page and the translation together. The French prompt is ~4.9k
+  tokens, and at 6144 long pages (~500 words) stopped mid-sentence; step 2
+  now rejects a reply cut off this way (`finish_reason: length`).
 - `--parallel 1`: llama.cpp now defaults to 4 slots, i.e. 4× the context
   memory.
 - `--jinja --reasoning-budget 0`: use the model's own chat template, with
@@ -146,7 +150,7 @@ llama-server -m olmOCR-2-7B-1025-Q6_K.gguf --mmproj mmproj-...-f16.gguf \
   --host 0.0.0.0 --port 11500 --api-key <shared-secret> -ngl 99 -c 8192
 # Ctrl-C, then before step 2 (translate):
 llama-server -m Qwen3.8-27B.i1-Q4_K_S.gguf --jinja --reasoning-budget 0 \
-  --host 0.0.0.0 --port 11500 --api-key <shared-secret> -ngl 46 -c 6144 --parallel 1
+  --host 0.0.0.0 --port 11500 --api-key <shared-secret> -ngl 46 -c 8192 --parallel 1
 ```
 
 With this you must run the four steps individually (not

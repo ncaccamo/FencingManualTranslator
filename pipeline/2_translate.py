@@ -1537,12 +1537,13 @@ def start_translation_server():
         "--model", TRANSLATION_MODEL,
         "--host", "0.0.0.0",
         "--port", "11434",
-        # 6144, not 4096: PROMPT_TEMPLATE (term policy + EXAMPLES) is ~1.5k
+        # Not 4096: PROMPT_TEMPLATE (term policy + EXAMPLES) is ~1.5k
         # tokens and prepended to every call, so a long source page + a
         # full-length response overran a 4096 window ("Context size has
-        # been exceeded" -> empty response -> "kept original text"). 8192
-        # costs VRAM the 27B needs for its layers.
-        "--ctx-size", "6144",
+        # been exceeded" -> empty response -> "kept original text"). 8192,
+        # not 6144, since 2026-10-12: the French prompt grew to ~4.9k tokens
+        # and long pages were cut mid-sentence (see LAST_CUT).
+        "--ctx-size", "8192",
         "--n-gpu-layers", TRANSLATION_GPU_LAYERS,
         # llama.cpp now defaults to 4 slots = 4x the context memory
         "--parallel", "1",
@@ -1593,6 +1594,7 @@ def start_translation_server():
 
 LAST_MODEL = ""   # model file of the last reply (set by translate_with_llama)
 MODEL_CALLS = 0   # replies so far -- tells a page that used the model from one skipped as blank
+LAST_CUT = False  # the last reply stopped because it ran out of room (finish_reason "length")
 
 
 def translate_with_llama(prompt: str, temperature: float = FIRST_TRY_TEMPERATURE) -> str:
@@ -1626,8 +1628,14 @@ def translate_with_llama(prompt: str, temperature: float = FIRST_TRY_TEMPERATURE
                 if "choices" in result and len(result["choices"]) > 0:
                     # the model file the server actually ran (llama-server
                     # reports its path) -- what the cover page credits
-                    global LAST_MODEL, MODEL_CALLS
+                    global LAST_MODEL, MODEL_CALLS, LAST_CUT
                     MODEL_CALLS += 1
+                    # out of room: the context window (prompt + source + reply)
+                    # filled and the reply stops mid-sentence. 2026-10-12: the
+                    # French prompt reached 4,891 tokens of a 6,144 window and
+                    # long pages were cut at ~330 words (Kirchhoffer scans 26,
+                    # 35, 52, 70), only one caught by the too-short check.
+                    LAST_CUT = result["choices"][0].get("finish_reason") == "length"
                     m = str(result.get("model") or "")
                     LAST_MODEL = re.sub(r"\.gguf$", "", re.split(r"[\\/]", m)[-1]) or LAST_MODEL
                     # A reasoning model (Qwen3.x, Gemma 4) run with thinking
@@ -2292,6 +2300,12 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
             continue
 
         best_candidate = best_candidate or candidate
+
+        # the reply ran out of room and stops mid-sentence. Retried; if every
+        # try is cut, the best one is kept with the low-confidence banner.
+        if LAST_CUT:
+            print(" → cut off (out of room)")
+            continue
 
         # every margin note (⟦MARGIN: …⟧, from _margins.py) must survive
         if candidate.count("⟦MARGIN:") < clean_text.count("⟦MARGIN:"):

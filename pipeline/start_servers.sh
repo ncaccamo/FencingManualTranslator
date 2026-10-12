@@ -60,7 +60,7 @@ sleep 3
 
 echo "Starting translation server on 11434..."
 setsid llama-server --model "$TRANSLATION_MODEL" --host 0.0.0.0 --port 11434 \
-    --ctx-size 6144 --n-gpu-layers "${TRANSLATION_GPU_LAYERS:-46}" --parallel 1 \
+    --ctx-size 8192 --n-gpu-layers "${TRANSLATION_GPU_LAYERS:-46}" --parallel 1 \
     --jinja --reasoning-budget 0 --threads "$(nproc)" \
     >/tmp/translation_server.log 2>&1 &
 disown

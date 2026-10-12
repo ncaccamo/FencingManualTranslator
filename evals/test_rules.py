@@ -2760,6 +2760,35 @@ def test_translation_waits_out_a_server_outage():
         TX.update(saved)
 
 
+def test_cut_off_reply_is_rejected():
+    # 2026-10-12: the context window filled and long pages stopped mid-sentence
+    # (finish_reason "length"); the reply is marked and translate_page retries it
+    import types, os
+    from _rules import TX
+    saved = {k: TX[k] for k in ("requests", "bc")}
+    class Resp:
+        status_code = 200
+        def __init__(self, fin):
+            self.fin = fin
+        def json(self):
+            return {"choices": [{"message": {"content": "The thrust of"}, "finish_reason": self.fin}]}
+    fin = {"v": "length"}
+    fake_req = types.SimpleNamespace(post=lambda *a, **k: Resp(fin["v"]))
+    fake_bc = types.SimpleNamespace(is_remote=lambda: True, auth_headers=lambda: {})
+    try:
+        TX.update(requests=fake_req, bc=fake_bc)
+        assert TX["translate_with_llama"]("p") == "The thrust of" and TX["LAST_CUT"] is True
+        fin["v"] = "stop"
+        TX["translate_with_llama"]("p")
+        assert TX["LAST_CUT"] is False
+    finally:
+        TX.update(saved)
+    page = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline", "2_translate.py"),
+                encoding="utf-8").read()
+    page = page[page.index("def translate_page("):]
+    assert page.index("if LAST_CUT:") < page.index("→ too short")
+
+
 def test_cover_page_counts_singular():
     # "87c136a, October 2, 2026 (1 pages)" on Gomard's cover, 2026-10-02
     C = _cover_module()
