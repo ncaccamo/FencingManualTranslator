@@ -115,28 +115,36 @@ La Boëssière's alignment pairs unrelated passages; leave it out of scoring.
 
 ---
 
-## 3. Choosing the translation model
+## 3. The translation model: choice, settings, and how good it is
+
+One investigation, in the order it happened: which model, which settings,
+which prompt, why it still errs, and how far it is from the best possible.
+Each step used the tools below; their results are what the current setup
+rests on.
+
+### 3.1 Where it is set
 
 The model is set by `TRANSLATION_MODEL_PATH` locally (default in
 `docker-compose.yml` and `2_translate.py`) or by the llama-swap key in
 remote mode (`fmt-translate`; `TRANSLATION_MODEL_NAME` to pick another
 key). OCR and translation run one after the other, so each has the whole
-GPU.
+GPU. Make a model or setting the default only by changing
+`docker-compose.yml` (locally) or the llama-swap entry (remotely); a full
+retranslation of every book is then a deliberate, scheduled run.
 
-**Current model:** Qwen3.8-27B, 4-bit (`i1-Q4_K_S`, ~15.8 GB), chosen
-2026-09-25 by the translation model selection test: no flagged pages out
-of 37 hard pages, against 14 for Qwen2.5-14B, and the most accurate
-fencing terms. It doesn't fit in 16 GB of VRAM whole, so part of its 64
-layers go on the GPU: 46 locally (`TRANSLATION_GPU_LAYERS`), 42 on the
-shared Windows system (the `--n-gpu-layers` of the llama-swap entry;
-`docs/remote-gpu.md`): ~40-100 s per page, depending on page size. The previous
+**Current model:** Qwen3.8-27B, 4-bit (`i1-Q4_K_S`, ~15.8 GB). It doesn't
+fit in 16 GB of VRAM whole, so part of its 64 layers go on the GPU: 46
+locally (`TRANSLATION_GPU_LAYERS`), 37 on the shared Windows system with
+speculative decoding (38 without; `docs/remote-gpu.md`). The previous
 model, Qwen2.5-14B-Instruct Q4_K_M (8.6 GB, fits whole), stays available
-as `fmt-translate-qwen25`. See `docs/remote-gpu.md` for the GPU memory
-limits on Windows.
+as `fmt-translate-qwen25`.
 
-**Testing a candidate:** `evals/translation_model_test.py` translates a
-fixed set of hard and control pages with each model and scores them side
-by side, without touching any book:
+### 3.2 Choosing the model (2026-09-25)
+
+`evals/translation_model_test.py` translates a fixed set of hard and
+control pages through the real `translate_page()` (same prompt, retries
+and repairs as a book run) and scores them with the review report's
+checks, side by side, without touching any book:
 
 ```bash
 docker exec -e TRANSLATION_MODEL_NAME=<llama-swap key> fmt-translator \
@@ -145,23 +153,150 @@ docker exec fmt-translator python3 /data/evals/translation_model_test.py current
 docker exec fmt-translator python3 /data/evals/translation_model_test.py compare current <label> ...
 ```
 
-Follow up with `translate_gold.py` + `gold_report.py` on a gold book or
-two (§2).
+The 37-page set (30 hard pages from the batch-2 review, plus controls) was
+run with Qwen2.5-14B (then the default), Qwen3.8-27B at a larger quant and
+at Q4 (twice), and a Gemma 4 model (key `bt-translate-gemma4`). With the
+checks of the day, Qwen3.8 Q4 flagged 0 pages against 14 for Qwen2.5, and
+had the most accurate fencing terms; Gemma 4 was about twice as fast
+(~20 s/page against ~40) but weaker on terms. Re-scored with the checks
+as they are on 2026-10-11 (more wording checks since):
 
-**Testing a server setting** (speculative decoding, quantized context, …)
-rather than a model: run the set twice with `EVAL_DETERMINISTIC=1`, with
-and without the setting, and compare the text word for word -- plus one
-repeat of the unchanged setting, so differences can be told from rounding
-noise. Then `gold_passages.py` for accuracy. `FIRST_TEMP=<t>` tries
-another first-try temperature. A prompt change is tried the same way without editing
-the prompt file: add it to `evals/_prompt_variants.py` and run with
-`PROMPT_VARIANT=<name>`. Make a model the default only by changing `docker-compose.yml`
-(locally) or the llama-swap entry (remotely); a full retranslation of
-every book is then a deliberate, scheduled run.
+| Run | Pages with a check | Low-confidence / unavailable | s/page |
+|---|---|---|---|
+| Qwen2.5-14B (then current) | 21/36 | 10 | — |
+| Qwen3.8-27B, larger quant | 18/36 | 0 | 46 |
+| Qwen3.8-27B Q4 (two runs) | 19/36, 20/36 | 0 | 40 |
+| Gemma 4 | 20/36 | 0 | 20 |
+
+So the three newer models are close on what the checks see; the choice
+rested on terms, read side by side. Follow a candidate up with
+`translate_gold.py` + `gold_report.py` on a gold book or two (§2).
+
+### 3.3 Settings: temperature, speculative decoding (2026-10-10/11)
+
+A server setting is tested by running the set twice with
+`EVAL_DETERMINISTIC=1`, with and without it, and comparing the text word
+for word, plus one repeat of the unchanged setting to tell differences
+from rounding noise; then `gold_passages.py` for accuracy. `FIRST_TEMP=<t>`
+tries another first-try temperature.
+
+- **Temperature 0 for the first try** (was 0.3, a value inherited from
+  the 7B): gold score 46.49 against 46.31 / 46.22 for two runs at 0.3
+  (their gap, 0.09, is the noise floor); 35 of 36 pages reproduce word for
+  word. 0.1 changed 24 of 36 pages. Retries stay at 0.55 / 0.8.
+- **Speculative decoding (MTP)**, Qwen3.8's built-in draft head: 2.2x
+  faster, ~0.3 GB VRAM; not word for word the same as the plain entry (23
+  of 36 pages identical), equal in accuracy and closeness to the source.
+  Default since 2026-10-11 (`docs/STATUS.md`, "Non-obvious decisions").
+- **More GPU layers** is ruled out: the Windows system has other uses
+  (`docs/remote-gpu.md`).
+
+### 3.4 Prompt tests
+
+A prompt change is tried without editing the prompt file: add it to
+`evals/_prompt_variants.py` and run with `PROMPT_VARIANT=<name>`, on the
+page set and on `gold_passages.py`. Closeness to the source (the share of
+content words with a source look-alike, `gold_passages.py score`) measures
+literalness, which the published-translation score can't: most references
+are free translations, so chrF++ rewards paraphrase.
+
+- **Literal translation, rule 0 (2026-10-10/11):** closeness 30.54% →
+  31.32%, gold score within noise. Its first version made false-friend
+  errors; v2 names them (`docs/model-quirks.md` 2.15).
+- **Kept-term guard, quotations, glossary (2026-10-11):** after a
+  retranslation with rule 0, `evals/retranslation_compare.py` and the
+  meaning reviews (§4) showed kept terms replaced by English look-alikes
+  and many glossary gaps. `PAGE_SET=retranslation` runs the pages they
+  came from, plus controls (`translation_model_test.py`, results under
+  `reports/translation-model-test/retranslation/`). Round 3 (97 pages, 2026-10-12)
+  fixed most of its 32 new pages (the weapon parts, over / under, *incontro*,
+  *destramente*, the Masiello page left in Italian); the review report's
+  checks flagged 1 page against 4 before; 54.7 s/page. Rules changed after
+  a run are rechecked on their pages with `PAGE_SET=followup`.
+
+### 3.5 Why it errs: the model's own probabilities
+
+`evals/word_probabilities.py <stem> <scan>` translates one page at
+temperature 0 and prints the model's top next words wherever a watched
+word (default: the line names) is a candidate. Use the plain entry
+(`--entry fmt-translate-plain`, the default): with MTP on, drafted tokens
+come back with no alternatives. On Kirchhoffer scan 52, where the source
+says quarte three times, "the straight riposte after ___" was tierce
+34.3%, quarte 32.6% -- a near-tie the model's prior from other fencing
+text nearly won -- and after writing tierce once it kept it (84%, 64%).
+That is why a hotter retry alone doesn't fix such a page, and why the
+check plus a targeted retry hint does (`docs/model-quirks.md` 2.16). With the
+glossary-round prompt (2026-10-11) the same spot reads quarte 47.8%, tierce
+14.5%: the prompt as a whole moves these odds, not only the lines it
+adds about line names.
+
+### 3.6 How far from the best: the ceiling test (2026-10-11)
+
+The checks and the gold score measure the local model against itself and
+against free human translations; neither says how much better a
+translation of these pages could be. The ceiling test answers that: a
+Claude agent translates the `PAGE_SET=retranslation` pages from the source
+alone, with the same prompt files and without seeing any existing English
+(saved as `reports/translation-model-test/retranslation/claude.json`), and
+a second agent judges the versions blind against the source -- meaning
+errors and wrong terms per page. It is a yardstick only: the books are
+translated locally, and the cover says so. A large gap means prompt and
+glossary work still pays; a small one means the remaining errors are for
+review to catch.
+
+**Result (2026-10-11, 63 pages, of which 46 had a known error):** the
+prompt with the glossary rounds fixed about 30 of the 46 -- every line-name
+swap, the kept terms, and most glossary terms (*battement*, *à fond*, *coup
+fourré*, *contre*, *développement*, *effacé*, *défendre*). What it left are
+sentence-level errors: lost negations (Kirchhoffer 50, 64, 86), *ne … que*
+read as "not" (Joseph-Renaud 39), *ignorait* → "knew", the possessive that
+swaps forte and foible (Gomard 139), and a long French quotation left
+untranslated (Masiello 128). Claude's translation, on the 55 of these
+pages it covered, got all six of those sentence errors right (Kirchhoffer
+50, 64, 86; Joseph-Renaud 39, 264; Masiello 128) and the same terms right. So the remaining gap is comprehension of the
+sentence, not vocabulary: more glossary work won't close it, review does
+(§4). Controls were stable (length and closeness within a point or two).
 
 ---
 
-## 4. Fine-tuning  (not started)
+## 4. Checking a retranslation, and reading for meaning
+
+The regression checks (§1) protect pages that should not change. A
+deliberate retranslation (a new prompt, a new model) changes most pages,
+so it needs a different check: did any page get worse, and is the
+English right?
+
+- **`evals/retranslation_compare.py <stem> [--before <tag>]`** compares a
+  book's translation with a copy saved before the run
+  (`translation.<tag>.txt`, `quality_report.<tag>.json` in the book's
+  `intermediate/`): pages shorter by 15%+ or longer by 30%+, kept terms that
+  lost their italics (counting the line names the PDF italicises when
+  drawn, and no more than the source has), footnote notes that vanished
+  (not ones that moved to the term's earlier first use), new
+  low-confidence pages, new review-report checks, source-language runs,
+  `[[fix]]` entries that stopped applying; and closeness before and after.
+  `reports/retranslation/<stem>.md` + `.html`, worst first, source /
+  before / after side by side. Save the copies before the run:
+  `cp translation.txt translation.<tag>.txt` (and the review report's
+  json). It flags; a person or the meaning review decides.
+- **Meaning review** (`evals/meaning_review.md`): a Claude agent reads the
+  source against the English page by page, about 130-160 scans per agent,
+  and lists each place the English says something different -- source
+  words, English now, a literal correction, a plain explanation, marked
+  where a fencing term is involved. It catches what no check can: a lost
+  negation, a reversed clause, a term guessed wrong. Check a few of each
+  report's worst items against the page (on 2026-10-11 every one checked,
+  over 20, was right), then merge the report into the book's checklist
+  section, where the reviewer ticks the items they agree with. In
+  "patterns" mode it lists recurring term errors first, with the book's
+  own definition where it gives one -- those become glossary lines in the
+  prompt, which fix every book; single errors become `[[fix]]` entries.
+  Run it on a book's final English; for a book about to be retranslated,
+  patterns mode only.
+
+---
+
+## 5. Fine-tuning  (not started)
 
 The pipeline only runs pretrained models; training would happen outside
 it.
@@ -173,7 +308,8 @@ it.
 - **Data is most of the work:** ~1,000 examples of `{prompt, source page,
   English page}`. English from (a) reviewed pages of the operator's own
   books, (b) aligned gold pairs (§2; human translations beat
-  model-written ones) and/or (c) a stronger model's output, corrected.
+  model-written ones) and/or (c) a stronger model's output, corrected --
+  the ceiling test (§3.6) shows how much a stronger model would add.
   Overweight the hard cases (drills, plate captions, pages that start
   mid-sentence, term-dense passages). Hold back ~15% and score them with
   §1 and §2 before and after.

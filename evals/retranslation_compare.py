@@ -149,8 +149,12 @@ def compare(stem, tag):
             why.append("possible source-language run"); score += 2
         if why:
             rows.append((score, s, why, src, a, b, ca, cb))
+    # the saved translation already had the fix applied, so it holds the
+    # replacement; the fix no longer applies when the new page has neither
+    # its find nor its replacement (Barbasetti: 5 such, the cover title among them)
     fixes = [f for f in _fixes(stem) if 1 <= f.get("scan", 0) <= len(new)
-             and f["find"] in old[f["scan"] - 1] and f["find"] not in new[f["scan"] - 1]
+             and (f["find"] in old[f["scan"] - 1] or f.get("replace", "") in old[f["scan"] - 1])
+             and f["find"] not in new[f["scan"] - 1]
              and f.get("replace", "") not in new[f["scan"] - 1]]
     rows.sort(key=lambda r: (-r[0], r[1]))
     pct = lambda c: 100 * c[0] / max(1, c[1])

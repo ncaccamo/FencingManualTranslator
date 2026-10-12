@@ -75,6 +75,78 @@ PAGES = [
     ("spinnewyn", 80, "control"),
 ]
 
+# PAGE_SET=retranslation: the 2026-10-11 retranslation check -- pages where the
+# literal prompt swapped a line name, dropped a kept term for an English
+# look-alike, or left a quotation in French; plus controls.
+RETRANSLATION_PAGES = [
+    ("kirchhoffer", 52, "quarte -> tierce"), ("kirchhoffer", 23, "reprise -> re-attack"),
+    ("kirchhoffer", 76, "reprise -> bout"),
+    ("josephrenaud", 49, "sixte -> septime"), ("josephrenaud", 142, "seconde -> second"),
+    ("josephrenaud", 169, "barré -> stop-hit"), ("josephrenaud", 178, "sixte -> septime"),
+    ("josephrenaud", 192, "seconde -> second"), ("josephrenaud", 228, "épée -> foil"),
+    ("josephrenaud", 263, "flèche -> run"),
+    ("barbasetti", 35, "French quotation left"), ("barbasetti", 36, "French quotation left"),
+    ("barbasetti", 69, "botta drilla"), ("barbasetti", 184, "rimessa -> remise"),
+    ("masiello_1887", 11, "maestro -> master"), ("masiello_1887", 72, "manrovesci -> reversals"),
+    ("masiello_1887", 128, "French quotation left"), ("masiello_1887", 133, "French quotation, l'fencing"),
+    ("masiello_1887", 349, "tocchi -> touches"), ("masiello_1887", 434, "maestro -> master"),
+    ("prevost-jollivet", 57, "sixte -> septime, all tries"),
+    ("gomard", 190, "sixte -> septime (0.3 run)"), ("gomard", 265, "sixte -> septime (0.3 run)"),
+    # from the meaning reviews (glossary terms, lost negations)
+    ("kirchhoffer", 19, "jarrets tendus -> knees bent"), ("kirchhoffer", 50, "negation lost"),
+    ("kirchhoffer", 54, "battement -> straight thrust"), ("kirchhoffer", 61, "pointe d'arrêt; contre de quarte"),
+    ("kirchhoffer", 64, "negation lost; plastronnez"), ("kirchhoffer", 86, "negation lost; contretemps"),
+    ("jacob", 17, "coup fourré -> feint"), ("jacob", 25, "hésiterais lost"),
+    ("jacob", 117, "battements -> cuts"), ("jacob", 132, "coup fourré -> astray"),
+    ("jacob", 144, "double contre de quarte"), ("jacob", 155, "à fond -> to the bottom"),
+    ("jacob", 237, "pistol tirer -> fence"), ("jacob", 277, "entraînés -> trained"),
+    ("josephrenaud", 30, "en cavant aux avancés"), ("josephrenaud", 39, "ne ... qu'aux reversed"),
+    ("josephrenaud", 86, "poule -> chicken"), ("josephrenaud", 145, "coquille -> button; caver"),
+    ("josephrenaud", 176, "battement -> stamp"), ("josephrenaud", 183, "contre de sixte -> against"),
+    ("josephrenaud", 197, "corps-à-corps -> croisé"), ("josephrenaud", 264, "ignorait -> knew"),
+    ("gomard", 60, "développement -> glide"), ("gomard", 69, "défend -> defends"),
+    ("gomard", 123, "effacé -> squared"), ("gomard", 139, "foible/forte reversed"),
+    ("gomard", 251, "attaque à l'épée"), ("gomard", 263, "ne plus que -> no longer"),
+    ("gomard", 297, "parer au simple"), ("gomard", 304, "défende -> defend"),
+    # round 3 (Italian books, Prévost-Jollivet, LaMarche pattern reviews)
+    ("masiello_1887", 83, "page left in Italian"), ("masiello_1887", 164, "coccia -> pommel"),
+    ("masiello_1887", 168, "coccia -> back of the head"), ("masiello_1887", 189, "forza nemica capitale"),
+    ("masiello_1887", 278, "coccia -> skull"), ("masiello_1887", 302, "parata di appoggio"),
+    ("masiello_1887", 397, "petto sopra -> outside"), ("masiello_1887", 439, "risposta -> answer"),
+    ("masiello_1887", 553, "destramente -> to the right"), ("masiello_1887", 731, "quegli/questi swapped"),
+    ("barbasetti", 33, "fleuret -> épée"), ("barbasetti", 41, "coccia, gavigliano -> ricasso"),
+    ("barbasetti", 43, "prona -> supine"), ("barbasetti", 116, "parate di tasto"),
+    ("barbasetti", 134, "sopra/sotto -> outside/inside"),
+    ("prevost-jollivet", 21, "rapière -> riposte"), ("prevost-jollivet", 49, "the four lines"),
+    ("prevost-jollivet", 88, "ligne du dehors"), ("prevost-jollivet", 106, "contre-dégagement"),
+    ("prevost-jollivet", 130, "contres-opposés et septime"), ("prevost-jollivet", 156, "tendre la broche"),
+    ("prevost-jollivet", 162, "temps -> tempo"), ("prevost-jollivet", 316, "jour -> day; ferrailler"),
+    ("lamarche", 56, "ongles en-dessus -> below"), ("lamarche", 99, "dégagez dessus"),
+    ("lamarche", 120, "parade trompée"), ("lamarche", 125, "contre de sixte et quarte"),
+    ("lamarche", 133, "tendre la perche; à la retraite"), ("lamarche", 172, "dessus/dedans vs haut/bas"),
+    ("lamarche", 289, "rapière -> riposte"), ("lamarche", 313, "fusée -> spring"),
+    ("lamarche", 161, "corps-à-corps replaced; en deçà"),
+    # controls
+    ("kirchhoffer", 30, "control"), ("josephrenaud", 100, "control"), ("josephrenaud", 200, "control"),
+    ("jacob", 100, "control"), ("jacob", 250, "control"), ("barbasetti", 100, "control"),
+    ("masiello_1887", 300, "control"), ("masiello_1887", 500, "control"), ("gomard", 120, "control"),
+    ("prevost-jollivet", 150, "control"), ("lamarche", 200, "control"), ("masiello_1887", 600, "control"),
+]
+# PAGE_SET=followup: pages whose rules changed after a test run
+FOLLOWUP_PAGES = [("lamarche", 133, "tendre la perche"), ("prevost-jollivet", 156, "tendre la broche"),
+                  ("prevost-jollivet", 79, "d'un coup sec"), ("barbasetti", 116, "parate di tasto"),
+                  ("lamarche", 56, "ongles en-dessus"), ("prevost-jollivet", 21, "rapière"),
+                  ("prevost-jollivet", 248, "rapière")]
+if os.environ.get("PAGE_SET") == "followup2":
+    PAGES = [("lamarche", 56, "ongles en-dessus; own-language note")]
+    OUT = OUT + "/retranslation"
+if os.environ.get("PAGE_SET") == "followup":
+    PAGES = FOLLOWUP_PAGES
+    OUT = OUT + "/retranslation"
+if os.environ.get("PAGE_SET") == "retranslation":
+    PAGES = RETRANSLATION_PAGES
+    OUT = OUT + "/retranslation"
+
 
 def _folder(prefix):
     import glob

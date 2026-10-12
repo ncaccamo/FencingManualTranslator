@@ -5,12 +5,13 @@ CRITICAL RULES — FOLLOW EXACTLY:
 0. Translate closely: keep the author's own words, sentence structure and order; where English has a word from the same root that means the same thing, use it; never add explanatory words, merge or reorder sentences, or omit anything. A phrasing that reads slightly foreign is fine. Depart from the author's wording only where a literal rendering would be wrong English or would change the meaning:
    - false friends: use the sense, not the look-alike — avvertenza → note, garantir (a part of the body) → protect, enfin → after all / finally, actuellement / attualmente → currently, eventualmente → possibly, assister à → attend;
    - prepositions follow their sense: di / de naming the means of an action is "by" (colpo di cavazione → thrust by <i>cavazione</i>; di molinello → by <i>molinello</i>);
-   - rule 0 never overrides rules 2-3: kept terms stay in their language, in <i>…</i>, exactly as listed.
+   - rule 0 never overrides rules 2-3: a kept term stays in its language, in <i>…</i>, exactly as listed — never an English word from the same root: reprise is not "re-attack", Italian <i>Maestro</i> is not "master", <i>tocchi</i> is not "touches", <i>manrovesci</i> is not "reversals", <i>rimessa</i> is not "remise";
+   - a quotation in a third language (French quoted in an Italian book, Latin in a French one) is translated into English like the rest, never left as it is; after the closing quotation mark write <fn>French in the original</fn> (or Latin, …). A book title is the only thing left as written.
 
 1. Translate EVERYTHING into modern English. The output must be entirely English (Latin script only). Do not leave French / Italian / German / Spanish / Latin sentences, phrases, headings, or captions untranslated. Never write a note to yourself in any language.
 
 2. KEEP in the original language, wrapped in <i>…</i>, ONLY this small set — the terms English-language fencing literature itself retains:
-   - French: riposte, remise, reprise, croisé, corps à corps, volte, sentiment du fer, tac-au-tac, and the numbered lines/parries prime, seconde, tierce, quarte, quinte, sixte, septime, octave.
+   - French: riposte, remise, reprise, croisé, corps à corps, volte, sentiment du fer, tac-au-tac, flanconnade (also spelled flanconade — write <i>flanconnade</i>), appel (the stamp of the foot: <i>appel</i>, plural <i>appels</i>), pointe d'arrêt (the pointed tip fixed to the épée's button — a device, never an action), and the numbered lines/parries prime, seconde, tierce, quarte, quinte, sixte, septime, octave.
    - "parade de tierce" = "parry of tierce" — translate "parade" (rule 3), keep the number.
    - épée — keep as "épée" (it IS the English term), wrap in <i>épée</i>.
    - German: Ausfallen, Zornhau, Versetzung, Absetzen, Winden
@@ -39,7 +40,47 @@ CRITICAL RULES — FOLLOW EXACTLY:
      keep their own names: coup droit → straight thrust, coup de temps → time-hit, coup d'arrêt → stop-thrust.
      Where the text DEFINES or CONTRASTS the two words as terms ("le coup est … ; la botte est …", "on ne
      doit appeler botte que …"), keep them in French: <i>coup</i>, <i>botte</i>.
-   - temps d'arrêt / coup d'arrêt → stop-hit / stop-thrust
+   - coup d'arrêt → stop-thrust   |   temps d'arrêt → stop-hit where it is that action, a pause where it is a pause ("sans temps d'arrêt" → without pausing)
+   - fencing terms these books use — the standard English, never a guess:
+     battement → beat ("double battement" → double beat; never "cut")   |   à fond → fully, with a full lunge ("contre-ripostez à fond" → counter-<i>riposte</i> with a full lunge; never "to the bottom")
+     contre, the circular parry → counter ("contre de quarte" → counter of quarte, "double contre" → double counter; never "against")
+     tirer → thrust ("tirer droit", "tiré droit" → thrust straight; never "draw"); of a pistol → fire
+     coup double → double hit (both fencers hit each other at the same time)   |   coup pour coup → hit for hit
+     fausse attaque → false attack (not a feint)   |   redoublement, redoubler → redoubling, to redouble (doublement and doublé are other actions)
+     contre-temps, contretemps → counter-time (never "time-hit")
+     les avancés, aux avancés → the advanced target (hand, wrist, forearm)
+     coquille → bell guard   |   jarret → back of the knee ("jarrets tendus" → knees straight)   |   saignée → crook of the elbow
+     de pied ferme → without moving the feet   |   à bras raccourci → with a shortened arm
+     dans les armes / sur les armes → inside / outside (the lines)   |   écarter le fer → set the blade aside
+     marche, en marchant → advance, advancing (never "walk")   |   invite de sixte → invitation in sixte
+     à la muette → in silence ("la leçon à la muette" → the silent lesson)
+     poule → pool (a competition)   |   terrain, of a duel → the ground (never "piste")   |   combat → combat (assaut is the bout)
+     développement, se développer → lunge, to lunge (extension is a different word)   |   se relever (after the lunge) → recover
+     épée meaning the blade, in set phrases → blade: attaque à l'épée → attack on the blade, absence d'épée → absence of blade, changement d'épée → change of engagement, donner l'épée → give the blade, liement d'épée → bind; <i>épée</i> only for the weapon
+     se tromper, of a parry → to be deceived ("la parade se trompe" → the parry is deceived; never "err")
+     un simple, parer au simple → a simple parry, to parry with the simple parry   |   menacé (noun, in riposte tables) → threat
+     effacer, effacé (the body turned sideways) → efface, effaced (never "squared")   |   parer de tac → beat parry
+     demi-contre → half-counter   |   demi-cercle → half-circle   |   estramaçon → cut   |   estocade → thrust
+     monture → hilt   |   passe → pass   |   droit-fil / faux-fil → true edge / false edge
+     engagement → engagement (never "bind", which is liement)   |   a line name (prime … octave) is always the French word, never "second", "third", "fourth", "seventh"
+     coup d'attaque → the attack (never "attacking attack")   |   le mur, tirer au mur → the wall exercise
+     pointe volante → flying point   |   doigté → fingering   |   pronation moyenne → middle pronation   |   attaque franche → frank attack
+     à temps perdu → at a lost tempo
+     fusée → grip   |   talon (of the blade) → heel   |   rapière → rapier (never "riposte")   |   espadon → two-handed sword   |   bâton à deux bouts → quarterstaff
+     temps, the action ("prendre un temps", "un temps") → time-hit; "tempo" only where temps counts the movements of an attack
+     tension, tendre le bras → extension, extend the arm   |   contre-opposé → counter-opposite   |   parade sèche (the parry that strikes and leaves the blade) → dry parry; but "d'un coup sec", sec, sèchement as an adverb (striking sharply) → sharp, sharply
+     dessus / dessous, the lines ("ligne du dessus", "dessus les armes", "dégagez dessus") → over / under ("the line over", "over the arms"); dedans / dehors → inside / outside; haut / bas → high / low; but of the hand or nails (ongles, main, poignet) "en dessus", "en-dessus", "dessus" → up, "en dessous", "en-dessous", "dessous" → down ("les ongles légèrement en-dessus" → the nails slightly up)
+     jour (an opening) → opening   |   découvert, se découvrir, à la découverte → opening, expose oneself, at the open target
+     jeu (a fencer's style) → play ("jeu de terrain" → play on the ground)   |   ferrailler, ferrailleur → clash blades, blade-clasher
+     écraser, écrasement (du corps) → crouch, crouching   |   dérober le corps → slip the body away (not an evasion of the blade)
+     garde volante → flying guard   |   coup voulu → intended hit   |   coup de raccroc → fluke hit   |   demi-allonge → half-extension
+     attaques à la retraite → attacks on the retreat   |   semelle → sole (one foot-length)   |   cou-de-pied → instep
+     rencontre, affaire (a duel) → encounter, affair (never "bout")   |   donner le change → mislead
+     "parer tierce" → parry tierce   |   "de quarte en seconde" → from quarte to seconde   |   septime enveloppée → septime enveloped
+   - ordinary words these books use in a sense the model misreads:
+     défendre (l'usage de …) → forbid   |   ne … plus que → now only (never "no longer")   |   ajuster (a hit) → aim
+     grande force, de première force → great skill, first-rate   |   vicieux → faulty
+     juste, justesse → correct, accuracy (never "just")   |   venir à bout de → get the better of   |   faire des armes → fence   |   Or (opening a sentence) → Now
    - du tac au tac → tac-au-tac   |   à temps perdu → at a lost tempo
    - divers (as a heading) → miscellaneous   |   avant-propos → foreword
    - première partie, deuxième partie … → First Part, Second Part … (ordinal first, never "Part One")
@@ -56,10 +97,12 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - dégagement → disengagement
    - froissement → graze
    - coulé → glide
-   - caver → to drop the point
-   - à-propos → sense of timing
+   - caver → to angle ("en cavant" → by angling, "coup cavé" → angled hit)
+   - barré → bar ("le barré de seconde" → the bar in seconde)
+   - coup fourré → double hit (the same as coup double)
+   - tendre la perche, la perche tendue, tendre la broche (slang for sticking the arm out stiffly at an attack, hoping the attacker runs onto the point; no English saying) → stick the arm out stiffly, the arm stuck out stiffly
+   - à-propos → timing (plural: moments of timing)
    - coup de temps → time-hit
-   - appel → stamp of the foot
    - rompre → to break ground   (a single deliberate step back, NOT "romp" -- and NOT "retreat"/"retraite", a different, more general backward movement; keep the two distinct if both appear)
    - rassemblement / rassembler / rassemblant → gathering (of the feet)   (spell the French EXACTLY: "rassemblant", never "raassemblant")
    Example:  "… and by a bind<fn>Fr. liement</fn> he carried the blade aside."
@@ -79,7 +122,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
 
 8. Ignore and do not transcribe ornament / colophon / publisher's-device motto text if any slipped through (e.g. a sower motto around a logo).
 
-9. NO translator commentary. The only footnotes you ever produce are the bare <fn>Fr. …</fn> / <fn>It. …</fn> source references from rule 3b. Never explain, define, gloss, or annotate a term or passage.
+9. NO translator commentary. The only footnotes you ever produce are the bare <fn>Fr. …</fn> / <fn>It. …</fn> source references from rule 3b, and <fn>French in the original</fn> after a translated quotation (rule 0). Never explain, define, gloss, or annotate a term or passage.
 
 10. MARGIN NOTES. A line of the form ⟦MARGIN: …⟧ is one of the author's printed margin notes. Translate the text inside it and keep the ⟦MARGIN: …⟧ wrapper exactly, on its own line, in the same place relative to the surrounding paragraphs. Never drop, merge or move a margin note, and never add one.
 

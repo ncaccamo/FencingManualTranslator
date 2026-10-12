@@ -196,9 +196,17 @@ _FOOTNOTED_FR = [
     ("coup de temps",  "time-hit"),
     ("coupés",         "cut-overs"),               ("coupé",        "cut-over"),
     ("coulés",         "glides"), ("coulé", "glide"), ("déroulé", "glide"),
-    ("à-propos",       "sense of timing"),
-    ("appels",         "stamps of the foot"),      ("appel",        "stamp of the foot"),
-    ("caver",          "to drop the point"),
+    ("à-propos",       "timing"),
+    # caver was "to drop the point" until 2026-10-11 -- wrong: the books define it
+    # as the opposite of opposition, an angled thrust (Kirchhoffer, Joseph-Renaud
+    # scan 144). barré: Robaglia's "croisé de seconde ... chasse vigoureusement le
+    # fer"; coup fourré = coup double (Kirchhoffer's glossary). Reviewer's choices.
+    ("en cavant",      "by angling"),             ("cavant",       "angling"),
+    ("caver",          "angle"),
+    ("barrés",         "bars"),                    ("barré",        "bar"),
+    ("coups fourrés",  "double hits"),             ("coup fourré",  "double hit"),
+    ("tendre la perche", "stick the arm out stiffly"), ("tendre la broche", "stick the arm out stiffly"),
+    ("la perche tendue", "the arm stuck out stiffly"),
 ]
 
 # Italian footnoted terms (translated, first use footnoted "It. <term>"),
@@ -216,17 +224,20 @@ _FOOTNOTED_IT = [
     ("circolazioni",    "circlings"),       ("circolazione", "circling"),
     ("di striscio",     "grazing"),         ("striscio",    "graze"),
     ("volanti",         "off the blade"),   ("volante",     "off the blade"),
+    ("spratico",        "practice bout"),
+    ("parate di tasto", "opposition parries"), ("parata di tasto", "opposition parry"),
 ]
 # accepted as source references in the model's <fn> notes, beyond _FOOTNOTED_IT
 _FOOTNOTED_IT_REFS = {"filo"}
 
 # canonical singular French for the "Fr. <term>" note, so a plural form
 # ("appels") doesn't produce a second note distinct from "Fr. appel".
-_FOOTNOTE_REF_IT = {"legamenti": "legamento", "trasporti": "trasporto",
+_FOOTNOTE_REF_IT = {"parate di tasto": "parata di tasto", "legamenti": "legamento", "trasporti": "trasporto",
                  "deviamenti": "deviamento", "controazioni": "controazione",
                  "circolazioni": "circolazione", "di striscio": "striscio",
                  "volanti": "volante"}
 _FOOTNOTE_REF_FR = {
+    "en cavant": "caver", "cavant": "caver", "barrés": "barré", "coups fourrés": "coup fourré",
     "rassemblements": "rassemblement", "rassemblant": "rassemblement",
     "rassembler": "rassemblement", "dérobements": "dérobement",
     "dégagements": "dégagement", "liements": "liement",
@@ -313,6 +324,18 @@ def pull_footnotes(text: str, source_text: str = "", seen: set = None):
         # accept only a bare source reference ("Fr. liement" / "French:
         # liement", "It. legamento") for a footnoted term -- the model
         # sometimes footnotes a kept term or puts the English in the note.
+        # "French in the original" after a quotation the model translated
+        # from a third language (prompt rule 0): kept on every quotation
+        q = re.fullmatch(r"(French|Italian|Latin|Spanish|German|Greek|English) in the original\.?", note, re.I)
+        # never the book's own language: a French quotation in a French book
+        # is just the text (LaMarche scan 56 got three such notes)
+        if q and q.group(1).lower() == BOOK_LANG.lower():
+            return ""
+        if q:
+            if len(numbered) >= FN_MAX_PER_PAGE:
+                return ""
+            numbered.append(f"{q.group(1).capitalize()} in the original")
+            return f"{FN_MARK}{len(numbered)}"
         ref = re.sub(rf"^(?:{ab}\.|{label.lower()}:)\s*", "", note, flags=re.I).lower().rstrip(".")
         if not note or ref not in _footnoted_refs:
             return ""                       # drop the tag, keep the phrase
@@ -388,12 +411,24 @@ _ALWAYS_TRANSLATE = [
 ]
 
 
+# French around the word: it is inside a French title or quotation kept as
+# written ("L'exercice des armes ou le maniement du fleuret", "Escrime
+# pratique", "Histoire de l'escrime" -- Masiello scans 102, 113, 128), not
+# an English sentence, which never has "du foil" or "fencing pratique".
+_FRENCH_BEFORE = re.compile(r"(?:\b(?:du|de|des|au|aux)\s+|\b[dl][’'])$", re.I)
+_FRENCH_AFTER = re.compile(r"^\s+(?:pratique|française|italienne|ancienne|moderne|théorique|"
+                           r"simplifiée|militaire|nouvelle|et\s+de|en\s+)", re.I)
+
+
 def apply_always_translate(text: str) -> str:
     if not text:
         return text
     for pat, repl in _ALWAYS_TRANSLATE:
         def _sub(m, r=repl):
             g = m.group(0)
+            if _FRENCH_BEFORE.search(m.string[max(0, m.start() - 8):m.start()]) \
+                    or _FRENCH_AFTER.match(m.string[m.end():m.end() + 24]):
+                return g
             return r.upper() if g.isupper() else r.capitalize() if g[:1].isupper() else r
         text = re.sub(r"\b" + pat + r"\b", _sub, text, flags=re.IGNORECASE)
     return _phrase_repairs(text)
@@ -443,6 +478,9 @@ _KEEP_TERMS_FR = [
     # RAPISES" is the same failure with a different garbled spelling.
     ("riposte", [r"rapier(?:[- ]?(?:rapier|response|riposte|reply))?",
                  r"riposte response", r"rapises?"]),
+    ("pointe d'arrêt", []), ("pointe d’arrêt", []),
+    ("flanconnade", []),
+    ("appels", []), ("appel", []),
     ("remise", []),
     ("reprise", []),
     # "du tac au tac": parry and riposte in one instant -- kept in French in
@@ -465,6 +503,66 @@ _KEEP_TERMS_IT = [(t, []) for t in (
     # (the French "RAPISES"; "RIPONSES" is fixed in fix_known_garbles)
     ("riposte", [r"rapier(?:[- ]?(?:rapier|response|riposte|reply))?",
                  r"riposte response", r"rapises?"])]
+
+
+# Maestro is kept every time in an Italian book (reviewer, 2026-10-11): the
+# lesson's master, a named one (Maestro Parise) and masters in general. The
+# literal prompt had the model write "master" in prose (Masiello scan 434,
+# 74 -> 56 kept). Each "master(s)" outside <i>...</i> becomes <i>Maestro</i> /
+# <i>Maestri</i>, no more of them than the page's source has maestro/maestri
+# (a "master" can render padrone); the verb ("to master") is left alone.
+_MAESTRO_SRC = re.compile(r"(?<!\w)maestr[oi](?!\w)", re.I)
+_MASTER_EN = re.compile(r"(?<![\w-])(?<!to )(master)(s?)(?![\w-])", re.I)
+
+
+# rapière → "riposte": the model reads the weapon as the fencing term even
+# with a glossary line (Prévost-Jollivet scans 21, 248; LaMarche 289 twice).
+# The source's riposte / rapière words are paired in order with the English's
+# riposte / rapier words; only when the counts match does a "riposte" standing
+# where the source has rapière become "rapier". Otherwise nothing changes.
+_RIPOSTE_OR_RAPIER_SRC = re.compile(r"\b(?:ripost\w*|rapi[eè]res?)\b", re.I)
+_RIPOSTE_OR_RAPIER_EN = re.compile(r"(?:<i>)?\b(ripost(?:e|es|ed|ing)|rapiers?)\b(?:</i>)?", re.I)
+
+
+def restore_rapier(text: str, src: str) -> str:
+    if not text or not src or not re.search(r"rapi[eè]re", src, re.I):
+        return text
+    src_words = _RIPOSTE_OR_RAPIER_SRC.findall(src)
+    out = list(_RIPOSTE_OR_RAPIER_EN.finditer(text))
+    if len(src_words) != len(out):
+        return text
+    for sw, m in reversed(list(zip(src_words, out))):
+        if sw.lower().startswith("rapi") and m.group(1).lower().startswith("ripost"):
+            word = "rapiers" if m.group(1).lower().endswith("s") else "rapier"
+            word = word.capitalize() if m.group(1)[:1].isupper() else word
+            text = text[:m.start()] + word + text[m.end():]
+    return text
+
+
+def enforce_maestro(text: str, src: str) -> str:
+    if BOOK_LANG != "Italian" or not text:
+        return text
+    budget = [len(_MAESTRO_SRC.findall(src or ""))]
+    if not budget[0]:
+        return text
+
+    def sub(m):
+        if budget[0] <= 0:
+            return m.group(0)
+        budget[0] -= 1
+        word = "Maestri" if m.group(2) else "Maestro"
+        if m.group(1).isupper():
+            word = word.upper()
+        return f"<i>{word}</i>"
+
+    out = []
+    for part in re.split(r"(<i>.*?</i>)", text, flags=re.S | re.I):
+        if not part.lower().startswith("<i>"):
+            part = _MASTER_EN.sub(sub, part)
+        else:
+            budget[0] -= len(re.findall(r"maestr[oi]", part, re.I))
+        out.append(part)
+    return "".join(out)
 
 
 def _keep_terms():
@@ -577,8 +675,12 @@ def fix_known_garbles(text: str, src: str = "") -> str:
     # a French book title with its *escrime* turned into English by the
     # glossary: "Traité d'Fencing pratique" (Joseph-Renaud scan 35),
     # "Bibliographie de l'Fencing" (Barbasetti). English never writes
-    # "d'Fencing" / "l'Fencing", so it is always such a title.
-    text = re.sub(r"(\b[dl][’'])Fencing\b", r"\1Escrime", text)
+    # "d'Fencing" / "l'Fencing", so it is always such a title -- or French
+    # quoted as it stands, lower case: "Histoire de l'fencing" (Masiello
+    # scan 133), "dans l'fencing" (Barbasetti scan 36).
+    text = re.sub(r"(\b[dlDL][’'])(fencing|Fencing|FENCING)\b",
+                  lambda m: m.group(1) + {"fencing": "escrime", "Fencing": "Escrime",
+                                          "FENCING": "ESCRIME"}[m.group(2)], text)
     # "RIPOSTES AT THE <i>TAC-AU-TAC</i>." (Gomard scans 242, 246): the
     # idiom read as a place. Only "at the" -- "of the" can be a real noun
     # use ("the speed of the tac-au-tac")
@@ -2095,6 +2197,7 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         return (f"[oversized OCR page — likely a repetition artifact; "
                 f"first part translated, remainder omitted]\n\n{cand}"[:6000])
     best_candidate = None   # best rejected attempt, for the fallback
+    line_hint = ""          # set when a try swapped a line name (below)
     for attempt in range(3):
         print(f"  Page {i}/{n} (try {attempt + 1})", end="", flush=True)
 
@@ -2111,6 +2214,7 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
                            f"fluent English. Do NOT repeat any of it in the "
                            f"original language. Match the capitalisation of the "
                            f"source; do NOT write the text in all capitals."
+                           f"{line_hint}"
                            f"\n\n{ctx}Text to translate:\n{clean_text}")
             temp = 0.3 + 0.25 * attempt
         candidate = translate_with_llama(full_prompt, temperature=temp)
@@ -2150,6 +2254,8 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
                                "[[TABLE]]", candidate)
         candidate = apply_always_translate(candidate)
         candidate = enforce_kept_terms(candidate, clean_text)
+        candidate = enforce_maestro(candidate, clean_text)
+        candidate = restore_rapier(candidate, clean_text)
         # on a ToC page: translate the Cat-3 terms but emit NO
         # footnote marker (a contents line must not carry one, and
         # it would burn the once-per-book note), and skip the
@@ -2219,6 +2325,14 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         # with the low-confidence banner for a person to check.
         swap = line_names_swapped(candidate, clean_text)
         if swap:
+            # a hotter try alone often repeats it (Prévost-Jollivet scan 57, all
+            # three tries) -- Kirchhoffer scan 52 was a
+            # near-tie, tierce 34% / quarte 33%, then self-consistent -- so the
+            # retry is told which lines the source names, and how often
+            named = {w: c for w, c in _line_name_counts(clean_text, source=True).items() if c}
+            line_hint = (" The source names these lines / parries, and no others: "
+                         + ", ".join(f"{w} ({c}x)" for w, c in named.items())
+                         + ". Write each one exactly where the source has it; never put one line in place of another.")
             print(f" → line names changed ({swap})")
             time.sleep(2)
             continue

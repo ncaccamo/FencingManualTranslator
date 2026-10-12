@@ -70,18 +70,18 @@ models:
       --host 127.0.0.1 --port ${PORT} --api-key ${LLAMA_API_KEY}
       --ctx-size 8192 --n-gpu-layers 999 --parallel 1
     ttl: 300
-  fmt-translate:
-    cmd: >
-      llama-server -m models\Qwen3.8-27B.i1-Q4_K_S.gguf
-      --host 127.0.0.1 --port ${PORT} --api-key ${LLAMA_API_KEY}
-      --ctx-size 6144 --n-gpu-layers 38 --parallel 1 --jinja --reasoning-budget 0
-    ttl: 300
-  fmt-translate-mtp:             # optional: speculative decoding, 2.2x (see below)
+  fmt-translate:                 # speculative decoding (MTP), 2.2x -- the default since 2026-10-11
     cmd: >
       llama-server -m models\Qwen3.8-27B.i1-Q4_K_S.gguf
       --host 127.0.0.1 --port ${PORT} --api-key ${LLAMA_API_KEY}
       --ctx-size 6144 --n-gpu-layers 37 --parallel 1 --jinja --reasoning-budget 0
       --spec-type draft-mtp --spec-draft-n-max 3
+    ttl: 300
+  fmt-translate-plain:           # the same model without MTP: fallback, and word probabilities
+    cmd: >
+      llama-server -m models\Qwen3.8-27B.i1-Q4_K_S.gguf
+      --host 127.0.0.1 --port ${PORT} --api-key ${LLAMA_API_KEY}
+      --ctx-size 6144 --n-gpu-layers 38 --parallel 1 --jinja --reasoning-budget 0
     ttl: 300
   fmt-translate-qwen25:          # previous model, kept for comparisons
     cmd: >
@@ -106,7 +106,7 @@ terminology). Its flags, and why:
   system (~40 s per page) but spilled 3 GB when other programs held GPU
   memory, doubling the page time (2026-10-02); 36 avoided the spill but put
   so much on the CPU that it was slower still. At 42: ~100 s for a dense
-  ~290-word page. 38 is the setting kept since 2026-10-06: the system has
+  ~290-word page. 38 is the setting kept since 2026-10-06 (37 with MTP): the system has
   other uses and can't be kept clear for a run, so the margin matters more
   than the speed (~0.5-0.6 s per source word). In Task Manager → Performance → GPU, "shared GPU memory"
   near 1.6 GB during a run is normal (transfer buffers); 3 GB is a spill —
@@ -117,14 +117,18 @@ terminology). Its flags, and why:
   thinking turned off (it only slows translation down).
 - Use a plain K quant: the unsloth "UD" mixed quants crashed on Vulkan
   (llama.cpp b11182).
-- `fmt-translate-mtp` (optional, not the default): the same model with
-  Qwen3.8's built-in draft head (multi-token prediction) proposing up to 3
-  tokens that the main model checks in one pass -- 2.2x faster for ~0.3 GB
-  more VRAM, hence 37 layers. Its output is close to, but not word for word
-  the same as, `fmt-translate` (`docs/STATUS.md`, "Non-obvious decisions").
-  To try it: `TRANSLATION_MODEL_NAME=fmt-translate-mtp` for a run.
-  llama-swap only rereads its config with `--watch-config`; otherwise
-  restart it after adding an entry ("no router for requested model").
+- `--spec-type draft-mtp --spec-draft-n-max 3` (the `fmt-translate`
+  entry, the default since 2026-10-11): Qwen3.8's built-in draft head
+  (multi-token prediction) proposes up to 3 tokens that the main model
+  checks in one pass -- 2.2x faster for ~0.3 GB more VRAM, hence 37 layers.
+  Its output is close to, but not word for word the same as, the plain
+  entry's, and scored the same for accuracy and closeness to the source
+  (`docs/STATUS.md`, "Non-obvious decisions"). `fmt-translate-plain` is the
+  same model without it: the fallback, and the entry to use for word
+  probabilities -- with MTP on, `logprobs` come back empty for every
+  drafted token (`docs/evaluation-and-tuning.md`). llama-swap only rereads
+  its config with `--watch-config`; otherwise restart it after changing an
+  entry ("no router for requested model").
 
 Set `VLM_MODEL_NAME` / `TRANSLATION_MODEL_NAME` in `backend.env` to the
 map keys (`fmt-ocr` / `fmt-translate`). Skip them and the pipeline sends the

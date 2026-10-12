@@ -1,9 +1,9 @@
 2. KEEP in Italian, wrapped in <i>…</i>, ONLY this set — the terms English-language writing on Italian fencing itself retains:
    - the hand positions, lines and parries: prima, seconda, terza, quarta, quinta, sesta, settima, ottava ("quarta bassa", "in seconda", "invito di terza"). "parata di terza" = "parry of terza" — translate "parata" (rule 3), keep the number.
-   - named techniques: cavazione, controcavazione, cartoccio, fianconata (also spelled flanconata — write <i>fianconata</i>), inquartata, intrecciata, appuntata, sforzo (sforzi), passata sotto, passata, intagliata, molinello (molinelli), fendente, tocco (di sciabola), traversone, raddoppio, ripigliata, rimessa, ripresa, copertino, balestra / balestrata, scandaglio, traccheggio, imbroccata, mandritto.
+   - named techniques: cavazione, controcavazione, cartoccio, fianconata (also spelled flanconata — write <i>fianconata</i>), inquartata, intrecciata, appuntata, sforzo (sforzi), passata sotto, passata, intagliata, molinello (molinelli), fendente, tocco (di sciabola), traversone, raddoppio, ripigliata, rimessa, ripresa, copertino, balestra / balestrata, scandaglio, traccheggio, imbroccata, mandritto, manrovescio (manrovesci).
    - coupé — the French word, which these Italian authors use and English fencing uses too: <i>coupé</i>.
    - parts of the weapon: ricasso.
-   - Maestro (the fencing master, in the lessons and drill tables; plural Maestri) — keep it capitalised: <i>Maestro</i>.
+   - Maestro, every time — the fencing master in the lessons and drill tables, a master named ("il maestro Parise" → "<i>Maestro</i> Parise") and masters in general ("i maestri italiani" → "the Italian <i>Maestri</i>"); capitalised, plural Maestri: <i>Maestro</i>, <i>Maestri</i>. Never "master".
    - risposta, risposte → <i>riposte</i>, <i>ripostes</i> (the fencing term, as in French) -- NEVER "answer", "reply" or "response", headings included: "RISPOSTE CHE SI POSSONO ESEGUIRE" → "<i>RIPOSTES</i> THAT CAN BE EXECUTED". The verb too: rispondere → riposte ("risponderà di cavazione al petto" → "he will <i>riposte</i> with a <i>cavazione</i> to the chest"; "si risponde di seconda" → "one <i>ripostes</i> in <i>seconda</i>"). Only a reply in conversation, or to a letter or a challenge, is an "answer".
    A book may DEFINE one of these words as its own technique or use it only descriptively; follow the rules here unless the book's own [terms] say otherwise.
    EVERYTHING ELSE is translated (rules 3 and 3b).
@@ -27,6 +27,17 @@
    - spada → sword   |   sciabola → saber   |   fioretto → foil   |   ferro (the opponent's steel) → the blade   |   forte / debole → forte / foible
    - targets: testa → head   |   figura → face ("figura interna / esterna" → inside / outside face)   |   guancia → cheek   |   petto → chest   |   pancia → belly   |   fianco → flank   |   addome → abdomen   |   tronco → trunk   |   braccio → arm
 
+   - parts of the weapon, as these books define them: coccia → bell guard (never "pommel", "ricasso", "hilt", "skull")   |   gavigliano → crossbar   |   pomo → pommel   |   impugnatura → grip   |   cuscinetto → cushion   |   gradi (of the blade) → degrees
+   - incontro → double hit (both hit at once)   |   sparita di corpo → body evasion (not a feint: it hits)   |   controrisposta → counter-<i>riposte</i>   |   ripresa d'attacco → <i>ripresa</i> of attack
+   - sotto misura → under measure   |   giusta misura → correct measure   |   distacco, distaccare → disengagement, disengage (leaving the opponent's blade)   |   cavare → make a <i>cavazione</i>
+   - tempi, the actions ("tempi semplici", "tempi al braccio") → time-hits   |   finta puntata dritta → feint of straight thrust   |   finta di sciabolata dritta → feint of straight cut
+   - parata di appoggio → support parry   |   pugno → fist   |   mano prona / supina → hand prone (palm down) / supine (palm up)
+   - sopra / sotto, of a target or line ("petto sopra", "braccio sopra") → above / below (never "outside" / "inside", which are dentro / fuori)   |   destramente → deftly (never "to the right")
+   - 1ª, 2ª … 8ª, 1.a … → the line name: <i>prima</i>, <i>seconda</i> … <i>ottava</i> (never "1st", "4th")
+   - legatura, arma legata, legaccio — the strap tying the sword to the wrist → binding, tied (to the wrist); spada legata all'avversa, the blades in contact → engaged
+   - tempista → tempo-fencer   |   cavalleria, the code of knights → chivalry (the mounted troops → cavalry)   |   sala d'armi → fencing hall   |   padrini → seconds   |   garetti → hamstrings   |   piastrone → plastron   |   minacciare → threaten
+   - "a più fermo", "più fermo" in a fencing sense is an OCR misreading of "a piè fermo" → firm-footed
+
 3b. TRANSLATE these too, and the FIRST time each one appears in the text you are given, write it as  English<fn>It. original</fn>  — a bare source reference, NOT an explanation, nothing added. Later occurrences: just the English.
    - legamento → engagement
    - filo, when it is an ACTION along the opponent's blade ("colpo di filo", "accennare il filo", "filo di terza") → glide
@@ -39,7 +50,9 @@
    - controazione → counter-action
    - circolazione → circling (of the blade)
    - striscio, di striscio → graze, grazing (along the opponent's blade — not filo, which is glide)
-   - volante, volanti (an action made with no contact with the opponent's blade — "finta volante", "azioni volanti") → off the blade: "feint off the blade", "actions off the blade"
+   - volante, volanti (an action made with no contact with the opponent's blade — "finta volante", "azioni volanti") → off the blade: "feint off the blade", "actions off the blade"; but "volanti sul ferro" (flying actions made on the blade) → flying actions on the blade
+   - spratico (a directed teaching bout) → practice bout
+   - parata di tasto (the simple parry that keeps contact, as against parata di picco, the beat parry) → opposition parry
    Example:  "… with an engagement<fn>It. legamento</fn> of <i>terza</i> he closed the line."
    In a HEADING (rule 4) translate the term but omit the <fn> tag.
 

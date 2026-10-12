@@ -1667,6 +1667,81 @@ translated pages (10,719, both generations) it flags 14, every one a real
 swap. Found by `evals/retranslation_compare.py`, which compares a
 retranslation page by page with the one before.
 
+**Why it happens** (measured with `evals/word_probabilities.py`): on
+Kirchhoffer scan 52, at "the straight riposte after ___", the model gave
+tierce 34.3% and quarte 32.6% -- the source word and the model's prior from
+other fencing text almost tied, and temperature 0 takes the top one. Once
+written, the model stays consistent with its own choice: tierce at 84% and
+64% at the next two places, quarte under 3%. So one near-tie becomes three
+errors, a hotter retry alone often repeats it (Prévost-Jollivet scan 57
+failed at 0, 0.55 and 0.8 -- the paragraph before "Parade de sixte"
+describes a low parry, which fits septime: the model "corrects" the
+author), and the retry is now told which lines the source names and how
+often. The same copying replaced one kept term with another: *LE
+CORPS-A-CORPS* → "THE *CROISÉ*" (Joseph-Renaud scan 197).
+
+### 2.17 "A word from the same root": look-alikes for kept terms (2026-10-11)
+
+Rule 0 asks for an English word from the same root where one means the
+same. The model applied it to kept terms too: *reprise d'attaque* → "the
+re-attack" (Kirchhoffer's own definition of the term), *maestro* → "master"
+(18 more pages in Masiello), *tocchi* → "touches" (in English fencing a
+touch is a scoring hit), *manrovesci* → "side reversals", Italian *rimessa*
+→ French "remise". And "keep the author's own words" left French
+quotations in an Italian book in French, half garbled ("l'fencing est le
+métier des lâches"). Fixes: rule 0's guard names these traps; a
+third-language quotation is translated, followed by "French in the
+original" (`pull_footnotes` keeps that note on every quotation); in an
+Italian book *Maestro* / *Maestri* is kept every time, prose included, with
+`enforce_maestro()` as the backstop (never more than the source page has;
+"to master" untouched).
+
+### 2.18 Terms the glossary never defined (2026-10-11)
+
+The meaning reviews (`evals/meaning_review.md`) found that most wrong
+senses are standard fencing terms the prompt never defined, which the
+model guessed: *battement* → "cut" or "stamp of the foot", *à fond* → "to
+the bottom", *coup fourré* → "the feint", *contre de quarte* → "against
+quarte", *coquille* → "button", *poule* → "chicken", *développement* →
+"glide", *effacé* → "squared" (the opposite), *pointe d'arrêt* (the device)
+→ "stop-thrust" (the action is *coup d'arrêt*), *tirer* of a pistol →
+"fence". One of the wrong renderings was ours: the glossary said *caver* →
+"to drop the point", and one book used it on 65 pages; the books define it
+as the opposite of opposition, an angled thrust (now "angle"). Where the
+reviewer and the books' own definitions agreed, two rounds of glossary
+lines went into rule 3 and 3b (`translation_prompt.txt`): e.g. *coup
+fourré* = *coup double* → double hit (Kirchhoffer's glossary: "même
+signification"), *barré* → bar (Robaglia: a croisé of seconde driving the
+blade off), *épée* meaning the blade → "blade" (*attaque à l'épée* → attack
+on the blade, Gomard's own definition). Ordinary words with a misread
+sense got warnings too: *défendre l'usage* → forbid (rendered "defend": the
+opposite), *ne … plus que* → now only (rendered "no longer": the opposite).
+
+A third round (2026-10-12) came from pattern reviews of the Italian books,
+Prévost-Jollivet and LaMarche. Italian: the parts of the weapon -- *coccia*
+(bell guard) was wrong nearly every time ("pommel", "ricasso", "the back of
+the opponent's head"), *gavigliano* (crossbar) → "ricasso"; *incontro* →
+double hit; *destramente* → "to the right" (deftly); *sopra* / *sotto* →
+"outside" / "inside" (above / below); "più fermo", an OCR misreading of
+*piè fermo*. French: *fusée* (grip), *rapière* → "riposte", *temps* the
+action → "tempo", the lines *dessus* / *dessous* (now over / under: in
+Prévost-Jollivet's four lines *dessus* is the high outside line and
+*dehors* the low one; in LaMarche *dessus* / *dedans* are the two sides).
+Two rules overreached and got exceptions: *dessus* → over turned "les
+ongles en-dessus" into "the nails slightly over" (now up / down for the
+hand), and the quotation note was put on a French quotation in a French
+book (now never the book's own language). *rapière* → "riposte" survived
+its glossary line; `restore_rapier()` pairs the source's *riposte* /
+*rapière* words with the English in order and corrects only when the
+counts match.
+
+Not fixable by the glossary: **lost negations** (*il ne faut … parer* →
+"one must … parry"), **reversed clauses** (*amener l'adversaire à les
+tromper* → "to be deceived by them"), a dropped verb that flips a sentence
+(*j'hésiterais … à subir* → "submit"). A per-page negation count was tried
+and can't find them (the English had as many negations as the French on
+every known page); the meaning review is the check for these.
+
 ## Part 3 — shared / architectural
 
 - **Page separator** — `pipeline/_pageio.py::PAGE_SEP` (U+001E). Every

@@ -2618,6 +2618,97 @@ def test_line_name_swap_rejected():
     assert "line_names_swapped(candidate, clean_text)" in page
 
 
+def test_maestro_kept_everywhere_in_italian():
+    # 2026-10-11 (reviewer): Maestro every time in an Italian book -- the literal
+    # prompt wrote "master" in prose (Masiello scan 434). Capped at the source's
+    # count; the verb and French books are untouched.
+    from _rules import TX
+    TX["BOOK_LANG"] = "Italian"
+    try:
+        f = TX["enforce_maestro"]
+        src = "Sarà bene che il maestro faccia eseguire... fra allievo e maestro. I maestri italiani."
+        out = f("It will be well that the master have them executed... between student and master. "
+                "The Italian masters.", src)
+        assert out == ("It will be well that the <i>Maestro</i> have them executed... between student and "
+                       "<i>Maestro</i>. The Italian <i>Maestri</i>."), out
+        assert f("the <i>Maestro</i> and the master, to master it", "il maestro e il maestro") == \
+            "the <i>Maestro</i> and the <i>Maestro</i>, to master it"
+        assert f("the master and the master", "il maestro e il padrone") == "the <i>Maestro</i> and the master"
+        assert f("MASTER PARISE", "MAESTRO PARISE") == "<i>MAESTRO</i> PARISE"
+        assert f("the master", "nessuno") == "the master"
+    finally:
+        TX["BOOK_LANG"] = "French"
+    assert TX["enforce_maestro"]("the fencing master", "le maestro") == "the fencing master"
+
+
+def test_third_language_quotation_note():
+    # 2026-10-11 (reviewer, option a): a French quotation in an Italian book is
+    # translated, with "French in the original" -- Barbasetti scans 35-36 had
+    # them left in French. The note survives pull_footnotes, once per quotation.
+    from _rules import TX
+    out, n = TX["pull_footnotes"]('He wrote: "fencing is the trade of cowards!"<fn>French in the original</fn> '
+                                  'And: "a mediocre skill"<fn>French in the original</fn>.', "", set())
+    assert n == 0 and "French in the original" not in out and "<fn>" not in out, out  # French book
+    TX["BOOK_LANG"] = "Italian"
+    try:
+        out, n = TX["pull_footnotes"]('He wrote: "fencing is the trade of cowards!"<fn>French in the original</fn> '
+                                      'And: "a mediocre skill"<fn>French in the original</fn>.', "", set())
+        assert n == 2 and out.count("French in the original") == 2 and "<fn>" not in out, out
+    finally:
+        TX["BOOK_LANG"] = "French"
+    p = TX["prompt_for_language"]("Italian")
+    assert "a quotation in a third language" in p and "<i>manrovesci</i> is not \"reversals\"" in p
+    assert "Maestro, every time" in p and "manrovescio (manrovesci)" in p
+    assert "a quotation in a third language" in TX["prompt_for_language"]("French")
+
+
+def test_french_elision_before_fencing_restored():
+    # Masiello scan 133: "Histoire de l'escrime" quoted as it stands came out
+    # "Histoire de l'fencing" (the always-translate list, then this repair);
+    # English never writes l'/d' before "fencing"
+    from _rules import TX
+    f = lambda t: TX["fix_known_garbles"](TX["apply_always_translate"](t))
+    assert f("author of the Histoire de l'escrime") == "author of the Histoire de l'escrime"
+    assert f("dans l’escrime, l'expose") == "dans l’escrime, l'expose"
+    assert f("Traité d'Escrime pratique") == "Traité d'Escrime pratique"
+    assert f("TRAITÉ D'ESCRIME") == "TRAITÉ D'ESCRIME"
+    assert f("the art of escrime") == "the art of fencing"
+
+
+def test_always_translate_leaves_french_titles():
+    # Masiello scans 113, 128: "le maniement du fleuret" -> "du foil", "Escrime
+    # pratique" -> "Fencing pratique" inside French titles kept as written
+    from _rules import TX
+    f = TX["apply_always_translate"]
+    assert f("L'exercice des armes ou le maniement du fleuret, 1676") == \
+        "L'exercice des armes ou le maniement du fleuret, 1676"
+    assert f("his Escrime pratique spoke") == "his Escrime pratique spoke"
+    assert f("the escrime of the time, a fleuret") == "the fencing of the time, a foil"
+
+
+def test_rapier_not_riposte():
+    # Prévost-Jollivet scan 21: "l'épée ou la rapière avait pour auxiliaire la
+    # dague" -> "the épée or the <i>riposte</i> had as its auxiliary the dagger"
+    from _rules import TX
+    f = TX["restore_rapier"]
+    src = "l'épée ou la rapière avait pour auxiliaire la dague. Il riposte droit."
+    assert f("the <i>épée</i> or the <i>riposte</i> had the dagger. He <i>ripostes</i> straight.", src) == \
+        "the <i>épée</i> or the rapier had the dagger. He <i>ripostes</i> straight."
+    # counts don't match: left alone
+    assert f("the <i>riposte</i> and the <i>riposte</i>", "la rapière") == "the <i>riposte</i> and the <i>riposte</i>"
+    assert f("a <i>riposte</i>", "une riposte") == "a <i>riposte</i>"
+
+
+def test_line_swap_retry_names_the_lines():
+    # the retry after a swapped line is told which lines the source names
+    import os
+    page = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline", "2_translate.py"),
+                encoding="utf-8").read()
+    page = page[page.index("def translate_page("):]
+    assert '{line_hint}' in page and "line_hint = (" in page
+    assert page.index("line_hint = \"\"") < page.index("for attempt in range(3):")
+
+
 def test_translation_waits_out_a_server_outage():
     # 2026-10-02: the GPU system lost power and 33 pages were kept untranslated
     # within minutes. Remote mode now waits for the server and resends; a

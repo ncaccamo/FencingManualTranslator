@@ -25,9 +25,9 @@ the operator's business and is not tracked here.)
   translation model selection test (`evals/translation_model_test.py`);
   llama-swap key `fmt-translate` remotely, :11434 locally. Too big for 16 GB
   of VRAM whole: part of its 64 layers on the GPU (46 locally,
-  `TRANSLATION_GPU_LAYERS`; 38 on the shared Windows system, see
-  `docs/remote-gpu.md`), ~0.5-0.6 s per source word there (60-160 s/page
-  depending on page size). First try at temperature 0 (repeatable
+  `TRANSLATION_GPU_LAYERS`; 37 on the shared Windows system with
+  speculative decoding, see `docs/remote-gpu.md`), ~0.25 s per source word
+  there (25-75 s/page depending on page size; 2.2x slower without it). First try at temperature 0 (repeatable
   wording; retries hotter). A page is never dropped; low-confidence output
   is flagged inline.
 - **Page breaks:** a sentence split across a page break is joined onto one
@@ -96,15 +96,14 @@ the operator's business and is not tracked here.)
 5. **Known translation soft spots** (see `docs/model-quirks.md`): braced
    command groups sometimes flatten; literary prose leaves a few
    `[low-confidence]` pages partly untranslated.
-6. **Translation speed — MTP tested, adoption undecided (2026-10-10).**
-   More GPU layers is ruled out: the Windows system has other uses, so 38
-   is the setting that holds up. Speculative decoding with Qwen3.8's
-   built-in draft head (MTP, `--spec-type draft-mtp`) is **2.2x faster**
-   at no extra VRAM (37 layers + the head) and scores like the previous
-   production setting against published translations, but not word for
-   word like the normal entry -- details under "Non-obvious decisions".
-   The llama-swap entry `fmt-translate-mtp` exists, unused; adopting it is
-   the reviewer's call. Still untested: 8-bit context memory (`-ctk q8_0
+6. **Translation speed — MTP adopted (2026-10-11).** More GPU layers is
+   ruled out: the Windows system has other uses, so 38 is the setting that
+   holds up. Speculative decoding with Qwen3.8's built-in draft head (MTP)
+   is **2.2x faster** at no extra VRAM (37 layers + the head), equal in
+   accuracy and closeness to the source; `fmt-translate` runs it, and
+   `fmt-translate-plain` is the fallback (`docs/remote-gpu.md`). Still
+   untested: its repeatability at temperature 0 (the plain entry differed
+   on 1 of 36 pages between two runs), and 8-bit context memory (`-ctk q8_0
    -ctv q8_0`, ~3 more layers).
 7. **`rocm714` backend** — wired, not compiled; `docker/ROCM714_NOTES.md`.
 8. **Page numbers: hidden numbers re-read with the margin crop — done
@@ -124,6 +123,19 @@ the operator's business and is not tracked here.)
    the scan first; none wrong. The queue's book job now runs it after
    step 1 (`scripts/queue.py`); by hand: `read_folios.py <stem>`, then
    `--apply`.
+9. **Meaning review — a reader for what the checks can't see
+   (2026-10-11).** The automatic checks catch form (lost italics, length,
+   untranslated text), not a wrong sense. A Claude agent reads the source
+   against the English page by page (`evals/meaning_review.md`) and lists
+   each place the English says something different, with the source words,
+   a literal correction and a plain explanation; the items go into the
+   book's checklist section for the reviewer to tick. Run on four French
+   books it found about a third of the items change the meaning, mostly
+   terms the glossary never defined, so the model guessed (*battement* →
+   "cut", *coup fourré* → "the feint", *coquille* → "button", *poule* →
+   "chicken"), plus lost negations and reversed clauses. Recurring terms
+   become glossary lines (`docs/model-quirks.md` 2.17-2.18); single errors
+   become `[[fix]]` entries. Open: the Italian books' terms.
 
 ## Not yet tested
 
@@ -173,6 +185,43 @@ the operator's business and is not tracked here.)
   old 0.3 production, slightly below the best. `/props` reports
   `speculative.types: none` even when it is on -- check a completion's
   `timings.draft_n` instead.
+
+- **A swapped line name is rejected, not trusted to temperature
+  (2026-10-11).** quarte → "tierce" on one page, sixte → septime on
+  another: the model's probabilities at the first one were a near-tie
+  (tierce 34%, quarte 33%), and once written it stays consistent with its
+  own choice (84%, 64% at the next two). The 0.3 translations had as many
+  swaps, on other pages. `line_names_swapped()` rejects such a try; the
+  retry is told which lines the source names. Details: `docs/model-quirks.md` 2.16.
+- **Rule 0's "word from the same root" needs its guard spelled out
+  (2026-10-11).** The literal prompt replaced kept terms with English
+  look-alikes (*reprise* → "re-attack", *maestro* → "master", *tocchi* →
+  "touches", *manrovesci* → "reversals") and left third-language
+  quotations untranslated; rule 0 now names those traps, a quotation is
+  translated with "French in the original", and *Maestro* is kept every
+  time in an Italian book (reviewer). Details: `docs/model-quirks.md` 2.17.
+- **The glossary is where meaning errors are fixed (2026-10-11).** The
+  meaning reviews showed most wrong senses are fencing terms the prompt
+  never defined; one glossary line fixes every book. Our own rule was
+  wrong once: *caver* → "to drop the point" (65 pages in one book) -- the
+  books define it as the opposite of opposition, an angled thrust, now
+  "angle". Reviewer's choices: *pointe d'arrêt*, *flanconnade*, *appel*
+  kept in French; *coup fourré* = *coup double* → double hit (a book's own
+  glossary: "même signification"); *barré* → bar; *à-propos* → timing; *épée*
+  meaning the blade translated (attack on the blade). A book that defines
+  *coup* and *botte* as two things keeps both in French through `[terms]`. Round 3 (2026-10-12): *dessus* /
+  *dessous* → over / under; *coccia* → bell guard; *pugno* → fist; *parade
+  sèche* → dry parry (the book explains it; the adverb *coup sec* stays
+  "sharp"); *tendre la perche / la broche* → stick the arm out stiffly (no
+  English saying); *parata di tasto* → opposition parry (a published
+  translator's choice); *spratico* → practice bout; *tempista* →
+  tempo-fencer; a book that defines *tiratore* against *schermidore* gets
+  swordsman / fencer through `[terms]`.
+- **No negation-count check (2026-10-11).** Lost negations (*il ne faut
+  … parer* → "one must … parry") are real, but counting negations per page
+  can't find them: on every known page the English had as many as the
+  French (a lost one offset by another elsewhere). It would need sentence
+  alignment; the meaning review is the check for these.
 
 - **Page separator: now U+001E, was `\n---\n`.** All stages join / split
   the multi-page files (`raw_ocr.txt`, `extracted.txt`, `translation.txt`)
