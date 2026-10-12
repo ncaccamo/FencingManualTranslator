@@ -124,7 +124,7 @@ def run_lines() -> list:
            f"pages    {p['done']} done, {p['left']} left of {p['total']}"
            + (f"   (last: scan {p['last']})" if p.get("last") else "")]
     if p.get("sec_per_page"):
-        out.append(f"speed    {p['sec_per_page']} s/page  ({p['pages_per_hour']} pages/h, last 10 pages)")
+        out.append(f"speed    {p['sec_per_page']} s/page  ({p['pages_per_hour']} pages/h, this run)")
     clock = _clock(backend_env())
     if p.get("eta") and p["state"] in ("running", "waiting for GPU"):
         h, m = divmod(p["eta_minutes"], 60)

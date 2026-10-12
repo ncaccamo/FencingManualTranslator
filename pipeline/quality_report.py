@@ -100,7 +100,11 @@ TERM_RULES_IT = [
     (r"\bcolp[oi] di punta\b", r"\bpoint[- ]cuts?\b", "colpo di punta → thrust"),
     (r"\bcolp[oi] di taglio\b", r"\bcutting blows?\b", "colpo di taglio → cut"),
     (r"\bpicch?i?o\b|\bpicco\b", r"\b(?:pecks?|knocks?|woodpeckers?)\b", "picchio → beat"),
-    (r"\bvolant[ei]\b", r"\bflying\b(?!\s+(?:<i>)?cartocc)", "volante → off the blade"),
+    # except "azioni volanti sul ferro" -> "flying actions on the blade"
+    # (glossary 2026-10-11; Barbasetti scan 90) and "punta volante" -> "flying
+    # point", as the French books' "pointe volante" (Masiello 1887 scan 129)
+    (r"\bvolant[ei]\b", r"\bflying\b(?!\s+(?:<i>)?cartocc)(?!\s+points?\b)(?![^.;]{0,30}\bon\s+the\s+blade\b)",
+     "volante → off the blade"),
     (r"\bfil[oi]\b", r"\b(?:threads?|wires?)\b", "filo → glide / edge"),
     (r"\brispost[ae]\b", r"\b(?:responses?|repl(?:y|ies)|answers?)\b(?!\s+to\s+(?:the|his|a)\s+letter)",
      "risposta → riposte"),

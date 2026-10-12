@@ -543,8 +543,9 @@ foreground, for a quick single run.
 
 A 350-page book is several hours. Steps 1 and 2 record their progress
 after every page in `processed/_status/progress.json`: the book, the step,
-pages done and left, the speed over the last 10 pages (time spent waiting
-for the GPU server left out) and an estimated finish time.
+pages done and left, the speed over the run so far (time spent waiting
+for the GPU server left out, skipped table and blank pages averaged in) and
+an estimated finish time.
 
 ```bash
 scripts/progress.sh              # live view, refreshed every 5 s (Ctrl-C to quit)

@@ -14,8 +14,11 @@ progress.json:
      "step": "OCR" | "translation", "book": stem,
      "done": pages finished this run, "total": pages this run will do,
      "left": ..., "percent": ...,
-     "sec_per_page": mean of the last 10 pages, time waiting for the GPU
-                     server left out,
+     "sec_per_page": the run so far -- time since it started over pages
+                     done, time waiting for the GPU server left out. Not the
+                     last few pages: a stretch of skipped table / blank pages
+                     (under a second each) made that read 2,251 pages/h and a
+                     9-minute ETA with 4 hours left (Masiello, 2026-10-12),
      "pages_per_hour": ..., "eta": "HH:MM" local, "eta_minutes": ...,
      "started": "...", "updated": "...", in the system's clock (UTC in the
      container), and as seconds: "started_unix", "updated_unix", "eta_unix"
@@ -27,7 +30,6 @@ few minutes old as stalled: the process may have died without saying so.
 Writing here can never stop a run: every error is swallowed.
 """
 import atexit
-import collections
 import json
 import os
 import time
@@ -44,8 +46,8 @@ def _write():
     if _run is None:
         return
     r = _run
-    durs = list(r["durs"])
-    spp = sum(durs) / len(durs) if durs else None
+    work = time.time() - r["t0"] - r["waited_total"]
+    spp = work / r["done"] if r["done"] and work > 0 else None
     left = max(0, r["total"] - r["done"])
     eta_min = round(left * spp / 60) if spp else None
     out = {"state": r["state"], "step": r["step"], "book": r["book"],
@@ -71,8 +73,7 @@ def start(book: str, step: str, total: int) -> None:
     """A book's step begins: `total` = the pages this run will process."""
     global _run
     _run = {"book": book, "step": step, "total": total, "done": 0, "state": "running",
-            "started": _now(), "t0": time.time(), "mark": time.time(), "waited": 0.0, "waited_total": 0.0,
-            "durs": collections.deque(maxlen=10), "last": None}
+            "started": _now(), "t0": time.time(), "waited_total": 0.0, "last": None}
     _write()
 
 
@@ -80,9 +81,6 @@ def page(scan=None) -> None:
     """One page finished."""
     if _run is None:
         return
-    now = time.time()
-    _run["durs"].append(max(0.0, now - _run["mark"] - _run["waited"]))
-    _run["mark"], _run["waited"] = now, 0.0
     _run["done"] += 1
     _run["last"] = scan
     _write()
@@ -95,7 +93,6 @@ def waiting(on: bool, since: float = None) -> None:
         return
     _run["state"] = "waiting for GPU" if on else "running"
     if not on and since:
-        _run["waited"] += time.time() - since
         _run["waited_total"] += time.time() - since
     _write()
 

@@ -539,6 +539,31 @@ def restore_rapier(text: str, src: str) -> str:
     return text
 
 
+# "reprise d'attaque" written as "re-attack" despite prompt rule 0
+# (Kirchhoffer scan 23, Joseph-Renaud scans 158, 226; 2026-10-12): back to
+# the kept term, never more times than the source has the phrase. Italian
+# books are untouched -- their source has no "reprise d'attaque".
+_REPRISE_SRC = re.compile(r"\breprises?\s+d['’]\s*attaques?\b", re.I)
+_REATTACK_EN = re.compile(r"(?:<i>\s*)?\b(re-attack)(s?)\b(?![-\w])(?:\s*</i>)?", re.I)
+
+
+def restore_reprise(text: str, src: str) -> str:
+    budget = [len(_REPRISE_SRC.findall(src or ""))]
+    if not text or not budget[0]:
+        return text
+
+    def sub(m):
+        if budget[0] <= 0:
+            return m.group(0)
+        budget[0] -= 1
+        word = "reprises" if m.group(2) else "reprise"
+        if m.group(1).isupper():
+            return f"<i>{word.upper()}</i> OF ATTACK"
+        word = word.capitalize() if m.group(1)[:1].isupper() else word
+        return f"<i>{word}</i> of attack"
+    return _REATTACK_EN.sub(sub, text)
+
+
 def enforce_maestro(text: str, src: str) -> str:
     if BOOK_LANG != "Italian" or not text:
         return text
@@ -2264,6 +2289,7 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         candidate = enforce_kept_terms(candidate, clean_text)
         candidate = enforce_maestro(candidate, clean_text)
         candidate = restore_rapier(candidate, clean_text)
+        candidate = restore_reprise(candidate, clean_text)
         # on a ToC page: translate the Cat-3 terms but emit NO
         # footnote marker (a contents line must not carry one, and
         # it would burn the once-per-book note), and skip the

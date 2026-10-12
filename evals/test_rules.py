@@ -2321,6 +2321,9 @@ def test_review_report_italian_rules_only_on_italian_books():
     assert re.search(src, "una finta volante", re.I)
     assert re.search(wrong, "a flying feint", re.I)
     assert not re.search(wrong, "the flying <i>cartoccio</i>", re.I)       # Florio §65
+    assert not re.search(wrong, "at least in the flying actions on the blade.", re.I)  # Barbasetti 90
+    assert re.search(wrong, "when the flying double feints are executed", re.I)        # Barbasetti 124
+    assert not re.search(wrong, "the first to speak of the flying point.", re.I)       # Masiello 1887 129
     src, wrong, _ = rule["misura → measure"]
     assert re.search(src, "fuori misura", re.I)
     assert not re.search(src, "la distanza ... fuori misura", re.I)         # the book says distance
@@ -2519,6 +2522,25 @@ def test_report_point_cut_and_cutting_blow():
     assert "colpo di punta → thrust" in hits(Q.TERM_RULES_IT, "colpo di punta", "a point cut")
 
 
+def test_italian_low_high_at_render():
+    # 2026-10-12: "quarta bassa" -> "low quarta" (reviewer); Masiello 1887 had
+    # it three ways. Applied when the PDF is drawn.
+    import os, re
+    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline", "_render.py"),
+               encoding="utf-8").read()
+    ns = {"re": re}
+    exec(src[src.index("_IT_LINE_LOW_HIGH = "):src.index("def markdown_italics")], ns)
+    f = ns["italian_low_high"]
+    assert f("parry of <i>quarta bassa</i>; the arm") == "parry of low <i>quarta</i>; the arm"
+    assert f("parry of <i>quarta</i> bassa in the following manner") == "parry of low <i>quarta</i> in the following manner"
+    assert f("OF THE <i>FIANCONATA</i> OF <i>QUARTA</i> BASSA.") == "OF THE <i>FIANCONATA</i> OF LOW <i>QUARTA</i>."
+    assert f("<i>Terza bassa</i>: the hand") == "Low <i>terza</i>: the hand"
+    assert f("from <i>prima alta</i>") == "from high <i>prima</i>"
+    assert f("parry of low <i>quarta</i>") == "parry of low <i>quarta</i>"          # already right
+    assert f("<i>quarte basse</i>") == "<i>quarte basse</i>"                       # French, untouched
+    assert f("the <i>quarta</i> balestra") == "the <i>quarta</i> balestra"
+
+
 def test_line_names_italic_at_render():
     # 2026-10-11: the French lines / parries are italic like riposte, applied when the
     # PDF is drawn (_render.line_name_italics) -- the model left ~95% roman. "prime"
@@ -2699,6 +2721,20 @@ def test_rapier_not_riposte():
     assert f("a <i>riposte</i>", "une riposte") == "a <i>riposte</i>"
 
 
+def test_reprise_not_re_attack():
+    # Joseph-Renaud scan 226: "c'est une reprise d'attaque" -> "this is a
+    # re-attack" (and scan 158, Kirchhoffer scan 23)
+    from _rules import TX
+    f = TX["restore_reprise"]
+    assert f("this is a re-attack... If I had parried", "c'est une reprise d'attaque... Si j'avais paré") == \
+        "this is a <i>reprise</i> of attack... If I had parried"
+    assert f("Re-attacks are rare.", "Les reprises d’attaque sont rares.") == "<i>Reprises</i> of attack are rare."
+    # no more than the source has; verbs and other books left alone
+    assert f("a re-attack and a re-attack", "une reprise d'attaque") == "a <i>reprise</i> of attack and a re-attack"
+    assert f("he re-attacked", "il reprit l'attaque") == "he re-attacked"
+    assert f("a re-attack", "una ripresa d'attacco") == "a re-attack"
+
+
 def test_line_swap_retry_names_the_lines():
     # the retry after a swapped line is told which lines the source names
     import os
@@ -2787,6 +2823,31 @@ def test_cut_off_reply_is_rejected():
                 encoding="utf-8").read()
     page = page[page.index("def translate_page("):]
     assert page.index("if LAST_CUT:") < page.index("→ too short")
+
+
+def test_progress_speed_is_the_whole_run():
+    # 2026-10-12, Masiello: 18 skipped table pages in a row made the last-10
+    # speed 2,251 pages/h and the ETA 9 minutes, with ~4 hours left
+    import importlib, json, os, tempfile, time as _t
+    sys.path.insert(0, str(_PIPELINE))
+    P = importlib.import_module("_progress")
+    d = tempfile.mkdtemp()
+    saved = (P.DIR, P.time.time)
+    clock = [1000.0]
+    try:
+        P.DIR, P.time.time = d, lambda: clock[0]
+        P.start("b", "translation", 100)
+        for i in range(10):                      # 10 real pages, 40 s each
+            clock[0] += 40; P.page(i)
+        P.waiting(True); clock[0] += 600; P.waiting(False, since=clock[0] - 600)   # GPU away 10 min
+        for i in range(18):                      # 18 skipped pages, 0.5 s each
+            clock[0] += 0.5; P.page(10 + i)
+        p = json.load(open(os.path.join(d, "progress.json")))
+        assert p["sec_per_page"] == round(409 / 28, 1), p          # (400 + 9) s / 28 pages
+        assert p["eta_minutes"] == round(72 * 409 / 28 / 60), p
+        P.finish("stopped")
+    finally:
+        P.DIR, P.time.time = saved
 
 
 def test_cover_page_counts_singular():

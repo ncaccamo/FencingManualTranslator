@@ -225,6 +225,29 @@ def line_name_italics(s):
     return "".join(out)
 
 
+# Italian "quarta bassa" / "terza alta" -> "low quarta" / "high terza": English
+# says low / high, not bassa / alta (reviewer, 2026-10-12). The model wrote it
+# three ways (Masiello 1887: "<i>quarta bassa</i>", "<i>quarta</i> bassa",
+# "low <i>quarta</i>"); applied when the PDF is drawn, so no retranslation.
+# Feminine singular only: the French books' "quarte basse" is a different word.
+_IT_LINE_LOW_HIGH = re.compile(
+    r"<i>\s*(prima|seconda|terza|quarta|quinta|sesta|settima|ottava)\s+(bassa|alta)\s*</i>"
+    r"|<i>\s*(prima|seconda|terza|quarta|quinta|sesta|settima|ottava)\s*</i>\s+(bassa|alta)\b",
+    re.IGNORECASE)
+
+
+def italian_low_high(s):
+    def sub(m):
+        line, pos = (m.group(1), m.group(2)) if m.group(1) else (m.group(3), m.group(4))
+        word = "low" if pos.lower() == "bassa" else "high"
+        if line.isupper() and pos.isupper():
+            return f"{word.upper()} <i>{line}</i>"
+        if line[:1].isupper():
+            return f"{word.capitalize()} <i>{line.lower()}</i>"
+        return f"{word} <i>{line}</i>"
+    return _IT_LINE_LOW_HIGH.sub(sub, s) if s else s
+
+
 def markdown_italics(s):
     return _MD_ITALIC.sub(lambda m: "<i>" + re.sub(r"</?i>", "", m.group(1)) + "</i>", s)
 
@@ -330,7 +353,7 @@ def layout(text, width, size):
     """text -> list[Line], pre-wrapped to `width` pt at `size`."""
     out = []
     para_end = False            # the line before ended a prose sentence
-    text = line_name_italics(text)
+    text = italian_low_high(line_name_italics(text))
     for raw in (text or "").split("\n"):
         if _STARS.match(raw):
             continue
