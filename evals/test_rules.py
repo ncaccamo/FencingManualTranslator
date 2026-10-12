@@ -2850,6 +2850,29 @@ def test_progress_speed_is_the_whole_run():
         P.DIR, P.time.time = saved
 
 
+def test_table_marker_never_sent_as_heading():
+    # 2026-10-12, Masiello 1887: the all-caps "[[TABLE]]" line looked like a
+    # one-word French heading, went to the model and came back "TABLE" or
+    # nothing -- 9 tables lost. Markers are left alone, and a try that drops
+    # one is retried.
+    import os
+    from _rules import TX
+    saved = TX["translate_with_llama"]
+    def boom(*a, **k):
+        raise AssertionError("model called for a marker line")
+    try:
+        TX["translate_with_llama"] = boom
+        f = TX["retranslate_stray_french_headings"]
+        for t in ("of two tempi.\n\n[[TABLE]]\n\nwho should", "[Empty page]", "⟦MARGIN: Fig. 3⟧"):
+            assert f(t) == t
+    finally:
+        TX["translate_with_llama"] = saved
+    page = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline", "2_translate.py"),
+                encoding="utf-8").read()
+    page = page[page.index("def translate_page("):]
+    assert 'candidate.count("[[TABLE]]") < clean_text.count("[[TABLE]]")' in page
+
+
 def test_cover_page_counts_singular():
     # "87c136a, October 2, 2026 (1 pages)" on Gomard's cover, 2026-10-02
     C = _cover_module()

@@ -1211,6 +1211,12 @@ def retranslate_stray_french_headings(text: str) -> str:
     out = []
     for line in text.split("\n"):
         s = line.strip()
+        # a pipeline marker ("[[TABLE]]", "[Empty page]", a margin note) is
+        # not a heading: sent to the model it came back as "TABLE" or nothing,
+        # and the table was lost (Masiello 1887, 9 pages, 2026-10-12)
+        if re.fullmatch(r"\[\[?[^\[\]\n]*\]\]?|⟦[^⟧]*⟧", s):
+            out.append(line)
+            continue
         letters = [c for c in s if c.isalpha()]
         is_heading = (
             0 < len(s.split()) <= 9
@@ -2339,6 +2345,13 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
             time.sleep(2)
             continue
 
+        # every table marker must survive: steps 3 & 4 put the scan of the
+        # table there (Masiello 1887 scans 376-377: the model left it out)
+        if candidate.count("[[TABLE]]") < clean_text.count("[[TABLE]]"):
+            print(" → table marker lost")
+            time.sleep(2)
+            continue
+
         if contains_too_much_non_english(candidate):
             print(" → not English")
             time.sleep(8)
@@ -2401,6 +2414,8 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         print(" ⚠ kept (low confidence)")
         body = deshout(best_candidate, clean_text) \
             if _shout_ratio(best_candidate) > 0.85 else best_candidate
+        if best_candidate.count("[[TABLE]]") < clean_text.count("[[TABLE]]"):
+            body = body.rstrip() + "\n\n[[TABLE]]"      # place is a guess; the table is kept
         return f"[low-confidence translation — review]\n{body}"
     elif src_words < 15:
         # Every attempt was a refusal/preamble and there was
