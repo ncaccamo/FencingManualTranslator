@@ -33,7 +33,7 @@ _DEG = {"cw": 270, "ccw": 90, "90": 270, "-90": 90, "180": 180}
 # Step 1 records a caption per picture; sometimes the OCR model wrote a
 # description of the picture instead of the printed caption, or left a piece
 # of its own prompt on the end. Checked on all 455 recorded captions,
-# 2026-10-07 (review-notes/CAPTION_CHECK_SAMPLE.md).
+# 2026-10-07 (review-notes/archive/experiments/CAPTION_CHECK_SAMPLE.md).
 _CAPTION_JUNK = [
     # "Fig. 11 -- the picture is essentially the whole page (little or no
     # running text)": the OCR prompt's own wording (Edom x4, Masiello 1887 x6)

@@ -128,14 +128,12 @@ the operator's business and is not tracked here.)
    untranslated text), not a wrong sense. A Claude agent reads the source
    against the English page by page (`evals/meaning_review.md`) and lists
    each place the English says something different, with the source words,
-   a literal correction and a plain explanation; the items go into the
-   book's checklist section for the reviewer to tick. Run on four French
-   books it found about a third of the items change the meaning, mostly
-   terms the glossary never defined, so the model guessed (*battement* →
-   "cut", *coup fourré* → "the feint", *coquille* → "button", *poule* →
-   "chicken"), plus lost negations and reversed clauses. Recurring terms
-   become glossary lines (`docs/model-quirks.md` 2.17-2.18); single errors
-   become `[[fix]]` entries. Open: the Italian books' terms.
+   the exact English, a literal correction and a plain explanation, by pdf
+   page. Recurring errors go to the reviewer as a decision list; decided
+   renderings become glossary lines, the pattern pages are retranslated and
+   re-reviewed, and single errors become `[[fix]]` entries
+   (`docs/evaluation-and-tuning.md` §4). French and Italian books both
+   reviewed; round 4 of the glossary (2026-10-13) came from it.
 
 ## Not yet tested
 
@@ -216,7 +214,17 @@ the operator's business and is not tracked here.)
   English saying); *parata di tasto* → opposition parry (a published
   translator's choice); *spratico* → practice bout; *tempista* →
   tempo-fencer; a book that defines *tiratore* against *schermidore* gets
-  swordsman / fencer through `[terms]`.
+  swordsman / fencer through `[terms]`. Round 4 (2026-10-13, from reviews of the full retranslation):
+  every line names its scope, because the worst new errors were our own
+  lines applied to a neighbouring phrase (*tendre la perche* → plain
+  *tendre*, *dérober le corps* → *dérober* the blade, *tempi* the actions →
+  *tempi* counting movements; `docs/model-quirks.md` 2.19). Decided:
+  *doublé* / *dédoublé* kept (the books explain them); *remiser* → to
+  remise; *prendre le temps* → take the tempo ("take the time" reads as "be
+  slow"); *plastron* → plastron (the jacket), plastron work (the lesson),
+  lesson-giver (the master who gives it); *Académie d'armes* kept; Italian
+  old masters' cut names kept as printed, *armi* of the army → arms of the
+  service.
 - **No negation-count check (2026-10-11).** Lost negations (*il ne faut
   … parer* → "one must … parry") are real, but counting negations per page
   can't find them: on every known page the English had as many as the

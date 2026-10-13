@@ -11,7 +11,7 @@ Model: docling-project/docling-layout-heron (IBM Docling; RT-DETR v2 trained
 on DocLayNet; Apache-2.0), baked into the image at a pinned revision, CPU
 only (~0.5 s/page). Classes include page_header, title, section_header,
 text, picture, caption. Evaluation on all 1,673 pages of the 6-book corpus
-(2026-09-25, review-notes/TITLE_PROMPT_TEST.md): where it disagreed with the
+(2026-09-25, review-notes/archive/experiments/TITLE_PROMPT_TEST.md): where it disagreed with the
 text-heuristic headers, the scans sided with it on nearly every page checked.
 
 Results are cached per book in intermediate/layout.json so the model never

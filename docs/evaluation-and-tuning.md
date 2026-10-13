@@ -274,25 +274,41 @@ English right?
   drawn, and no more than the source has), footnote notes that vanished
   (not ones that moved to the term's earlier first use), new
   low-confidence pages, new review-report checks, source-language runs,
-  `[[fix]]` entries that stopped applying; and closeness before and after.
-  `reports/retranslation/<stem>.md` + `.html`, worst first, source /
-  before / after side by side. Save the copies before the run:
-  `cp translation.txt translation.<tag>.txt` (and the review report's
-  json). It flags; a person or the meaning review decides.
+  `[[fix]]` entries that no longer apply (find and replacement both gone
+  from the page -- step 2 applies the fixes at the end of each run, so a
+  working one leaves its replacement); and closeness before and after.
+  `reports/retranslation/<stem>.md` + `.html`, worst first, by side-by-side
+  pdf page, source / before / after side by side. Save the copies before
+  the run: `cp translation.txt translation.<tag>.txt` (and the review
+  report's json). It flags; a person or the meaning review decides.
+  It does not see a page cut off mid-sentence that is not much shorter:
+  step 2 now rejects a reply that ran out of room (`finish_reason:
+  length`), and the meaning review checks page endings.
 - **Meaning review** (`evals/meaning_review.md`): a Claude agent reads the
-  source against the English page by page, about 130-160 scans per agent,
-  and lists each place the English says something different -- source
-  words, English now, a literal correction, a plain explanation, marked
-  where a fencing term is involved. It catches what no check can: a lost
-  negation, a reversed clause, a term guessed wrong. Check a few of each
-  report's worst items against the page (on 2026-10-11 every one checked,
-  over 20, was right), then merge the report into the book's checklist
-  section, where the reviewer ticks the items they agree with. In
-  "patterns" mode it lists recurring term errors first, with the book's
-  own definition where it gives one -- those become glossary lines in the
-  prompt, which fix every book; single errors become `[[fix]]` entries.
-  Run it on a book's final English; for a book about to be retranslated,
-  patterns mode only.
+  source against the English page by page, about 130-190 pages per agent,
+  two or three agents at a time, and lists each place the English says
+  something different -- source words, the English now (an exact quote, so
+  it can become a `[[fix]]` find), a literal correction, a plain
+  explanation, marked where a fencing term is involved, by side-by-side pdf
+  page. It reads the prompt's glossary rules first, so the reviewer's
+  decided renderings are not reported, and skips what a `[[fix]]` already
+  corrects. It catches what no check can: a lost negation, a reversed
+  clause, a term guessed wrong, a page cut off, a table that vanished.
+  Check a few of each report's worst items against the page before using
+  it.
+
+  **The loop.** Recurring errors across books become a decision list for
+  the reviewer (one line each: source, now, proposed, where); the decided
+  renderings go into the prompt's glossary, which fixes every book. Then:
+  save a copy (`translation.before-<round>.txt`), retranslate only the
+  pages that show the patterns, compare, and re-review those pages -- is
+  each error fixed, did anything break? A page that got worse is restored
+  from the copy. Single errors (negations, swapped roles, OCR misreadings)
+  become `[[fix]]` entries, re-checked against the text after the
+  retranslation. Each round's own lines need watching: in round 4
+  (2026-10-13) the worst new errors came from glossary lines applied to a
+  neighbouring phrase (`docs/model-quirks.md` 2.19), so every line names
+  its scope.
 
 ---
 
