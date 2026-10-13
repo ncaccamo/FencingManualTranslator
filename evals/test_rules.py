@@ -2881,6 +2881,20 @@ def test_double_and_reverse_double_kept_italic():
     assert f("two doublés", "deux doublés") == "two <i>doublés</i>"
 
 
+def test_glossary_headword_left_in_french():
+    # prompt rule 7b (2026-10-13): a book's own glossary keeps its French
+    # headword, then the English in parentheses -- the footnoted-term backstop
+    # must not turn "<i>Caver</i> (to angle)" into "angle (to angle)"
+    from _rules import TX
+    f = TX["enforce_footnoted_terms"]
+    t = "<i>Caver</i> (to angle); this is to seek to strike"
+    assert f(t, set()) == t
+    assert "angle" in f("by caver the opponent", set())
+    g = TX["apply_always_translate"]
+    assert g("<i>Escrime</i> (fencing). — The art") == "<i>Escrime</i> (fencing). — The art"
+    assert g("<i>Fleuret</i> (foil). — The weapon") == "<i>Fleuret</i> (foil). — The weapon"
+
+
 def test_froissement_of_pride_is_not_a_graze():
     # Jacob pdf 254, 287: "froissement d'amour-propre" (hurt pride) became
     # "graze" with a "French: froissement" note

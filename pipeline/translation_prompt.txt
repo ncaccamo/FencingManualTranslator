@@ -6,7 +6,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - false friends: use the sense, not the look-alike — avvertenza → note, garantir (a part of the body) → protect, enfin → after all / finally, actuellement / attualmente → currently, eventualmente → possibly, assister à → attend;
    - prepositions follow their sense: di / de naming the means of an action is "by" (colpo di cavazione → thrust by <i>cavazione</i>; di molinello → by <i>molinello</i>);
    - rule 0 never overrides rules 2-3: a kept term stays in its language, in <i>…</i>, exactly as listed — never an English word from the same root: reprise is not "re-attack", Italian <i>Maestro</i> is not "master", <i>tocchi</i> is not "touches", <i>manrovesci</i> is not "reversals", <i>rimessa</i> is not "remise";
-   - a quotation in a third language (French quoted in an Italian book, Latin in a French one) is translated into English like the rest, never left as it is; after the closing quotation mark write <fn>French in the original</fn> (or Latin, …). A book title is the only thing left as written.
+   - a quotation in a third language (French quoted in an Italian book, Latin in a French one) is translated into English like the rest, never left as it is; after the closing quotation mark write <fn>French in the original</fn> (or Latin, …). A book title — in a bibliography or quoted in the text — is translated like the rest, followed by the original in square brackets: "The Science of Fencing [La scienza della scherma]".
 
 1. Translate EVERYTHING into modern English. The output must be entirely English (Latin script only). Do not leave French / Italian / German / Spanish / Latin sentences, phrases, headings, or captions untranslated. Never write a note to yourself in any language.
 
@@ -126,6 +126,8 @@ CRITICAL RULES — FOLLOW EXACTLY:
 6. Output ONLY the English translation. Your first character must be the first character of the translation itself. Never begin with "Following", "Here", "Note", "Translation:", "Sure", or any sentence describing what you are about to do. No restating the original, no commentary. Output plain text, NOT Markdown: no `#` headings, no `---` rules, no `![image](...)`, no `**bold**`. The only markup allowed is `<i>...</i>` (rule 2) and the `<fn>Fr. ...</fn>` / `<fn>It. ...</fn>` source references (rule 3b).
 
 7. PRESERVE LAYOUT. If the text is a drill or list of commands (one short imperative per line, sometimes indented, sometimes grouped by a "{" brace to several alternatives), keep that exact structure: one command per line, same leading indentation, keep the "{" and its aligned alternative lines. Do NOT merge braced alternatives or command lines into a sentence or comma list — translate the words on each line in place. Keep a "* * *" separator line as-is. Keep blank lines between blocks.
+
+7b. A LIST IN WHICH THE AUTHOR DEFINES TERMS (a glossary: each entry starts with a headword, then "." or "—" or ";" and its definition — "Caver; c'est chercher …", "Haut. — Expression qui …", "Phrase. Enchaînement …"): keep each entry's HEADWORD in the original language, in <i>…</i>, followed by its English in parentheses, then translate the definition: "<i>Caver</i> (to angle); this is to seek …", "<i>Haut</i> (high). — Expression used …". A kept term (rule 2) is not repeated: "<i>Remise</i>. — …". Only the headword that opens an entry of such a list — never a word in an ordinary sentence, and never a heading.
 
 8. Ignore and do not transcribe ornament / colophon / publisher's-device motto text if any slipped through (e.g. a sower motto around a logo).
 

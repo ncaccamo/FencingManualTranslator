@@ -288,7 +288,7 @@ def enforce_footnoted_terms(text: str, seen: set, footnote: bool = True) -> str:
     for fr, en in _footnoted():
         pat = re.compile(r"(?:<i>\s*)?(?<![\w-])" + re.escape(fr)
                          + r"(?![\w-])" + _FOOTNOTED_NOT_BEFORE.get(fr, "")
-                         + r"(?:\s*</i>)?", re.I)
+                         + r"(?:\s*</i>)?(?!\s*(?:</i>\s*)?\()", re.I)   # not a glossary headword: "<i>Caver</i> (to angle)"
         first = [True]
         note_fr = _footnote_ref().get(fr, fr)
 
@@ -435,6 +435,10 @@ def apply_always_translate(text: str) -> str:
             g = m.group(0)
             if _FRENCH_BEFORE.search(m.string[max(0, m.start() - 8):m.start()]) \
                     or _FRENCH_AFTER.match(m.string[m.end():m.end() + 24]):
+                return g
+            # a glossary headword kept in French (prompt rule 7b): "<i>Escrime</i> (fencing)"
+            if m.string[max(0, m.start() - 3):m.start()] == "<i>" \
+                    and re.match(r"\s*</i>\s*\(", m.string[m.end():m.end() + 8]):
                 return g
             return r.upper() if g.isupper() else r.capitalize() if g[:1].isupper() else r
         text = re.sub(r"\b" + pat + r"\b", _sub, text, flags=re.IGNORECASE)
