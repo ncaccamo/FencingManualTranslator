@@ -2742,6 +2742,22 @@ def test_rapier_not_riposte():
     assert f("a <i>riposte</i>", "une riposte") == "a <i>riposte</i>"
 
 
+def test_epee_as_blade_in_set_phrases():
+    # Prévost-Jollivet pdf 79-84, 162, 320 (2026-10-13): "attaques à l'épée"
+    # kept as "attacks with the épée" despite the glossary, headings too
+    from _rules import TX
+    f = TX["restore_blade_phrases"]
+    src = "DES ATTAQUES À L'ÉPÉE. Les attaques à l'épée sont… en absence d'épée… joindre l'épée"
+    assert f("OF ATTACKS WITH THE <i>ÉPÉE</i>.", src) == "OF ATTACKS ON THE BLADE."
+    assert f("The attacks on the <i>épée</i> are", src) == "The attacks on the blade are"
+    assert f("in absence of <i>épée</i>", src) == "in absence of blade"
+    assert f("to join the <i>épée</i>", src) == "to join the blade"
+    # Gomard's glossary pairs the two words: "Donner l'épée ou le fer"
+    assert f("To give the <i>épée</i> or the blade", "Donner l'épée ou le fer") == "To give the <i>épée</i> or the blade"
+    # not where the French has no such phrase: the weapon stays the épée
+    assert f("an attack with the <i>épée</i>", "une attaque avec l'épée") == "an attack with the <i>épée</i>"
+
+
 def test_reprise_not_re_attack():
     # Joseph-Renaud scan 226: "c'est une reprise d'attaque" -> "this is a
     # re-attack" (and scan 158, Kirchhoffer scan 23)
@@ -2871,6 +2887,14 @@ def test_progress_speed_is_the_whole_run():
         P.DIR, P.time.time = saved
 
 
+def test_stop_point_is_pointe_d_arret():
+    # Joseph-Renaud pdf 46: "pointes d'arrêt" (the device) -> "stop-points"
+    from _rules import TX
+    f = TX["enforce_kept_terms"]
+    assert f("with stop-points on the épées", "") == "with <i>pointes d'arrêt</i> on the épées"
+    assert f("Stop-point. — Small point", "") == "<i>Pointe d'arrêt</i>. — Small point"
+
+
 def test_double_and_reverse_double_kept_italic():
     # Prévost-Jollivet pdf 125: "D'un doublé dessus dédoublé dehors" -- kept
     # in French and italic, like riposte (reviewer, 2026-10-13)
@@ -2926,6 +2950,15 @@ def test_table_marker_never_sent_as_heading():
                 encoding="utf-8").read()
     page = page[page.index("def translate_page("):]
     assert 'candidate.count("[[TABLE]]") < clean_text.count("[[TABLE]]")' in page
+
+    # 2026-10-13: a dropped marker goes back where the source has it
+    r = TX["restore_table_markers"]
+    src = "[[TABLE]]\n\n(1) If the parry of seconda… (2) The action in tempo…"
+    assert r("(1) If the parry… (2) The action…", src).startswith("[[TABLE]]\n\n(1)")
+    src = "SCORING TABLE.\n\n[[TABLE]]\n\nORDER OF BOUTS.\n\n[[TABLE]]"
+    assert r("SCORING TABLE.\n\nORDER OF BOUTS.", src) == "SCORING TABLE.\n\n[[TABLE]]\n\nORDER OF BOUTS.\n\n[[TABLE]]"
+    assert r("SCORING TABLE.\n\nORDER OF BOUTS.\n\n[[TABLE]]", src) == "SCORING TABLE.\n\n[[TABLE]]\n\nORDER OF BOUTS.\n\n[[TABLE]]"
+    assert r("text\n\n[[TABLE]]", "text\n\n[[TABLE]]") == "text\n\n[[TABLE]]"
 
 
 def test_cover_page_counts_singular():

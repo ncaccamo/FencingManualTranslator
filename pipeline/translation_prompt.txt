@@ -11,7 +11,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
 1. Translate EVERYTHING into modern English. The output must be entirely English (Latin script only). Do not leave French / Italian / German / Spanish / Latin sentences, phrases, headings, or captions untranslated. Never write a note to yourself in any language.
 
 2. KEEP in the original language, wrapped in <i>…</i>, ONLY this small set — the terms English-language fencing literature itself retains:
-   - French: riposte, remise, reprise, croisé, corps à corps, volte, sentiment du fer, tac-au-tac, flanconnade (also spelled flanconade — write <i>flanconnade</i>), appel (the stamp of the foot: <i>appel</i>, plural <i>appels</i>), pointe d'arrêt (the pointed tip fixed to the épée's button — a device, never an action), doublé and dédoublé (a double, and a double in the reverse direction: <i>doublé</i>, <i>dédoublé</i>; the verbs "doubler", "dédoubler" → make a <i>doublé</i>, make a <i>dédoublé</i>), and the numbered lines/parries prime, seconde, tierce, quarte, quinte, sixte, septime, octave.
+   - French: riposte, remise, reprise, croisé, corps à corps, volte, sentiment du fer, tac-au-tac, flanconnade (also spelled flanconade — write <i>flanconnade</i>), appel (the stamp of the foot: <i>appel</i>, plural <i>appels</i>), pointe d'arrêt (the pointed tip fixed to the épée's button — a device, never an action), doublé and dédoublé (a double, and a double in the reverse direction: <i>doublé</i>, <i>dédoublé</i>; the verbs "doubler", "dédoubler" → make a <i>doublé</i>, make a <i>dédoublé</i>; where the book DEFINES the word, keep the defined word itself: "dédoubler signifie doubler en sens inverse du premier doublé" → "<i>dédoubler</i> means to double in the direction opposite to the first <i>doublé</i>"), and the numbered lines/parries prime, seconde, tierce, quarte, quinte, sixte, septime, octave.
    - "parade de tierce" = "parry of tierce" — translate "parade" (rule 3), keep the number.
    - épée — keep as "épée" (it IS the English term), wrap in <i>épée</i>.
    - German: Ausfallen, Zornhau, Versetzung, Absetzen, Winden
@@ -45,7 +45,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - fencing terms these books use — the standard English, never a guess:
      battement → beat ("double battement" → double beat; never "cut")   |   à fond → fully, with a full lunge ("contre-ripostez à fond" → counter-<i>riposte</i> with a full lunge; never "to the bottom")
      contre, the circular parry → counter ("contre de quarte" → counter of quarte, "double contre" → double counter; never "against")
-     tirer → thrust ("tirer droit", "tiré droit" → thrust straight; never "draw"); of a pistol → fire, and the tireur at the pistol → marksman (in a pistol duel tirer is NEVER thrust)
+     tirer → thrust ("tirer droit", "tiré droit" → thrust straight, "tirer les contres" → thrust the counters; never "draw", never "throw"); of a pistol → fire, and the tireur at the pistol → marksman (in a pistol duel tirer is NEVER thrust)
      coup double → double hit (both fencers hit each other at the same time)   |   coup pour coup → hit for hit
      fausse attaque → false attack (not a feint)   |   redoublement, redoubler → redoubling, to redouble (doublement and doublé are other actions)
      contre-temps, contretemps → counter-time (never "time-hit")
@@ -53,7 +53,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
      coquille → bell guard   |   jarret → back of the knee ("jarrets tendus" → knees straight)   |   saignée → crook of the elbow
      de pied ferme → without moving the feet   |   à bras raccourci → with a shortened arm
      dans les armes / sur les armes → inside / outside (the lines)   |   écarter le fer → set the blade aside
-     marche, en marchant → advance, advancing (never "walk")   |   invite de sixte → invitation in sixte
+     marche, en marchant → advance, advancing (never "walk"); but marcher en arrière → step back (never "advance backward")   |   invite de sixte → invitation in sixte
      à la muette → in silence ("la leçon à la muette" → the silent lesson)
      poule → pool (a competition)   |   terrain, of a duel → the ground (never "piste")   |   combat → combat (assaut is the bout)
      développement, se développer → lunge, to lunge (extension is a different word)   |   se relever (after the lunge) → recover
@@ -68,12 +68,12 @@ CRITICAL RULES — FOLLOW EXACTLY:
      pointe volante → flying point   |   doigté → fingering   |   pronation moyenne → middle pronation   |   attaque franche → frank attack
      à temps perdu → at a lost tempo
      fusée → grip   |   talon (of the blade) → heel   |   rapière → rapier (never "riposte")   |   espadon → two-handed sword   |   bâton à deux bouts → quarterstaff
-     coup de temps → time-hit   |   prendre le temps, prendre un temps (seizing the moment in the opponent's action) → take the tempo, take a tempo (never "take the time", which reads as "be slow")   |   other temps → tempo
+     prendre le temps, prendre un temps (seizing the moment in the opponent's action) → take the tempo, take a tempo (never "take the time", which reads as "be slow")   |   temps meaning that hit itself, made into the opponent's attack ("un temps", "les temps", "parades des temps", a glossary's "Temps. C'est une attaque …") → time-hit   |   temps counting the movements of an attack ("en deux temps", "premier temps") → tempo
      tension, tendre le bras, tendre → extension, extend the arm, extend (plain tendre is NEVER "stiffly": that is only the slang tendre la perche / la broche, rule 3b)   |   contre-opposé → counter-opposite   |   parade sèche (the parry that strikes and leaves the blade) → dry parry; but "d'un coup sec", sec, sèchement as an adverb (striking sharply) → sharp, sharply
      dessus / dessous, the lines ("ligne du dessus", "dessus les armes", "dégagez dessus") → over / under ("the line over", "over the arms"); dedans / dehors → inside / outside; haut / bas → high / low ("ligne haute / basse" → high / low line, never "line over / under"); but of the hand or nails (ongles, main, poignet) "en dessus", "en-dessus", "dessus" → up, "en dessous", "en-dessous", "dessous" → down ("les ongles légèrement en-dessus" → the nails slightly up)
      jour (an opening) → opening   |   découvert (noun), se découvrir, à la découverte → opening, expose oneself, at the open target; découvert as an adjective (one's own attack, arm or body left unprotected) → uncovered
      jeu (a fencer's style or way of fencing) → play, never "game" ("jeu de terrain" → play on the ground; "son jeu" → his play)   |   ferrailler, ferrailleur → clash blades, blade-clasher
-     écraser, écrasement (du corps) → crouch, crouching; but écraser le fer, l'écraser (the opponent's blade) → crush the blade, crush it   |   dérober le corps → slip the body away; but dérober, dérobez (the blade, a taking of the blade) → evade
+     écraser, écrasement (du corps) → crouch, crouching; but écraser le fer, l'écraser (the opponent's blade) → crush the blade, crush it   |   dérober le corps, dérober le haut du corps (the body) → slip the body away, slip the upper body; but dérober, dérobez (the blade, a taking of the blade) → evade
      garde volante → flying guard   |   coup voulu → intended hit   |   coup de raccroc → fluke hit   |   demi-allonge → half-extension
      attaques à la retraite → attacks on the retreat   |   semelle → sole (one foot-length)   |   cou-de-pied → instep
      rencontre, affaire (a duel) → encounter, affair (never "bout")   |   donner le change → mislead
@@ -81,7 +81,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
      remise en garde → return to guard (never "the remise", never "on-guard position")   |   esquive, esquiver → dodge (dérobement is the evasion)
      plastron: the master's padded jacket → plastron; the lesson at it ("le plastron", "pendant le plastron", "donner le plastron", "quelques minutes de plastron") → plastron work; au plastron → at the plastron; plastronner → work at the plastron (unless the book defines it otherwise)
      passe d'armes → passage of arms   |   assaut en un → one-touch bout   |   riposte d'opposition → <i>riposte</i> with opposition (never "counter-riposte")
-     martingale → martingale   |   prévôt → provost   |   salut, salut des armes (the formal salute before a bout) → salute, salute of arms   |   tantôt … tantôt → sometimes … sometimes
+     riposteur (the fencer who ripostes) → riposter   |   martingale → martingale   |   prévôt → provost   |   salut, salut des armes (the formal salute before a bout) → salute, salute of arms   |   tantôt … tantôt → sometimes … sometimes
      "parer tierce" → parry tierce   |   "de quarte en seconde" → from quarte to seconde   |   septime enveloppée → septime enveloped
    - ordinary words these books use in a sense the model misreads:
      défendre (l'usage de …) → forbid   |   ne … plus que → now only (never "no longer")   |   ajuster (a hit) → aim
@@ -107,9 +107,9 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - barré → bar ("le barré de seconde" → the bar in seconde)
    - coup fourré → double hit (the same as coup double)
    - tendre la perche, la perche tendue, tendre la broche (slang for sticking the arm out stiffly at an attack, hoping the attacker runs onto the point; no English saying) → stick the arm out stiffly, the arm stuck out stiffly
-   - à-propos → timing (plural: moments of timing)
+   - à-propos → timing (plural: moments of timing); but "mal à propos" → at the wrong moment, "à propos" (opportunely) → at the right moment — never "at a lost tempo", which is à temps perdu
    - coup de temps → time-hit
-   - rompre → to break ground   (a single deliberate step back, NOT "romp" -- and NOT "retreat"/"retraite", a different, more general backward movement; keep the two distinct if both appear)
+   - rompre → to break ground, but "rompre la mesure" → break the measure   (a single deliberate step back, NOT "romp" -- and NOT "retreat"/"retraite", a different, more general backward movement; keep the two distinct if both appear)
    - plastron meaning a person, the master who gives the lesson ("un remarquable plastron") → lesson-giver
    - rassemblement / rassembler / rassemblant → gathering (of the feet)   (spell the French EXACTLY: "rassemblant", never "raassemblant")
    Example:  "… and by a bind<fn>Fr. liement</fn> he carried the blade aside."

@@ -489,7 +489,8 @@ _KEEP_TERMS_FR = [
     # RAPISES" is the same failure with a different garbled spelling.
     ("riposte", [r"rapier(?:[- ]?(?:rapier|response|riposte|reply))?",
                  r"riposte response", r"rapises?"]),
-    ("pointe d'arrêt", []), ("pointe d’arrêt", []),
+    # kept, never "stop-point(s)" (Joseph-Renaud pdf 46, Kirchhoffer pdf 39)
+    ("pointes d'arrêt", [r"stop[- ]points"]), ("pointe d'arrêt", [r"stop[- ]point"]), ("pointe d’arrêt", []),
     ("flanconnade", []),
     ("appels", []), ("appel", []),
     ("remise", []),
@@ -550,6 +551,31 @@ def restore_rapier(text: str, src: str) -> str:
             word = "rapiers" if m.group(1).lower().endswith("s") else "rapier"
             word = word.capitalize() if m.group(1)[:1].isupper() else word
             text = text[:m.start()] + word + text[m.end():]
+    return text
+
+
+# épée meaning the blade in set phrases (prompt rule 3): the model kept "the
+# épée" on six Prévost-Jollivet pages and many Gomard ones after the rule
+# said otherwise, headings included ("ATTACKS WITH THE ÉPÉE"). Only where the
+# French page has the phrase.
+_E = r"(?:the\s+)?(?:<i>\s*)?[ée]p[ée]es?(?:\s*</i>)?"
+_BLADE_PHRASES = [
+    (r"\battaques?\s+à\s+l['’]\s*épée", r"\b(attacks?)\s+(?:with|on|to|against)\s+" + _E + r"(?!\w)", r"\1 on the blade"),
+    (r"\babsences?\s+d['’]\s*épée", r"\b(absences?)\s+of\s+" + _E + r"(?!\w)", r"\1 of blade"),
+    (r"\bdonne\w*\s+(?:l['’]|de\s+l['’])\s*épée", r"\b(giv(?:e|es|en|ing)|gave)\s+(?:the\s+)?(?:<i>\s*)?[ée]p[ée]e(?:\s*</i>)?(?!\w)(?!(?:\s*</i>)?\s+or\s+the\s+blade)", r"\1 the blade"),
+    (r"\b(?:joindre|joint|joignez|engager|engagez|engage)\s+l['’]\s*épée", r"\b(join\w*|engag\w*)\s+(?:the\s+)?(?:<i>\s*)?[ée]p[ée]e(?:\s*</i>)?(?!\w)", r"\1 the blade"),
+]
+
+
+def restore_blade_phrases(text: str, src: str) -> str:
+    if not text or not src or BOOK_LANG == "Italian":
+        return text
+    for fr, en, repl in _BLADE_PHRASES:
+        if re.search(fr, src, re.I):
+            def sub(m, repl=repl):
+                out = m.expand(repl)
+                return out.upper() if re.sub(r"</?i>", "", m.group(0)).isupper() else out
+            text = re.sub(en, sub, text, flags=re.I)
     return text
 
 
@@ -774,7 +800,8 @@ def enforce_kept_terms(text: str, src: str = "") -> str:
                 # preserve plurality of the garbled match ("RAPISES" ->
                 # "ripostes", not the always-singular "riposte")
                 g = m.group(0)
-                plural = g.rstrip().lower().endswith("s") and not term.endswith("s")
+                plural = (g.rstrip().lower().endswith("s") and not term.endswith("s")
+                          and not term.split()[0].endswith("s"))   # "pointes d'arrêt" is already plural
                 disp = term + ("s" if plural else "")
                 return f"<i>{_match_term_case(disp, g)}</i>"
             text = re.sub(r"(?<!<i>)\b" + w + r"\b(?!</i>)",
@@ -2167,6 +2194,43 @@ def page_context_block(st: dict) -> str:
     return "\n".join(lines) + "\n\n"
 
 
+def restore_table_markers(text: str, src: str) -> str:
+    """Put back each "[[TABLE]]" the translation dropped, after as many
+    paragraphs as precede it in the source (a table that opens the page goes
+    first, before its footnotes). Paragraphs are blank-line separated; the
+    model keeps them one for one closely enough for a table's place."""
+    paras = [p for p in re.split(r"\n\s*\n", src.strip()) if p.strip()]
+    want, before = [], 0
+    for p in paras:
+        if p.strip() == "[[TABLE]]":
+            want.append(before)
+        else:
+            before += 1
+    missing = len(want) - text.count("[[TABLE]]")
+    if missing <= 0:
+        return text
+    out = [p for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
+    # each marker the model kept answers the source marker nearest its place
+    left, n_text = list(want), 0
+    for p in out:
+        if p.strip() == "[[TABLE]]":
+            if left:
+                left.remove(min(left, key=lambda w: abs(w - n_text)))
+        else:
+            n_text += 1
+    for pos in sorted(left, reverse=True):
+        n_text = 0
+        at = len(out)
+        for k, p in enumerate(out):
+            if n_text == pos:
+                at = k
+                break
+            if p.strip() != "[[TABLE]]":
+                n_text += 1
+        out.insert(at, "[[TABLE]]")
+    return "\n\n".join(out)
+
+
 def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
     """Translate one extracted.txt page record -> its translation.txt entry.
     Never raises and never returns nothing: a failed page comes back as a
@@ -2310,6 +2374,7 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         candidate = enforce_maestro(candidate, clean_text)
         candidate = restore_rapier(candidate, clean_text)
         candidate = restore_reprise(candidate, clean_text)
+        candidate = restore_blade_phrases(candidate, clean_text)
         # on a ToC page: translate the Cat-3 terms but emit NO
         # footnote marker (a contents line must not carry one, and
         # it would burn the once-per-book note), and skip the
@@ -2360,11 +2425,12 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
             continue
 
         # every table marker must survive: steps 3 & 4 put the scan of the
-        # table there (Masiello 1887 scans 376-377: the model left it out)
+        # table there (Masiello 1887 scans 376-377: the model left it out).
+        # A retry rarely helps (2026-10-13: 12 of 12 tries on four pages
+        # dropped it), so it is put back where the source has it.
         if candidate.count("[[TABLE]]") < clean_text.count("[[TABLE]]"):
-            print(" → table marker lost")
-            time.sleep(2)
-            continue
+            candidate = restore_table_markers(candidate, clean_text)
+            print(" (table marker put back)", end="")
 
         if contains_too_much_non_english(candidate):
             print(" → not English")
@@ -2428,8 +2494,8 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         print(" ⚠ kept (low confidence)")
         body = deshout(best_candidate, clean_text) \
             if _shout_ratio(best_candidate) > 0.85 else best_candidate
-        if best_candidate.count("[[TABLE]]") < clean_text.count("[[TABLE]]"):
-            body = body.rstrip() + "\n\n[[TABLE]]"      # place is a guess; the table is kept
+        if body.count("[[TABLE]]") < clean_text.count("[[TABLE]]"):
+            body = restore_table_markers(body, clean_text)
         return f"[low-confidence translation — review]\n{body}"
     elif src_words < 15:
         # Every attempt was a refusal/preamble and there was
