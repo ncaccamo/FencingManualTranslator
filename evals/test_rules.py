@@ -3268,6 +3268,86 @@ def test_join_across_an_honorific():
     p = [{"body": "Il tirait au corps."}, {"body": "Anatole arriva."}]
     assert join_split_sentences(p) == 0
 
+
+def test_glossary_and_bibliography_pages():
+    # 2026-10-13: prompt rule 7b (a glossary keeps its headword) and the
+    # book-title line were followed on some pages, not others. Glossary and
+    # bibliography pages are found per book; code completes what the model
+    # left out.
+    import _pagekind as pk
+    g1 = ("Haut. — Expression qui sert à désigner les lignes au-dessus de la main.\n"
+          "Invité. — Mouvement de la lame, ayant pour effet d'ouvrir une ligne.\n"
+          "Justesse. — Précision du tireur qui touche l'adversaire à l'endroit voulu.")
+    g2 = ("Mesure. — Être à portée de l'adversaire quand il attaque.\n"
+          "Opposition. — Parade sans choc apparent, qui écarte le fer ennemi.\n"
+          "Pointer. — (Sabre.) Porter le coup de pointe ou en faire la menace.")
+    # the list's last page: two entries carrying the order on (Gomard pdf 113)
+    g3 = ("- Se relever, c'est se mettre en garde après le coup porté.\n"
+          "- Tourné du poignet. Ce mot n'est pas encore admis par les dictionnaires.\n"
+          "Voir à la table générale pour les termes techniques suivants.")
+    # run-in section headings: same shape, not alphabetical (Kirchhoffer pdf 24)
+    heads = ("Battement. — Choc sec donné sur la lame de l'adversaire.\n"
+             "Pression. — Action de presser la lame de l'adversaire.\n"
+             "Froissé. — Glissement vif et fort le long du fer ennemi.")
+    # an alphabetical list of names (Lambertini): no definitions
+    names = ("Engel Leone maestro d'armi — Torino\nEnrichetti Cesare maestro d'armi — Parma\n"
+             "Fangarezzi Giuseppe prof. di scherma — Odessa")
+    bib = ("L'Art des armes, par Danet. Paris, 1766.\n"
+           "Il vero Maneggio di spada, d'Alessandro Senesio. In Bologna, 1660.\n"
+           "L'Exercice des armes ou le maniement du fleuret, par le Perche du Coudray. Paris, 1676.\n"
+           "Les vrays Principes de l'espée seule, par Philibert de La Touche. Paris, 1670.")
+    prose = "Il tirait au corps. On dit qu'il était fort.\nEn 1766 parut un livre."
+    kinds = pk.book_page_kinds([prose, g1, g2, g3, heads, heads, names, names, bib, prose])
+    assert kinds == {1: "glossary", 2: "glossary", 3: "glossary", 8: "bibliography"}, kinds
+    assert pk.book_page_kinds([prose, g1, prose]) == {}       # one page is not enough
+
+    en = ("High. — Expression used to designate the lines above the hand.\n"
+          "Invitation. — Movement of the blade whose effect is to open a line.\n"
+          "<i>Justesse</i> (accuracy). — The fencer's precision in touching.")
+    assert pk.complete_glossary(en, g1).split("\n") == [
+        "<i>Haut</i> (high). — Expression used to designate the lines above the hand.",
+        "<i>Invité</i> (invitation). — Movement of the blade whose effect is to open a line.",
+        "<i>Justesse</i> (accuracy). — The fencer's precision in touching."]
+    # same word in both, a headword with its own comma, a kept term in the English
+    src = ("Opposition. — Parade sans choc apparent, qui écarte le fer ennemi.\n"
+           "Etre croisé, se croiser, se dit d'un tireur qui porte le pied trop à gauche.\n"
+           "Coup jugé ; se dit d'une attaque prévue dans tous ses mouvements.")
+    en = ("Opposition. — Parry without apparent shock, which deflects the blade.\n"
+          "To be crossed, to cross, is said of a fencer who carries the foot too far left.\n"
+          "<i>Coup</i> judged; said of an attack foreseen in all its movements.")
+    assert pk.complete_glossary(en, src).split("\n") == [
+        "<i>Opposition</i>. — Parry without apparent shock, which deflects the blade.",
+        "<i>Etre croisé, se croiser</i> (to be crossed, to cross), is said of a fencer who carries the foot too far left.",
+        "<i>Coup jugé</i> (<i>coup</i> judged); said of an attack foreseen in all its movements."]
+    # lines not one for one: left as it is
+    assert pk.complete_glossary("High. — Expression used.", g1) == "High. — Expression used."
+
+    en = ("The Art of Arms, by Danet. Paris, 1766.\n"
+          "The true handling of the sword [Il vero Maneggio di spada], by Alessandro Senesio. In Bologna, 1660.\n"
+          "The exercise of arms or the handling of the foil, by le Perche du Coudray. Paris, 1676.\n"
+          "The true principles of the épée alone, by Philibert de La Touche. Paris, 1670.")
+    out = pk.complete_bibliography(en, bib).split("\n")
+    assert out[0] == "The Art of Arms [L'Art des armes], by Danet. Paris, 1766."
+    assert out[1] == en.split("\n")[1]                       # already there
+    assert out[2] == ("The exercise of arms or the handling of the foil [L'Exercice des armes "
+                      "ou le maniement du fleuret], by le Perche du Coudray. Paris, 1676.")
+    # years out of step: left as it is
+    assert pk.complete_bibliography(en.replace("1676", "1677"), bib) == en.replace("1676", "1677")
+
+
+def test_quotation_left_untranslated():
+    # Masiello 1887 pdf 73: a French quotation kept in French, noted
+    # "French in the original" -- the note is for a translated quotation
+    from _rules import TX
+    f = TX["quotation_left_untranslated"]
+    assert f("with a <i>fendente</i>.\nSans le bouter d'estocq ou hachier.<fn>French in the original</fn>\nAnd")
+    assert f("Vigeant writes: « L'impulsion qu'il donna à son art »<fn>French in the original</fn>.")
+    assert not f("Mérignac writes that \"Viggiani is the first author who admits several thrusts.\" "
+                 "<fn>French in the original</fn>")
+    assert not f("as Vigeant says: « Far from it »<fn>French in the original</fn>")   # too short to judge
+    assert not f("Sans le bouter d'estocq ou hachier.")                             # no note
+
+
 def _run_plain() -> int:
     fns = sorted((n, f) for n, f in globals().items()
                  if n.startswith("test_") and callable(f))

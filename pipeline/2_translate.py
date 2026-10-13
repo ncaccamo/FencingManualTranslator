@@ -16,6 +16,7 @@ from pathlib import Path
 import backend_config as bc
 import _pageio
 import _overrides
+import _pagekind
 import _progress
 
 PROMPT_FILE = "/app/translation_prompt.txt"
@@ -1518,6 +1519,32 @@ _REFUSAL_RE = re.compile(
     re.IGNORECASE)
 
 
+_ENGLISH_FUNCTION_WORDS = {"the", "of", "and", "to", "is", "an", "that", "with",   # not "a", "in", "on": French / Italian too
+                           "it", "for", "by", "his", "be", "not", "as", "which", "on", "or",
+                           "he", "one", "without", "from", "at", "are", "was", "this"}
+
+
+def quotation_left_untranslated(text: str) -> bool:
+    """A "<fn>French in the original</fn>" (or Latin, …) note after a
+    quotation still in that language: the text before the note, back to
+    the opening quotation mark or the start of the line, has no English
+    function word and some foreign one (Masiello 1887 pdf 73: "Sans le
+    bouter d'estocq ou hachier.<fn>French in the original</fn>")."""
+    for m in re.finditer(r"<fn>\s*\w+ in the original\.?\s*</fn>", text, re.I):
+        seg = text[max(0, m.start() - 400):m.start()].split("\n")[-1]
+        opened = max(seg.rfind(q) for q in "«“\"")
+        if opened > 0:
+            seg = seg[opened:]
+        seg = re.sub(r"<fn>.*?</fn>|<i>.*?</i>", " ", seg)
+        words = [w.lower() for w in re.findall(r"\b\w+\b", seg)]
+        if len(words) < 3 or any(w in _ENGLISH_FUNCTION_WORDS for w in words):
+            continue
+        if any(w in NON_ENGLISH_INDICATORS for w in words) \
+                or re.search(r"\b[cdjlmnqst]['’][aeiouyh]", seg, re.I):
+            return True
+    return False
+
+
 def strip_model_preamble(text: str) -> str:
     """Drop leading 'Here is the translation:' / 'Sure:' / 'Note: ...' lines
     the model prepends despite the prompt. Stops at the first real line."""
@@ -2315,6 +2342,10 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
                 f"first part translated, remainder omitted]\n\n{cand}"[:6000])
     best_candidate = None   # best rejected attempt, for the fallback
     line_hint = ""          # set when a try swapped a line name (below)
+    # the book's glossary / bibliography (_pagekind): the model is told what
+    # kind of page it has, and code completes what it still leaves out
+    kind = st.get("kind")
+    kind_note = f"{_pagekind.INSTRUCTION[kind]}\n\n" if kind else ""
     for attempt in range(3):
         print(f"  Page {i}/{n} (try {attempt + 1})", end="", flush=True)
 
@@ -2322,7 +2353,7 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         # blunt instruction -- the 7B sometimes gets stuck echoing
         # the French source verbatim, and a hotter sample + the
         # extra line breaks it out.
-        ctx = page_context_block(st)
+        ctx = page_context_block(st) + kind_note
         if attempt == 0:
             full_prompt = f"{PROMPT_TEMPLATE}\n\n{ctx}Text to translate:\n{clean_text}"
             temp = FIRST_TRY_TEMPERATURE
@@ -2369,6 +2400,11 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         else:
             candidate = re.sub(r"(?im)^\s*\[+\s*TABLE[^\]\n]*\]+\s*$",
                                "[[TABLE]]", candidate)
+        # before the term passes: a headword kept in the original is guarded there
+        if kind == "glossary":
+            candidate = _pagekind.complete_glossary(candidate, clean_text)
+        elif kind == "bibliography":
+            candidate = _pagekind.complete_bibliography(candidate, clean_text)
         candidate = apply_always_translate(candidate)
         candidate = enforce_kept_terms(candidate, clean_text)
         candidate = enforce_maestro(candidate, clean_text)
@@ -2435,6 +2471,13 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         if contains_too_much_non_english(candidate):
             print(" → not English")
             time.sleep(8)
+            continue
+
+        # a quotation noted "French in the original" but left in French
+        # (Masiello 1887 pdf 73: "Sans le bouter d'estocq ou hachier.")
+        if quotation_left_untranslated(candidate):
+            print(" → quotation not translated")
+            time.sleep(2)
             continue
 
         # Qwen rendered the whole page in capitals (source wasn't).
@@ -2647,11 +2690,13 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
     if finished:
         print(f"Resuming: {len(finished)} of {len(targets)} page(s) already done")
     fps = load_fingerprints(folder) or [page_fingerprint(p) for p in ex]
+    kinds = _pagekind.book_page_kinds([clean_vlm_extraction(p) for p in ex])
     _progress.start(stem, "translation", len([t for t in targets if t not in finished]))
     for s_ in targets:
         if s_ in finished:
             continue
         st["context"] = neighbour_context(ex, s_ - 1) if PAGE_CONTEXT else None
+        st["kind"] = kinds.get(s_ - 1)
         tr[s_ - 1] = translate_page(ex[s_ - 1].strip(), s_, len(ex), st)
         done[str(s_)] = fp(ex[s_ - 1])
         fps[s_ - 1] = page_fingerprint(ex[s_ - 1])
@@ -2738,11 +2783,13 @@ try:
             translated_pages, page_models, page_stamps = [], [], []
             _st = {"fn_seen": set(), "footnoted_seen": set(), "fn_state": {}}
 
+        kinds = _pagekind.book_page_kinds([clean_vlm_extraction(p) for p in pages])
         _progress.start(Path(folder).name[:-len("_translated")], "translation",
                         len(pages) - len(translated_pages))
         for i in range(len(translated_pages) + 1, len(pages) + 1):
             calls = MODEL_CALLS
             _st["context"] = neighbour_context(pages, i - 1) if PAGE_CONTEXT else None
+            _st["kind"] = kinds.get(i - 1)
             translated_pages.append(translate_page(pages[i - 1], i, len(pages), _st))
             # "-": no model reply (blank / marker page) -- the cover skips it
             page_models.append((LAST_MODEL or TRANSLATION_MODEL_NAME)

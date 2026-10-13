@@ -1764,6 +1764,32 @@ a one-word French heading and replaced it with the model's answer, losing 9
 tables in one book (marker lines are now skipped, and a try that drops a table
 marker is retried).
 
+### 2.20 Rules for a few pages, missed on those pages (2026-10-13)
+
+Rule 7b (a book's own glossary keeps each headword in the original, then the
+English in parentheses) and rule 0's line on book titles (translated, then
+the original in square brackets) were followed on some pages and not others:
+one glossary page right, the next all English; a bibliography with no
+original titles at all. A rule that applies to a handful of pages, read on
+every page, is easy for the model to pass over.
+
+`pipeline/_pagekind.py` now finds those pages per book, the model is told
+which kind of page it has (right before the page text), and code completes
+what it still leaves out:
+
+- **glossary**: a run of two or more pages whose entries ("Haut. — …",
+  "Caver; c'est …", "Sauter, se dit …") have their headwords in alphabetical
+  order. Run-in section headings have the same shape but not the order; an
+  alphabetical list of names has no definitions. English and source lines are
+  paired one for one, and an English headword becomes "<i>Haut</i> (high)".
+- **bibliography**: most lines end in a year. Entries are paired by their
+  years; the original title (before ", par …") goes in brackets after the
+  English one (before ", by …").
+
+A page whose lines don't pair up is left as the model gave it. Separately, a
+"French in the original" note after a quotation still in French (no English
+word in it) is retried.
+
 ## Part 3 — shared / architectural
 
 - **Page separator** — `pipeline/_pageio.py::PAGE_SEP` (U+001E). Every
