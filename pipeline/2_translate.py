@@ -2401,8 +2401,10 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
             candidate = re.sub(r"(?im)^\s*\[+\s*TABLE[^\]\n]*\]+\s*$",
                                "[[TABLE]]", candidate)
         # before the term passes: a headword kept in the original is guarded there
+        heads = []
         if kind == "glossary":
             candidate = _pagekind.complete_glossary(candidate, clean_text)
+            candidate, heads = _pagekind.mask_headwords(candidate)
         elif kind == "bibliography":
             candidate = _pagekind.complete_bibliography(candidate, clean_text)
         candidate = apply_always_translate(candidate)
@@ -2423,6 +2425,7 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
             candidate = retranslate_stray_french_headings(candidate)
             candidate = restore_dropped_part_title(candidate, clean_text)
             candidate = fix_subheading_spacing(candidate)
+        candidate = _pagekind.unmask_headwords(candidate, heads)
 
         # "This isn't fencing text" / "Please provide the text..." --
         # the model had nothing real to translate. Not a fallback

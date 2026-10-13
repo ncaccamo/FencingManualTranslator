@@ -3334,6 +3334,29 @@ def test_glossary_and_bibliography_pages():
     # years out of step: left as it is
     assert pk.complete_bibliography(en.replace("1676", "1677"), bib) == en.replace("1676", "1677")
 
+    # 2026-10-13 GPU test: an entry over two lines; "by" opening a line;
+    # "by way of dialogue" is not the author
+    src = ("Nouveau traité de l'art des armes,\npar Nicolas Demeuse. Liège, 1778.\n"
+           "Lo Schermo, nel quale per via di dialogo si discorre, d'Angelo Viggiani. In Venetia, 1575.")
+    en = ("New Treatise on the Art of Arms\nby Nicolas Demeuse. Liège, 1778.\n"
+          "The Fencing, in which, by way of dialogue, there is discourse, of Angelo Viggiani. In Venice, 1575.")
+    assert pk.complete_bibliography(en, src).split("\n") == [
+        "New Treatise on the Art of Arms [Nouveau traité de l'art des armes]",
+        "by Nicolas Demeuse. Liège, 1778.", en.split("\n")[2]]
+
+    # the model's own half-italic headword; the headword is safe from the term passes
+    src = ("Coup jugé. C'est lorsqu'on a prévu le coup de son adversaire.\n"
+           "Écraser le fer. Trop appuyer sur l'arme de l'adversaire quand on attaque.\n"
+           "Écraser (s'). Trop plier sur les jarrets en garde, défaut commun.")
+    en = ("<i>Coup</i> jugé (judged hit). It is when one has foreseen the hit of one's adversary.\n"
+          "<i>Écraser le fer</i> (to crush the blade). To press too hard on the weapon of the adversary.\n"
+          "<i>Écraser</i> (to crush). To bend too much on the back of the knees.")
+    out = pk.complete_glossary(en, src)
+    assert out.startswith("<i>Coup jugé</i> (judged hit). It is"), out
+    masked, saved = pk.mask_headwords(out)
+    assert "fer" not in masked.split("\n")[1].split("(")[0]
+    assert pk.unmask_headwords(masked, saved) == out
+
 
 def test_quotation_left_untranslated():
     # Masiello 1887 pdf 73: a French quotation kept in French, noted

@@ -175,6 +175,12 @@ def complete_glossary(en: str, src: str) -> str:
         body = line[len(lead):]
         if re.match(r"<i>\s*" + re.escape(head) + r"\s*</i>", body, re.I):
             continue                                    # already kept
+        # kept, but italic only in part, before the model's own English:
+        # "<i>Coup</i> jugé (judged <i>coup</i>)", "<i>Etre croisé</i>, <i>se croiser</i> (to be crossed)"
+        paren = body.find("(", 0, len(head) * 2 + 20)
+        if paren > 0 and _plain(body[:paren]) == _plain(head):
+            e_all[i] = lead + f"<i>{head}</i> " + body[paren:]
+            continue
         # a headword with its own commas ("Etre croisé, se croiser, se dit")
         # has as many in English before the definition
         seps = list(re.finditer(_en_sep(sep), body[:len(head) * 3 + 40]))
@@ -194,9 +200,45 @@ def complete_glossary(en: str, src: str) -> str:
     return "\n".join(e_all)
 
 
+_HEADWORD = re.compile(r"(?m)^([ \t]*[-–]?[ \t]*)(<i>[^<>\n]{1,80}</i>)")
+
+
+def mask_headwords(text: str) -> tuple:
+    """Hide each line-opening "<i>headword</i>" of a glossary page from the
+    term passes that follow, which otherwise rewrite the French inside it
+    ("<i>Écraser le fer</i>" -> "<i>Écraser the blade</i>", Prévost-Jollivet
+    pdf 316). unmask_headwords() puts them back."""
+    saved = []
+
+    def hide(m):
+        saved.append(m.group(2))
+        return f"{m.group(1)}\x02{len(saved) - 1}\x02"
+    return _HEADWORD.sub(hide, text), saved
+
+
+def unmask_headwords(text: str, saved: list) -> str:
+    return re.sub(r"\x02(\d+)\x02", lambda m: saved[int(m.group(1))], text)
+
+
 # the author, after the title: ", par …", ", di …", "; by …"
-_BY_SRC = re.compile(r"[,;]\s+(?:(?:par|di|da|composta\s+da|scritt[oa]\s+da|del|dal)\s|d['’](?=[A-ZÀ-Ý]))")
-_BY_EN = re.compile(r"[,;]\s+(?:by|composed\s+by|written\s+by)\s")
+# ... followed by a name ("par Danet", "par le sieur", "d'Alessandro"), never
+# "by way of dialogue"
+_NAME = r"(?=[A-ZÀ-Ý]|M\.|Mr|le\s|the\s+[Ss]ieur)"
+_BY_SRC = re.compile(r"(?:(?:[,;]\s+|\s|^)(?:par|di|da|composta\s+da|scritt[oa]\s+da|del|dal"
+                     r"|von|dargestellt\s+von|herausgegeben\s+von)\s|[,;]\s+d['’])" + _NAME)
+_BY_EN = re.compile(r"(?:[,;]\s+|\s|^)(?:by|composed\s+by|written\s+by|presented\s+by|edited\s+by)\s" + _NAME)
+
+
+def _entries(lines: list) -> list:
+    """Bibliography entries: the lines up to and including each one ending
+    in a year (an entry may run over two or three lines)."""
+    out, cur = [], []
+    for n, l in lines:
+        cur.append((n, l))
+        if _YEAR_END.search(l):
+            out.append(cur)
+            cur = []
+    return out
 
 
 def complete_bibliography(en: str, src: str) -> str:
@@ -204,22 +246,48 @@ def complete_bibliography(en: str, src: str) -> str:
     translation left it out. Entries are paired by the year that ends them
     (same years, same order, or the page is left as it is); the title is
     what comes before the author (", par …" / ", by …")."""
-    s_entries = [l for l in _lines(src) if _YEAR_END.search(l)]
+    s_entries = _entries(list(enumerate(_lines(src))))
     e_all = en.split("\n")
-    e_idx = [i for i, l in enumerate(e_all) if _YEAR_END.search(l)]
-    def year(l):
-        return re.findall(r"1[4-9]\d\d", l)[-1]
-    if [year(l) for l in s_entries] != [year(e_all[i]) for i in e_idx]:
+    e_entries = _entries([(i, l) for i, l in enumerate(e_all)
+                          if l.strip() and not l.strip().startswith("⟦")])
+
+    def year(entry):
+        return re.findall(r"1[4-9]\d\d", entry[-1][1])[-1]
+    if [year(e) for e in s_entries] != [year(e) for e in e_entries]:
         return en
-    for s, i in zip(s_entries, e_idx):
-        line = e_all[i]
-        if "[" in line:
+    for s_ent, e_ent in zip(s_entries, e_entries):
+        if any("[" in l for _, l in e_ent):
             continue
-        ms, me = _BY_SRC.search(s), _BY_EN.search(line)
-        if not ms or not me:
+        # the title starts on the line where the author is named (the line
+        # before too, when that one holds only its last word or two): an
+        # entry without a year above it is not part of it
+        s_lines = [l.strip() for _, l in s_ent]
+        ms = next(((n, m) for n, l in enumerate(s_lines) for m in [_BY_SRC.search(l)] if m), None)
+        hit = next(((k, m) for k, (_, l) in enumerate(e_ent)
+                    for m in [_BY_EN.search(l)] if m), None)
+        if not ms or not hit:
             continue
-        title = s[:ms.start()].strip()
-        if len(title.split()) < 2 or _plain(title) == _plain(line[:me.start()]):
+        n, m = ms
+        title = s_lines[n][:m.start()]
+        if len(title.split()) < 2 and n > 0:
+            title = s_lines[n - 1] + " " + title
+        title = title.strip().rstrip(",;").strip()
+        k, me = hit
+        if me.start() == 0:                     # "by …" opens the line: after the line before
+            if k == 0:
+                continue
+            k -= 1
+            at = len(e_ent[k][1].rstrip())
+        else:
+            at = me.start()
+        i, line = e_ent[k]
+        # the title, and the English before the author, must look like the
+        # same thing: not a carry-over from the page before (a year, a
+        # "(…)"), not "in which" against a long title
+        before = line[:at] if len(line[:at].split()) >= 2 or k == 0 else e_ent[k - 1][1] + " " + line[:at]
+        nt, nb = len(title.split()), len(before.split())
+        if nt < 2 or re.search(r"1[4-9]\d\d|\(", title) or not 0.5 * nt <= nb <= 2.2 * nt \
+                or _plain(title) == _plain(before):
             continue
-        e_all[i] = line[:me.start()] + f" [{title}]" + line[me.start():]
+        e_all[i] = line[:at].rstrip().rstrip(",;") + f" [{title}]" + line[at:]
     return "\n".join(e_all)
