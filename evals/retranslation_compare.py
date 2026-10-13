@@ -149,13 +149,14 @@ def compare(stem, tag):
             why.append("possible source-language run"); score += 2
         if why:
             rows.append((score, s, why, src, a, b, ca, cb))
-    # the saved translation already had the fix applied, so it holds the
-    # replacement; the fix no longer applies when the new page has neither
-    # its find nor its replacement (Barbasetti: 5 such, the cover title among them)
+    # step 2 applies the fixes at the end of a run, so a working fix leaves its
+    # replacement in the page; one whose find and replacement are both missing
+    # did not apply. Not only fixes that worked on the old page: Barbasetti's 5
+    # stale fixes were already stale before this retranslation and went unreported.
     fixes = [f for f in _fixes(stem) if 1 <= f.get("scan", 0) <= len(new)
-             and (f["find"] in old[f["scan"] - 1] or f.get("replace", "") in old[f["scan"] - 1])
+             and f.get("find") and f.get("replace")
              and f["find"] not in new[f["scan"] - 1]
-             and f.get("replace", "") not in new[f["scan"] - 1]]
+             and f["replace"] not in new[f["scan"] - 1]]
     rows.sort(key=lambda r: (-r[0], r[1]))
     pct = lambda c: 100 * c[0] / max(1, c[1])
     head = [f"# {stem} — retranslation check", "",
@@ -164,13 +165,13 @@ def compare(stem, tag):
             f"{pct(tot['cl_new']):.2f}% (content words with a source look-alike).", ""]
     if fixes:
         head += ["**`[[fix]]` entries whose text is gone from the new page** (no longer applied — re-check):", ""]
-        head += [f"- scan {f['scan']}: find \"{f['find'][:70]}\"" for f in fixes] + [""]
+        head += [f"- pdf {f['scan'] + 1}: find \"{f['find'][:70]}\"" for f in fixes] + [""]
     md, h = list(head), []
     e = lambda t: html.escape(t).replace("&lt;i&gt;", "<i>").replace("&lt;/i&gt;", "</i>").replace("\n", "<br>")
     for score, s, why, src, a, b, ca, cb in rows:
-        md += [f"## scan {s} — " + "; ".join(why), "",
+        md += [f"## pdf {s + 1} — " + "; ".join(why), "",
                "**Before:**", "", a.replace("\n", "  \n"), "", "**After:**", "", b.replace("\n", "  \n"), ""]
-        h.append(f"<h2>scan {s} — {html.escape('; '.join(why))}</h2><div class=g><div><h3>Source</h3>{e(src)}</div>"
+        h.append(f"<h2>pdf {s + 1} — {html.escape('; '.join(why))}</h2><div class=g><div><h3>Source</h3>{e(src)}</div>"
                  f"<div><h3>Before</h3>{e(a)}</div><div><h3>After</h3>{e(b)}</div></div>")
     os.makedirs(OUT, exist_ok=True)
     open(f"{OUT}/{stem}.md", "w", encoding="utf-8").write("\n".join(md) + "\n")

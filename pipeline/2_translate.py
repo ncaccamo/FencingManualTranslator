@@ -261,6 +261,12 @@ def _footnote_ref():
 
 
 
+# a footnoted term inside an ordinary phrase is not the fencing action:
+# "froissement d'amour-propre" is hurt pride, not a graze (Jacob 1887, 2026-10-13)
+_FOOTNOTED_NOT_BEFORE = {"froissement": r"(?!\s+d['’]\s*amour)",
+                         "froissements": r"(?!\s+d['’]\s*amour)"}
+
+
 def enforce_footnoted_terms(text: str, seen: set, footnote: bool = True) -> str:
     """Backstop for footnoted terms. Translate EVERY occurrence the model
     left in French (bare or italicised) to its English rendering, and on
@@ -281,7 +287,8 @@ def enforce_footnoted_terms(text: str, seen: set, footnote: bool = True) -> str:
     label = _LANG_REF.get(BOOK_LANG, _LANG_REF["French"])[1]
     for fr, en in _footnoted():
         pat = re.compile(r"(?:<i>\s*)?(?<![\w-])" + re.escape(fr)
-                         + r"(?![\w-])(?:\s*</i>)?", re.I)
+                         + r"(?![\w-])" + _FOOTNOTED_NOT_BEFORE.get(fr, "")
+                         + r"(?:\s*</i>)?", re.I)
         first = [True]
         note_fr = _footnote_ref().get(fr, fr)
 
@@ -483,6 +490,9 @@ _KEEP_TERMS_FR = [
     ("appels", []), ("appel", []),
     ("remise", []),
     ("reprise", []),
+    # doublé / dédoublé kept in French (reviewer, 2026-10-13: the books explain
+    # them; Prévost-Jollivet had seven renderings). Plurals first.
+    ("dédoublés", []), ("dédoublé", []), ("doublés", []), ("doublé", []),
     # "du tac au tac": parry and riposte in one instant -- kept in French in
     # English fencing writing. Qwen3.8 rendered it word for word ("FROM THE
     # TAC TO THE TAC", Gomard scan 239); older output left it bare/unitalic.

@@ -1742,6 +1742,28 @@ tromper* → "to be deceived by them"), a dropped verb that flips a sentence
 and can't find them (the English had as many negations as the French on
 every known page); the meaning review is the check for these.
 
+### 2.19 Glossary lines applied beyond their scope (2026-10-13)
+
+Meaning reviews of the full retranslation (seven books) found that the worst
+new errors came from the glossary's own lines, applied to a neighbouring
+phrase with the same head word:
+
+| Line | Meant for | Applied to | Fix |
+|---|---|---|---|
+| stick the arm out stiffly | slang *tendre la perche / broche* | plain *tendre le bras* | "plain tendre → extend, never stiffly" |
+| slip the body away | *dérober le corps* | *dérober* the blade | "dérober (the blade) → evade" |
+| crouch | *écraser* (du corps) | *écraser le fer* | "écraser le fer → crush the blade" |
+| time-hits | Italian *tempi*, the actions | *tempi* counting movements ("composte di tre tempi") | "tempi counting → tempo / tempi" |
+| "GATHERING" | rule 4b's example of a quoted word (« rassemblant ») | other quoted words on the page (« moderne », « en avançant ») | example removed |
+
+So every glossary line now names its scope and the near phrase it does not
+cover. A leftover also contradicted rule 2: *appel* was kept, and still listed
+among the words translated (→ "stamp of the foot"). And one code step went
+beyond its scope: the stray-heading pass took the "[[TABLE]]" marker line for
+a one-word French heading and replaced it with the model's answer, losing 9
+tables in one book (marker lines are now skipped, and a try that drops a table
+marker is retried).
+
 ## Part 3 — shared / architectural
 
 - **Page separator** — `pipeline/_pageio.py::PAGE_SEP` (U+001E). Every

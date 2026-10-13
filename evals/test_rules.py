@@ -2541,6 +2541,27 @@ def test_italian_low_high_at_render():
     assert f("the <i>quarta</i> balestra") == "the <i>quarta</i> balestra"
 
 
+def test_italian_line_numerals_at_render():
+    # 2026-10-13: Barbasetti's "3a-in-4a", "3<sup>a</sup>-in-4<sup>a</sup>",
+    # "2nd-in-3rd", Bruno's "4ª bassa" left as numerals (prompt: line names).
+    # French drill positions and equation references are left alone.
+    import os, re
+    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline", "_render.py"),
+               encoding="utf-8").read()
+    ns = {"re": re}
+    exec(src[src.index("_IT_N = "):src.index("def markdown_italics")], ns)
+    f, lh = ns["italian_line_numerals"], ns["italian_low_high"]
+    assert f("turning the fist in 3<sup>a</sup>-in-4<sup>a</sup>.") == "turning the fist in <i>terza</i>-in-<i>quarta</i>."
+    assert f("turning the fist in 3^a-in-4^a and") == "turning the fist in <i>terza</i>-in-<i>quarta</i> and"
+    assert f("3a-in-4a — take an intermediate position") == "<i>terza</i>-in-<i>quarta</i> — take an intermediate position"
+    assert f("into the 2nd-in-3rd position") == "into the <i>seconda</i>-in-<i>terza</i> position"
+    assert f("with the fist in 2a, and then") == "with the fist in <i>seconda</i>, and then"
+    assert lh(f("parry of 4ª bassa, feint")) == "parry of low <i>quarta</i>, feint"
+    for keep in ("(See the 5th position.)", "From equation (2.a) we have", "(book I, day 1.a)",
+                 "part 4a, where", "see fig. 4a", "the 4th position"):
+        assert f(keep) == keep, keep
+
+
 def test_line_names_italic_at_render():
     # 2026-10-11: the French lines / parries are italic like riposte, applied when the
     # PDF is drawn (_render.line_name_italics) -- the model left ~95% roman. "prime"
@@ -2848,6 +2869,26 @@ def test_progress_speed_is_the_whole_run():
         P.finish("stopped")
     finally:
         P.DIR, P.time.time = saved
+
+
+def test_double_and_reverse_double_kept_italic():
+    # Prévost-Jollivet pdf 125: "D'un doublé dessus dédoublé dehors" -- kept
+    # in French and italic, like riposte (reviewer, 2026-10-13)
+    from _rules import TX
+    f = TX["enforce_kept_terms"]
+    out = f("Against a doublé over, dédoublé outside", "D'un doublé dessus dédoublé dehors")
+    assert out == "Against a <i>doublé</i> over, <i>dédoublé</i> outside", out
+    assert f("two doublés", "deux doublés") == "two <i>doublés</i>"
+
+
+def test_froissement_of_pride_is_not_a_graze():
+    # Jacob pdf 254, 287: "froissement d'amour-propre" (hurt pride) became
+    # "graze" with a "French: froissement" note
+    from _rules import TX
+    f = TX["enforce_footnoted_terms"]
+    out = f("a froissement d'amour-propre", set())
+    assert "graze" not in out and "froissement d'amour-propre" in out
+    assert "graze" in f("by a froissement of the blade", set())
 
 
 def test_table_marker_never_sent_as_heading():

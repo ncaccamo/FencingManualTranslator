@@ -225,6 +225,29 @@ def line_name_italics(s):
     return "".join(out)
 
 
+# Italian hand positions / lines written as numerals ("4ª", "4a", "3<sup>a</sup>-in-
+# 4<sup>a</sup>", "2nd-in-3rd") -> the line name, drawn when the PDF is made
+# (prompt rule: never "4th"; Barbasetti 1902, Bruno 1891). Only these Italian
+# shapes: a French book's "5th position" (Cordelois, Baudry) is a numbered drill
+# position and is left alone, as are "1.a"-style equation / day references.
+_IT_N = {"1": "prima", "2": "seconda", "3": "terza", "4": "quarta",
+         "5": "quinta", "6": "sesta", "7": "settima", "8": "ottava"}
+_NUM_A = r"([1-8])(?:ª|<sup>a</sup>|\^a|a)"
+_NUM_ORD = r"([1-8])(?:st|nd|rd|th)"
+_IT_LINE_NUMERAL = re.compile(
+    r"(?<![\w.§/(])(?<!fig\. )(?<!plate )(?<!table )(?<!no\. )(?<!p\. )(?<!part )"
+    r"(?:" + _NUM_A + r"|" + _NUM_ORD + r"(?=-in-))"
+    r"(?:-in-(?:" + _NUM_A + r"|" + _NUM_ORD + r"))?"
+    r"(?!\w)", re.IGNORECASE)
+
+
+def italian_line_numerals(s):
+    def sub(m):
+        a, b = m.group(1) or m.group(2), m.group(3) or m.group(4)
+        return f"<i>{_IT_N[a]}</i>" + (f"-in-<i>{_IT_N[b]}</i>" if b else "")
+    return _IT_LINE_NUMERAL.sub(sub, s) if s else s
+
+
 # Italian "quarta bassa" / "terza alta" -> "low quarta" / "high terza": English
 # says low / high, not bassa / alta (reviewer, 2026-10-12). The model wrote it
 # three ways (Masiello 1887: "<i>quarta bassa</i>", "<i>quarta</i> bassa",
@@ -353,7 +376,7 @@ def layout(text, width, size):
     """text -> list[Line], pre-wrapped to `width` pt at `size`."""
     out = []
     para_end = False            # the line before ended a prose sentence
-    text = italian_low_high(line_name_italics(text))
+    text = italian_low_high(italian_line_numerals(line_name_italics(text)))
     for raw in (text or "").split("\n"):
         if _STARS.match(raw):
             continue
