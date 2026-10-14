@@ -259,6 +259,45 @@ sentence, not vocabulary: more glossary work won't close it, review does
 
 ---
 
+## 3a. The OCR model: olmOCR-2 against newer Qwen vision models (2026-10-14)
+
+olmOCR-2-7B is a fine-tune of Qwen2.5-VL-7B on mostly English documents,
+and the question came up whether a newer general Qwen vision model reads
+French and Italian books better. Tested: **Qwen3-VL-8B-Instruct** and
+**Qwen3.5-9B** (natively multimodal), both Q6_K with their `mmproj`, the
+same size class as olmOCR-2 and run the same way (step 1's rendering,
+contrast step, 1288-px image and OCR prompt). 26 pages from nine books:
+pages olmOCR-2 is known to misread, plain French and Italian pages, tables,
+margin notes, footnotes, and pages whose text came out garbled. olmOCR-2's
+side is the books' own `raw_ocr.txt`. Scripts and outputs were scratch
+(not kept in the repo).
+
+| | olmOCR-2 | Qwen3-VL-8B | Qwen3.5-9B |
+|---|---|---|---|
+| known misreads right (11 pages chosen *because* olmOCR-2 failed them) | 0 | 10 | 11 |
+| ordinary pages: errors of its own | few ("linca", a Latin "suit" for *fuit*) | words split in two ("posi zione", "gar de", "ri postes") | spelling modernised ("riescire" → "riuscire", "periglio" → "pericolo"), letters misread ("Lienent", "dérovements") |
+| tables | marked as tables (the PDF shows the scan) | grid read as text ("1 2 3 4 …") | numbers invented |
+| margin notes | left out (step 1 reads them separately) | put in the body text: each note would appear twice | the same |
+| image descriptions | rare (step 1 strips them) | — | "[The image provided appears to be …]" for a caption page |
+
+**Kept olmOCR-2.** The newer models fix exactly the habits we already
+repair one by one (`_OCR_PHRASE_FIXES`: "Rompire" for *Rompre*, "finite"
+for *finte* — the test confirmed both are olmOCR-2's own), but on ordinary
+text they make more mistakes, and quieter ones: a modernised spelling
+looks right. And they break two things the pipeline relies on, tables and
+margin notes. A page that no model reads (a damaged scan) needs a better
+copy of the page, not another model.
+
+A better general model can still help with **one page at a time**: re-read
+a page olmOCR-2 clearly fails, check the text by hand, and patch it in.
+
+Worth a new test when a model trained for faithful whole-page transcription
+(as olmOCR is) appears on a newer base. A switch would apply to new books;
+a book already reviewed is re-read only if its OCR errors are significant,
+since new source text means retranslating it and redoing its review.
+
+---
+
 ## 4. Checking a retranslation, and reading for meaning
 
 The regression checks (§1) protect pages that should not change. A

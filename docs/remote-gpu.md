@@ -62,34 +62,57 @@ A minimal `llama-swap.yaml` for the two FencingManualTranslator models:
 
 ```yaml
 healthCheckTimeout: 300
+
+# The API key is checked by llama-swap itself, for every request. Take it
+# from the environment with the env. prefix -- a bare ${LLAMA_API_KEY} is
+# not a known macro, and llama-swap then refuses the whole file and does not
+# start. The llama-servers it spawns listen on 127.0.0.1 only and need no key.
+apiKeys:
+  - "${env.LLAMA_API_KEY}"
+
 models:
-  fmt-ocr:
-    cmd: >
-      llama-server -m models\allenai_olmOCR-2-7B-1025-Q6_K.gguf
-      --mmproj models\mmproj-allenai_olmOCR-2-7B-1025-f16.gguf
-      --host 127.0.0.1 --port ${PORT} --api-key ${LLAMA_API_KEY}
+  "fmt-ocr":
+    unlisted: true               # keep it out of chat front ends' model lists
+    cmd: |
+      C:\ai\llama\llama-server.exe
+      -m C:\ai\models\allenai_olmOCR-2-7B-1025-Q6_K.gguf
+      --mmproj C:\ai\models\mmproj-allenai_olmOCR-2-7B-1025-f16.gguf
+      --host 127.0.0.1 --port ${PORT}
       --ctx-size 8192 --n-gpu-layers 999 --parallel 1
     ttl: 300
-  fmt-translate:                 # speculative decoding (MTP), 2.2x -- the default since 2026-10-11
-    cmd: >
-      llama-server -m models\Qwen3.8-27B.i1-Q4_K_S.gguf
-      --host 127.0.0.1 --port ${PORT} --api-key ${LLAMA_API_KEY}
+  "fmt-translate":               # speculative decoding (MTP), 2.2x -- the default since 2026-10-11
+    unlisted: true
+    cmd: |
+      C:\ai\llama\llama-server.exe
+      -m C:\ai\models\Qwen3.8-27B.i1-Q4_K_S.gguf
+      --host 127.0.0.1 --port ${PORT}
       --ctx-size 8192 --n-gpu-layers 37 --parallel 1 --jinja --reasoning-budget 0
       --spec-type draft-mtp --spec-draft-n-max 3
     ttl: 300
-  fmt-translate-plain:           # the same model without MTP: fallback, and word probabilities
-    cmd: >
-      llama-server -m models\Qwen3.8-27B.i1-Q4_K_S.gguf
-      --host 127.0.0.1 --port ${PORT} --api-key ${LLAMA_API_KEY}
+  "fmt-translate-plain":         # the same model without MTP: fallback, and word probabilities
+    unlisted: true
+    cmd: |
+      C:\ai\llama\llama-server.exe
+      -m C:\ai\models\Qwen3.8-27B.i1-Q4_K_S.gguf
+      --host 127.0.0.1 --port ${PORT}
       --ctx-size 8192 --n-gpu-layers 38 --parallel 1 --jinja --reasoning-budget 0
     ttl: 300
-  fmt-translate-qwen25:          # previous model, kept for comparisons
-    cmd: >
-      llama-server -m models\Qwen2.5-14B-Instruct-Q4_K_M.gguf
-      --host 127.0.0.1 --port ${PORT} --api-key ${LLAMA_API_KEY}
+  "fmt-translate-qwen25":        # previous model, kept for comparisons
+    unlisted: true
+    cmd: |
+      C:\ai\llama\llama-server.exe
+      -m C:\ai\models\Qwen2.5-14B-Instruct-Q4_K_M.gguf
+      --host 127.0.0.1 --port ${PORT}
       --ctx-size 8192 --n-gpu-layers 999 --parallel 1
     ttl: 300
 ```
+
+Use full paths (the working directory of a scheduled task is not the
+llama-swap folder), and give each `mmproj` file a name that says which model
+it belongs to: several repos call theirs just `mmproj-F16.gguf`, and a wrong
+name only shows when that model is first asked for ("upstream command exited
+prematurely"). If llama-swap stops at once, run its start script in a
+visible window to read the config error.
 
 The translation model is **Qwen3.8-27B, 4-bit** (`i1-Q4_K_S` from
 mradermacher/Qwen3.8-27B-i1-GGUF), chosen 2026-09-25 by the translation

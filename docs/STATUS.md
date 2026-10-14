@@ -249,6 +249,11 @@ the operator's business and is not tracked here.)
   with an in-text figure (dozens–hundreds of garbage tokens the cleanup
   can't remove) and misreads stains (`matière`→`2 latiére`). No
   Tesseract-first / per-page-fallback scheme.
+- **olmOCR-2, not a newer general Qwen vision model** (2026-10-14:
+  Qwen3-VL-8B and Qwen3.5-9B on 26 pages). They fix olmOCR-2's known
+  misreads, but split words, modernise spellings, read tables as text and
+  put margin notes in the body. Repair olmOCR-2's habits one by one
+  instead (`_OCR_PHRASE_FIXES`). `docs/evaluation-and-tuning.md` §3a.
 - **The pipeline owns the llama-servers, not the container entrypoint.**
   An earlier entrypoint started both servers under `wait -n`; a `pkill`
   from any pipeline step then dropped PID 1 and bounced the whole
