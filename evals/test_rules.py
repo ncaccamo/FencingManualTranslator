@@ -3404,6 +3404,27 @@ def test_untranslated_paragraph_is_found():
     assert f("<i>Haut</i> (high). — Expression used to designate the lines above the hand.") is None
 
 
+def test_colpo_diritto_is_a_straight_thrust():
+    # Marchionni 1847: «colpo diritto» -> "straight hit" 120 of 142 times,
+    # rule line or not (2026-10-14)
+    from _rules import TX
+    f = TX["restore_straight_thrust"]
+    saved = TX["BOOK_LANG"]
+    try:
+        TX["BOOK_LANG"] = "Italian"
+        src = "§ 1. Colpo diritto nella linea alta di dentro. Si tira il colpo diritto."
+        assert f("§ 1. Straight hit in the inside high line. One delivers the straight hit.", src) == \
+            "§ 1. Straight thrust in the inside high line. One delivers the straight thrust."
+        assert f("STRAIGHT HITS", "COLPI DIRITTI") == "STRAIGHT THRUSTS"
+        # only as many as the source has; none without it
+        assert f("a straight hit, then a straight hit", "un colpo dritto") == "a straight thrust, then a straight hit"
+        assert f("a straight hit", "una botta") == "a straight hit"
+        TX["BOOK_LANG"] = "French"
+        assert f("a straight hit", "un colpo diritto") == "a straight hit"
+    finally:
+        TX["BOOK_LANG"] = saved
+
+
 def _run_plain() -> int:
     fns = sorted((n, f) for n, f in globals().items()
                  if n.startswith("test_") and callable(f))

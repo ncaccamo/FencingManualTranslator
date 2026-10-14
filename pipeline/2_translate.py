@@ -605,6 +605,30 @@ def restore_reprise(text: str, src: str) -> str:
     return _REATTACK_EN.sub(sub, text)
 
 
+# Italian «colpo diritto / dritto / diretto» is the straight thrust (rule 3);
+# the model keeps its "colpo → hit" habit and writes "straight hit" even with
+# the spelling in the rule (Marchionni 1847: 120 of 142, 2026-10-14). As many
+# as the source has, Italian books only.
+_STRAIGHT_SRC = re.compile(r"(?i)\bcolp[oi]\s+(?:di?ritt[oi]|dritt[oi]|dirett[oi])\b")
+_STRAIGHT_EN = re.compile(r"\b(straight|Straight|STRAIGHT)\s+(hit|attack|HIT|ATTACK)(s|S)?\b")
+
+
+def restore_straight_thrust(text: str, src: str) -> str:
+    if BOOK_LANG != "Italian":
+        return text
+    budget = [len(_STRAIGHT_SRC.findall(src or ""))]
+    if not text or not budget[0]:
+        return text
+
+    def sub(m):
+        if budget[0] <= 0:
+            return m.group(0)
+        budget[0] -= 1
+        word = "THRUST" if m.group(2).isupper() else "thrust"
+        return f"{m.group(1)} {word}{m.group(3) or ''}"
+    return _STRAIGHT_EN.sub(sub, text)
+
+
 def enforce_maestro(text: str, src: str) -> str:
     if BOOK_LANG != "Italian" or not text:
         return text
@@ -2449,6 +2473,7 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         candidate = restore_rapier(candidate, clean_text)
         candidate = restore_reprise(candidate, clean_text)
         candidate = restore_blade_phrases(candidate, clean_text)
+        candidate = restore_straight_thrust(candidate, clean_text)
         # on a ToC page: translate the Cat-3 terms but emit NO
         # footnote marker (a contents line must not carry one, and
         # it would burn the once-per-book note), and skip the
