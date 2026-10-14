@@ -785,6 +785,14 @@ def join_split_sentences(parsed: list) -> int:
         honorific = re.search(_HONORIFIC_END, main) if main else None
         if not main or (re.search(r"[.!?\u2026][\u00bb\u201d\")\]\s]*\Z", main) and not honorific):
             continue
+        # a plate leaf's caption line -- no page number, the page's only line,
+        # short, no punctuation -- is not a sentence's start: Masiello 1887 pdf 448
+        # ("Destro e mancino cavazione al fianco") took the opening of pdf
+        # 450, whose sentence starts on pdf 443, six plate pages back
+        if (parsed[i].get("page_raw") or "").strip().lower() in ("", "none") \
+                and "\n" not in a.strip() and len(a.split()) <= 8 \
+                and not re.search(r"[,;:.]", a):
+            continue
         last_line = main.rsplit("\n", 1)[-1]
         # a contents line (dotted leader to a page number) or a table row --
         # not an ellipsis in prose ("abbattimenti.... in voler essere")

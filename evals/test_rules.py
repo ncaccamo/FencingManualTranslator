@@ -3277,6 +3277,11 @@ def test_join_across_an_honorific():
     # a real sentence end before a capital is still left alone
     p = [{"body": "Il tirait au corps."}, {"body": "Anatole arriva."}]
     assert join_split_sentences(p) == 0
+    # a plate's caption line is not a sentence start (Masiello 1887 pdf 448)
+    p = [{"page_raw": "none", "body": "Destro e mancino cavazione al fianco"}, {"body": ""},
+         {"page_raw": "367", "body": "tutte quelle azioni che col destro finirebbero al petto sopra, anche col mancino."}]
+    assert join_split_sentences(p) == 0
+    assert p[0]["body"] == "Destro e mancino cavazione al fianco"
 
 
 def test_glossary_and_bibliography_pages():
