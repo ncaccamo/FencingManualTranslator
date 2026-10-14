@@ -1420,6 +1420,16 @@ def test_repair_source_ocr_misreads_plonche_planche():
     assert parsed[0]["header"] == "Planche XIX."
 
 
+def test_repair_source_ocr_misreads_glossary_headwords():
+    # 2026-10-13: glossary headwords are kept in the original in the
+    # English, so their misreads show; each checked against the scan
+    parsed = [{"header": "", "body": "Rompire la mesure. — S'éloigner.\nS'écraiser, se dit d'un tireur"},
+              {"header": "", "body": "Frave, è lo sviluppo alternativo\nla Frave del libro"}]
+    repair_source_ocr_misreads(parsed)
+    assert parsed[0]["body"] == "Rompre la mesure. — S'éloigner.\nS'écraser, se dit d'un tireur"
+    assert parsed[1]["body"] == "Frase, è lo sviluppo alternativo\nla Frave del libro"
+
+
 def test_phrase_repairs_translated_by():
     assert _phrase_repairs("Translated by Prévost and Jollivet") \
         == "By Prévost and Jollivet"

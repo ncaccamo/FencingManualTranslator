@@ -1689,6 +1689,16 @@ _OCR_PHRASE_FIXES = [
     # other "Planche N." header in the same book reads and translates
     # correctly; this is a one-leaf OCR miss, not a systemic misread.
     (re.compile(r"(?i)\bplonche\b"), _fix_case_preserving("planche")),
+    # glossary headwords, now kept in the original in the English (rule
+    # 7b), so a misread shows; each checked against the scan, 2026-10-13.
+    # 'Rompre' read 'Rompire' in two books (Kirchhoffer pdf 40,
+    # Prévost-Jollivet pdf 318, both a bold or italic headword).
+    (re.compile(r"(?i)\brompire\b"), _fix_case_preserving("rompre")),
+    # Gomard pdf 112: "S'écraser, se dit d'un tireur ..."
+    (re.compile(r"(?i)\bécraiser\b"), _fix_case_preserving("écraser")),
+    # Masiello 1887 pdf 737: "Frase, è lo sviluppo alternativo ..." (italic
+    # s read as v); only as an entry's headword
+    (re.compile(r"(?m)^([ \t]*)Frave(?=,)"), lambda m: m.group(1) + "Frase"),
 ]
 
 
