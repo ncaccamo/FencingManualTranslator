@@ -1524,6 +1524,41 @@ _ENGLISH_FUNCTION_WORDS = {"the", "of", "and", "to", "is", "an", "that", "with",
                            "he", "one", "without", "from", "at", "are", "was", "this"}
 
 
+# function words, for telling which language a paragraph is in (the review
+# report's lists, quality_report.py, plus Latin)
+_PARA_EN = set("the and of to is are in that with for on it by as be this from his their which "
+               "was were one an at or not but have has its".split())
+_PARA_LANG = {
+    "French": set("le la les des du de et est sont qui que dans pour avec une un sur pas ne se il "
+                  "elle au aux ce cette son sa ses leur leurs nous vous on en par plus".split()),
+    "Italian": set("il lo la i gli le di da del della dei delle degli che non è sono per con una "
+                   "un uno nel nella nei si ma come più anche questo questa quello essere al alla".split()),
+    "Latin": set("et est sunt qui quae quod non ad cum ex ab sive nam enim ut aut vel sed atque neque "
+                 "quam ubi esse eius ipse ipsis idest omnis".split()),
+}
+
+
+def untranslated_paragraph(text: str):
+    """(paragraph start, language) of a paragraph of eight words or more
+    still in French / Italian / Latin, or None. Kept terms (<i>), notes,
+    margin notes and a bibliography's [original titles] don't count. The
+    review report flagged such paragraphs after the fact: Latin footnotes
+    (Marchionni pdf 34-35, Danet pdf 338), French quoted in Italian books
+    (Florio pdf 55, Masiello 1887 pdf 129), verse left as printed (Blengini
+    pdf 82, Florio pdf 38)."""
+    body = text.split(FN_HEADER)[0]
+    for para in re.split(r"\n\s*\n", body):
+        bare = re.sub(r"<i>.*?</i>|<fn>.*?</fn>|⟦[^⟧]*⟧|\[[^\]\n]*\]", " ", para, flags=re.S)
+        w = [x.lower() for x in re.findall(r"[^\W\d_]+", bare)]
+        if len(w) < 8:
+            continue
+        en = sum(x in _PARA_EN for x in w)
+        lang, n = max(((l, sum(x in ws for x in w)) for l, ws in _PARA_LANG.items()), key=lambda t: t[1])
+        if n >= 5 and n > 2 * en:
+            return " ".join(para.split()[:6]), lang
+    return None
+
+
 def quotation_left_untranslated(text: str) -> bool:
     """A "<fn>French in the original</fn>" (or Latin, …) note after a
     quotation still in that language: the text before the note, back to
@@ -2342,6 +2377,7 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
                 f"first part translated, remainder omitted]\n\n{cand}"[:6000])
     best_candidate = None   # best rejected attempt, for the fallback
     line_hint = ""          # set when a try swapped a line name (below)
+    para_hint = ""          # set when a try left a paragraph untranslated (below)
     # the book's glossary / bibliography (_pagekind): the model is told what
     # kind of page it has, and code completes what it still leaves out
     kind = st.get("kind")
@@ -2362,7 +2398,7 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
                            f"fluent English. Do NOT repeat any of it in the "
                            f"original language. Match the capitalisation of the "
                            f"source; do NOT write the text in all capitals."
-                           f"{line_hint}"
+                           f"{line_hint}{para_hint}"
                            f"\n\n{ctx}Text to translate:\n{clean_text}")
             temp = 0.3 + 0.25 * attempt
         candidate = translate_with_llama(full_prompt, temperature=temp)
@@ -2474,6 +2510,19 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         if contains_too_much_non_english(candidate):
             print(" → not English")
             time.sleep(8)
+            continue
+
+        # a paragraph still in French / Italian / Latin: retried with the
+        # paragraph named; on the last try it is kept as it is (a list of
+        # names or titles can look the same, and the review report shows it)
+        left = untranslated_paragraph(candidate)
+        if left and attempt < 2:
+            start, lang = left
+            para_hint = (f" The paragraph beginning «{start}» is still in {lang}: translate it into English too"
+                         + ("." if lang == BOOK_LANG else
+                            f", and right after it write <fn>{lang} in the original</fn>."))
+            print(f" → paragraph still in {lang}")
+            time.sleep(2)
             continue
 
         # a quotation noted "French in the original" but left in French

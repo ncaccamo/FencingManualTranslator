@@ -3386,6 +3386,24 @@ def test_quotation_left_untranslated():
     assert not f("Sans le bouter d'estocq ou hachier.")                             # no note
 
 
+def test_untranslated_paragraph_is_found():
+    # 2026-10-14: whole paragraphs left in another language, flagged only by
+    # the review report afterwards -- now retried in step 2
+    from _rules import TX
+    f = TX["untranslated_paragraph"]
+    assert f("Some text.\n\n(*) Voluntaria omnis et gratuita opera pugnantium fuit; nam ad hoc "
+             "non cogebantur, sed sponte sua et ex animo")[1] == "Latin"         # Marchionni pdf 34
+    assert f("» Dispense ma valeur d'un combat inegal;\n» Trop peu d'honneur pour moi suivrait "
+             "cette victoire, et le vainqueur")[1] == "French"                    # Florio pdf 55
+    assert f("Non schivar, non parar, non ritirarsi\nVoglion costor, nè qui destrezza ha parte; "
+             "che la spada del destro è per la gloria")[1] == "Italian"           # Blengini pdf 82 (verse)
+    # English with kept terms, notes and bracketed original titles is fine
+    assert f("The <i>riposte</i> of <i>quarte</i> is made in the line of the engagement.") is None
+    assert f("The Art of Arms [L'art des armes, ou la manière la plus certaine de se servir de l'épée], "
+             "by Danet. Paris, 1766.") is None
+    assert f("<i>Haut</i> (high). — Expression used to designate the lines above the hand.") is None
+
+
 def _run_plain() -> int:
     fns = sorted((n, f) for n, f in globals().items()
                  if n.startswith("test_") and callable(f))

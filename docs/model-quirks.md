@@ -1790,6 +1790,14 @@ A page whose lines don't pair up is left as the model gave it. Separately, a
 "French in the original" note after a quotation still in French (no English
 word in it) is retried.
 
+A whole paragraph left in another language is retried too, with that
+paragraph named in the retry ("The paragraph beginning «…» is still in Latin:
+translate it into English too, and right after it write <fn>Latin in the
+original</fn>"): Latin footnotes (Marchionni, Danet), French quoted in Italian
+books (Florio, Masiello 1887), verse kept as printed (Blengini, Florio) -- 15
+pages in all the books, found before only by the review report. On the last
+try the paragraph is kept as it is: a list of names or titles looks the same.
+
 ## Part 3 — shared / architectural
 
 - **Page separator** — `pipeline/_pageio.py::PAGE_SEP` (U+001E). Every
