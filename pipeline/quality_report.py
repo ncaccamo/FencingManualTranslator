@@ -228,6 +228,14 @@ def translation_issues(src: str, t: str) -> list:
             w = re.search(wrong, re.sub(r"<i>.*?</i>", "", body), re.I)
             if w:
                 out.append((CHECK, "wording", f"{w.group(0)!r} against the glossary ({rule})"))
+    # one of the author's footnotes missing from the English (same count as
+    # step 2's note_bodies: a marker, then four words or more)
+    def notes(x):
+        return sum(1 for m in re.finditer(r"\((?:\d{1,2}|\*{1,3})\)\s*([^\n(]{0,400})", x or "")
+                   if len(m.group(1).split()) >= 4)
+    if notes(t) < notes(src):
+        out.append((CHECK, "translation", f"a footnote of the source is missing "
+                    f"({notes(src)} in the source, {notes(t)} in the English)"))
     # leftover French: a whole paragraph the model didn't translate
     for para in re.split(r"\n\s*\n", body):
         if _words(para) >= 8 and still_french(para):

@@ -1583,6 +1583,17 @@ def untranslated_paragraph(text: str):
     return None
 
 
+# the author's own footnotes: "(1) …", "(*) …" -- a marker, then the note
+_NOTE_MARK = r"\((?:\d{1,2}|\*{1,3})\)"
+
+
+def note_bodies(text: str) -> int:
+    """How many of the author's footnotes a page holds: a marker followed by
+    four words or more (a call in the running text is just the marker)."""
+    return sum(1 for m in re.finditer(_NOTE_MARK + r"\s*([^\n(]{0,400})", text or "")
+               if len(m.group(1).split()) >= 4)
+
+
 def quotation_left_untranslated(text: str) -> bool:
     """A "<fn>French in the original</fn>" (or Latin, …) note after a
     quotation still in that language: the text before the note, back to
@@ -2547,6 +2558,15 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
                          + ("." if lang == BOOK_LANG else
                             f", and right after it write <fn>{lang} in the original</fn>."))
             print(f" → paragraph still in {lang}")
+            time.sleep(2)
+            continue
+
+        # one of the author's footnotes dropped (Marchionni 1847 pdf 34: the
+        # retry for its Latin notes left all three out; Florio pdf 44 lost two).
+        # Retried; on the last try kept as it is (a table of "(2)" cells looks
+        # the same), and the review report flags the page.
+        if attempt < 2 and note_bodies(candidate) < note_bodies(clean_text):
+            print(" → footnote lost")
             time.sleep(2)
             continue
 

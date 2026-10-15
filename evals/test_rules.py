@@ -3425,6 +3425,19 @@ def test_colpo_diritto_is_a_straight_thrust():
         TX["BOOK_LANG"] = saved
 
 
+def test_lost_footnote_is_noticed():
+    # Marchionni 1847 pdf 34 (2026-10-14): the retry for three Latin notes
+    # dropped all three; Florio pdf 44 lost (4) and (5)
+    from _rules import TX
+    f = TX["note_bodies"]
+    src = ("text (1) more text.\n\n(1) Voluntaria omnis et gratuita opera pugnantium fuit.\n"
+           "(**) De principatu civitatis, quam Ibeum vocabant, ambigentes.")
+    assert f(src) == 2
+    assert f("text (1) more text.") == 0                        # a call is not a note
+    assert f("text (1) more.\n___FOOTNOTES___\n(1) Every service of the fighters was voluntary. "
+             "(**) Disputing the rule of the city they called Ibeum.") == 2
+
+
 def _run_plain() -> int:
     fns = sorted((n, f) for n, f in globals().items()
                  if n.startswith("test_") and callable(f))
