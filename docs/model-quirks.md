@@ -1801,7 +1801,7 @@ try the paragraph is kept as it is: a list of names or titles looks the same.
 The retry can fix one thing by dropping another: asked to translate three
 Latin footnotes, the model left all three out (Marchionni pdf 34). So a
 try that has fewer of the author's footnotes ("(1) …", "(*) …": a marker,
-then four words or more) than the source is retried too, kept on the last
+at the start of a line, then a word) than the source is retried too, kept on the last
 try (a table of "(2)" cells looks the same), and the review report flags
 the page. 25 pages in all the books had lost a note this way.
 

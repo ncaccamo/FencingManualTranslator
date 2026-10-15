@@ -3434,8 +3434,10 @@ def test_lost_footnote_is_noticed():
            "(**) De principatu civitatis, quam Ibeum vocabant, ambigentes.")
     assert f(src) == 2
     assert f("text (1) more text.") == 0                        # a call is not a note
-    assert f("text (1) more.\n___FOOTNOTES___\n(1) Every service of the fighters was voluntary. "
-             "(**) Disputing the rule of the city they called Ibeum.") == 2
+    assert f("(1), ma siccome non può darsi difesa") == 0        # nor a call opening a line
+    # a finished page: notes gathered in the block, one after another, one in italics
+    assert f("text (1) more.\n___FOOTNOTES___\n(1) Abridged Collection. (2) <i>Estramaçon</i>, "
+             "cutting saber. (3) <i>Estocade</i>, hit given with the point.") == 3
 
 
 def _run_plain() -> int:

@@ -1588,10 +1588,15 @@ _NOTE_MARK = r"\((?:\d{1,2}|\*{1,3})\)"
 
 
 def note_bodies(text: str) -> int:
-    """How many of the author's footnotes a page holds: a marker followed by
-    four words or more (a call in the running text is just the marker)."""
-    return sum(1 for m in re.finditer(_NOTE_MARK + r"\s*([^\n(]{0,400})", text or "")
-               if len(m.group(1).split()) >= 4)
+    """How many of the author's footnotes a page holds: a marker at the start
+    of a line, then the note's first word (a call in the running text,
+    "(1), ma siccome …", is not a note). In a finished page the notes are
+    gathered in the footnote block, where they can follow one another on a
+    line: there any marker followed by a word counts."""
+    body, _, block = (text or "").partition(FN_HEADER)
+    word = r"[ \t.]*(?:<i>|[«“\"])?[^\W\d_]"
+    return (len(re.findall(r"(?m)^[ \t]*" + _NOTE_MARK + word, body))
+            + len(re.findall(_NOTE_MARK + word, block)))
 
 
 def quotation_left_untranslated(text: str) -> bool:

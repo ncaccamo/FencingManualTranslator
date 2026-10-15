@@ -228,11 +228,14 @@ def translation_issues(src: str, t: str) -> list:
             w = re.search(wrong, re.sub(r"<i>.*?</i>", "", body), re.I)
             if w:
                 out.append((CHECK, "wording", f"{w.group(0)!r} against the glossary ({rule})"))
-    # one of the author's footnotes missing from the English (same count as
-    # step 2's note_bodies: a marker, then four words or more)
+    # one of the author's footnotes missing from the English (the count is
+    # step 2's note_bodies: a marker opening a line, or any marker in the
+    # footnote block, followed by the note's first word)
     def notes(x):
-        return sum(1 for m in re.finditer(r"\((?:\d{1,2}|\*{1,3})\)\s*([^\n(]{0,400})", x or "")
-                   if len(m.group(1).split()) >= 4)
+        body, _, block = (x or "").partition("___FOOTNOTES___")
+        mark, word = r"\((?:\d{1,2}|\*{1,3})\)", r"[ \t.]*(?:<i>|[«“\"])?[^\W\d_]"
+        return (len(re.findall(r"(?m)^[ \t]*" + mark + word, body))
+                + len(re.findall(mark + word, block)))
     if notes(t) < notes(src):
         out.append((CHECK, "translation", f"a footnote of the source is missing "
                     f"({notes(src)} in the source, {notes(t)} in the English)"))
