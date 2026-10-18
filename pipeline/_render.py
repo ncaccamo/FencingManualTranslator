@@ -933,6 +933,7 @@ def draw_table(page, rect, html_text, size=7.5, dry=False, min_size=5.5):
     while size >= min_size:
         # column widths: by the longest word / content of single-column cells
         need = [8.0] * n_cols
+        floor = [8.0] * n_cols          # the longest word: a column never narrower
         for line in rows:
             for c in line:
                 if c["colspan"] == 1 and c["text"]:
@@ -944,8 +945,19 @@ def draw_table(page, rect, html_text, size=7.5, dry=False, min_size=5.5):
                     longest = max((wd(w) for w in words), default=0)
                     full = wd(re.sub(r"</?i>", "", c["text"]))
                     need[c["col"]] = max(need[c["col"]], longest + 2 * pad, min(full, 140) * 0.6)
-        scale = W / sum(need)
-        widths = [w * scale for w in need]
+                    floor[c["col"]] = max(floor[c["col"]], longest + 2 * pad)
+        if sum(floor) > W and size - 0.5 >= min_size:   # longest words don't fit: smaller type
+            size -= 0.5
+            continue
+        if sum(floor) > W:              # not even at the smallest size: squeeze all
+            widths = [f_ * W / sum(floor) for f_ in floor]
+        else:
+            # share out what is left above the floors (Bruno's "Paragraph" was
+            # squeezed under its own width and ran into "Order number")
+            extra = [n_ - f_ for n_, f_ in zip(need, floor)]
+            k = (W - sum(floor)) / sum(extra) if sum(extra) else 0.0
+            widths = [f_ + e_ * min(k, 10.0) for f_, e_ in zip(floor, extra)]
+            widths = [w * W / sum(widths) for w in widths]
         xs = [x0]
         for w in widths:
             xs.append(xs[-1] + w)
