@@ -2682,11 +2682,13 @@ def test_maestro_kept_everywhere_in_italian():
         src = "Sarà bene che il maestro faccia eseguire... fra allievo e maestro. I maestri italiani."
         out = f("It will be well that the master have them executed... between student and master. "
                 "The Italian masters.", src)
-        assert out == ("It will be well that the <i>Maestro</i> have them executed... between student and "
-                       "<i>Maestro</i>. The Italian <i>Maestri</i>."), out
+        # in the book's case (reviewer, 2026-10-18)
+        assert out == ("It will be well that the <i>maestro</i> have them executed... between student and "
+                       "<i>maestro</i>. The Italian <i>maestri</i>."), out
         assert f("the <i>Maestro</i> and the master, to master it", "il maestro e il maestro") == \
-            "the <i>Maestro</i> and the <i>Maestro</i>, to master it"
-        assert f("the master and the master", "il maestro e il padrone") == "the <i>Maestro</i> and the master"
+            "the <i>maestro</i> and the <i>maestro</i>, to master it"
+        assert f("the master and the master", "il maestro e il padrone") == "the <i>maestro</i> and the master"
+        assert f("the master Parise", "il Maestro Parise") == "the <i>Maestro</i> Parise"
         assert f("MASTER PARISE", "MAESTRO PARISE") == "<i>MAESTRO</i> PARISE"
         assert f("the master", "nessuno") == "the master"
     finally:
@@ -3167,7 +3169,8 @@ def test_render_paragraph_indent_and_star_divider():
     # Joseph-Renaud pdf 54: paragraphs separated by single line breaks ran
     # together; a paragraph after a finished sentence now starts indented.
     # Lists, capital headings and lines after a colon are left flush; a line
-    # of stars ("★★", the OCR's section divider) is not drawn.
+    # of stars ("★★", the OCR's section divider) is drawn as a centred divider
+    # (reviewer, 2026-10-18; it was left out from 2026-10-06).
     import importlib
     sys.path.insert(0, str(_PIPELINE))
     try:
@@ -3180,7 +3183,8 @@ def test_render_paragraph_indent_and_star_divider():
     assert ind("The lesson ends.\nCHAPTER II") == [0, 0]
     assert ind("The lesson ends.\n1° Lunge.\n2° Recover.") == [0, 0, 0]
     assert ind("Orchid, Dancer\nThe Golden Waltz") == [0, 0]
-    assert ind("First part.\n\n★★\n\nSecond part.") == [0, 0]
+    star = [l for l in R.layout("First part.\n\n★★\n\nSecond part.", 400, 9) if not l.gap]
+    assert len(star) == 3 and "*" in "".join(t for t, _ in star[1].spans) and star[1].indent > 100
 
 
 def test_header_map_covers_two_part_heads_either_way_round():
@@ -3423,6 +3427,188 @@ def test_colpo_diritto_is_a_straight_thrust():
         assert f("a straight hit", "un colpo diritto") == "a straight hit"
     finally:
         TX["BOOK_LANG"] = saved
+
+
+def test_kept_term_takes_the_books_case():
+    # Kirchhoffer scan 74 «(Fleuret — Épée — Sabre.)» (reviewer, 2026-10-18:
+    # case matches the book, no exceptions); Lambertini «in Quarta»
+    from _rules import TX
+    f = TX["source_case_kept_terms"]
+    assert f("(Foil — <i>épée</i> — Saber.)", "(Fleuret — Épée — Sabre.)") == "(Foil — <i>Épée</i> — Saber.)"
+    assert f("one parries in <i>quarta</i>.", "si para di Quarta.") == "one parries in <i>Quarta</i>."
+    # the book lowercase, the English capitalised mid-sentence
+    assert f("such as the <i>Schwerdt</i> (1)", "comme le schwerdt (1)") == "such as the <i>schwerdt</i> (1)"
+    # a capital at a sentence start is grammar: neither side counts it
+    assert f("then the <i>riposte</i>.", "Riposte du tac au tac.") == "then the <i>riposte</i>."
+    assert f("<i>Riposte</i> at once.", "puis la riposte.") == "<i>Riposte</i> at once."
+    # a capitals heading in the book doesn't set the word's case in the text
+    src = "DELLA RISPOSTA DI CAVAZIONE.\nUna cavazione al petto."
+    assert f("OF THE <i>CAVAZIONE</i> RIPOSTE.\nA <i>cavazione</i> to the chest.", src) == \
+        "OF THE <i>CAVAZIONE</i> RIPOSTE.\nA <i>cavazione</i> to the chest."
+    # the book uses both cases: paired in order inside one paragraph only
+    assert f("in <i>quarta</i> then <i>quarta</i>", "di Quarta poi di quarta") == "in <i>Quarta</i> then <i>quarta</i>"
+    assert f("in <i>quarta</i>\nthen <i>quarta</i>\nx", "di Quarta poi di quarta") == "in <i>quarta</i>\nthen <i>quarta</i>\nx"
+    # a term opening its line as the book's line does, capitalised (Gomard scan 113)
+    assert f("Engagement.\n<i>épée</i>.\nFoible.", "Engagement.\nÉpée.\nFaible.") == \
+        "Engagement.\n<i>Épée</i>.\nFoible."
+    assert f("<i>riposte</i> follows.", "la riposte suit.") == "<i>riposte</i> follows."
+    # Maestro too (reviewer, 2026-10-18: follow the book)
+    assert f("I became a fencing <i>Maestro</i>.", "divenni maestro d'armi.") == "I became a fencing <i>maestro</i>."
+
+
+def test_capitals_line_stays_in_capitals():
+    # reviewer, 2026-10-18: case matches the book. "PREMIÈRE PARTIE." came
+    # out "First Part." (5 books), "ALLIEVO." "Student." (Masiello)
+    from _rules import TX
+    f = TX["source_caps_lines"]
+    assert f("First Part.\n\nThe lunge is made.", "PREMIÈRE PARTIE.\n\nOn se fend.") == \
+        "FIRST PART.\n\nThe lunge is made."
+    # a word the book prints in small letters keeps its case
+    assert f("By Dr. W. Hamstrong.", "PAR LE Dr. W. HAMSTRONG.") == "BY Dr. W. HAMSTRONG."
+    # kept terms stay tagged; a stray "<" is not a tag (Gomard scan 245)
+    assert f("<ripostes by simple <i>coups</i>.", "RIPOSTES PAR COUPS SIMPLES.") == \
+        "<RIPOSTES BY SIMPLE <i>COUPS</i>."
+    assert f("ripostes by simple <i>coups</i>.", "RIPOSTES PAR COUPS SIMPLES.") == \
+        "RIPOSTES BY SIMPLE <i>COUPS</i>."
+    # paragraphs that don't line up one for one: nothing (Florio scan 81)
+    assert f("Northern fencing.", "III. SCHERMA SETTENTRIONALE.\nLa scherma.") == "Northern fencing."
+    # a long English line against a short heading: shifted, left alone
+    assert f("Nevertheless, French fencing has merits arising from the nature of the people.",
+             "SCHERMA ITALIANA.") == \
+        "Nevertheless, French fencing has merits arising from the nature of the people."
+    # an empty-page placeholder is not a heading
+    assert f("[Empty page]", "TAV. III") == "[Empty page]"
+
+
+def test_paragraph_style_layout():
+    # reviewer, 2026-10-18: one paragraph style per book. The OCR marks
+    # paragraphs at random (Kirchhoffer pdf 13); structure keeps its own lines.
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        R = importlib.import_module("_render")
+        R._font("times-roman")
+    except Exception:                        # needs PyMuPDF: runs in the image
+        return
+    lay = lambda text, **k: [("GAP" if l.gap else round(l.indent)) for l in
+                             R.layout(text, 2000, 9, paras="indented", **k)]
+    para = round(9 * R.PARA_INDENT_EM)
+    long1 = "First long paragraph of running text that goes on and on and ends here."
+    # stray blank line between two paragraphs dropped; both indented
+    assert lay(long1 + "\n\nThe weapon. To practise fencing one uses a weapon called a foil, as here.") == [para, para]
+    # a short run-in list item after a paragraph is a paragraph too
+    assert lay(long1 + "\n  The thumb guard, of leather or padded cloth;") == [para, para]
+    # a run-in section title keeps its space
+    assert lay(long1 + "\n\nL'épée. — Tous les assauts sérieux s'exécutent à la pointe d'arrêt.") == [para, "GAP", para]
+    # dialogue / drill lines: structure, untouched
+    assert lay("Maestro:\nHolds the weapon in the high line\n\nI. TEMPO") == [0, 0, "GAP", 0]
+    # a page opening mid-sentence: no indent
+    assert lay("of the adversary, who then has to parry in quarte and return to his guard.") == [0]
+    # a long numbered paragraph is a paragraph (Joseph-Renaud pdf 8)
+    assert lay(long1 + "\n\n4° The right arm must be almost completely extended, as we shall see.") == [para, para]
+    # the gap after a line ending ":" stays (Gomard scan 229)
+    assert lay("Coups deceiving the half-counter of octave, the septime and the quarte:\n\n"
+               "Feint of the disengagement of septime; f. of the counter-disengagement.") == [para, "GAP", para]
+    # a heading in capitals is centred when the book centres them
+    assert lay("LES CONTRE-TEMPS", centre=True)[0] > 100
+    assert lay("LES CONTRE-TEMPS") == [0]
+
+
+def test_render_line_helpers():
+    # pure helpers of the paragraph layout (2026-10-18)
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        R = importlib.import_module("_render")
+    except ImportError:
+        return
+    # a sentence the OCR broke at a printed line end is put back together
+    assert R._rejoin("Saber bouts, in the fencing hall,\nare less subject to conventions.") == \
+        ["Saber bouts, in the fencing hall, are less subject to conventions."]
+    assert R._rejoin("{ Feint of the disengagement of sixte;\nf. of the counter") == \
+        ["{ Feint of the disengagement of sixte;", "f. of the counter"]
+    assert R._rejoin("He returns to guard.\nthen") == ["He returns to guard.", "then"]
+    assert R._heading_line("LES CONTRE-TEMPS") and not R._heading_line("THE POMMEL ...... 26")
+    assert R._RUN_IN.match("L'épée. — Tous") and R._RUN_IN.match("Tactique générale. — Nous")
+    assert not R._RUN_IN.match("The fencer who attacks must either take the blade — or disturb")
+
+
+def test_page_side_from_neighbours():
+    # reviewer, 2026-10-18: number and head in the book's places. A page
+    # without a read number takes its side from the nearest one (pages alternate)
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    L = importlib.import_module("_layout")
+    plan = {"odd": {"folio": ("top", "L"), "head": "R"}, "even": {"folio": ("top", "R"), "head": "L"}}
+    folios = ["21", "22", "[23]", "24", ""]
+    assert L.page_side(plan, folios, 0)["folio"] == ("top", "L")     # Kirchhoffer: odd on the left
+    assert L.page_side(plan, folios, 2)["folio"] == ("top", "L")     # [23] -> odd
+    assert L.page_side(plan, folios, 4)["folio"] == ("top", "L")     # after 24 -> odd
+    assert L.page_side(None, folios, 0) is None
+    assert L._slot([0, 0, [0.12, 0, 0.15, 0]]) == "L" and L._slot([0, 0, [0.4, 0, 0.55, 0]]) == "C"
+
+
+def test_divider_restored_from_source():
+    # reviewer, 2026-10-18: the book's section divider (Joseph-Renaud's ⁂,
+    # read as "**") is kept -- put back where the source has it, only when the
+    # English has the source's lines one for one
+    from _rules import TX
+    f = TX["restore_dividers"]
+    src = "First paragraph.\nSecond paragraph.\n**\nThird paragraph."
+    assert f("First.\nSecond.\nThird.", src) == "First.\nSecond.\n\n[[DIVIDER]]\n\nThird."
+    assert f("First.\nSecond and third.", src) == "First.\nSecond and third."     # lines don't match
+    assert f("First.\nSecond.", "First.\nSecond.") == "First.\nSecond."
+    assert f("First.\n___FOOTNOTES___\n(1) n", "A.\n* * *") == "First.\n___FOOTNOTES___\n(1) n"
+
+
+def test_lesson_paired_into_two_columns():
+    # reviewer, 2026-10-18: Barbasetti's lessons are two columns -- master left,
+    # pupil's numbered steps right -- and read as alternating actions; the OCR
+    # gives them as two blocks. Paired back only when the counts match.
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        R = importlib.import_module("_render")
+    except ImportError:
+        return
+    rows = ["<i>Maestro</i>:", "Holds the weapon on the high line", "Executes a parry of change", "",
+            "Student:", "I. TIME", "Takes the blade", "II. TEMPO", "Circles inside to the lunge.", "", "Next."]
+    out = R._pair_lesson(rows)
+    assert out[0].startswith("\x00TABLE") and out[1:] == ["", "Next."]
+    assert out[0].count("<tr>") == 3 and "Holds the weapon" in out[0] and "Circles inside" in out[0]
+    # one master line against two steps: left as it is
+    rows2 = ["Holds the weapon on the high line", "", "I. TIME", "Takes the blade", "II. TEMPO", "Circles."]
+    assert R._pair_lesson(rows2) == rows2
+
+
+def test_lesson_step_label_stays_tempo():
+    # Barbasetti: "I. TEMPO" came out "I. TIME" 38 of 86 times (reviewer, 2026-10-18: Tempo)
+    from _rules import TX
+    f = TX["fix_known_garbles"]
+    assert f("I. TIME\nTakes the blade\nII. TEMPO", "I. TEMPO\nPrende il ferro\nII. TEMPO") == \
+        "I. TEMPO\nTakes the blade\nII. TEMPO"
+    assert f("I. TIME", "Prima volta") == "I. TIME"
+
+
+def test_translated_tables_placed_at_markers():
+    # reviewer, 2026-10-18: translated tables in the text where the book has them
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        R = importlib.import_module("_render")
+    except ImportError:
+        return
+    text = "Intro.\n\n[[TABLE]]\n\nAfter."
+    out, ok = R.place_tables(text, {"en": ["<table>A</table>", "<table>B</table>"]})
+    assert ok and out == "Intro.\n\n\x00TABLE<table>A</table>\n\x00TABLE<table>B</table>\n\nAfter."
+    # a table the OCR read as headings only (null): the marker stays, for the pointer
+    out, ok = R.place_tables(text, {"en": [None]})
+    assert not ok and out == text
+    assert R.place_tables(text, None) == (text, False)
+    # one marker, a translated table and one without (Kirchhoffer scan 74)
+    out, ok = R.place_tables(text, {"en": ["<table>A</table>", None, None]})
+    assert not ok and out == "Intro.\n\n\x00TABLE<table>A</table>\n[[TABLE]]\n\nAfter."   # one pointer for both
+    assert R.place_tables("No table.", None) == ("No table.", True)
 
 
 def test_lost_footnote_is_noticed():

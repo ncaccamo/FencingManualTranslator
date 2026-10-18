@@ -44,6 +44,8 @@ comment saying what the book is. Every section is optional.
 | Key | Meaning | Example |
 |---|---|---|
 | `running_heads = false` | The book prints **no running heads**. The line the layout detector takes for one is really the page number. With this set, only the OCR's own reading decides whether a page has a running head, and none is copied onto a page from its neighbours. | Florio 1844 (`⁂ 3 ⁂` centred between ornaments), Bruno 1891 (a bare centred `19`), Lambertini 1870 (the page number in the outer corner). |
+| `paragraphs = "spaced"` | The book prints a **blank line between paragraphs** and no first-line indent. Unset (`"indented"`): each paragraph opens with an indent and no blank line, as most of these books print them. Only the PDFs change (rebuild steps 3 & 4). | A book whose scans show spaced paragraphs. |
+| `page_numbers = "outer"` | Where the book prints its **page numbers**, for scans the layout detector can't read for it: `"outer"` (odd right, even left), `"inner"`, `"centre"`, or `"bottom-outer"` etc. The running head is then centred. Unset: learned from the scans. PDFs only. | Jacob-André 1887 (yellowed scans, no page-number boxes detected). |
 | `final = true` | The book is **finished**. Every script that would change it (steps 1–4, `reprocess_extracted.py`, `apply_overrides.py`, `reread_pages.py`, …) skips it, even under `--all`, unless run with `--unlock`. The review report still runs. | Set it once a book is released. |
 
 **When to use `running_heads = false`:** the review report says so. It

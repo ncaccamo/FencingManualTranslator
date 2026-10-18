@@ -254,6 +254,13 @@ the operator's business and is not tracked here.)
   misreads, but split words, modernise spellings, read tables as text and
   put margin notes in the body. Repair olmOCR-2's habits one by one
   instead (`_OCR_PHRASE_FIXES`). `docs/evaluation-and-tuning.md` §3a.
+- **The book's own bold and italic type are not kept** (accepted
+  2026-10-18). olmOCR-2 records no type style; asked to mark italics (as
+  `<i>`, or Markdown `*…*`) it marked none on 8 test pages, nor did
+  Qwen3-VL-8B. Asked only to list italic words, Qwen3-VL found some on one
+  page but also listed roman sentences, and missed a glossary page's italic
+  headwords. So italics in the English mean a kept term only, and run-in
+  bold headings come out plain. Retry with a better local vision model.
 - **The pipeline owns the llama-servers, not the container entrypoint.**
   An earlier entrypoint started both servers under `wait -n`; a `pkill`
   from any pipeline step then dropped PID 1 and bounced the whole

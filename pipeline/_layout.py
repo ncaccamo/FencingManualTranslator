@@ -206,3 +206,177 @@ def running_head(page: dict, band, vlm_header: bool) -> tuple:
     if vlm_header and merged:
         return True, False, "text starts at the running-head position"
     return False, vlm_header, "no running head detected"
+
+
+# ---- where the book prints its page number and running head ---------------
+
+def _slot(b, page=None):
+    """'L' / 'C' / 'R': where a box sits across the page. (Not measured
+    against the text block: the detector's text boxes often miss part of
+    its width -- Masiello's centred heads came out "R".)"""
+    c = (b[2][0] + b[2][2]) / 2
+    return "L" if c < 0.38 else "R" if c > 0.62 else "C"
+
+
+def _page_numbers_setting(folder: str):
+    import _overrides
+    try:
+        ov = _overrides.load(os.path.basename(folder.rstrip("/")).replace("_translated", ""))
+    except _overrides.OverridesError:
+        return None
+    return ov["book"].get("page_numbers")
+
+
+def folio_plan(folder: str, folios: list):
+    """Where the book prints its page number and running head, learned from
+    the scans (reviewer, 2026-10-18: the English mirrors the book's places).
+    `folios` = each page's PAGE_NUMBER. Returns {"odd": side, "even": side},
+    side = {"folio": ("top"|"bottom", "L"|"C"|"R"), "head": "L"|"C"|"R"},
+    from the detector's boxes on pages with a read folio -- a narrow box in
+    the top or bottom margin is the number, the widest other one at the top
+    the head.
+    The side is learned per odd / even folio, not assumed: Kirchhoffer has
+    its odd numbers on the left. None when the scans don't say clearly
+    (no layout.json, too few pages, or under 80 % agreement): then the PDFs
+    keep their old fixed layout."""
+    import collections
+    set_by_hand = _page_numbers_setting(folder)
+    if set_by_hand:
+        where, _, kind = set_by_hand.rpartition("-")
+        where = where or "top"
+        odd, even = {"outer": ("R", "L"), "inner": ("L", "R"), "centre": ("C", "C")}[kind]
+        return {"odd": {"folio": (where, odd), "head": "C"},
+                "even": {"folio": (where, even), "head": "C"}}
+    lay = load(folder)
+    if not lay:
+        return None
+    # the raw boxes: in a book set to print no running heads, head_pages()
+    # drops the top boxes -- which are exactly its page numbers
+    pages = [lay["pages"].get(str(i), {"boxes": []}) for i in range(len(folios))]
+    lone = 0.1 if no_running_heads(folder) else 0.05
+    seen = {p: collections.Counter() for p in ("odd", "even")}
+    heads = {p: collections.Counter() for p in ("odd", "even")}
+    for page, num in zip(pages, folios):
+        if not re.fullmatch(r"\d+", (num or "").strip()):
+            continue
+        par = "odd" if int(num) % 2 else "even"
+        bx = [b for b in page["boxes"] if b[1] >= 0.5]
+        # the number is the narrowest box in the margin -- a one-word head
+        # ("ÉPÉE", Kirchhoffer) is nearly as narrow, so never just the first
+        tops = sorted((b for b in bx if b[0] == "page_header" and _yc(b) < 0.15), key=_wid)
+        bot = [b for b in bx if b[0] == "page_footer" and _yc(b) > 0.85 and _wid(b) < 0.1]
+        top = tops[0] if tops and _wid(tops[0]) < 0.1 and (len(tops) > 1 or _wid(tops[0]) < lone) else None
+        if top and not bot:
+            seen[par][("top", _slot(top, page))] += 1
+        elif bot and not top:
+            seen[par][("bottom", _slot(min(bot, key=_wid), page))] += 1
+        rest = [b for b in tops if b is not top]
+        if rest:
+            heads[par][_slot(max(rest, key=_wid), page)] += 1
+    plan = {}
+    for par in ("odd", "even"):
+        total = sum(seen[par].values())
+        if total < 10:
+            return None
+        where, n = seen[par].most_common(1)[0]
+        if n < 0.8 * total:
+            return None
+        # the head: where most pages print it (a stretch of shifted scans
+        # mustn't move it -- Masiello 1887 has 63 of 270 off to one side);
+        # never on the number's side of a shared top line
+        head = heads[par].most_common(1)[0][0] if heads[par] else "C"
+        if where[0] == "top" and head == where[1]:
+            head = "C"
+        plan[par] = {"folio": where, "head": head}
+    return plan
+
+
+def page_side(plan, folios: list, i: int):
+    """The plan's side for page i: by its own folio, else by the nearest
+    page with a read one (pages alternate), else None."""
+    if not plan:
+        return None
+    for d in range(0, 12):
+        for k in ((i - d, i + d) if d else (i,)):
+            if 0 <= k < len(folios) and re.fullmatch(r"\d+", (folios[k] or "").strip()):
+                odd = (int(folios[k]) + (i - k)) % 2
+                return plan["odd" if odd else "even"]
+    return None
+
+
+def two_part_heads(folder: str, headers: list) -> bool:
+    """Does the book really print two-part running heads (a topic left, a
+    subtopic right: Kirchhoffer's plates, "ÉPÉE ... LA GARDE")? Step 1 also
+    splits a head the OCR read on two lines or with a wide gap -- one
+    printed line in every other book checked (Jacob-André "CONSEILS AUX
+    TÉMOINS.", Prévost-Jollivet, Gomard, Masiello; 2026-10-18). Yes only when
+    the scans show two separate head boxes on 3+ such pages (Kirchhoffer 13,
+    every other book 0); else the PDFs join the halves into one line."""
+    lay = load(folder)
+    if not lay:
+        return False
+    two = 0
+    for k, h in enumerate(headers):
+        if "\t" not in (h or ""):
+            continue
+        bx = sorted((b for b in lay["pages"].get(str(k), {"boxes": []})["boxes"]
+                     if b[0] == "page_header" and b[1] >= 0.5 and _yc(b) < 0.15 and _wid(b) >= 0.06),
+                    key=lambda b: b[2][0])
+        apart = []
+        for b in bx:
+            if not apart or b[2][0] > apart[-1][2][2]:
+                apart.append(b)
+        two += len(apart) >= 2 and apart[1][2][0] - apart[0][2][2] > 0.1
+    return two >= 3
+
+
+def block_places(folder: str, i: int, n_paras: int):
+    """For a page of a few short paragraphs -- picture captions, a title
+    page, a dedication: where each text block sits on the scan, top to
+    bottom, as [(how far down 0-1, centred?)]: the boxes the detector reads
+    as text, caption or heading, outside the head and foot margins, merged
+    where they touch. Only when there are exactly `n_paras` of them, so each
+    English paragraph can be drawn level with its own and centred like it
+    (Kirchhoffer pdf 66's captions, its title pages; 2026-10-18); else None."""
+    lay = load(folder)
+    if not lay:
+        return None
+    page = lay["pages"].get(str(i))
+    if not page:
+        return None
+    bx = sorted((b for b in page["boxes"] if b[0] in ("caption", "text", "title", "section_header",
+                                                      "list_item", "footnote") and b[1] >= 0.5
+                 and 0.1 < _yc(b) < 0.92), key=lambda b: b[2][1])
+    groups = []
+    for b in bx:
+        if groups and b[2][1] <= groups[-1][1] + 0.02:
+            g = groups[-1]
+            g[1], g[2], g[3] = max(g[1], b[2][3]), min(g[2], b[2][0]), max(g[3], b[2][2])
+        else:
+            groups.append([b[2][1], b[2][3], b[2][0], b[2][2]])
+    if len(groups) != n_paras or not n_paras:
+        return None
+    body = [b for b in page["boxes"] if b[0] in BODY + ("caption", "picture") and b[1] >= 0.5]
+    x0 = min((b[2][0] for b in body), default=0.1)
+    x1 = max((b[2][2] for b in body), default=0.9)
+    return [(g[0], abs((g[2] - x0) - (x1 - g[3])) < 0.06 * (x1 - x0) and (g[3] - g[2]) < 0.85 * (x1 - x0))
+            for g in groups]
+
+
+def caption_places(folder: str, i: int, n: int):
+    """How far down the scan (0-1) the page's `n` picture captions sit --
+    the detector's caption boxes, top to bottom, when there are exactly n
+    (Kirchhoffer pdf 92: a plate page with only its caption, 78 % down);
+    else None."""
+    lay = load(folder)
+    page = lay and lay["pages"].get(str(i))
+    if not page:
+        return None
+    caps = sorted((b for b in page["boxes"] if b[0] == "caption" and b[1] >= 0.5), key=lambda b: b[2][1])
+    merged = []
+    for b in caps:
+        if merged and b[2][1] <= merged[-1][1] + 0.02:
+            merged[-1][1] = max(merged[-1][1], b[2][3])
+        else:
+            merged.append([b[2][1], b[2][3]])
+    return [m[0] for m in merged] if len(merged) == n and n else None

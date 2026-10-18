@@ -323,6 +323,18 @@ rather than silently ignoring a decision. A `find` that no longer matches
 
 ### Retranslating individual pages
 
+Tables are translated in a pass of their own (a book's grids drawn in
+English in both PDFs; without it they show a pointer to the scan). A new
+translation runs it; for a book translated before it existed, or after a
+source page with a table changed:
+
+```bash
+docker exec fmt-translator python3 /app/2_translate.py --tables <stem>
+```
+
+It translates only the pages whose tables changed, so a stopped run
+resumes; then rebuild the PDFs.
+
 To redo a few pages without retranslating the book (a changed source page,
 a bad translation, a new `[terms]` entry), name the scan pages:
 

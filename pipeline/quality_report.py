@@ -289,7 +289,9 @@ def page_map(folder: str, n: int) -> dict:
     for p in range(1, len(d)):                          # sheet 1 is the cover
         r = d[p].rect
         head = d[p].get_text(clip=fitz.Rect(r.width / 2, 0, r.width, 60)).lstrip()
-        if not re.match(r"(?:Page \S+\s+)?\(cont\.\)", head):
+        # anywhere in the top strip: the running head can sit before the
+        # page number on that line (the book's places, 2026-10-18)
+        if not re.search(r"\(cont\.\)", head):
             scan += 1
             out[scan] = p + 1
     return out if scan == n else {}
@@ -508,7 +510,7 @@ def check_book(folder: str) -> list:
     # fragment -- is listed so nothing is translated as two halves unseen.
     def _english(t):
         b = re.sub(r"\u27e6MARGIN:[^\u27e7]*\u27e7", "", _body(t or ""))
-        b = re.sub(r"\[\[TABLE\]\]", "", b).strip()
+        b = re.sub(r"\[\[(?:TABLE|DIVIDER)\]\]", "", b).strip()
         return "" if b in ("", "[Empty page]") else b
     eng = [_english(t) for t in tr]
     for i in range(len(eng) - 1):

@@ -212,7 +212,7 @@ class Flow:
 
     LABEL_H = FS * 2.4
 
-    def section_label(self, page_num, header, reserve=0.0, compact=False):
+    def section_label(self, page_num, header, reserve=0.0, compact=False, side=None):
         # `reserve` = extra height the caller will use right after the label;
         # if the label + that reserve won't fit, start a fresh sheet so the
         # label is never orphaned from its content (e.g. a figure).
@@ -243,6 +243,20 @@ class Flow:
             label = f"— {page_num} —"
         else:                              # no trusted folio: header alone, or nothing
             label = head_inline
+        if side and not two_part and not long_hdr and trusted:
+            # the book's places (reviewer, 2026-10-18): the number on its
+            # side, the head where the book sets it; one line when they fit.
+            # (Top or bottom alike: this text runs on across sheets, so the
+            # number stays at its section's start.)
+            items = [(f"— {page_num} —", side["folio"][1], _render.BOLD, FS + 1)]
+            if head_inline:
+                items.append((head_inline, side["head"], _render.BOLD, FS + 1))
+            rows = _render.place_row(items, COL.x0, COL.x1)
+            for txt, x, font, size, line in rows:
+                self.page.insert_text((x, self.y + FS + 2 + (FS + 3) * line), txt,
+                                      fontsize=size, fontname=font)
+            self.y += (FS + 3) * rows[-1][4]
+            label = ""
         if label:
             self.page.insert_text((COL.x0, self.y + FS + 2), label,
                                   fontsize=FS + 1, fontname=_render.BOLD)
@@ -260,7 +274,7 @@ class Flow:
 
     def body(self, text):
         body_txt, notes = _render.split_footnotes(text)
-        self._flow(_render.layout(body_txt, COL.width, FS), FS)
+        self._flow(_render.layout(body_txt, COL.width, FS, paras=PARAS, centre=CENTRE), FS)
         if notes:
             # end-of-section glossary block, smaller type
             self.y += FS * 0.4
@@ -332,6 +346,8 @@ class Flow:
 
 
 created_count = 0
+PARAS = "indented"      # the book's paragraph style, set per book below
+CENTRE = False          # the book centres its headings, set per book below
 
 # the books named on the command line, or --all (_books.py; PDF_ONLY= still read)
 import _books
@@ -362,6 +378,15 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
 
     # headers.json, plus two-part heads printed the other way round (_render)
     header_map = _render.header_map(int_dir)
+    TABLES = _render.load_tables(int_dir)
+
+    PARAS = _render.book_paragraphs(book)
+    CENTRE = _render.centres_headings(folder)
+    import _layout
+    TWO_PART = _layout.two_part_heads(folder, [parse_vlm_output(e).get("header", "") for e in extractions])
+    sides = _render.folio_sides(folder, [parse_vlm_output(e).get("page_num", "") for e in extractions])
+    if any(sides):
+        print("  page number / running head: in the book's places")
 
     src_doc = None
     ocr_pdf = next((os.path.join(int_dir, f) for f in os.listdir(int_dir)
@@ -384,6 +409,9 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         # A scoring grid / poule table: step 2 left a [[TABLE]] sentinel.
         # Embed the source page image for it and strip the sentinel from
         # the body so any surrounding prose still renders.
+        # Translated tables (tables.json) are drawn in the text; only a
+        # table without one still gets the scan image.
+        tr, _all = _render.place_tables(tr or "", TABLES.get(str(i)))
         body_is_table = "[[TABLE]]" in (tr or "")
         if body_is_table:
             tr = re.sub(r"(?m)^\s*\[\[TABLE\]\]\s*$", "", tr or "").strip()
@@ -460,9 +488,13 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         rot = _rot_pages.get(i)      # a listed page's own direction, else the book's
         first_h = flow._fig_size(src_page, placements[0][0], rot)[1] if placements else 0.0
         hdr = st.get("header", "")
-        flow.section_label(st.get("page_num", ""), re.sub(r"</?i>", "", header_map.get(hdr, hdr)),
+        hdr_en = re.sub(r"</?i>", "", header_map.get(hdr, hdr))
+        if not TWO_PART:                 # one printed line, split by step 1
+            hdr_en = hdr_en.replace("\t", " ")
+        flow.section_label(st.get("page_num", ""), hdr_en,
                            reserve=(first_h + FS * 1.6) if placements else 0.0,
-                           compact=bool(is_empty and placements))
+                           compact=bool(is_empty and placements),
+                           side=sides[i] if i < len(sides) else None)
         for band, caption in placements:
             flow.figure(src_page, band, caption=caption, rotate=rot)
             figures += 1

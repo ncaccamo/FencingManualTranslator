@@ -521,7 +521,8 @@ _KEEP_TERMS_IT = [(t, []) for t in (
                  r"riposte response", r"rapises?"])]
 
 
-# Maestro is kept every time in an Italian book (reviewer, 2026-10-11): the
+# Maestro is kept every time in an Italian book (reviewer, 2026-10-11), in the
+# book's case (2026-10-18: "il maestro" -> <i>maestro</i>, "Maestro Parise"): the
 # lesson's master, a named one (Maestro Parise) and masters in general. The
 # literal prompt had the model write "master" in prose (Masiello scan 434,
 # 74 -> 56 kept). Each "master(s)" outside <i>...</i> becomes <i>Maestro</i> /
@@ -652,7 +653,8 @@ def enforce_maestro(text: str, src: str) -> str:
         else:
             budget[0] -= len(re.findall(r"maestr[oi]", part, re.I))
         out.append(part)
-    return "".join(out)
+    # in the book's case (reviewer, 2026-10-18): "il maestro" -> <i>maestro</i>
+    return source_case_kept_terms("".join(out), src)
 
 
 def _keep_terms():
@@ -725,6 +727,184 @@ def caps_kept_terms(text: str, src: str = "") -> str:
                 parts[k] = f"<i>{m.group(1).upper()}</i>"
         return "".join(parts)
     return "\n".join(_line(l) for l in text.split("\n"))
+
+
+# Before a word: the start of a sentence (or of the line), so its capital is
+# grammar, not the book's choice -- opening quote, bracket or dash allowed.
+_SENT_START = re.compile(r"(?:^|[.!?…])[\s«“\"(\[—–-]*$")
+
+
+def _case_class(w: str):
+    letters = [c for c in w if c.isalpha()]
+    if not letters:
+        return None
+    if all(c.islower() for c in letters):
+        return "lower"
+    if len(letters) >= 2 and all(c.isupper() for c in letters):
+        return "upper"
+    if letters[0].isupper() and all(c.islower() for c in letters[1:2]):
+        return "cap"
+    return None
+
+
+def _apply_case(w: str, cls: str) -> str:
+    if cls == "upper":
+        return w.upper()
+    if cls == "lower":
+        return w[:1].lower() + w[1:]
+    return w[:1].upper() + w[1:]
+
+
+def source_case_kept_terms(text: str, src: str = "") -> str:
+    """A kept term takes the letter case the book gives it (reviewer rule,
+    2026-10-18: case matches the book, no exceptions). Kirchhoffer scan 74
+    prints «(Fleuret — Épée — Sabre.)»; the model wrote "(Foil — <i>épée</i>
+    — Saber.)". Only the book's mid-sentence uses count -- a capital at a
+    sentence start is grammar -- and a term at the start of an English
+    sentence is left as it is, as is one in capitals (caps_kept_terms).
+    Paragraph by paragraph when the English has the book's paragraphs,
+    else the whole page; the book's uses must agree on one case, or there
+    must be as many in the English paragraph as in the French one (then
+    in order). A word in a capitals heading takes the line's case, so it
+    doesn't count."""
+    if not src or "<i>" not in text:
+        return text
+    plain_src = re.sub(r"<[^>]+>", "", src)
+    lines = text.split("\n")
+    en_paras = [n for n, l in enumerate(lines) if l.strip() and l.strip() != FN_HEADER]
+    src_paras = [l for l in plain_src.split("\n") if l.strip()]
+    aligned = len(en_paras) == len(src_paras)
+    if aligned:
+        groups = [([n], [s]) for n, s in zip(en_paras, src_paras)]
+    else:
+        groups = [(en_paras, src_paras)]
+
+    def _caps_line(line):
+        letters = [c for c in line if c.isalpha()]
+        return len(letters) >= 4 and sum(c.isupper() for c in letters) > 0.7 * len(letters)
+
+    def _mids(term, src_lines):
+        out = []
+        for line in src_lines:
+            if _caps_line(line):           # a heading in capitals: the line's case, not the word's
+                continue
+            for m in re.finditer(r"(?<![\w’'-])" + re.escape(term) + r"(?![\w-])", line, re.I):
+                if not _SENT_START.search(line[:m.start()]):
+                    out.append(_case_class(m.group(0)))
+        return out
+
+    edits = {}
+    for en_lines, src_lines in groups:
+        uses = {}
+        for n in en_lines:
+            line = lines[n]
+            for m in re.finditer(r"<i>([^<]+)</i>", line):
+                term = m.group(1)
+                if _case_class(term) in (None, "upper"):
+                    continue
+                before = re.sub(r"<[^>]+>", "", line[:m.start()])
+                if not _SENT_START.search(before):
+                    uses.setdefault(term.lower(), []).append((n, m.start(), term))
+                elif (aligned and _case_class(term) == "lower" and not before.strip(" «“\"(")
+                      and re.match(r"[\s«“\"(]*" + re.escape(term) + r"(?![\w-])",
+                                   src_lines[0], re.I)
+                      and _case_class(re.match(r"[\s«“\"(]*(\S+)", src_lines[0]).group(1)) != "lower"):
+                    # opening its line, as the book's line opens with it capitalised
+                    # (Gomard scan 113's word list: "<i>épée</i>." for «Épée.»)
+                    edits[(n, m.start())] = (term, _apply_case(term, "cap"))
+        for key, found in uses.items():
+            mids = _mids(found[0][2], src_lines)
+            if not mids or None in mids:
+                continue
+            if len(set(mids)) == 1:
+                want = mids * len(found)
+            elif len(mids) == len(found) and aligned:
+                want = mids
+            else:
+                continue
+            for (n, at, term), cls in zip(found, want):
+                if _case_class(term) != cls:
+                    edits[(n, at)] = (term, _apply_case(term, cls))
+    for (n, at), (old, new) in sorted(edits.items(), reverse=True):
+        line = lines[n]
+        lines[n] = line[:at] + f"<i>{new}</i>" + line[at + len(old) + 7:]
+    return "\n".join(lines)
+
+
+_MARKUP = re.compile(r"(</?(?:i|b|sup|fn)>)", re.I)   # not a stray "<" (Gomard scan 245)
+
+
+def _mostly_caps(line: str, share: float = 0.85) -> bool:
+    letters = [c for c in _MARKUP.sub("", line) if c.isalpha()]
+    return len(letters) >= 4 and sum(c.isupper() for c in letters) > share * len(letters)
+
+
+def source_caps_lines(text: str, src: str = "") -> str:
+    """A short line the book sets in capitals is in capitals in the English
+    too (reviewer rule, 2026-10-18: case matches the book). The model often
+    sets them in title or sentence case: "PREMIÈRE PARTIE." -> "First Part.",
+    "ALLIEVO." -> "Student.", "RIPOSTES A TEMPS PERDU PAR COUPS SIMPLES." ->
+    lower case (Gomard scan 245). Only when the English has the book's
+    paragraphs one for one and the two lines are of a like length (Florio
+    scan 81 has as many paragraphs, shifted). A word the book prints in
+    small letters on that line keeps its case ("PAR LE Dr. W. HAMSTRONG")."""
+    if not src:
+        return text
+    lines = text.split("\n")
+    body_end = next((n for n, l in enumerate(lines) if l.strip() == FN_HEADER), len(lines))
+    en_paras = [n for n in range(body_end) if lines[n].strip()]
+    src_paras = [l for l in re.sub(r"<[^>]+>", "", src).split("\n")
+                 if l.strip() and not re.match(r"\s*\(\d+\)", l)]
+    if len(en_paras) != len(src_paras):
+        return text
+    for n, s_line in zip(en_paras, src_paras):
+        line = lines[n]
+        sw, ew = len(s_line.split()), len(_MARKUP.sub("", line).split())
+        if (not _mostly_caps(s_line) or sw > 15 or ew > 2 * sw + 3 or "<fn>" in line
+                or re.fullmatch(r"\s*\[[^\]]*\]\s*", line) or _mostly_caps(line, 0.5)):
+            continue
+        keep = {w for w in re.findall(r"[^\W\d_][\w.'’-]*", s_line) if not w.isupper()}
+        lines[n] = "".join(
+            part if _MARKUP.fullmatch(part) else
+            re.sub(r"[^\W\d_][\w.'’-]*", lambda m: m.group(0) if m.group(0) in keep
+                   else m.group(0).upper(), part)
+            for part in _MARKUP.split(line))
+    return "\n".join(lines)
+
+
+# A section divider printed between paragraphs -- stars, an asterism, a row
+# of bullets or a tilde rule (Joseph-Renaud's ⁂, LaMarche's * * *). The OCR
+# writes it as its own line on many pages; the translation dropped it (the
+# model, and a clean-up that took it for Markdown). Reviewer, 2026-10-18:
+# keep a divider, drawn centred with space around it (_render).
+DIVIDER = "[[DIVIDER]]"
+_DIVIDER_SRC = re.compile(r"^\s*(?:[*★☆✶✱•·~]\s*){2,}\s*$|^\s*[⁂]\s*$|^\s*~{3,}\s*$")
+
+
+def restore_dividers(text: str, src: str) -> str:
+    """Put each divider of the source back as a [[DIVIDER]] line, before
+    the English line that has as many lines above it as the source line
+    after the divider has -- only when the English has exactly the source's
+    lines (else nothing: a divider in the wrong place is worse than none)."""
+    if not src or not text:
+        return text
+    src_lines = [l for l in re.sub(r"<[^>]+>", "", src).split("\n") if l.strip()]
+    marks = [k for k, l in enumerate(src_lines) if _DIVIDER_SRC.match(l)]
+    if not marks:
+        return text
+    body, sep, notes = text.partition(FN_HEADER)
+    en = body.split("\n")
+    en_idx = [n for n, l in enumerate(en) if l.strip() and l.strip() != DIVIDER]
+    words = [l for l in src_lines if not _DIVIDER_SRC.match(l)]
+    if len(en_idx) != len(words) or DIVIDER in body:
+        return text
+    for j in sorted(marks, reverse=True):
+        before = sum(1 for k in range(j) if not _DIVIDER_SRC.match(src_lines[k]))
+        if before == 0 or before >= len(en_idx):
+            continue
+        at = en_idx[before]
+        en[at:at] = ["", DIVIDER, ""]
+    return "\n".join(en) + sep + notes
 
 
 def fix_known_garbles(text: str, src: str = "") -> str:
@@ -807,6 +987,12 @@ def fix_known_garbles(text: str, src: str = "") -> str:
     # (Jacob), "Count F. of L'Angle-Beaumanoir" (Spinnewyn) -- after an initial
     text = re.sub(r"\b([A-Z]\.\s+)(of|OF|Of)(\s+(?:La|LA|Le|LE|L['’]))",
                   lambda m: m.group(1) + ("DE" if m.group(2) == "OF" else "de") + m.group(3), text)
+    # a lesson's step label printed "I. TEMPO" stays "I. TEMPO", never
+    # "I. TIME" (Barbasetti, 38 of 86; reviewer, 2026-10-18)
+    if src and re.search(r"(?im)^\s*[IVX]+\.?\s+TEMPO\b", src):
+        text = re.sub(r"(?m)^(\s*[IVX]+\.?\s+)(TIME|Time)\b",
+                      lambda m: m.group(1) + ("TEMPO" if m.group(2).isupper() else "Tempo"), text)
+    text = source_caps_lines(source_case_kept_terms(text, src), src)
     return caps_kept_terms(text, src)
 
 
@@ -1941,9 +2127,9 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
                 counts = Counter(c.lower() for c in candidates)
                 best_norm, _ = counts.most_common(1)[0]
                 one = next(c for c in candidates if c.lower() == best_norm)
-                fig["caption_en"] = caps_kept_terms(match_case(cap, one) or cap, cap)
+                fig["caption_en"] = caps_kept_terms(source_case_kept_terms(match_case(cap, one) or cap, cap), cap)
             elif fallback:
-                fig["caption_en"] = caps_kept_terms(match_case(cap, fallback) or cap, cap)
+                fig["caption_en"] = caps_kept_terms(source_case_kept_terms(match_case(cap, fallback) or cap, cap), cap)
             else:
                 fig["caption_en"] = cap
             n += 1
@@ -1951,6 +2137,86 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
         _json.dump(fig_map, fh, ensure_ascii=False, indent=1)
     if n:
         print(f"  translated {n} figure caption(s)")
+    return n
+
+
+def _cell_text(cell_html: str) -> str:
+    import html as _html
+    return _html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", cell_html))).strip()
+
+
+def translate_tables(folder: str, force: bool = False) -> int:
+    """Translate the tables of the book (reviewer, 2026-10-18: the side-by-side
+    showed only "[table — see facing page]"; Masiello 1887 has 135 table
+    pages). The OCR gives each table as HTML; each distinct cell text is
+    translated once, as a numbered list with the book's full prompt, then
+    given the caption treatment (footnote markers dropped -- a cell has no
+    room for a note and the term is footnoted in the running text -- kept
+    terms, the book's case). Written to intermediate/tables.json as
+    {scan index: {"src": [table html], "en": [english html or null]}}; a
+    page whose tables are unchanged is skipped unless `force`. A table the
+    OCR read as headings only (no body cell has text, at most 3 rows --
+    Kirchhoffer's bout order) is stored as null: the PDFs keep the pointer
+    to the scan. Returns the number of pages translated."""
+    import json as _json
+    ex_path, path = f"{folder}/intermediate/extracted.txt", f"{folder}/intermediate/tables.json"
+    if not os.path.exists(ex_path):
+        return 0
+    pages = _pageio.split_pages(open(ex_path, encoding="utf-8").read())
+    done = _json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
+    n = 0
+    for i, page in enumerate(pages):
+        src = clean_vlm_extraction(page)
+        tables = re.findall(r"<table\b.*?</table\s*>", src, re.S | re.I)
+        tail = re.search(r"<table\b(?:(?!</table).)*\Z", src, re.S | re.I)   # a grid the page cut off
+        if tail:
+            tables.append(tail.group(0) + "</table>")
+        if not tables:
+            done.pop(str(i), None)
+            continue
+        if not force and done.get(str(i), {}).get("src") == tables:
+            continue
+        en = []
+        for tb in tables:
+            cells = re.findall(r"<t([hd])\b[^>]*>(.*?)</t[hd]>", tb, re.S | re.I)
+            body = [_cell_text(c) for kind, c in cells if kind.lower() == "d"]
+            rows = len(re.findall(r"<tr\b", tb, re.I))
+            if not any(re.search(r"\w", b) for b in body) and rows <= 3:
+                en.append(None)
+                continue
+            texts = list(dict.fromkeys(t for t in (_cell_text(c) for _, c in cells)
+                                       if re.search(r"[^\W\d_]{2,}", t)))
+            tr = {}
+            for k in range(0, len(texts), 60):
+                chunk = texts[k:k + 60]
+                listing = "\n".join(f"{j}. {t}" for j, t in enumerate(chunk, 1))
+                reply = translate_with_llama(
+                    f"{PROMPT_TEMPLATE}\n\nThe text below is the cells of a TABLE, one per numbered line. "
+                    f"Translate each line on its own, keeping its number; answer with exactly {len(chunk)} "
+                    f"numbered lines and nothing else.\n\nText to translate:\n{listing}")
+                got = dict(re.findall(r"(?m)^\s*(\d+)\.\s*(.*\S)", strip_model_preamble(reply or "")))
+                for j, t in enumerate(chunk, 1):
+                    cell = got.get(str(j), "")
+                    cell = re.sub(r"<fn>.*?</fn>|</?fn>", "", cell, flags=re.S | re.I)
+                    if not cell or contains_too_much_non_english(cell) and len(cell.split()) > 3:
+                        tr[t] = t                   # kept as printed: better than a wrong guess
+                        continue
+                    cell = enforce_kept_terms(apply_always_translate(cell), t)
+                    cell = fix_parry_names(cell, t)
+                    cell = enforce_footnoted_terms(cell, set(), footnote=False)
+                    tr[t] = caps_kept_terms(source_caps_lines(source_case_kept_terms(cell, t), t), t)
+
+            def _sub(m, tr=tr):
+                raw = _cell_text(m.group(3))
+                return f"<{m.group(1)}{m.group(2)}>{tr.get(raw, raw)}</{m.group(1)}>"
+            en.append(re.sub(r"\s+", " ", re.sub(r"<(t[hd])\b([^>]*)>(.*?)</t[hd]>", _sub, tb,
+                                                 flags=re.S | re.I)))
+        done[str(i)] = {"src": tables, "en": en}
+        n += 1
+        with open(path, "w", encoding="utf-8") as fh:
+            _json.dump(done, fh, ensure_ascii=False, indent=1)
+    if n:
+        print(f"  translated the tables of {n} page(s)")
     return n
 
 
@@ -2457,6 +2723,8 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         # hit-or-miss and looked wrong (Gomard p255).
         candidate = re.sub(r'(?m)^[ \t]*(?:-{3,}|\*(?:[ \t]*\*)+|•(?:[ \t]*•)+)[ \t]*$',
                            '', candidate)
+        # ... and the book's own divider goes back where the source has it
+        candidate = restore_dividers(candidate, clean_text)
         candidate = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', candidate)
         candidate = re.sub(r'\*\*([^*\n]+)\*\*', r'\1', candidate)   # **bold**
         candidate = re.sub(r'(?m)^\s{0,3}#{1,6}\s+', '', candidate)  # # heading
@@ -2664,6 +2932,7 @@ _USAGE = """usage: python3 /app/2_translate.py <stem> [<stem> ...] | --all
          python3 /app/2_translate.py --pages <stem> <scan pages>   e.g. 12,40-42
          python3 /app/2_translate.py --flagged <stem> <words> [--list]   e.g. risposta, or kind:split
          python3 /app/2_translate.py --captions <stem> [<stem> ...] | --all
+         python3 /app/2_translate.py --tables <stem> [<stem> ...] | --all
   translates new books, and the pages whose source changed since translation;
   --flagged retranslates the pages whose review-report checks mention <words>
   (or are of that kind) -- after a prompt or [terms] fix for that mistake"""
@@ -2703,7 +2972,7 @@ if len(sys.argv) > 1 and sys.argv[1] == "--pages":
         sys.exit(_USAGE)
     _books.check_unlocked(sys.argv[2], sys.argv)
     _BOOK_FOLDERS = []
-elif len(sys.argv) > 1 and sys.argv[1] == "--captions":
+elif len(sys.argv) > 1 and sys.argv[1] in ("--captions", "--tables"):
     _BOOK_FOLDERS = [_books.folder_of(n) for n in _books.select(sys.argv[2:], _USAGE)]
 else:
     _BOOK_FOLDERS = [_books.folder_of(n) for n in _books.select(sys.argv[1:], _USAGE)]
@@ -2730,6 +2999,22 @@ if len(sys.argv) > 1 and sys.argv[1] == "--captions":
         if translation_proc is not REMOTE_SERVER and translation_proc:
             translation_proc.terminate()
     print("\n✓ Caption pass complete\n")
+    sys.exit(0)
+
+
+# `2_translate.py --tables` translates only the books' tables (tables.json),
+# without touching the page bodies -- each run translates the pages whose
+# tables changed, so a run that stops resumes where it was.
+if len(sys.argv) > 1 and sys.argv[1] == "--tables":
+    try:
+        for folder in _BOOK_FOLDERS:
+            print(f"tables: {Path(folder).name}")
+            PROMPT_TEMPLATE = prompt_for_book(Path(folder).name.replace("_translated", ""))
+            translate_tables(folder)
+    finally:
+        if translation_proc is not REMOTE_SERVER and translation_proc:
+            translation_proc.terminate()
+    print("\n✓ Table pass complete\n")
     sys.exit(0)
 
 
@@ -2817,6 +3102,7 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
         os.remove(prog_p)
     translate_figure_captions(folder)      # only captions not yet translated
     translate_headers(folder)              # only header strings not yet translated
+    translate_tables(folder)               # only pages whose tables changed
     apply_book_overrides(folder, fixes=False)
     harmonize_titles_with_headers(folder)
     apply_book_overrides(folder)
@@ -2909,6 +3195,7 @@ try:
 
         translate_figure_captions(folder)
         translate_headers(folder)
+        translate_tables(folder)
         apply_book_overrides(folder, fixes=False)
         harmonize_titles_with_headers(folder)
         apply_book_overrides(folder)

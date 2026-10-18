@@ -91,6 +91,36 @@ def figure_caption(fig):
     return clean_caption(en or src)
 
 
+def folio_sides(folder, folios):
+    """Per page, where the book prints its number and running head (see
+    _layout.folio_plan; reviewer, 2026-10-18), or None for every page when
+    the scans don't say clearly -- the old fixed layout then."""
+    import _layout
+    plan = _layout.folio_plan(folder, folios)
+    return [_layout.page_side(plan, folios, i) for i in range(len(folios))]
+
+
+def slot_x(slot, txt, font, size, x0, x1):
+    """Left x for `txt` set at `slot` ('L' / 'C' / 'R') between x0 and x1."""
+    w = _font(font).text_length(txt, fontsize=size)
+    return x0 if slot == "L" else x1 - w if slot == "R" else (x0 + x1 - w) / 2
+
+
+def place_row(items, x0, x1):
+    """[(text, slot, font, size)] -> [(text, x, font, size, line)]: one line
+    when they don't collide, else each later item on the next line."""
+    out, spans, line = [], [], 0
+    for txt, slot, font, size in items:
+        x = slot_x(slot, txt, font, size, x0, x1)
+        w = _font(font).text_length(txt, fontsize=size)
+        if any(not (x + w + 8 <= a or b + 8 <= x) for a, b in spans):
+            line += 1
+            spans = []
+        spans.append((x, x + w))
+        out.append((txt, x, font, size, line))
+    return out
+
+
 def header_map(int_dir):
     """intermediate/headers.json (running head -> English), plus each
     two-part head the other way round: a book that prints the halves on
@@ -303,8 +333,16 @@ def _wrap(spans, width, size, first_indent=0.0):
         for tok in re.findall(r"\S+\s*|\s+", text):
             w = _w(tok, ital, size)
             if cur and tok.strip() and cur_w + w > width:
+                # punctuation glued to the word before it (after an italic
+                # term: "<i>quarte</i>; diseng.") goes down with that word,
+                # never alone at the start of a line (Gomard scan 229)
+                carry = []
+                if (re.match(r"[;:,.!?)\]»”’]", tok) and len(cur) > 1
+                        and not cur[-1][0][-1:].isspace()):
+                    carry = [cur.pop()]
                 lines.append(cur)
-                cur, cur_w = [], 0.0          # later lines: full width
+                cur = carry                   # later lines: full width
+                cur_w = sum(_w(t, i, size) for t, i in carry)
                 tok = tok.lstrip()
                 w = _w(tok, ital, size)
             if not tok:
@@ -317,13 +355,15 @@ def _wrap(spans, width, size, first_indent=0.0):
 
 
 class Line:
-    __slots__ = ("indent", "spans", "gap", "note")
+    __slots__ = ("indent", "spans", "gap", "note", "tail", "table")
 
-    def __init__(self, indent=0.0, spans=None, gap=False, note=False):
+    def __init__(self, indent=0.0, spans=None, gap=False, note=False, tail="", table=""):
         self.indent = indent
         self.spans = spans or []
         self.gap = gap
         self.note = note        # an author's margin note (see layout())
+        self.tail = tail        # a contents line's page number: set flush right, dot leaders before it
+        self.table = table      # an HTML table drawn as a grid in the flow (draw_table)
 
 
 # A margin note arrives from step 2 as its own line, ⟦MARGIN: …⟧, placed
@@ -355,6 +395,14 @@ _SENT_END = re.compile(r"[.!?…»”\")](?:</i>)?\s*$")   # not ":" -- a list f
 # drawn: the OCR caught it on some pages only (2026-10-06 review); the blank
 # lines around it still leave the gap
 _STARS = re.compile(r"^\s*[★☆⁂✶✱]+(?:\s*[★☆⁂✶✱]+)*\s*$")
+DIVIDER = "[[DIVIDER]]"     # a section divider kept from the book (2_translate.restore_dividers)
+
+
+def _divider(width, size):
+    """The book's section divider: centred stars with space around them
+    (reviewer, 2026-10-18; whatever the book's own ornament)."""
+    mark = "*      *      *"
+    return [Line(gap=True), Line(max(0.0, (width - _w(mark, 0, size)) / 2), [(mark, 0)]), Line(gap=True)]
 
 
 def _para_line(s):
@@ -372,13 +420,68 @@ def _prose_indent(s):
             and not _LIST_START.match(s) and bool(re.match(r"[\w“\"«(<]", s)))
 
 
-def layout(text, width, size):
-    """text -> list[Line], pre-wrapped to `width` pt at `size`."""
+# a line that ends a paragraph in the book: a sentence end, or the ";" / ":"
+# that closes each item of a run-in list (Kirchhoffer pdf 13: "La lame, ...;"
+# / "La garde, ...;" each its own indented paragraph)
+_PARA_END = re.compile(r"[.!?…»”\")\];:](?:</i>)?\s*$")
+
+
+def centres_headings(folder):
+    """Does the book centre its headings? From the layout detector: most of
+    its heading boxes sit centred over the text (70-98 % in most books;
+    Bruno, Danet, Saint-Martin under half -- those stay flush left)."""
+    import _layout
+    lay = _layout.load(folder)
+    if not lay:
+        return False
+    centred = total = 0
+    for p in lay["pages"].values():
+        body = [b for b in p["boxes"] if b[0] == "text" and b[1] >= 0.5]
+        if not body:
+            continue
+        x0, x1 = min(b[2][0] for b in body), max(b[2][2] for b in body)
+        for b in p["boxes"]:
+            if b[0] in ("section_header", "title") and b[1] >= 0.5 and (b[2][1] + b[2][3]) / 2 > 0.12:
+                left, right = b[2][0] - x0, x1 - b[2][2]
+                total += 1
+                centred += abs(left - right) < 0.06 * (x1 - x0) and left > 0.04
+    return total >= 20 and centred >= 0.5 * total
+
+
+def book_paragraphs(stem, books_dir="/data/books"):
+    """The book's paragraph style ([book] paragraphs; "indented" unless set)."""
+    import _overrides
+    try:
+        return _overrides.load(stem, books_dir)["book"].get("paragraphs", "indented")
+    except _overrides.OverridesError:
+        return "indented"
+
+
+def layout(text, width, size, paras=None, centre=False, toc=None):
+    """text -> list[Line], pre-wrapped to `width` pt at `size`.
+
+    `paras` -- body text only: the book's paragraph style (reviewer,
+    2026-10-18). The OCR marks paragraphs at random -- a blank line or a
+    bare line break, 0, 2 or 4 leading spaces (Kirchhoffer pdf 13) -- so the
+    page came out partly indented, partly spaced. "indented": every
+    paragraph of running text opens with a first-line indent and a blank
+    line between two of them is dropped; "spaced": a blank line between
+    paragraphs, no indent. Either way headings, lists, drills, verse and
+    tables keep their own layout, and a page that opens mid-sentence (a
+    small letter) gets no indent. None: the old rules (captions, notes).
+    `centre` -- the book centres its headings (_layout.centres_headings):
+    a heading line in capitals is centred too. `toc` -- the page is a
+    contents / index page (None: decided from this text; a caller drawing
+    a page paragraph by paragraph decides once for the page)."""
+    if paras:
+        return _layout_paras(text, width, size, paras, centre, toc)
     out = []
     para_end = False            # the line before ended a prose sentence
     text = italian_low_high(italian_line_numerals(line_name_italics(text)))
     for raw in (text or "").split("\n"):
-        if _STARS.match(raw):
+        if _STARS.match(raw) or raw.strip() == DIVIDER:
+            out += _divider(width, size)
+            para_end = False
             continue
         if not raw.strip():
             out.append(Line(gap=True))
@@ -404,6 +507,267 @@ def layout(text, width, size):
             out.append(Line(indent + (first if k == 0 else 0.0), vline))
         para_end = text_line and bool(_SENT_END.search(raw))
     return out
+
+
+_LEADERS = re.compile(r"\.{3,}|…{2,}|\s\d+\s*$")   # a contents line: dot leaders, a page number
+
+
+_RUN_IN = re.compile(r"[^\W\d][^.!?—]{0,40}?[.:]\s*[—–]\s")   # "L'épée. — ", up to ~6 words
+
+
+def _heading_line(plain):
+    """A heading set in capitals: mostly capital letters, short, not a
+    contents line."""
+    letters = [c for c in plain if c.isalpha()]
+    return (len(letters) >= 3 and sum(c.isupper() for c in letters) > 0.7 * len(letters)
+            and len(plain.split()) <= 15 and not _LEADERS.search(plain))
+
+
+def _rejoin(text):
+    """The text's lines, with a sentence the OCR broke at a printed line end
+    put back together ("Saber bouts, in the fencing hall," / "are less
+    subject ...", Jacob-André pdf 220): the line runs on (a comma or a word,
+    25+ letters) and the next opens with a small letter. Never inside a
+    brace group or a heading."""
+    out = []
+    for line in (text or "").split("\n"):
+        last = out[-1] if out else ""
+        if (last.strip() and len(re.sub(r"<[^>]+>", "", last).strip()) >= 25
+                and re.search(r"[,\w](?:</i>)?$", last.rstrip())
+                and re.match(r" {0,4}(?:<i>)?[a-zà-ÿ]", line)
+                and "{" not in last and "{" not in line and "}" not in line
+                and not _heading_line(re.sub(r"<[^>]+>", "", last).strip())
+                and not _MARGIN_RE.match(last) and not _MARGIN_RE.match(line)):
+            out[-1] = last.rstrip() + " " + line.strip()
+        else:
+            out.append(line)
+    return out
+
+
+def _title_line(plain):
+    """A heading in ordinary case standing alone between blank lines: short,
+    one phrase, not a sentence of running text -- "52. Double Circling and
+    Double Controcavazione" (Barbasetti), "Synoptic charts." (Masiello).
+    Not a quotation, a colon line, or a contents line."""
+    words = plain.split()
+    return (0 < len(words) <= 10 and not re.match(r"[«“\"(]", plain)
+            and not re.search(r"[:;,]$", plain) and not _LEADERS.search(plain)
+            and not re.search(r"[.!?…]\s+\S", re.sub(r"^(?:§\s*)?[\dIVXLC]+[.°]\s*(?:—\s*)?", "", plain))
+            and plain[:1] not in "-—–•*" and bool(re.match(r"(?:§\s*)?[\w(]", plain))
+            and not plain[:1].islower())
+
+
+# a contents / index line: its page number at the end, after dot leaders, or
+# "Page 61" / "Pag. 61" / "» 263" / "ibid." (Barbasetti, Masiello, Kirchhoffer)
+_TOC_END = re.compile(r"^(?P<text>.*?\S)(?:\s*(?:\.\s*){2,}|\s*…+\s*|\s+)"
+                      r"(?P<num>(?:(?:Page|Pag\.|p\.)\s*)?(?:[»\"]\s*)?(?:\d{1,4}\*?|[IVXLC]{1,7}|ibid\.?))\s*$")
+_TOC_STRONG = re.compile(r"(?:\.\s*){2,}|…|\b(?:Page|Pag\.)\s*\d|»\s*(?:\d|ibid)")
+
+
+def toc_page(text):
+    return _toc_page((text or "").split("\n"))
+
+
+def _toc_page(rows):
+    """A contents or index page: 3+ lines ending in a page number with
+    dot leaders, "Page N" or "» N"."""
+    return sum(1 for r in rows if _TOC_END.match(r.strip()) and _TOC_STRONG.search(r)) >= 3
+
+
+def _layout_toc(rows, width, size, centre):
+    """Contents lines: the text, dot leaders, the page number flush right
+    (as the book sets them); a two-column row ("10. Parry ... Page 61 | 22.
+    Parries ...", Barbasetti) is split in two. No paragraph indent; the
+    OCR's own indents and blank lines stay; headings centred."""
+    out = []
+    lines = []
+    for r in rows:
+        lines += [x for x in re.split(r"\s+\|\s+", r.rstrip(" |"))] if " | " in r else [r]
+    for raw in lines:
+        if not raw.strip():
+            out.append(Line(gap=True))
+            continue
+        if _STARS.match(raw) or raw.strip() == DIVIDER:
+            out += _divider(width, size)
+            continue
+        n = min(len(raw) - len(raw.lstrip(" ")), 8)
+        body = raw.strip()
+        plain = re.sub(r"<[^>]+>", "", body)
+        m = _TOC_END.match(body)
+        if m and not _heading_line(plain):
+            tail = m.group("num")
+            reserve = _w(tail, 0, size) + 24
+            entry = re.sub(r"\s+\.$", "", m.group("text"))      # "Beat Parries . » 67"
+            vl = _wrap(_spans(entry), max(width - n * _SPACE_PT - reserve, _MIN_WRAP), size)
+            for k, v in enumerate(vl):
+                out.append(Line(n * _SPACE_PT if k == 0 else n * _SPACE_PT + 12, v,
+                                tail=tail if k == len(vl) - 1 else ""))
+            continue
+        if centre and (_heading_line(plain) or re.fullmatch(r"(?:CHAPTER|CAPITOLO|CHAPITRE|PART|PARTE)\b.*", plain, re.I)):
+            for v in _wrap(_spans(body), width, size):
+                out.append(Line(max(0.0, (width - sum(_w(t, i, size) for t, i in v)) / 2), v))
+            continue
+        for k, v in enumerate(_wrap(_spans(body), max(width - n * _SPACE_PT, _MIN_WRAP), size)):
+            out.append(Line(n * _SPACE_PT if k == 0 else n * _SPACE_PT + 12, v))
+    return out
+
+
+_STEP = re.compile(r"^(?:[IVX]+|\d+)\.?\s+(?:TIME|TEMPO|TEMPS)\b", re.I)
+_SPEAKER = re.compile(r"^(?:<i>)?(Maestro|Master|Allievo|Student|Pupil|Professeur|Élève)(?:</i>)?\s*[:.]?\s*$", re.I)
+
+
+def _pair_lesson(rows):
+    """A lesson set in two columns in the book -- the master's actions left,
+    the pupil's numbered steps right (Barbasetti: "Maestro: | Allievo: / I.
+    TEMPO ...") -- arrives as two blocks one after the other. When the
+    master has as many lines as the pupil has steps, pair them back into a
+    two-column table, so the actions alternate as printed (reviewer,
+    2026-10-18). Returns the rows with each such run replaced by one
+    "\x00TABLE" row."""
+    import html as _html
+    out, k = [], 0
+    while k < len(rows):
+        j = k
+        heads = []
+        if _SPEAKER.match(rows[j].strip()):
+            heads.append(rows[j].strip()); j += 1
+        left = []
+        while j < len(rows) and rows[j].strip() and not _STEP.match(rows[j].strip()) \
+                and not _SPEAKER.match(rows[j].strip()):
+            left.append(rows[j].strip()); j += 1
+        while j < len(rows) and not rows[j].strip():
+            j += 1
+        if j < len(rows) and _SPEAKER.match(rows[j].strip()):
+            heads.append(rows[j].strip()); j += 1
+        steps = []
+        while j < len(rows) and rows[j].strip():
+            line = rows[j].strip()
+            if _STEP.match(line):
+                steps.append([line])
+            elif steps:
+                steps[-1].append(line)
+            else:
+                break
+            j += 1
+        if left and len(steps) >= 2 and len(left) == len(steps) and all(len(x) >= 2 for x in steps) \
+                and all(len(re.sub(r"<[^>]+>", "", l).split()) <= 14 for l in left):
+            cell = lambda t: re.sub(r"&lt;(/?i)&gt;", r"<\1>", _html.escape(t))
+            body = ""
+            if len(heads) == 2:
+                body += "<tr>" + "".join(f"<th>{cell(re.sub(r'[:.]$', '', h))}</th>" for h in heads) + "</tr>"
+            for l, st in zip(left, steps):
+                body += f"<tr><td>{cell(l)}</td><td>{cell(st[0])}<br>{cell(' '.join(st[1:]))}</td></tr>"
+            out.append("\x00TABLE" + "<table>" + body + "</table>")
+            k = j
+            continue
+        out.append(rows[k]); k += 1
+    return out
+
+
+def _layout_paras(text, width, size, style, centre=False, toc=None):
+    """layout() with a paragraph style. A line is a paragraph of running
+    text only when it reads as one: long (60+ letters), or ending a sentence
+    or list item right after another paragraph (Kirchhoffer's "The thumb
+    guard, ...;"). Short lines without that ending, and the lines of a brace
+    group, are structure -- drill steps, two-column dialogue tables (Barbasetti
+    scan 134), Gomard's braced feints (scan 232) -- and keep the OCR's own
+    lines and blank lines. A blank line is dropped only between two
+    paragraphs, at least one of them long (two short ones -- lines of
+    dialogue -- keep it)."""
+    out = []
+    prev, prev_long = "start", False    # start | prose | prose-open | other
+    gap = brace = prev_colon = False
+    text = italian_low_high(italian_line_numerals(line_name_italics(text)))
+    if toc if toc is not None else _toc_page((text or "").split("\n")):
+        return _layout_toc((text or "").split("\n"), width, size, centre)
+    rows = _pair_lesson(_rejoin(text))
+    for at, raw in enumerate(rows):
+        if raw.startswith("\x00TABLE"):
+            # a full blank line before and after a table, never tight against
+            # the text (reviewer, 2026-10-18)
+            if out:
+                out += [Line(gap=True), Line(gap=True)]
+            out.append(Line(table=raw[len("\x00TABLE"):]))
+            out += [Line(gap=True)]
+            gap, prev, prev_long = False, "other", False
+            continue
+        if _STARS.match(raw) or raw.strip() == DIVIDER:
+            out += _divider(width, size)
+            gap, prev, prev_long = False, "other", False
+            continue
+        if not raw.strip():
+            gap = prev != "start"
+            brace = False
+            continue
+        m = _MARGIN_RE.match(raw)
+        if m:
+            if gap:
+                out.append(Line(gap=True))
+            gap, prev = False, "other"
+            note = re.sub(r"</?i>", "", m.group(1))
+            for vline in _wrap([(note, 1)], max(width - NOTE_INDENT, _MIN_WRAP), size):
+                out.append(Line(NOTE_INDENT, vline, note=True))
+            continue
+        brace = brace or "{" in raw
+        n = len(raw) - len(raw.lstrip(" "))
+        body = raw[n:]
+        plain = re.sub(r"<[^>]+>", "", body).strip()
+        long_ = len(plain) >= 60
+        ends = bool(_PARA_END.search(body))
+        # a long numbered paragraph ("4° Le bras droit ...", Joseph-Renaud pdf
+        # 8) is a paragraph like any other; a short numbered drill step is not
+        numbered = bool(_LIST_START.match(body)) and long_ and not body.lstrip().startswith(("—", "-", "•", "*"))
+        prose = (not brace and (n <= 4 or long_) and (_para_line(body) or numbered)
+                 and (long_ or (ends and prev == "prose")))
+        if prose:
+            raw, n = body, 0
+        new_para = prose and prev in ("start", "prose", "other") and not (
+            prev == "start" and (not long_ or re.match(r"(?:<i>)?[«“\"(]?[a-zà-ÿ]", raw)))
+        # ... but not before a run-in section title ("L'épée. — Tous les
+        # assauts", "Tactique générale. — "): the book leaves space there
+        run_in = bool(_RUN_IN.match(plain))
+        drop_gap = (style == "indented" and prose and prev == "prose" and (long_ or prev_long)
+                    and not run_in and not prev_colon)
+        alone = ((at == 0 or not rows[at - 1].strip()) and (at + 1 == len(rows) or not rows[at + 1].strip()))
+        # a title ending "." ("Synoptic charts.") only after a heading or at
+        # the top -- after running text it is a one-line paragraph ("He returns.")
+        title = alone and _title_line(plain) and (
+            not re.search(r"\.(?:</i>)?$", body) or prev in ("start", "other")
+            or bool(re.match(r"(?:§\s*)?[\dIVXLC]+[.°]", plain)))
+        if centre and not brace and (title or (not prose and _heading_line(plain))):
+            # a heading: centred, its space before kept
+            if gap:
+                out.append(Line(gap=True))
+            gap = prev_colon = False
+            for vline in _wrap(_spans(body), width, size):
+                w = sum(_w(t, i, size) for t, i in vline)
+                out.append(Line(max(0.0, (width - w) / 2), vline))
+            prev, prev_long = "other", False
+            continue
+        if gap and not drop_gap:
+            out.append(Line(gap=True))
+        elif style == "spaced" and new_para and prev == "prose" and not gap:
+            out.append(Line(gap=True))
+        gap = False
+        first = size * PARA_INDENT_EM if (style == "indented" and new_para) else 0.0
+        indent = n * _SPACE_PT
+        avail = max(width - indent, _MIN_WRAP)
+        for k, vline in enumerate(_wrap(_spans(raw[n:]), avail, size, first)):
+            out.append(Line(indent + (first if k == 0 else 0.0), vline))
+        prev = ("prose" if ends else "prose-open") if prose else "other"
+        prev_long = long_
+        # a line ending ":" introduces a list or table: the gap after it stays
+        prev_colon = bool(re.search(r":(?:</i>)?\s*$", body))
+    return out
+
+
+def centre_lines(lines, width, size):
+    """The same lines, each centred in `width` (a title page's lines)."""
+    for ln in lines:
+        if not ln.gap and ln.indent >= 0 and not ln.tail:
+            w = sum(_w(t, i, size) for t, i in ln.spans if t)
+            ln.indent = max(0.0, (width - w) / 2)
+    return lines
 
 
 def draw(page, rect, lines, size, *, leading=1.28, gap_frac=0.55,
@@ -435,6 +799,17 @@ def draw(page, rect, lines, size, *, leading=1.28, gap_frac=0.55,
                                width=0.4, color=color)
             y += lh * 0.35
             continue
+        if ln.table:
+            h = draw_table(page, (x0, y, x1, y1), ln.table, size=min(size, 8.5), dry=True)
+            if h is None:
+                if idx == 0:            # can't fit even on a fresh page: skip it
+                    continue
+                leftover = lines[idx:]
+                break
+            if not dry:
+                draw_table(page, (x0, y, x1, y1), ln.table, size=min(size, 8.5))
+            y = h + lh * 0.4
+            continue
         if y + lh > y1:
             leftover = lines[idx:]
             break
@@ -453,6 +828,16 @@ def draw(page, rect, lines, size, *, leading=1.28, gap_frac=0.55,
                     wrote_note = True
                 else:
                     wrote = True
+            if ln.tail:
+                tail_w = _font(ROMAN).text_length(ln.tail, fontsize=size)
+                dot_w = _font(ROMAN).text_length(". ", fontsize=size)
+                gap_w = x1 - tail_w - 4 - (pt.x + 4)
+                if gap_w > dot_w:
+                    writer.append(fitz.Point(pt.x + 4, y + size), ". " * int(gap_w / dot_w),
+                                  font=_font(ROMAN), fontsize=size)
+                writer.append(fitz.Point(x1 - tail_w, y + size), ln.tail,
+                              font=_font(ROMAN), fontsize=size)
+                wrote = wrote or not ln.note
             if ln.note:
                 bx = x0 + ln.indent - 5
                 page.draw_line((bx, y + size * 0.15), (bx, y + lh * 0.95),
@@ -504,3 +889,136 @@ def measure(lines, size, *, leading=1.28, gap_frac=0.55):
     for ln in lines:
         h += size * leading * (gap_frac if ln.gap else 1.0)
     return h
+
+
+# ---- tables ----------------------------------------------------------------
+
+def parse_table(html_text):
+    """An OCR'd HTML table -> (rows, n_cols): rows = [[cell, ...], ...],
+    cell = {"text", "row", "col", "rowspan", "colspan", "head"} placed on a
+    grid (rowspan / colspan honoured)."""
+    import html as _html
+    rows, taken, out = re.findall(r"<tr\b[^>]*>(.*?)</tr>", html_text, re.S | re.I), {}, []
+    n_cols = 0
+    for r, row in enumerate(rows):
+        c, line = 0, []
+        for m in re.finditer(r"<(t[hd])\b([^>]*)>(.*?)</t[hd]>", row, re.S | re.I):
+            while taken.get((r, c)):
+                c += 1
+            rs = int((re.search(r'rowspan="?(\d+)', m.group(2)) or [0, 1])[1])
+            cs = int((re.search(r'colspan="?(\d+)', m.group(2)) or [0, 1])[1])
+            text = _html.unescape(re.sub(r"\s+", " ", re.sub(r"<(?!/?i>|br\s*/?>)[^>]+>", " ", m.group(3)))).strip()
+            text = re.sub(r"\s*<br\s*/?>\s*", "\n", text)
+            line.append({"text": text, "row": r, "col": c, "rowspan": rs, "colspan": cs,
+                         "head": m.group(1).lower() == "th"})
+            for dr in range(rs):
+                for dc in range(cs):
+                    taken[(r + dr, c + dc)] = True
+            c += cs
+        n_cols = max(n_cols, c)
+        out.append(line)
+    return out, n_cols
+
+
+def draw_table(page, rect, html_text, size=7.5, dry=False, min_size=5.5):
+    """Draw an HTML table as a ruled grid in rect = (x0, y0, x1, y1); the
+    largest size from `size` down to `min_size` that fits. Returns the y
+    under the table (or None when it can't fit at all)."""
+    rows, n_cols = parse_table(html_text)
+    if not rows or not n_cols:
+        return None
+    x0, y0, x1, y1 = rect
+    W = x1 - x0
+    pad = 2.0
+    while size >= min_size:
+        # column widths: by the longest word / content of single-column cells
+        need = [8.0] * n_cols
+        for line in rows:
+            for c in line:
+                if c["colspan"] == 1 and c["text"]:
+                    words = re.sub(r"</?i>", "", c["text"]).split()
+                    longest = max((_w(w, 0, size) for w in words), default=0)
+                    full = _w(re.sub(r"</?i>", "", c["text"]), 0, size)
+                    need[c["col"]] = max(need[c["col"]], longest + 2 * pad, min(full, 140) * 0.6)
+        scale = W / sum(need)
+        widths = [w * scale for w in need]
+        xs = [x0]
+        for w in widths:
+            xs.append(xs[-1] + w)
+        # row heights from wrapped text
+        n_rows = len(rows)
+        lh = size * 1.2
+        heights = [lh + 2 * pad] * n_rows
+        laid = []
+        for line in rows:
+            for c in line:
+                cw = xs[c["col"] + c["colspan"]] - xs[c["col"]] - 2 * pad
+                lines = [v for part in c["text"].split("\n") if part.strip()
+                         for v in _wrap(_spans(part), max(cw, 4), size)]
+                laid.append((c, lines))
+                if c["rowspan"] == 1:
+                    heights[c["row"]] = max(heights[c["row"]], len(lines) * lh + 2 * pad)
+        if sum(heights) <= y1 - y0:
+            break
+        size -= 0.5
+    else:
+        return None
+    ys = [y0]
+    for h in heights:
+        ys.append(ys[-1] + h)
+    if dry:
+        return ys[-1]
+    tw = fitz.TextWriter(page.rect)
+    for c, lines in laid:
+        cx0, cx1 = xs[c["col"]], xs[c["col"] + c["colspan"]]
+        cy0, cy1 = ys[c["row"]], ys[min(c["row"] + c["rowspan"], n_rows)]
+        page.draw_rect(fitz.Rect(cx0, cy0, cx1, cy1), width=0.4, color=(0.45, 0.45, 0.45))
+        ty = cy0 + pad
+        for vl in lines:
+            w = sum(_w(t, i, size) for t, i in vl)
+            tx = (cx0 + cx1 - w) / 2 if c["head"] else cx0 + pad
+            pt = fitz.Point(tx, ty + size)
+            for t, ital in vl:
+                if t:
+                    res = tw.append(pt, t, font=_font(BOLD if c["head"] and not ital else ITALIC if ital else ROMAN),
+                                    fontsize=size)
+                    pt = res[1] if isinstance(res, (tuple, list)) else res
+            ty += lh
+    tw.write_text(page)
+    return ys[-1]
+
+
+def load_tables(int_dir):
+    """intermediate/tables.json (2_translate.translate_tables), or {}."""
+    import json
+    p = os.path.join(int_dir, "tables.json")
+    try:
+        return json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    except ValueError:
+        return {}
+
+
+def place_tables(text, entry):
+    """Put a page's translated tables where its [[TABLE]] markers are, each
+    as one layout row ("\x00TABLE<html>"); more tables than markers -> the
+    rest follow the last marker. Returns (text, all_placed): a marker with
+    no translated table (none yet, or one the OCR read as headings only)
+    stays as the marker, for the caller's pointer to the scan."""
+    marks = len(re.findall(r"(?m)^[ \t]*\[\[TABLE\]\][ \t]*$", text or ""))
+    tables = (entry or {}).get("en") or []
+    if not marks or not tables:
+        return text, not marks
+    groups = [[t] for t in tables[:marks - 1]] + [tables[marks - 1:]]
+    it = iter(groups)
+    left = [False]
+
+    def sub(m):
+        group = next(it, [])
+        if not group or None in group:
+            left[0] = True
+        # a table without a translation keeps its marker, in its place
+        rows = [("\x00TABLE" + t) if t else "[[TABLE]]" for t in group]
+        rows = [r for k, r in enumerate(rows) if r != "[[TABLE]]" or k == 0 or rows[k - 1] != r]
+        return "\n".join(rows) or m.group(0)
+    text = re.sub(r"(?m)^[ \t]*\[\[TABLE\]\][ \t]*$", sub, text)
+    return text, not left[0]

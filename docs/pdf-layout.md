@@ -79,6 +79,50 @@ Text → a list of `Line` objects. A `Line` has:
   dropped. `dry=True` measures without drawing (used to pick a font size
   that fits).
 
+### Paragraph style, headings (body text)
+
+The OCR marks paragraphs at random -- a blank line or a bare line break,
+0, 2 or 4 leading spaces on the same page (Kirchhoffer pdf 13) -- so
+body text is laid out in **one style per book**: `layout(...,
+paras="indented"|"spaced", centre=...)` (`_layout_paras`). The style is
+`[book] paragraphs` in the overrides file, `"indented"` unless set.
+
+- A line is a **paragraph of running text** only when it reads as one:
+  60+ letters, or ending a sentence / list item (`. ! ? ; :`) right after
+  another paragraph ("The thumb guard, ...;"). A long numbered paragraph
+  ("4° Le bras droit ...") counts too.
+- Everything else is **structure** and keeps the OCR's own lines and
+  blank lines: short drill steps, two-column dialogue tables (Barbasetti
+  scan 134), brace groups (from a `{` line to the next blank line; Gomard
+  scan 232), word lists, legends.
+- *indented*: each paragraph gets a first-line indent; a blank line
+  between two paragraphs (one of them long) is dropped -- except before a
+  run-in section title ("L'épée. — ", `_RUN_IN`) and after a line ending
+  `:`, where the book leaves space. *spaced*: a blank line between
+  paragraphs, no indent.
+- A page that opens mid-sentence (a small letter) gets no indent.
+- A sentence the OCR broke at a printed line end is rejoined (`_rejoin`:
+  the line runs on with a comma or word, the next opens in lower case).
+- **Headings in capitals are centred** when the book centres its headings
+  (`centres_headings()`: 60 %+ of the layout detector's heading boxes sit
+  centred over the text -- most books; Bruno, Danet, Saint-Martin don't).
+- Punctuation glued to an italic term never starts a line on its own.
+
+- **Section dividers**: a `[[DIVIDER]]` line (step 2 keeps the book's
+  divider -- stars, ⁂, bullets, a tilde rule -- where the OCR read it;
+  `restore_dividers` puts it back in an existing translation when the
+  English has the source's lines one for one) is drawn as centred
+  `*   *   *` with space around it. A divider the OCR missed can't be
+  recovered.
+- **Two-column lessons** (Barbasetti: the master's actions left, the
+  pupil's numbered steps "I. TEMPO …" right) arrive as two blocks; when
+  the master has as many lines as the pupil has steps they are paired back
+  into a two-column grid (`_pair_lesson`), so the actions alternate as
+  printed.
+
+Captions, notes and the old callers use `paras=None` -- the previous
+rules, unchanged.
+
 ### Footnotes
 
 `2_translate.py` appends a `___FOOTNOTES___` block to a page's text.
@@ -151,7 +195,29 @@ for free (this is why figures were easy here and hard in step 3).
 
 **Right column:**
 
-- Header row: `Page [n]` + the (translated) running header + a rule.
+- Header row: `Page [n]` + the (translated) running header + a rule,
+  **in the book's places** (see "Page number and running head" below).
+- **A plate page with only its caption** (from `figures.json`): drawn
+  level with the scan's caption box (`_layout.caption_places`; Kirchhoffer
+  pdf 92), else at the top.
+- **Pages of a few short paragraphs** (picture captions, title pages, a
+  dedication: at most 8, each 30 words or fewer): each paragraph is drawn
+  level with its own block on the scan, and centred where the book centres
+  it (`_layout.block_places`: the detector's text / caption / heading
+  blocks, used only when there are as many as English paragraphs;
+  Kirchhoffer pdf 66, its title pages).
+- **Tables**: step 2 translates each table's cells (`translate_tables`,
+  `intermediate/tables.json`); the grid is drawn in the text where the
+  page's `[[TABLE]]` marker is (`place_tables`, `draw_table`: rowspan /
+  colspan honoured, columns sized by content, the font shrunk to 5.5 pt to
+  fit, a blank line before and after). A table with no translation -- not
+  run yet, or one the OCR read as headings only (Kirchhoffer's bout order)
+  -- keeps the `[table — see facing page]` pointer (step 3: the scan
+  image).
+- **Contents and index pages** (3+ lines ending in a page number with dot
+  leaders, "Page N" or "» N"): each entry's page number is set flush
+  right with dot leaders, as printed; a two-column row joined by "|"
+  (Barbasetti) is split in two; no paragraph indent (`_layout_toc`).
 - Body: try font size **9, then 8, then 7 pt** — the largest that fits
   the column (`draw(dry=True)`). If even 7 pt overflows, draw what fits
   and spill the rest onto a `(cont.)` continuation spread (same scan
@@ -244,7 +310,34 @@ sidecars are git-ignored, like the rest of the private corpus.
   Gomard `903`→`303`, and monotonic-chain folios across unnumbered plate
   leaves) were promoted upstream and *do* show.
 - **Two-part running head** (`SABRE` / `ATTAQUE ET PARADE`): drawn with
-  the first half at the column's left edge and the second flush right.
+  the first half at the column's left edge and the second flush right --
+  only in a book that really prints them (`_layout.two_part_heads`: two
+  separate head boxes on 3+ such pages; Kirchhoffer). Step 1 also splits
+  a head the OCR read on two lines; everywhere else the halves are joined
+  into one line ("CONSEILS AUX TÉMOINS.", Jacob-André).
+
+### Page number and running head
+
+Both PDFs put the page number and running head where the book prints
+them (`_layout.folio_plan`, `_render.folio_sides`). Learned per book
+from the layout detector: on pages with a read folio, the narrowest box
+in the top or bottom margin is the number, the widest other top box the
+head; their place (left / centre / right of the page) is counted per
+**odd / even folio** -- not assumed: Kirchhoffer prints odd numbers on
+the left. A side needs 10+ pages and 80 % agreement; the head goes where
+most pages print it, never on the number's side of a shared line. A page
+with no read folio takes its side from the nearest one (pages alternate).
+
+- Side by side: number and head on one line in their places (stacked
+  when they would collide); a number printed at the **bottom** is drawn
+  at the foot of the English half; `(cont.)` stays at the top.
+- English-only: the text runs on across sheets, so the number stays at
+  its section's start -- only its left / centre / right place mirrors the
+  book.
+- No clear plan (no layout.json, too few pages, disagreement): the old
+  fixed layout. `[book] page_numbers = "outer" | "inner" | "centre" |
+  "bottom-…"` sets it by hand for scans the detector can't read
+  (Jacob-André).
 - A full-page decorative vignette is **not** embedded as a whole-page
   "Figure N" in the English-only PDF when the page also has 40+ words of
   translated prose — the text wins, the vignette is dropped.
@@ -258,6 +351,7 @@ sidecars are git-ignored, like the rest of the private corpus.
 | `page_numbers.txt` | step 1 | (reference) | one reconciled folio per line; `[n]` = interpolated, not printed |
 | `figures.json` | step 1 (captions filled by step 2) | 3, 4 | `{ page_index: [ {kind: plate\|inset, caption, caption_en} ] }` |
 | `headers.json` | step 2 | 3, 4 | `{ raw_running_header: english }` |
+| `tables.json` | step 2 (`--tables`) | 3, 4 | `{ scan index: {"src": [table html], "en": [english html or null]} }` |
 | `<book>_OCR.pdf` | step 1 | 3, 4 | verbatim copy of the source scan |
 
 ---

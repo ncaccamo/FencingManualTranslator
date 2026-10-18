@@ -121,6 +121,8 @@ CRITICAL RULES — FOLLOW EXACTLY:
 
 4b. Names: never translate the particle of a person's name — "M. A. de La Forge" → "Mr. A. de La Forge", "le comte F. de L'Angle-Beaumanoir" → "Count F. de L'Angle-Beaumanoir". A word the French puts in quotation marks stays in quotation marks in English, translated as itself — never replaced by another quoted word from the page. The name of a society stays in French, plain text: Académie d'armes.
 
+4c. LETTER CASE follows the book. A word the author capitalises in mid-sentence keeps its capital in the English, kept or translated ("di Quarta" → "of <i>Quarta</i>", "la Guardia" → "the Guard", "(Fleuret — Épée — Sabre.)" → "(Foil — <i>Épée</i> — Saber.)"); a word the author writes in small letters stays in small letters ("il maestro" → "the <i>maestro</i>"). A line in capitals stays in capitals ("PREMIÈRE PARTIE." → "FIRST PART."). Ordinary English capitals (a sentence start, "I", a person's name) apply as usual.
+
 5. Preserve every number, measurement, and unit exactly as written (e.g. "0m,85", "470 grams", "1°", "no. 5"). Never drop a numeric callout.
 
 5b. This is ONE PAGE of a longer work. It may begin or end in the middle of a sentence. Translate only the words given: do NOT add a word, clause, or full stop to "complete" a sentence that runs off the end of the page, and do NOT capitalise the first word if the page starts mid-sentence. An abrupt start or end is correct.

@@ -17,6 +17,18 @@ continuation sheet, so it can't key anything durable.)
                          number (Florio, Bruno, Lambertini). Only the
                          OCR's own HEADER counts; no head is carried onto
                          a page from its neighbours.
+        paragraphs       "indented" (default) -> each paragraph opens with
+                         a first-line indent and no blank line between
+                         paragraphs, as most of these books print them;
+                         "spaced" -> a blank line between paragraphs, no
+                         indent. (The OCR marks paragraphs at random, so the
+                         PDFs set one style per book -- _render.layout.)
+        page_numbers     where the book prints its page numbers, for a book
+                         whose scans the layout detector can't read for it
+                         (Jacob-André): "outer" (odd right, even left),
+                         "inner", "centre", or "bottom-..." of these. The
+                         running head is then centred. Unset: learned from
+                         the scans (_layout.folio_plan).
         final            true -> the book is finished: scripts that would
                          change it skip it unless run with --unlock
                          (_books.py). The review report still runs.
@@ -58,7 +70,9 @@ import tomllib
 
 _PAGE_KEYS = {"page_number", "header", "retranslate", "note", "caption", "caption_en", "figure"}
 _TOP_KEYS = {"book", "headers", "terms", "pages", "fix"}
-_BOOK_KEYS = {"running_heads": bool, "final": bool}
+_BOOK_KEYS = {"running_heads": bool, "final": bool, "paragraphs": str, "page_numbers": str}
+_PARAGRAPHS = ("indented", "spaced")
+_PAGE_NUMBERS = ("outer", "inner", "centre", "bottom-outer", "bottom-inner", "bottom-centre")
 
 
 class OverridesError(ValueError):
@@ -115,6 +129,10 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
             raise OverridesError(f"{p}: [book] unknown key {k!r}")
         if not isinstance(v, _BOOK_KEYS[k]):
             raise OverridesError(f"{p}: [book] {k} must be {_BOOK_KEYS[k].__name__}")
+        if k == "paragraphs" and v not in _PARAGRAPHS:
+            raise OverridesError(f"{p}: [book] paragraphs must be one of {_PARAGRAPHS}")
+        if k == "page_numbers" and v not in _PAGE_NUMBERS:
+            raise OverridesError(f"{p}: [book] page_numbers must be one of {_PAGE_NUMBERS}")
     for sec in ("headers", "terms"):
         for k, v in (raw.get(sec) or {}).items():
             if not isinstance(v, str):
