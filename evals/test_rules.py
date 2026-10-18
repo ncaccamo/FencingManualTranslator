@@ -3611,6 +3611,15 @@ def test_translated_tables_placed_at_markers():
     assert R.place_tables("No table.", None) == ("No table.", True)
 
 
+def test_table_number_cells_or_and():
+    # Bruno 1891: "3. o 1. e 2." -- a cell of numbers is never sent to the
+    # model (no word), so its Italian or / and stayed (2026-10-18)
+    from _rules import TX
+    f = TX["number_cells_or_and"]
+    assert f("<tr><td>3. o 1. e 2.</td><td>3.</td><td>1. o 3. o caduta</td></tr>") == \
+        "<tr><td>3. or 1. and 2.</td><td>3.</td><td>1. o 3. o caduta</td></tr>"
+
+
 def test_lost_footnote_is_noticed():
     # Marchionni 1847 pdf 34 (2026-10-14): the retry for three Latin notes
     # dropped all three; Florio pdf 44 lost (4) and (5)

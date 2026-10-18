@@ -2145,6 +2145,15 @@ def _cell_text(cell_html: str) -> str:
     return _html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", cell_html))).strip()
 
 
+def number_cells_or_and(table_html: str) -> str:
+    """A table cell of numbers joined by Italian "o" / "e" (Bruno: "3. o 1.
+    e 2.") has no word for the model, so it is never sent; its or / and are
+    put in English here (2026-10-18)."""
+    return re.sub(r"(<t[hd]\b[^>]*>)([\d.,\s]*\d[\d.,\s]*(?:\s[oe]\s[\d.,\s]+)+)(</t[hd]>)",
+                  lambda m: m.group(1) + re.sub(r"\s([oe])\s", lambda w: " or " if w.group(1) == "o"
+                                                else " and ", m.group(2)) + m.group(3), table_html)
+
+
 def translate_tables(folder: str, force: bool = False) -> int:
     """Translate the tables of the book (reviewer, 2026-10-18: the side-by-side
     showed only "[table — see facing page]"; Masiello 1887 has 135 table
@@ -2179,6 +2188,8 @@ def translate_tables(folder: str, force: bool = False) -> int:
         en = []
         for tb in tables:
             cells = re.findall(r"<t([hd])\b[^>]*>(.*?)</t[hd]>", tb, re.S | re.I)
+            if BOOK_LANG == "Italian":
+                tb = number_cells_or_and(tb)
             body = [_cell_text(c) for kind, c in cells if kind.lower() == "d"]
             rows = len(re.findall(r"<tr\b", tb, re.I))
             if not any(re.search(r"\w", b) for b in body) and rows <= 3:

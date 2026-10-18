@@ -936,9 +936,13 @@ def draw_table(page, rect, html_text, size=7.5, dry=False, min_size=5.5):
         for line in rows:
             for c in line:
                 if c["colspan"] == 1 and c["text"]:
+                    # a heading cell is set in bold: measure it in bold (Bruno's
+                    # "Paragraph" ran into "Order number")
+                    wd = (lambda t: _font(BOLD).text_length(t, fontsize=size)) if c["head"] \
+                        else (lambda t: _w(t, 0, size))
                     words = re.sub(r"</?i>", "", c["text"]).split()
-                    longest = max((_w(w, 0, size) for w in words), default=0)
-                    full = _w(re.sub(r"</?i>", "", c["text"]), 0, size)
+                    longest = max((wd(w) for w in words), default=0)
+                    full = wd(re.sub(r"</?i>", "", c["text"]))
                     need[c["col"]] = max(need[c["col"]], longest + 2 * pad, min(full, 140) * 0.6)
         scale = W / sum(need)
         widths = [w * scale for w in need]
