@@ -10,6 +10,7 @@ the system doing the run. Runs on the host (it drives the container).
                                                        report flags for that (or kind:split)
     scripts/queue.py add pdfs <stem>                   rebuild PDFs + review report
     scripts/queue.py add captions <stem>               the caption reading + report
+    scripts/queue.py add tables <stem>                 translate the book's tables, then PDFs + report
     scripts/queue.py add reprocess <stem>              re-derive step 1's text + report
         ... add --front                                put it at the head of the queue
     scripts/queue.py list                              what's queued, running, done
@@ -63,7 +64,7 @@ PAUSE = os.path.join(STATUS, "queue.pause")
 HOLD = os.path.join(STATUS, "queue.hold")
 CONTAINER = "fmt-translator"
 _stopping = False          # set by SIGTERM (queue.py stop): start nothing new
-ACTIONS = {"book": 0, "pages": 1, "flagged": 1, "pdfs": 0, "captions": 0, "reprocess": 0}
+ACTIONS = {"book": 0, "pages": 1, "flagged": 1, "pdfs": 0, "captions": 0, "reprocess": 0, "tables": 0}
 
 
 # ---- the queue file --------------------------------------------------------
@@ -220,6 +221,10 @@ class Runner:
             if self.run("2_translate.py", "--flagged", stem, " ".join(rest), gpu=True):
                 return False
             self.heal_translation(stem)
+            return self.pdfs(stem)
+        if action == "tables":
+            if self.run("2_translate.py", "--tables", stem, gpu=True):
+                return False
             return self.pdfs(stem)
         if action == "pdfs":
             return self.pdfs(stem)
