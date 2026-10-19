@@ -54,9 +54,12 @@ def language(stem):
 def ask(model, prompt):
     r = requests.post(URL, headers={"Content-Type": "application/json", **bc.auth_headers()},
                       json={"model": model, "messages": [{"role": "user", "content": prompt}],
-                            "temperature": 0.0, "max_tokens": 8000}, timeout=3600)
+                            "temperature": 0.0, "max_tokens": int(os.environ.get("JUDGE_MAX_TOKENS", "14000"))},
+                      timeout=7200)
     r.raise_for_status()
-    msg = r.json()["choices"][0]["message"]
+    j = r.json()
+    msg = j["choices"][0]["message"]
+    ask.usage = j.get("usage") or {}
     return msg.get("content") or "", msg.get("reasoning_content") or ""
 
 
@@ -94,10 +97,11 @@ def main():
                 continue
             items = parse(reply)
             done[k] = {"items": items, "reply": reply, "thought_chars": len(thought),
+                       "tokens": (getattr(ask, "usage", {}) or {}).get("completion_tokens"),
                        "seconds": round(time.time() - t)}
             json.dump(done, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
             print(f"{model} {k}: {'unparsed' if items is None else len(items)} item(s), "
-                  f"{done[k]['seconds']}s", flush=True)
+                  f"{done[k]['tokens']} tokens, {done[k]['seconds']}s", flush=True)
 
 
 if __name__ == "__main__":
