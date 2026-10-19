@@ -586,6 +586,83 @@ def check_book(folder: str) -> list:
                     f"page(s) after p. {lv} -- skips ahead")
         last = (i, int(v))
 
+    # --- 2026-10-18: checks for what the reviewer found by eye -------------
+    # (a) the same short source line (a heading, a lesson label) translated
+    # two ways in the book: Barbasetti "I. TEMPO" -> "I. TIME" / "I. TEMPO"
+    # (38 of 86), "Azioni composte" -> compound / composite actions
+    plain = lambda x: re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", x)).strip()
+    seen_as = defaultdict(lambda: defaultdict(list))
+    for i, (e, t) in enumerate(zip(ex, tr)):
+        sl = [plain(l) for l in clean_vlm_extraction(e).split("\n") if l.strip()] if e.strip() else []
+        el = [plain(l) for l in _body(t).split("\n") if l.strip() and not l.startswith("[[")]
+        if len(sl) != len(el):
+            continue
+        for a, b in zip(sl, el):
+            if 1 <= len(a.split()) <= 6 and len(re.findall(r"[^\W\d_]", a)) >= 3:
+                seen_as[a.upper().rstrip(".:")][b.upper().rstrip(".:")].append(i + 1)
+    for a, ens in seen_as.items():
+        # a variant sharing no word with the usual one is a page whose lines
+        # are shifted against the source ("I. TEMPO" -> "STUDENT"), not a
+        # second translation
+        ens = {re.sub(r"†\d+", "", k).strip(): v for k, v in ens.items()}
+        top = max(ens, key=lambda k: len(ens[k])) if ens else ""
+        tw = {w for w in re.findall(r"[^\W\d_]{3,}", top)}
+        ens = {k: v for k, v in ens.items() if k == top or tw & set(re.findall(r"[^\W\d_]{3,}", k))}
+        if len(ens) > 1 and sum(len(v) for v in ens.values()) >= 3:
+            ways = "; ".join(f"{k!r} ({len(v)})" for k, v in sorted(ens.items(), key=lambda kv: -len(kv[1])))
+            first = min(min(v) for v in ens.values())
+            add(first, CHECK, "consistency", f"{a!r} is translated {len(ens)} ways: {ways} -- "
+                "pick one (a code rule or [[fix]])")
+
+    # (b) a source word left in italics that isn't a kept term: italic in the
+    # English, the same word in the source, rare in the book, not in the
+    # prompt's kept terms -- Jacob-André *baleine*, Kirchhoffer "has *remisé*"
+    kept = set()
+    for pf in glob.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), "translation_prompt*.txt")):
+        ptxt = open(pf, encoding="utf-8").read()
+        keep_rule = re.search(r"2\. KEEP.*?(?=\n3\. )", ptxt, re.S)   # the kept terms, listed plain
+        for chunk in [m.group(1) for m in re.finditer(r"<i>([^<]+)</i>", ptxt)] + \
+                ([keep_rule.group(0)] if keep_rule else []):
+            kept |= {w.lower() for w in re.findall(r"[^\W\d_][\w'’-]*", chunk)}
+
+    def is_kept(w):                       # plurals and inflections: croisés, épées, appuntate
+        stems = {w, w.rstrip("s"), w[:-1] + "a", w[:-1] + "o", w[:-1] + "e", w[:-2] + "a", w[:-2] + "o"}
+        return bool(stems & kept)
+    import _pagekind
+    glossary = {k for k, v in _pagekind.book_page_kinds(
+        [clean_vlm_extraction(e) if e.strip() else "" for e in ex]).items() if v == "glossary"}
+    ital = defaultdict(list)
+    for i, (e, t) in enumerate(zip(ex, tr)):
+        if i in glossary:                 # headwords kept in italics there (rule 7b)
+            continue
+        src_words = {w.lower() for w in re.findall(r"[^\W\d_][\w'’-]*", e)}
+        for m in re.finditer(r"<i>([^<\s]+)</i>", _body(t)):
+            w = m.group(1).strip(".,;:!?").lower()
+            if len(w) >= 4 and w in src_words and not is_kept(w):
+                ital[w].append(i + 1)
+    odd = {w: v for w, v in ital.items() if len(v) <= 2}
+    if len(odd) > 12:                     # one entry for a long list (Marchionni: archaic arms)
+        add(0, "BOOK", "kept term", f"{len(odd)} words left in the original in italics that are "
+            "not kept terms -- translate them, or add them to the kept terms: " +
+            ", ".join(f"{w} (scan {v[0]})" for w, v in sorted(odd.items(), key=lambda kv: kv[1][0])))
+    else:
+        for w, v in sorted(odd.items(), key=lambda kv: kv[1][0]):
+            add(v[0], CHECK, "kept term", f"<i>{w}</i> left in the original, but it is not one of the "
+                f"kept terms{' (also scan ' + str(v[1]) + ')' if len(v) > 1 else ''} -- translate it, "
+                "or add it to the kept terms")
+
+    # (c) table cells still in the source language (tables.json)
+    tables = json.load(open(f"{I}/tables.json", encoding="utf-8")) if os.path.exists(f"{I}/tables.json") else {}
+    for k, v in tables.items():
+        for en in v.get("en") or []:
+            if not en:
+                continue
+            left = [plain(c) for c in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", en, re.S)
+                    if still_french(plain(c), min_fr=2)]
+            if left:
+                add(int(k) + 1, CHECK, "table", f"{len(left)} table cell(s) left untranslated, "
+                    f"e.g. {left[0][:50]!r}")
+
     # running heads left in French: one entry per distinct head, on its
     # first page, listing where else it appears
     where = defaultdict(list)

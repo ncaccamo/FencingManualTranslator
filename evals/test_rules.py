@@ -3175,7 +3175,8 @@ def test_render_paragraph_indent_and_star_divider():
     sys.path.insert(0, str(_PIPELINE))
     try:
         R = importlib.import_module("_render")
-    except ImportError:                     # needs PyMuPDF: runs in the image
+        R._font("times-roman")              # a stand-in fitz on the host fails here
+    except Exception:                       # needs PyMuPDF: runs in the image
         return
     ind = lambda text: [round(l.indent) for l in R.layout(text, 400, 9) if not l.gap]
     assert ind("He will return to guard.\nNo attacks yet.") == [0, round(9 * R.PARA_INDENT_EM)]

@@ -181,6 +181,16 @@ side-by-side PDF. What it checks:
   phrase rendered several ways across the book (e.g. *coups composés* as
   "blows" on some pages and "thrusts" on others). Choose one, put it under
   `[terms]` (III.5b), and retranslate the other pages with `--pages`.
+- **Consistency:** a short line (a heading, a lesson label) whose identical
+  source text is translated two or more ways in the book: "I. TEMPO" as
+  "I. TIME" and "I. TEMPO", a lesson numbered "forty-third" in one place and
+  "thirty-third" in another, a garbled repeat. Pick one: a `[[fix]]`, or a
+  code rule when it recurs.
+- **Kept term:** a word left in the original, in italics, that is not one of
+  the prompt's kept terms (Jacob-André *baleine*). Translate it, or add it to
+  the kept terms. Glossary pages are skipped (their headwords are kept on
+  purpose); a long list (old weapon names) comes as one book-wide entry.
+- **Table:** table cells left in the original language.
 - **Notes:** things worth a glance but often fine. For example, a paragraph
   moved to the notes as a margin note, which is a heuristic and is sometimes wrong.
 
