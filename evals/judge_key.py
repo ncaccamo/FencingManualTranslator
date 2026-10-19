@@ -28,9 +28,16 @@ sys.path.insert(0, "/app")
 import _pageio  # noqa: E402
 
 ROOT = "/data"
-BOOKS = ["kirchhoffer-etal_1911_escrime", "josephrenaud_1928_traitemoderne", "jacob-andre_1887_jeuepee",
-         "prevost-jollivet_1891_escrimeduel", "barbasetti_1902_schermaspada", "masiello_1887_schermaitaliana"]
 REVIEWS = f"{ROOT}/evals/reports/meaning-review"
+
+
+def books():
+    """Every book with agent meaning reviews of its final text and the
+    English they read (translation.before-round4.txt) -- found, not listed:
+    the corpus is the operator's own."""
+    stems = {os.path.basename(f).split(".final.")[0] for f in glob.glob(f"{REVIEWS}/*.final.*.md")}
+    return sorted(s for s in stems if os.path.exists(
+        f"{ROOT}/processed/{s}_translated/intermediate/translation.before-round4.txt"))
 
 
 def norm(s):
@@ -59,7 +66,7 @@ def main():
     n_pages = int(sys.argv[sys.argv.index("--pages") + 1]) if "--pages" in sys.argv else 50
     rnd = random.Random(20261019)
     with_findings, clean = [], []
-    for stem in BOOKS:
+    for stem in books():
         I = f"{ROOT}/processed/{stem}_translated/intermediate"
         ex = _pageio.split_pages(open(f"{I}/extracted.txt", encoding="utf-8").read())
         tr = _pageio.split_pages(open(f"{I}/translation.before-round4.txt", encoding="utf-8").read())
