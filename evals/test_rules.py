@@ -3636,17 +3636,16 @@ def test_false_friends_flagged():
 
 
 def test_lost_negations_counted():
-    # 2026-10-19: Marchionni scan 107 (a passage left out, 4 negations short);
+    # 2026-10-19: a lost "not" (Kirchhoffer pdf 87); notes count on both sides
+    # (Marchionni scan 107 opens with a footnote's end, moved to the notes);
     # «ne ... guère» -> "seldom" and Italian "non ... che" ("only") are no loss
-    import importlib, os
-    if not os.path.exists("/app/translation_prompt.txt"):   # the report module needs the image
-        return
-    sys.path.insert(0, str(_PIPELINE))
-    f = importlib.import_module("quality_report").lost_negations
+    from _rules import TX
+    f = TX["lost_negations"]                 # step 2's retry gate; the report uses the same
     pad = " word" * 40
     assert f("Nous ne cesserons de le répéter. Il ne faut jamais rompre.", "We shall cease to repeat it. One must break." + pad, False) == 2
     assert f("Ils ne sont guère provoqués et ne provoquent guère.", "They are seldom challenged and seldom challenge." + pad, False) == 0
     assert f("non rappresenta che una leva; non può consistere che in questo", "it is only a lever" + pad, True) == 0
+    assert f("Le tireur ne peut se perfectionner que par le fait.", "The fencer can only improve by practice." + pad, False) == 0
 
 
 def test_lost_footnote_is_noticed():

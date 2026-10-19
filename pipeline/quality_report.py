@@ -428,29 +428,10 @@ def false_friends(src: str, en: str) -> list:
     return out
 
 
-# Negations: a page whose source has clearly more negations than its English
-# -- a "not" lost turns the meaning round (Kirchhoffer pdf 87 «nous ne
-# cesserons» -> "we shall cease"), or a passage was dropped (Marchionni scan
-# 107: the English skipped the first ~200 words). French counts only a real
-# negation (ne ... pas / jamais / plus / rien ...; not the expletive ne, not
-# ne ... que "only"); Italian "non". Bodies only: notes are compared apart.
-_NEG_FR = re.compile(r"\b(?:ne|n['’])\s*(?:\S+\s+){0,4}?(?:pas|point|jamais|plus|rien|guère|personne|"
-                     r"aucun|aucune|nullement)\b"
-                     # literary: no "pas" after cesser, oser, pouvoir, savoir ("nous ne cesserons")
-                     r"|\bne\s+(?:l[ae]s?\s+|[mts]e\s+)?(?:cess|os[ae]|osi|pu[ie]?s|peu[xt]|pourr|sau|sai[ts]?\b|sav)\w*(?!\s+(?:\S+\s+){0,3}?(?:pas|point|jamais|plus|rien|guère)\b)",
-                     re.I)
-# Italian: not "non ... che" ("only", like ne ... que) nor "se non" ("except")
-_NEG_IT = re.compile(r"(?<![Ss]e )\bnon\b(?!\s+(?:\S+\s+){0,4}?che\b)", re.I)
-_NEG_EN = re.compile(r"\b(?:not|never|no|nor|none|nothing|nobody|neither|cannot|without|nowhere|"
-                     r"hardly|scarcely|seldom|rarely)\b|n't\b", re.I)
-
-
-def lost_negations(src: str, en: str, italian: bool) -> int:
-    """How many more negations the source body has than the English body."""
-    src_body = re.split(r"(?m)^\s*\((?:\d{1,2}|\*{1,3})\)\s", src or "", maxsplit=1)[0]
-    if len((en or "").split()) < 40:
-        return 0
-    return len((_NEG_IT if italian else _NEG_FR).findall(src_body)) - len(_NEG_EN.findall(en or ""))
+# Negations: the rule lives in 2_translate.py (a try that loses one is
+# retried there); the report lists the pages where every try lost it.
+lost_negations = _ns["lost_negations"]
+_NEG_FR, _NEG_IT, _NEG_EN = _ns["_NEG_FR"], _ns["_NEG_IT"], _ns["_NEG_EN"]
 
 
 def check_book(folder: str) -> list:
@@ -485,7 +466,7 @@ def check_book(folder: str) -> list:
             add(s, CHECK, "ocr", "the OCR model failed on this page")
         for detail in false_friends(src, body):
             add(s, CHECK, "false friend", detail)
-        lost = lost_negations(src, body, _rules is TERM_RULES_IT)
+        lost = lost_negations(src, t, _rules is TERM_RULES_IT)
         if lost >= 2:
             add(s, CHECK, "negation", f"the source has {lost} more negations than the English "
                 "-- a \"not\" lost, or a passage left out")

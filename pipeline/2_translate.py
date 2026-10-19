@@ -1770,6 +1770,36 @@ def untranslated_paragraph(text: str):
 
 
 # the author's own footnotes: "(1) …", "(*) …" -- a marker, then the note
+
+# Negations: a page whose source has clearly more negations than its English
+# -- a "not" lost turns the meaning round (Kirchhoffer pdf 87 «nous ne
+# cesserons» -> "we shall cease"), or a passage was left out. French counts
+# only a real negation (ne ... pas / jamais / plus / rien ...; not the
+# expletive ne, not ne ... que "only"); Italian "non". Whole pages, notes
+# included on both sides.
+_NEG_FR = re.compile(r"\b(?:ne|n['’])\s*(?:\S+\s+){0,4}?(?:pas|point|jamais|plus|rien|guère|personne|"
+                     r"aucun|aucune|nullement)\b"
+                     # literary: no "pas" after cesser, oser, pouvoir, savoir ("nous ne cesserons")
+                     r"|\bne\s+(?:l[ae]s?\s+|[mts]e\s+)?(?:cess|os[ae]|osi|pu[ie]?s|peu[xt]|pourr|sau|sai[ts]?\b|sav)\w*(?!\s+(?:\S+\s+){0,3}?(?:pas|point|jamais|plus|rien|guère)\b)"
+                     r"(?![^.;:!?]{0,60}\bqu)",          # ne peut ... que = "can only" (Gomard scan 27)
+                     re.I)
+# Italian: not "non ... che" ("only", like ne ... que) nor "se non" ("except")
+_NEG_IT = re.compile(r"(?<![Ss]e )\bnon\b(?!\s+(?:\S+\s+){0,4}?che\b)", re.I)
+_NEG_EN = re.compile(r"\b(?:not|never|no|nor|none|nothing|nobody|neither|cannot|without|nowhere|"
+                     r"hardly|scarcely|seldom|rarely)\b|n't\b", re.I)
+
+
+def lost_negations(src: str, en: str, italian: bool) -> int:
+    """How many more negations the source page has than its English, notes
+    included on both sides: a page that opens with the end of the previous
+    page's footnote has that text in the English notes block (Marchionni
+    scan 107, Danet scan 69), so body against body would count it as lost."""
+    src = re.sub(r"<table\b.*?(?:</table\s*>|\Z)", " ", src or "", flags=re.S | re.I)
+    if len((en or "").split()) < 40:
+        return 0
+    return len((_NEG_IT if italian else _NEG_FR).findall(src)) - len(_NEG_EN.findall(en or ""))
+
+
 _NOTE_MARK = r"\((?:\d{1,2}|\*{1,3})\)"
 
 
@@ -2851,6 +2881,14 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         # the same), and the review report flags the page.
         if attempt < 2 and note_bodies(candidate) < note_bodies(clean_text):
             print(" → footnote lost")
+            time.sleep(2)
+            continue
+
+        # a "not" lost turns the meaning round (Kirchhoffer pdf 87 «nous ne
+        # cesserons» -> "we shall cease"); two or more negations short ->
+        # retried, the last try kept and the review report lists the page
+        if attempt < 2 and lost_negations(clean_text, candidate, BOOK_LANG == "Italian") >= 2:
+            print(" → negation lost")
             time.sleep(2)
             continue
 
