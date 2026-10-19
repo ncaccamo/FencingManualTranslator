@@ -3621,6 +3621,34 @@ def test_table_number_cells_or_and():
         "<tr><td>3. or 1. and 2.</td><td>3.</td><td>1. o 3. o caduta</td></tr>"
 
 
+def test_false_friends_flagged():
+    # 2026-10-19: Kirchhoffer pdf 63 «ignoraient» -> "ignored" (did not know);
+    # Gomard «il ignore la riposte»; Danet «exemples sensibles» -> "sensible"
+    import importlib, os
+    if not os.path.exists("/app/translation_prompt.txt"):   # the report module needs the image
+        return
+    sys.path.insert(0, str(_PIPELINE))
+    f = importlib.import_module("quality_report").false_friends
+    assert f("les champions ignoraient la patience", "the champions ignored the patience")
+    assert f("par des exemples sensibles", "through sensible examples")
+    assert not f("les champions ignoraient la patience", "the champions knew nothing of the patience")
+    assert not f("ayant demandé réparation", "having demanded reparation")
+
+
+def test_lost_negations_counted():
+    # 2026-10-19: Marchionni scan 107 (a passage left out, 4 negations short);
+    # «ne ... guère» -> "seldom" and Italian "non ... che" ("only") are no loss
+    import importlib, os
+    if not os.path.exists("/app/translation_prompt.txt"):   # the report module needs the image
+        return
+    sys.path.insert(0, str(_PIPELINE))
+    f = importlib.import_module("quality_report").lost_negations
+    pad = " word" * 40
+    assert f("Nous ne cesserons de le répéter. Il ne faut jamais rompre.", "We shall cease to repeat it. One must break." + pad, False) == 2
+    assert f("Ils ne sont guère provoqués et ne provoquent guère.", "They are seldom challenged and seldom challenge." + pad, False) == 0
+    assert f("non rappresenta che una leva; non può consistere che in questo", "it is only a lever" + pad, True) == 0
+
+
 def test_lost_footnote_is_noticed():
     # Marchionni 1847 pdf 34 (2026-10-14): the retry for three Latin notes
     # dropped all three; Florio pdf 44 lost (4) and (5)

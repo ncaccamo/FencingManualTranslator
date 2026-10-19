@@ -395,6 +395,64 @@ def folio_shaped_heads(pages: list, raw: list) -> tuple:
     return (none, small) if small >= 20 and none >= 0.8 * small else ()
 
 
+# False friends: a source word rendered by its English look-alike, which
+# means something else (Kirchhoffer pdf 63 «ignoraient» -> "ignored" for
+# "did not know"; pdf 60 «défiant» -> "defying" for "wary"). Flagged when the
+# page's source has the word and its English the look-alike. (source, English
+# look-alike, usual sense) -- French and Italian. Not demander -> demand
+# ("demander réparation" is "demand satisfaction") nor attendre -> attend:
+# on a dry run (2026-10-19) those were right or unrelated.
+FALSE_FRIENDS = [
+    (r"\bignor(?:er|e|es|ait|aient|ant|é|ée|ent|ons|ez|ava|avano|are|ano|ando)\b",
+     r"\bignor(?:e|ed|es|ing)\b", "not know, be unaware of"),
+    (r"\b(?:dé|mé)fiant", r"\bdef(?:ying|iant)\b", "wary, distrustful"),
+    (r"\b(?:actuellement|attualmente)\b", r"\bactually\b", "at present, now"),
+    (r"\b(?:éventuellement|eventualmente)\b", r"\beventually\b", "possibly, if need be"),
+    (r"\bassist(?:er|e|ait|aient|ent|ant|é)\s+à|\bassist(?:ere|eva|ono|ito)\s+a", r"\bassist(?:s|ed|ing)?\b",
+     "attend, be present at"),
+    (r"\bsensib(?:le|les|ile|ili)\b", r"\bsensible\b", "perceptible, noticeable, sensitive"),
+    (r"\bprét(?:end|endre|endent|endait)|\bpretend(?:e|ere|ono)\b", r"\bpretend(?:s|ed|ing)?\b", "claim"),
+    (r"\bachev(?:er|ez|é|ée|ait|ant)\b", r"\bachiev(?:e|es|ed|ing)\b", "finish, complete"),
+    (r"\bparenti\b", r"\bparents\b", "relatives"),
+]
+
+
+def false_friends(src: str, en: str) -> list:
+    out = []
+    for fr, look, sense in FALSE_FRIENDS:
+        f = re.search(fr, src or "", re.I)
+        e = re.search(look, re.sub(r"<[^>]+>", "", en or ""), re.I)
+        if f and e:
+            out.append(f"«{f.group(0)}» rendered as its look-alike {e.group(0)!r} -- usually means "
+                       f"\"{sense}\"")
+    return out
+
+
+# Negations: a page whose source has clearly more negations than its English
+# -- a "not" lost turns the meaning round (Kirchhoffer pdf 87 «nous ne
+# cesserons» -> "we shall cease"), or a passage was dropped (Marchionni scan
+# 107: the English skipped the first ~200 words). French counts only a real
+# negation (ne ... pas / jamais / plus / rien ...; not the expletive ne, not
+# ne ... que "only"); Italian "non". Bodies only: notes are compared apart.
+_NEG_FR = re.compile(r"\b(?:ne|n['’])\s*(?:\S+\s+){0,4}?(?:pas|point|jamais|plus|rien|guère|personne|"
+                     r"aucun|aucune|nullement)\b"
+                     # literary: no "pas" after cesser, oser, pouvoir, savoir ("nous ne cesserons")
+                     r"|\bne\s+(?:l[ae]s?\s+|[mts]e\s+)?(?:cess|os[ae]|osi|pu[ie]?s|peu[xt]|pourr|sau|sai[ts]?\b|sav)\w*(?!\s+(?:\S+\s+){0,3}?(?:pas|point|jamais|plus|rien|guère)\b)",
+                     re.I)
+# Italian: not "non ... che" ("only", like ne ... que) nor "se non" ("except")
+_NEG_IT = re.compile(r"(?<![Ss]e )\bnon\b(?!\s+(?:\S+\s+){0,4}?che\b)", re.I)
+_NEG_EN = re.compile(r"\b(?:not|never|no|nor|none|nothing|nobody|neither|cannot|without|nowhere|"
+                     r"hardly|scarcely|seldom|rarely)\b|n't\b", re.I)
+
+
+def lost_negations(src: str, en: str, italian: bool) -> int:
+    """How many more negations the source body has than the English body."""
+    src_body = re.split(r"(?m)^\s*\((?:\d{1,2}|\*{1,3})\)\s", src or "", maxsplit=1)[0]
+    if len((en or "").split()) < 40:
+        return 0
+    return len((_NEG_IT if italian else _NEG_FR).findall(src_body)) - len(_NEG_EN.findall(en or ""))
+
+
 def check_book(folder: str) -> list:
     global _rules
     _rules = TERM_RULES_IT if _ns["book_language"](
@@ -425,6 +483,12 @@ def check_book(folder: str) -> list:
         body = _body(t)
         if "VLM Error" in e:
             add(s, CHECK, "ocr", "the OCR model failed on this page")
+        for detail in false_friends(src, body):
+            add(s, CHECK, "false friend", detail)
+        lost = lost_negations(src, body, _rules is TERM_RULES_IT)
+        if lost >= 2:
+            add(s, CHECK, "negation", f"the source has {lost} more negations than the English "
+                "-- a \"not\" lost, or a passage left out")
         for level, kind, detail in translation_issues(src, t):
             add(s, level, kind, detail)
         if raw and i < len(raw):

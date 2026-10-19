@@ -191,6 +191,12 @@ side-by-side PDF. What it checks:
   the kept terms. Glossary pages are skipped (their headwords are kept on
   purpose); a long list (old weapon names) comes as one book-wide entry.
 - **Table:** table cells left in the original language.
+- **False friend:** a source word rendered by its English look-alike that
+  means something else («ignorer» → "ignore" for "not know», «sensible» →
+  "sensible" for "perceptible", «actuellement» → "actually").
+- **Negation:** a page whose source has two or more negations more than its
+  English: a "not" lost (the sentence now says the opposite), or a passage
+  left out.
 - **Notes:** things worth a glance but often fine. For example, a paragraph
   moved to the notes as a margin note, which is a heuristic and is sometimes wrong.
 
