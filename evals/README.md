@@ -17,23 +17,24 @@ Nothing here calls a model. It runs on the host with stock Python 3
 | `metrics.py` | crude per-book health numbers (French-residue pages, all-caps pages, untrusted folios, figure rows, italic spans, …). |
 | `freeze.py` | snapshot a book's accepted artifacts into `baselines/<book>/`. |
 | `check.py` | diff current pipeline output against the baselines + metrics table → `reports/<timestamp>.md`. Exit ≠ 0 if anything changed. |
-| `baselines/<book>/` | the frozen artifacts (`translation.txt`, `extracted.txt`, `figures.json`, `headers.json`, `page_numbers.txt`) + `MANIFEST.json` (git commit, timestamp). **Committed.** ~1–2 MB/book, text only — never the PDFs. |
-| `reports/` | check.py output. Git-ignored. |
+| `baselines/<book>/` | the frozen artifacts (`translation.txt`, `extracted.txt`, `figures.json`, `headers.json`, `page_numbers.txt`) + `MANIFEST.json` (git commit, timestamp). **Git-ignored**: the books are the operator's own, so their baselines stay on this system (~1–2 MB/book, text only — never the PDFs). |
+| `reports/` | check.py output, and the judge's (below). Git-ignored. |
+| `folio_choice_test.py` | the page-number re-read test: asks the OCR model about each labelled page's margins and scores confirmed / wrong / invented numbers (STATUS, "Page numbers"). |
+| `judge_key.py`, `meaning_judge.py`, `judge_score.py` | choosing a model for the local meaning review: an answer key built from the agent meaning reviews (`reports/meaning-review/`), a runner that sends each page pair to llama-swap models, and a scorer (`reports/judge/score.md`). See `docs/evaluation-and-tuning.md` §4a. |
 
 ## Workflow
 
 ```bash
 # 1. once a book's PDFs pass your review:
-python3 evals/freeze.py Joseph-Renaud
-git add evals/baselines/Joseph-Renaud_Lescrime && git commit -m "freeze JR baseline"
+python3 evals/freeze.py Joseph-Renaud      # stays local: baselines are git-ignored
 
 # 2. make a prompt / rule change, then re-run the pipeline for the frozen
 #    books (reprocess is enough for parser/reconcile changes; add step 2
 #    for term/translation changes):
-docker exec fmt-translator python3 /app/reprocess_extracted.py <folders>
-docker exec fmt-translator python3 /app/2_translate.py
-docker exec fmt-translator python3 /app/3_english_only_pdf.py
-docker exec fmt-translator python3 /app/4_side_by_side_pdf.py
+docker exec fmt-translator python3 /app/reprocess_extracted.py <stem>
+docker exec fmt-translator python3 /app/2_translate.py <stem>
+docker exec fmt-translator python3 /app/3_english_only_pdf.py <stem>
+docker exec fmt-translator python3 /app/4_side_by_side_pdf.py <stem>
 
 # 3. see what moved:
 python3 evals/test_rules.py          # deterministic layer — must stay green
@@ -42,7 +43,6 @@ python3 evals/check.py               # per-book page/figure/folio/metric diff
 # 4. a change is not automatically a regression. Read the flagged pages.
 #    If the change is an improvement you want, re-freeze:
 python3 evals/freeze.py Joseph-Renaud --force
-git add evals/baselines/Joseph-Renaud_Lescrime && git commit -m "re-freeze JR: <why>"
 ```
 
 `check.py Joseph-Renaud` limits to one book; `--quiet` drops the per-page

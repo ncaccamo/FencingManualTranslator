@@ -133,10 +133,13 @@ def _llama_server_env() -> dict:
     """A `docker exec` of this script inherits only the image-level
     LD_LIBRARY_PATH; llama-server links its backend impl .so
     (libllama-server-impl.so) at runtime from /usr/local/lib/llama-<suffix>/,
-    a dir the entrypoint adds for the servers IT launches but that we don't
-    get here -- so a server we spawn dies immediately with
-    "cannot open shared object file". Restore it for the configured backend
-    (validated; rocm714 errors clearly if it isn't built)."""
+    a dir set only in the entrypoint's own environment, which a `docker
+    exec` doesn't get -- so a server we spawn dies immediately with
+    "cannot open shared object file". Set it for the configured backend
+    (validated; rocm714 errors clearly if it isn't built). This path, not
+    the /usr/local/bin/llama-server link (fixed at build time, vulkan), is
+    what picks the backend: every llama-server-* loads the impl it finds
+    here (checked 2026-10-19: with the rocm dir, libggml-hip loads)."""
     suffix = bc.local_backend_suffix()
     env = dict(os.environ)
     env["LD_LIBRARY_PATH"] = f"/usr/local/lib/llama-{suffix}:" + env.get("LD_LIBRARY_PATH", "")
@@ -2224,7 +2227,7 @@ def start_vlm_server(restart=False):
                     print("="*60)
                 print()
                 return proc
-        except:
+        except Exception:
             pass
 
     print("\n\n✗ Server timeout")
@@ -2309,7 +2312,7 @@ def extract_page_with_vlm(image_b64: str, size_kb: float, page_num: int, total_p
             try:
                 error_json = response.json()
                 error_msg = error_json.get('error', {}).get('message', 'Unknown')
-            except:
+            except Exception:
                 error_msg = "Unknown"
 
             print(f"  Page {page_num+1}/{total_pages} ✗ HTTP 500: {error_msg}")
@@ -2420,7 +2423,7 @@ try:
                 vlm_proc.terminate()
                 try:
                     vlm_proc.wait(timeout=5)
-                except:
+                except Exception:
                     vlm_proc.kill()
                 time.sleep(3)
 
@@ -2580,7 +2583,7 @@ finally:
         try:
             vlm_proc.wait(timeout=10)
             print("✓ Vision server stopped (VRAM freed)\n")
-        except:
+        except Exception:
             vlm_proc.kill()
             print("✓ Vision server killed (VRAM freed)\n")
 

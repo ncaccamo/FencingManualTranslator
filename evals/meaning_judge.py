@@ -55,12 +55,26 @@ def ask(model, prompt):
     r = requests.post(URL, headers={"Content-Type": "application/json", **bc.auth_headers()},
                       json={"model": model, "messages": [{"role": "user", "content": prompt}],
                             "temperature": 0.0, "max_tokens": int(os.environ.get("JUDGE_MAX_TOKENS", "14000"))},
-                      timeout=7200)
+                      timeout=(30, 7200))     # 30 s to connect, 2 h to answer
     r.raise_for_status()
     j = r.json()
     msg = j["choices"][0]["message"]
     ask.usage = j.get("usage") or {}
     return msg.get("content") or "", msg.get("reasoning_content") or ""
+
+
+def wait_for_server(hours=24):
+    """Until the llama-swap host answers its /health again (up to `hours`)."""
+    url = bc.translate_base_url() + "/health"
+    for _ in range(hours * 60):
+        try:
+            if requests.get(url, headers=bc.auth_headers(), timeout=10).ok:
+                print("  GPU system back -- continuing", flush=True)
+                return
+        except requests.exceptions.RequestException:
+            pass
+        time.sleep(60)
+    raise SystemExit("GPU system did not come back")
 
 
 def parse(reply):
@@ -92,6 +106,16 @@ def main():
             t = time.time()
             try:
                 reply, thought = ask(model, prompt)
+            except requests.exceptions.ConnectionError as e:
+                # the GPU system is off or asleep: wait for it (as step 2 does),
+                # then judge the same page -- never fail through the key
+                print(f"{model} {k}: GPU system not answering ({type(e).__name__}) -- waiting", flush=True)
+                wait_for_server()
+                try:
+                    reply, thought = ask(model, prompt)
+                except Exception as e2:                  # noqa: BLE001
+                    print(f"{model} {k}: ERROR {e2}", flush=True)
+                    continue
             except Exception as e:                       # noqa: BLE001
                 print(f"{model} {k}: ERROR {e}", flush=True)
                 continue

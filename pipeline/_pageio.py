@@ -14,8 +14,10 @@ separator") -- a non-printing control character that cannot occur in OCR
 text or model output, so nothing the models produce can split a page.
 
 `split_pages` still reads a legacy `\n---\n` file (written before the
-switch) so old `processed/<book>_translated/` folders keep working
-without a re-run. A file is one format or the other, never mixed.
+switch). Every working file is converted (2026-10-19, LaMarche's raw_ocr.txt
+last); the reader stays for the restore-point backups written before then
+(`raw_ocr.before_patch.txt` ...). A file is one format or the other, never
+mixed.
 """
 
 PAGE_SEP = "\n\x1e\n"

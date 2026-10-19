@@ -259,6 +259,13 @@ partly effective — see 2.4.
 
 ### 1.6 Printed marginalia — inconsistent
 
+> **Superseded (2026-09-25).** `label_margin_notes()`, described below, was
+> removed: guessing a margin note from the text's shape deleted real text
+> (Prévost's "Le rôle du médecin." heading), against the rule that no
+> source text is ever lost. Margin notes are now read from the layout
+> detector and kept, drawn beside their paragraph -- see §1.6d. What
+> follows is the history.
+
 **Seen:** Gomard 1845 — printed marginal shoulder-notes next to the main
 text.
 
@@ -1169,8 +1176,9 @@ glossary (`footnote_glossary.txt`).
 definitions were translator commentary. Footnotes are **only** the bare
 `†Fr. <term>` source reference on a footnoted term (category 2; see 2.8). The prompt
 tells the model to write `English<fn>Fr. term</fn>` on first use;
-`enforce_cat3_footnotes()` is the backstop (translates every stray French
-Cat-3 occurrence, footnotes the first). `pull_footnotes()` turns `<fn>`
+`enforce_footnoted_terms()` (then called `enforce_cat3_footnotes()`) is the
+backstop (translates every stray French footnoted-term occurrence, footnotes
+the first). `pull_footnotes()` turns `<fn>`
 tags into `†N` + a `___FOOTNOTES___` block, deduped once per book, max 4
 per page, and normalises the note text to **`French: <term>`** (accepts
 either `Fr.` or `French:` from the model). `_render.py` splits that block
@@ -1193,16 +1201,17 @@ not solved. Open item in [STATUS](STATUS.md), "Known translation soft spots".
 ### 2.5 ToC / dotted-leader pages half-translate kept terms
 
 **Seen:** contents pages list entries like `Coupé . . . . 44`. The model
-translates the entries unevenly, and `enforce_cat3_footnotes` would
+translates the entries unevenly, and `enforce_footnoted_terms` would
 staple the once-per-book `<fn>` note onto a contents line if the book's
 first `coupé` happens to be there.
 
 **Mitigation (2026-09-01):** `is_toc_page()` — a page where ≥ 50% of the
 non-blank lines match `text … dot-leader … page-number`. On a detected
-ToC page, `enforce_cat3_footnotes(..., footnote=False)` (translate the
-Cat-3 term, emit **no** marker) and skip
+ToC page, `enforce_footnoted_terms(..., footnote=False)` (translate the
+footnoted term, emit **no** marker) and skip
 `retranslate_stray_french_headings` / `fix_subheading_spacing` (every
-entry looks like a heading). Cat-1 / Cat-2 rules run unchanged, so the
+entry looks like a heading). The translated- and kept-term rules (then
+"Cat-1 / Cat-2") run unchanged, so the
 entries still translate consistently with the body.
 
 ### 2.5b Two more residue/casing gaps, round 7
@@ -1738,9 +1747,11 @@ counts match.
 Not fixable by the glossary: **lost negations** (*il ne faut … parer* →
 "one must … parry"), **reversed clauses** (*amener l'adversaire à les
 tromper* → "to be deceived by them"), a dropped verb that flips a sentence
-(*j'hésiterais … à subir* → "submit"). A per-page negation count was tried
-and can't find them (the English had as many negations as the French on
-every known page); the meaning review is the check for these.
+(*j'hésiterais … à subir* → "submit"). A per-page negation count can't
+find a single lost one (the English had as many negations as the French on
+every known page); the meaning review is the check for these. It does catch
+a page two or more short -- several lost, or a passage left out -- and since
+2026-10-19 such a try is retried in step 2 (`lost_negations()`, STATUS).
 
 ### 2.19 Glossary lines applied beyond their scope (2026-10-13)
 

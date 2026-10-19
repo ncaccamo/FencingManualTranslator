@@ -740,7 +740,7 @@ differ) and re-run step 2 for that book.
 ```bash
 docker exec fmt-translator pkill -f llama-server
 docker compose restart && sleep 20
-docker exec fmt-translator python3 /app/2_translate.py
+docker exec fmt-translator python3 /app/2_translate.py <stem>
 ```
 
 Step 2 resumes — it skips books whose `intermediate/translation.txt` is

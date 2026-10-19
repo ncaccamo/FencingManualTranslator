@@ -48,11 +48,10 @@ def _load_prefix(filename: str, split_marker: str) -> dict:
             f"file's structure changed; update evals/_rules.py")
     src = src.split(split_marker)[0]
     # the scripts hard-code container paths and do exit(1) on missing model
-    # files; point the prompt/glossary reads at the repo copies and skip the
+    # files; point the prompt reads at the repo copies and skip the
     # model-file checks (the pure helpers don't need a model).
     for cp, real in {
         "/app/translation_prompt.txt": PIPELINE / "translation_prompt.txt",
-        "/app/footnote_glossary.txt": PIPELINE / "footnote_glossary.txt",
         "/app/vlm_ocr_prompt.txt": PIPELINE / "vlm_ocr_prompt.txt",
     }.items():
         src = src.replace(f'"{cp}"', repr(str(real)))

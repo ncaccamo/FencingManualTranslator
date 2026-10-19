@@ -15,7 +15,8 @@ fi
 
 # Stamp the cover page with the pipeline revision. `docker exec` does not
 # inherit host env, so pass it explicitly on the steps that build PDFs.
-# Manual `docker exec` invocations just omit the line (see pipeline/_cover.py).
+# (A manual `docker exec` run stamps it too: _version.py reads the mounted
+# .git when PIPELINE_VERSION is unset.)
 PIPELINE_VERSION=$(git -C "$WORKDIR" rev-parse --short HEAD 2>/dev/null)
 export PIPELINE_VERSION
 

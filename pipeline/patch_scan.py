@@ -26,10 +26,10 @@ a picture file (paths relative to books/). "note" goes on the cover page
 
 --apply then leaves the book ready for the usual steps, which redo only the
 new pages:
-    PDF_ONLY=<stem> python3 /app/1_ocr_and_extract_vlm.py   # OCR + layout + margin notes of the new pages
+    python3 /app/1_ocr_and_extract_vlm.py <stem>            # OCR + layout + margin notes of the new pages
     python3 /app/patch_scan.py <stem> <plan.json> --finish  # re-parse, keeping translated captions
     python3 /app/2_translate.py <stem>                      # translates the new pages only
-    PDF_ONLY=<stem> ... 3_english_only_pdf.py / 4_side_by_side_pdf.py ; quality_report.py <stem>
+    3_english_only_pdf.py <stem> ; 4_side_by_side_pdf.py <stem> ; quality_report.py <stem>
 
 To change a plan after applying it, put the book's data back first: the
 first --apply backed it up as intermediate.before_patch-<time>, and the
@@ -205,7 +205,7 @@ def apply(stem: str, plan: dict) -> None:
     print("  now, on the host, from the repo folder (keeps the original first):")
     for c in keep + moves:
         print(f"    {c}")
-    print(f"  then: PDF_ONLY={stem} python3 /app/1_ocr_and_extract_vlm.py")
+    print(f"  then: python3 /app/1_ocr_and_extract_vlm.py {stem}")
 
 
 def finish(stem: str) -> None:

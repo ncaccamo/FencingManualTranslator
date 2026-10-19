@@ -13,8 +13,8 @@ if ! docker ps | grep -q fmt-translator; then
     echo "Container not running. Starting it..."
     cd ~/FencingManualTranslator
     docker compose up -d
-    echo "Waiting 60 seconds for model to load..."
-    sleep 60
+    # the container loads no model itself (the pipeline steps start them)
+    sleep 5
 else
     echo "Container already running"
 fi

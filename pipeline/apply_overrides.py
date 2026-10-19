@@ -5,7 +5,7 @@
 no reprocess. Run after editing the overrides file, then rebuild the PDFs:
 
     python3 /app/apply_overrides.py <stem> [<stem> ...]
-    PDF_ONLY=<stem> python3 /app/4_side_by_side_pdf.py   (and 3_ for English-only)
+    python3 /app/4_side_by_side_pdf.py <stem>   (and 3_ for English-only)
 
 Page-level decisions (page_number, header) are written into extracted.txt /
 page_numbers.txt; [headers] into headers.json; [[fix]] and the hand edits in

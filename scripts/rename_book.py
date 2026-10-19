@@ -7,13 +7,18 @@
     scripts/rename_book.py --map renames.tsv [--dry-run]     # one "old<TAB>new" per line
 
 Moves, for each pair:
-  books/<stem>.pdf  and  books/<stem>.{crop,lang,rotate,meta.json,overrides.toml}
-  processed/<stem>_translated/            (+ the 3 output PDFs inside, whose
-  processed/<stem>_translated.bak-*/       names embed the old stem)
+  books/<stem>.pdf  and  books/<stem>.{crop,rotate,split,meta.json,overrides.toml}
+  books/<stem>.edits/                     (hand edits -- edit_page.py)
+  books/_alt/<stem>_original.pdf, books/_alt/<stem>.patch.json, ...  (patch_scan.py)
+  books/_skip/<stem>.*                    (a book set aside with its decisions)
+  processed/<stem>_translated/            (+ the output PDFs and review report
+  processed/<stem>_translated.bak-*/       inside, whose names embed the old stem)
   evals/baselines/<stem>/                 (+ rewrites book/source in MANIFEST.json)
+  evals/gold/*/<stem>.*                   (an evaluation pair's copies)
 
 No pipeline re-run -- pure filesystem plus one JSON tweak. Missing paths
-are skipped. Refuses if a destination already exists.
+are skipped. Refuses if a destination already exists. Notes that mention
+the old name in prose (review-notes/, reports) are left as they are.
 """
 from __future__ import annotations
 from pathlib import Path
@@ -44,9 +49,23 @@ def _sub_stem(name: str, old: str, new: str) -> str:
 
 
 def plan_pair(old: str, new: str) -> None:
-    # books/ pdf + sidecars
-    for ext in (".pdf", ".crop", ".rotate", ".split", ".meta.json", ".overrides.toml"):
+    # books/ pdf + sidecars, the hand-edit folder
+    for ext in (".pdf", ".crop", ".rotate", ".split", ".meta.json", ".overrides.toml", ".edits"):
         _mv(BOOKS / f"{old}{ext}", BOOKS / f"{new}{ext}")
+    # the book's own files in the side folders: patch_scan.py's originals and
+    # plan (_alt), a book set aside (_skip), an evaluation pair (evals/gold/*).
+    # Only names that are the stem plus a suffix -- never another stem that
+    # starts with this one.
+    side = [BOOKS / "_alt", BOOKS / "_skip"] + \
+        ([d for d in (REPO / "evals" / "gold").iterdir() if d.is_dir()]
+         if (REPO / "evals" / "gold").is_dir() else [])
+    for d in side:
+        if not d.is_dir():
+            continue
+        for f in d.iterdir():
+            rest = f.name[len(old):]
+            if f.name.startswith(old) and (rest.startswith(".") or rest.startswith("_original")):
+                _mv(f, d / (new + rest))
 
     # processed dirs: the live one and any dated backups. NB: don't glob --
     # a stem can contain '[' ']' (Gallica junk names) which glob eats.
@@ -58,8 +77,8 @@ def plan_pair(old: str, new: str) -> None:
         new_dir = PROCESSED / _sub_stem(d.name, old, new)
         # PDFs inside embed the book name (stem minus _translated): the two
         # finished outputs in the root, plus the intermediate OCR PDF.
-        for f in d.iterdir():
-            if f.name.startswith(old) and f.suffix == ".pdf":
+        for f in d.iterdir():                 # the PDFs and the review report
+            if f.name.startswith(old) and f.suffix in (".pdf", ".md"):
                 _mv(f, d / _sub_stem(f.name, old, new))
         int_dir = d / "intermediate"
         if int_dir.is_dir():

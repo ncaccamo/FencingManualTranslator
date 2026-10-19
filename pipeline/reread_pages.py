@@ -107,5 +107,5 @@ new_ex = _pageio.split_pages(open(f"{I}/extracted.txt", encoding="utf-8").read()
 changed = [k + 1 for k, (a, b) in enumerate(zip(old_ex, new_ex)) if a != b]
 print(f"extracted text changed on scan page(s): {changed or 'none'}")
 if changed and os.path.exists(f"{I}/translation.txt"):
-    print(f"  retranslate them: PDF_ONLY={stem} python3 /app/2_translate.py "
+    print(f"  retranslate them: python3 /app/2_translate.py {stem} "
           f"(picks up changed pages only)")

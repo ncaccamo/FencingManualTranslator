@@ -351,6 +351,33 @@ English right?
 
 ---
 
+## 4a. A local meaning review: choosing the judge model (2026-10-19)
+
+The agent meaning reviews (§4) find the errors no automatic check can, but
+cost too much to run on every new book. A local model on the GPU can do the
+same read overnight if it is good enough; which one is measured, not
+guessed:
+
+- `evals/judge_key.py` (in the image) builds the answer key: the agent
+  reviews' findings (`evals/reports/meaning-review/<stem>.final.*.md`)
+  placed on their scan pages, with the English those reviews read
+  (`translation.before-round4.txt`), plus pages the reviews found clean. 50
+  pages, 70 % with known errors; the books are found, not listed.
+- `evals/meaning_judge.py <model> ...` sends each page pair to the named
+  llama-swap models (each needs a 16k context: they reason before
+  answering) and saves after every page, so a stopped run resumes.
+- `evals/judge_score.py` scores them: known meaning and term errors found
+  (four words in a row in common, on either side), flags on clean pages
+  (noise -- or an error the agents missed), unreadable answers, time per
+  page; every unmatched flag is listed in `reports/judge/score.md`.
+
+The first candidates (16 GB GPU + 32 GB memory; one model loaded at a
+time): Qwen3.5-35B-A3B and Gemma 4 26B-A4B (mixture of experts, experts in
+system memory with `--cpu-moe`) and gpt-oss-20b. On a first page Gemma 4
+reasoned through its whole 14k-token allowance without answering, so it is
+tested with reasoning off. Results, and the choice, go here when the run is
+scored.
+
 ## 5. Fine-tuning  (not started)
 
 The pipeline only runs pretrained models; training would happen outside

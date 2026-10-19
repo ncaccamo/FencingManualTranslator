@@ -3,9 +3,9 @@
 This is for development, not something that applies to end users. It covers VS Code, Claude Code, and GitHub, written to route around the specific mistakes made getting this set up the first time.
 
 (Contrast with `MANUAL_SECTION_II_HOST_PREREQUISITES.md`, which covers
-what a machine needs to *run* the translation pipeline itself — GPU
-drivers, Docker, ROCm. This document is about the tools used to *develop*
-it.)
+what a machine needs to *run* the translation pipeline itself — the
+in-kernel GPU driver and Docker; no ROCm on the host, it is all in the
+image. This document is about the tools used to *develop* it.)
 
 ---
 

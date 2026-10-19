@@ -194,7 +194,7 @@ def main():
         print(f"    mv books/{stem}.pdf books/_alt/{stem}_original.pdf")
     print(f"    mv processed/{stem}_translated processed/_audit/{stem}_translated.before-split")
     print(f"    cp processed/_audit/split_{stem}/{stem}.pdf books/{stem}.pdf")
-    print(f"  then step 1 on the book: PDF_ONLY={stem} python3 /app/1_ocr_and_extract_vlm.py")
+    print(f"  then step 1 on the book: python3 /app/1_ocr_and_extract_vlm.py {stem}")
 
 
 if __name__ == "__main__":

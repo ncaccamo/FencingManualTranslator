@@ -1879,10 +1879,13 @@ def _llama_server_env() -> dict:
     """A `docker exec` of this script inherits only the image-level
     LD_LIBRARY_PATH; llama-server links its backend impl .so
     (libllama-server-impl.so) at runtime from /usr/local/lib/llama-<suffix>/,
-    a dir the entrypoint adds for the servers IT launches but that we don't
-    get here -- so a server we spawn dies immediately with
-    "cannot open shared object file". Restore it for the configured backend
-    (validated; rocm714 errors clearly if it isn't built)."""
+    a dir set only in the entrypoint's own environment, which a `docker
+    exec` doesn't get -- so a server we spawn dies immediately with
+    "cannot open shared object file". Set it for the configured backend
+    (validated; rocm714 errors clearly if it isn't built). This path, not
+    the /usr/local/bin/llama-server link (fixed at build time, vulkan), is
+    what picks the backend: every llama-server-* loads the impl it finds
+    here (checked 2026-10-19: with the rocm dir, libggml-hip loads)."""
     suffix = bc.local_backend_suffix()
     env = dict(os.environ)
     env["LD_LIBRARY_PATH"] = f"/usr/local/lib/llama-{suffix}:" + env.get("LD_LIBRARY_PATH", "")
@@ -3156,7 +3159,7 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
     harmonize_titles_with_headers(folder)
     apply_book_overrides(folder)
     print(f"\n✓ {len(targets)} page(s) retranslated -- rebuild the PDFs:\n"
-          f"  PDF_ONLY={stem} python3 /app/4_side_by_side_pdf.py")
+          f"  python3 /app/4_side_by_side_pdf.py {stem}")
 
 
 if len(sys.argv) > 2 and sys.argv[1] == "--pages":
@@ -3263,7 +3266,7 @@ finally:
         try:
             translation_proc.wait(timeout=10)
             print("✓ Translation server stopped (VRAM freed)\n")
-        except:
+        except Exception:
             translation_proc.kill()
             print("✓ Translation server killed (VRAM freed)\n")
 

@@ -90,40 +90,15 @@ the operator's business and is not tracked here.)
    was tested and not adopted (2026-09-25, 20/25 pages right); the layout
    detector is the better signal (23/25).
 4. **Running heads with OCR typos** ("FIORETTTO", "MASIEMLO") are kept as
-   read; for now an override per book (`[headers]`). Seen in four books,
-   enough to consider a rule that corrects a head one or two letters off
-   the book's dominant one.
+   read; the review report lists a head one or two letters off another
+   (`head_variants`), and the fix is an override per book (`[headers]`;
+   both Masiello 1902 books, 2026-10-18). Seen in four books, enough to
+   consider a rule that corrects them automatically.
 5. **Known translation soft spots** (see `docs/model-quirks.md`): braced
    command groups sometimes flatten; literary prose leaves a few
    `[low-confidence]` pages partly untranslated.
-6. **Translation speed — MTP adopted (2026-10-11).** More GPU layers is
-   ruled out: the Windows system has other uses, so 38 is the setting that
-   holds up. Speculative decoding with Qwen3.8's built-in draft head (MTP)
-   is **2.2x faster** at no extra VRAM (37 layers + the head), equal in
-   accuracy and closeness to the source; `fmt-translate` runs it, and
-   `fmt-translate-plain` is the fallback (`docs/remote-gpu.md`). Still
-   untested: its repeatability at temperature 0 (the plain entry differed
-   on 1 of 36 pages between two runs), and 8-bit context memory (`-ctk q8_0
-   -ctv q8_0`, ~3 more layers).
-7. **`rocm714` backend** — wired, not compiled; `docker/ROCM714_NOTES.md`.
-8. **Page numbers: hidden numbers re-read with the margin crop — done
-   (2026-10-09).** A page number step 1 couldn't confirm is
-   hidden ("[13]"); `read_folios.py` asks the OCR model about the margins
-   alone and `apply_folio_witness()` shows the number only if a margin names
-   exactly it. Its old full-width strip could stop above the head line on
-   photographed pages (Jacob-André scan 14 "II" missed); the margins are
-   now cut from the layout detector's printed area, top and bottom read
-   separately. Measured with `evals/folio_choice_test.py` (137 labelled
-   pages): 40/47 printed numbers confirmed, 0 wrong, 0 invented on 90
-   pages that print none; misses are one-stroke misreads (XIII for XII,
-   viii for ix) and a numeral under a stamp. A choice question ("II, III or
-   IV?") was rejected: 8 invented numbers, and it picks wrong values when
-   only wrong ones are offered. Re-read all books (~2,300 pages, 1 h
-   GPU): 69 numbers in 20 books confirmed and shown, each checked against
-   the scan first; none wrong. The queue's book job now runs it after
-   step 1 (`scripts/queue.py`); by hand: `read_folios.py <stem>`, then
-   `--apply`.
-9. **Meaning review — a reader for what the checks can't see
+6. **`rocm714` backend** — wired, not compiled; `docker/ROCM714_NOTES.md`.
+7. **Meaning review — a reader for what the checks can't see
    (2026-10-11).** The automatic checks catch form (lost italics, length,
    untranslated text), not a wrong sense. A Claude agent reads the source
    against the English page by page (`evals/meaning_review.md`) and lists
@@ -225,11 +200,43 @@ the operator's business and is not tracked here.)
   lesson-giver (the master who gives it); *Académie d'armes* kept; Italian
   old masters' cut names kept as printed, *armi* of the army → arms of the
   service.
-- **No negation-count check (2026-10-11).** Lost negations (*il ne faut
-  … parer* → "one must … parry") are real, but counting negations per page
-  can't find them: on every known page the English had as many as the
-  French (a lost one offset by another elsewhere). It would need sentence
-  alignment; the meaning review is the check for these.
+- **Translation speed: MTP adopted (2026-10-11).** More GPU layers is
+  ruled out: the Windows system has other uses, so 38 is the setting that
+  holds up. Speculative decoding with Qwen3.8's built-in draft head (MTP)
+  is **2.2x faster** for about 0.3 GB more VRAM (37 layers + the head),
+  equal in accuracy and closeness to the source; `fmt-translate` runs it,
+  and `fmt-translate-plain` is the fallback (`docs/remote-gpu.md`). Still
+  untested: its repeatability at temperature 0 (the plain entry differed on
+  1 of 36 pages between two runs), and 8-bit context memory (`-ctk q8_0
+  -ctv q8_0`, ~3 more layers).
+- **Page numbers: hidden numbers re-read with the margin crop
+  (2026-10-09).** A page number step 1 couldn't confirm is hidden ("[13]"); `read_folios.py` asks the OCR model about the margins
+  alone and `apply_folio_witness()` shows the number only if a margin names
+  exactly it. Its old full-width strip could stop above the head line on
+  photographed pages (Jacob-André scan 14 "II" missed); the margins are
+  now cut from the layout detector's printed area, top and bottom read
+  separately. Measured with `evals/folio_choice_test.py` (137 labelled
+  pages): 40/47 printed numbers confirmed, 0 wrong, 0 invented on 90
+  pages that print none; misses are one-stroke misreads (XIII for XII,
+  viii for ix) and a numeral under a stamp. A choice question ("II, III or
+  IV?") was rejected: 8 invented numbers, and it picks wrong values when
+  only wrong ones are offered. Re-read all books (~2,300 pages, 1 h
+  GPU): 69 numbers in 20 books confirmed and shown, each checked against
+  the scan first; none wrong. The queue's book job now runs it after
+  step 1 (`scripts/queue.py`); by hand: `read_folios.py <stem>`, then
+  `--apply`.
+- **Negation count: a coarse gate, not a check for single losses
+  (2026-10-11, revised 2026-10-19).** A single lost negation (*il ne faut
+  … parer* → "one must … parry") can't be found by counting per page: on
+  every known page the English had as many as the French (a lost one offset
+  by another elsewhere); that needs sentence alignment, and the meaning
+  review is the check for it. What counting does catch is a page **two or
+  more** short -- several lost, or a passage left out: `lost_negations()`
+  retries such a try in step 2 and the review report lists the pages where
+  every try lost them (6 pages in all books). Whole pages, notes included on
+  both sides (a page opening with a footnote's end has it in the English
+  notes); not the expletive *ne*, *ne … que* / *ne pouvoir … que* ("only"),
+  *ne … guère* ("seldom"), Italian *non … che* / *se non*.
 
 - **Page separator: now U+001E, was `\n---\n`.** All stages join / split
   the multi-page files (`raw_ocr.txt`, `extracted.txt`, `translation.txt`)

@@ -82,7 +82,7 @@ print(f"Image prepared: {img.width}x{img.height}, {len(buffered.getvalue())/1024
 
 # Same "model" label the real pipeline sends (1_ocr_and_extract_vlm.py):
 # ignored by a single-model llama-server, the routing key under llama-swap.
-MODEL_NAME = os.environ.get("VLM_MODEL_NAME") or "olmocr2"
+MODEL_NAME = os.environ.get("VLM_MODEL_NAME") or "fmt-ocr"   # the llama-swap key (backend.env)
 
 print(f"Sending to VLM ({bc.ocr_base_url()}) as model={MODEL_NAME!r}...")
 
