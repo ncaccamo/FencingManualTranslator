@@ -19,6 +19,8 @@ import os
 import re
 import sys
 
+from meaning_judge import parse
+
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports", "judge")
 
 
@@ -62,6 +64,8 @@ def main():
                 continue
             secs.append(r.get("seconds", 0))
             items = r.get("items")
+            if items is None:
+                items = parse(r.get("reply"))        # read again: the parser may have improved since
             if items is None:
                 bad += 1
                 continue

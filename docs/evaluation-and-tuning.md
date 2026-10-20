@@ -364,8 +364,17 @@ guessed:
   (`translation.before-round4.txt`), plus pages the reviews found clean. 50
   pages, 70 % with known errors; the books are found, not listed.
 - `evals/meaning_judge.py <model> ...` sends each page pair to the named
-  llama-swap models (each needs a 16k context: they reason before
+  llama-swap models (the context must hold the page plus
+  `JUDGE_MAX_TOKENS`, 14k by default: reasoning models write long before
   answering) and saves after every page, so a stopped run resumes.
+  `<model>:nothink` asks for an answer without reasoning;
+  `JUDGE_PROMPT=v2` uses stricter instructions. A server error waits and
+  retries; 3 failed pages in a row, or no readable answer in the first 3,
+  stop that model.
+- `evals/judge_verify.py <result> <model>` is a second pass: each flag goes
+  back to the model as one question -- would a reader understand something
+  different from the author? -- and only the YES flags are kept
+  (`<result>+check.json`).
 - `evals/judge_score.py` scores them: known meaning and term errors found
   (four words in a row in common, on either side), flags on clean pages
   (noise -- or an error the agents missed), unreadable answers, time per
@@ -375,8 +384,40 @@ The first candidates (16 GB GPU + 32 GB memory; one model loaded at a
 time): Qwen3.5-35B-A3B and Gemma 4 26B-A4B (mixture of experts, experts in
 system memory with `--cpu-moe`) and gpt-oss-20b. On a first page Gemma 4
 reasoned through its whole 14k-token allowance without answering, so it is
-tested with reasoning off. Results, and the choice, go here when the run is
-scored.
+tested with reasoning off.
+
+Results (2026-10-19/20; the key has 15 clean pages):
+
+| Run | Known meaning errors found | Flags on clean pages | Other unmatched flags | Time / page |
+|---|---|---|---|---|
+| Qwen3.5, no reasoning | 19/25 (76 %) | 26 | 61 | 2 min |
+| the same + second pass | 12/25 (48 %) | 5 | 15 | 2½ min |
+| Qwen3.5, no reasoning, v2 instructions | 17/24 (70 %) | 48 | 108 | 1½ min |
+| the same + second pass | 10/24 (41 %) | 9 | 24 | 2 min |
+| Gemma 4, no reasoning | 9/26 (34 %) | 3 | 19 | 40 s |
+| gpt-oss-20b (stopped after 21 pages) | 2/10 (20 %) | 4 | 22 | 15 min |
+
+- Qwen3.5 *with* reasoning never answered: 30k tokens (~95k characters
+  of reasoning) on each page tried, ~20 min a page, and its server fell
+  over twice. Not usable at any affordable budget.
+- The v2 instructions made it noisier, not quieter: v1 let it file
+  nitpicks as "minor" (not scored); v2 has only "meaning", so they all
+  land there.
+- The bar for adopting it: ≥ 60 % of known errors found, at most one flag
+  in three clean pages, at least half the flags real. Nothing meets it.
+  The best compromise (Qwen3.5 + second pass) is at the noise limit but
+  finds under half the errors, and the second pass dropped 7 real ones.
+  Read by eye, about 7 of its 20 unmatched flags are real or worth a look
+  (one, «il sait mal prendre le fer» rendered "he knows how to take the
+  blade badly", is an error the agent reviews missed); the rest are wrong,
+  above all on fencing terms: it calls *incontro* = double hit, *di
+  figura* = at the face and *rompre* = break ground mistranslations.
+
+Decision: no local judge for now. Its fencing-term knowledge is the weak
+point -- exactly where a reviewer cannot afford false leads -- and a judge
+only ever writes a list for the operator; it never edits a translation.
+Worth a rerun with the same key when a stronger model fits the GPU
+system.
 
 ## 5. Fine-tuning  (not started)
 

@@ -8,10 +8,19 @@ score them (judge_score.py).
 
     python3 evals/meaning_judge.py <model> [<model> ...]      (in the image)
 
-<model> is a llama-swap model key (llama-swap.yaml). Results go to
-evals/reports/judge/<model>.json, one entry per page, saved after each page,
-so a stopped run resumes. Needs the server to give the model a 16k context:
-reasoning models write long before they answer.
+JUDGE_PROMPT=v2 uses the stricter instructions (result file <model>+v2.json).
+<model> is a llama-swap model key (llama-swap.yaml); <model>:nothink asks
+the same model to answer without reasoning (its own result file). Results go
+to evals/reports/judge/<model>.json, one entry per page, saved after each
+page, so a stopped run resumes. Needs the server to give the model a context
+of at least JUDGE_MAX_TOKENS + the page: reasoning models write long before
+they answer.
+
+Guards, so a bad setting can't eat a night: the first TRIAL pages of a model
+must give at least one readable answer, and FAILS failed pages in a row
+(server errors, unreadable answers) stop that model; the run goes on to the
+next model either way. A server error (5xx) or a lost connection waits for
+the GPU system and tries the page again.
 """
 import json
 import os
@@ -42,6 +51,38 @@ ENGLISH TRANSLATION:
 {english}
 """
 
+# v2: only what changes the sense; period language and literal renderings
+# spelled out as not errors (v1 flagged ~2 nitpicks a page on clean pages)
+INSTRUCTIONS_V2 = """You check the English translation of one page of a {lang} fencing manual written in the 19th or early 20th century against the {lang} original. Report ONLY the places where a reader of the English would understand something DIFFERENT from what the author wrote:
+- a word given a wrong sense (false friends: ignorer = not know, sensible = perceptible)
+- a negation lost or added
+- the wrong subject or object (who does what to whom), or a wrong tense that changes what happens
+- a wrong fencing action, side, line, hand, foot or number
+- a phrase or sentence left out, added, or left untranslated
+- an idiom rendered word for word so that it means something else
+
+These are NOT errors -- never report them:
+- old-fashioned words, period word senses and period word order; the translation deliberately stays close to the author's words, so a literal rendering that keeps the sense is correct even when it sounds stiff or old
+- awkward, wordy or unidiomatic English that still says the same thing
+- a near-synonym (begin / start, rapid / quick), singular or plural where the sense is the same, emphasis or nuance slightly weaker
+- spelling, punctuation, capitalisation, British/American usage
+- words in <i>italics</i>: technical terms kept in the original language on purpose (riposte, quarte, terza, cavazione, appuntata...)
+- notes marked †1 under ___FOOTNOTES___ (the translator's); (1), (2) are the author's own
+- a page that begins or ends mid-sentence
+
+If you are not sure a reader would understand something different, leave it out. Most pages have no error: then answer [].
+
+Answer with a JSON list only, no other text. One object per error:
+{{"source": "the exact words of the original", "english": "the exact words of the English", "problem": "what a reader would wrongly understand, in one sentence", "fix": "corrected English, as close to the author's words as possible", "severity": "meaning"}}
+
+{lang} ORIGINAL:
+{source}
+
+ENGLISH TRANSLATION:
+{english}
+"""
+PROMPTS = {"v1": INSTRUCTIONS, "v2": INSTRUCTIONS_V2}
+
 
 def language(stem):
     p = f"/data/books/{stem}.meta.json"
@@ -51,16 +92,31 @@ def language(stem):
         return "French"
 
 
+TRIAL = 3          # the first pages: at least one readable answer, or stop the model
+FAILS = 3          # failed pages in a row that stop the model
+
+
 def ask(model, prompt):
+    body = {"model": model.split(":")[0], "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.0, "max_tokens": int(os.environ.get("JUDGE_MAX_TOKENS", "14000"))}
+    if model.endswith(":nothink"):
+        body["chat_template_kwargs"] = {"enable_thinking": False}
     r = requests.post(URL, headers={"Content-Type": "application/json", **bc.auth_headers()},
-                      json={"model": model, "messages": [{"role": "user", "content": prompt}],
-                            "temperature": 0.0, "max_tokens": int(os.environ.get("JUDGE_MAX_TOKENS", "14000"))},
-                      timeout=(30, 7200))     # 30 s to connect, 2 h to answer
+                      json=body, timeout=(30, 7200))     # 30 s to connect, 2 h to answer
     r.raise_for_status()
     j = r.json()
     msg = j["choices"][0]["message"]
     ask.usage = j.get("usage") or {}
     return msg.get("content") or "", msg.get("reasoning_content") or ""
+
+
+def server_trouble(e):
+    """The GPU system is off or asleep, or its server fell over (llama-swap
+    answers 502 when the model's server dies or won't start)."""
+    if isinstance(e, requests.exceptions.ConnectionError):
+        return True
+    resp = getattr(e, "response", None)
+    return isinstance(e, requests.exceptions.HTTPError) and resp is not None and resp.status_code >= 500
 
 
 def wait_for_server(hours=24):
@@ -78,55 +134,75 @@ def wait_for_server(hours=24):
 
 
 def parse(reply):
+    """The model's answer: the last whole JSON list in its reply (a model
+    may write a list, then "Wait, I should re-evaluate..." and a second)."""
     reply = re.sub(r"(?s)<think>.*?</think>", "", reply or "")
-    m = re.search(r"\[.*\]", reply, re.S)
-    if not m:
-        return None
-    try:
-        items = json.loads(m.group(0))
-    except ValueError:
-        return None
-    return [x for x in items if isinstance(x, dict)]
-
+    dec, last = json.JSONDecoder(), None
+    for m in re.finditer(r"\[", reply):
+        try:
+            items, _ = dec.raw_decode(reply, m.start())
+        except ValueError:
+            continue
+        if isinstance(items, list) and all(isinstance(x, dict) for x in items):
+            last = items
+    return last
 
 def main():
     key = json.load(open(f"{OUT}/key.json", encoding="utf-8"))["pages"]
     if os.environ.get("JUDGE_LIMIT"):                    # a quick trial: the first n pages
         key = key[:int(os.environ["JUDGE_LIMIT"])]
     for model in sys.argv[1:]:
-        name = re.sub(r"[^\w.-]", "_", model)
+        version = os.environ.get("JUDGE_PROMPT", "v1")
+        name = re.sub(r"[^\w.-]", "_", model) + ("" if version == "v1" else f"+{version}")
         path = f"{OUT}/{name}.json"
         done = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
+        tried = fails = readable = 0
         for p in key:
             k = f"{p['stem']}:{p['scan']}"
+            if k in done and done[k].get("items") is None and parse(done[k].get("reply")) is not None:
+                done[k]["items"] = parse(done[k]["reply"])         # readable after all (parser fixed)
+                json.dump(done, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
             if k in done and done[k].get("items") is not None:
+                readable += 1
                 continue
+            if tried == TRIAL and not readable:
+                print(f"{model}: STOPPED -- no readable answer in the first {TRIAL} pages", flush=True)
+                break
+            if fails >= FAILS:
+                print(f"{model}: STOPPED -- {fails} failed pages in a row", flush=True)
+                break
+            tried += 1
             lang = language(p["stem"])
-            prompt = INSTRUCTIONS.format(lang=lang, source=p["source"], english=p["english"])
+            prompt = PROMPTS[version].format(lang=lang, source=p["source"], english=p["english"])
             t = time.time()
             try:
-                reply, thought = ask(model, prompt)
-            except requests.exceptions.ConnectionError as e:
-                # the GPU system is off or asleep: wait for it (as step 2 does),
-                # then judge the same page -- never fail through the key
-                print(f"{model} {k}: GPU system not answering ({type(e).__name__}) -- waiting", flush=True)
-                wait_for_server()
                 try:
                     reply, thought = ask(model, prompt)
-                except Exception as e2:                  # noqa: BLE001
-                    print(f"{model} {k}: ERROR {e2}", flush=True)
-                    continue
+                except requests.exceptions.RequestException as e:
+                    if not server_trouble(e):
+                        raise
+                    # wait for the GPU system / a fresh server (as step 2
+                    # does), then judge the same page once more
+                    print(f"{model} {k}: server trouble ({e}) -- waiting", flush=True)
+                    time.sleep(60)
+                    wait_for_server()
+                    t = time.time()
+                    reply, thought = ask(model, prompt)
             except Exception as e:                       # noqa: BLE001
                 print(f"{model} {k}: ERROR {e}", flush=True)
+                fails += 1
                 continue
             items = parse(reply)
             done[k] = {"items": items, "reply": reply, "thought_chars": len(thought),
                        "tokens": (getattr(ask, "usage", {}) or {}).get("completion_tokens"),
                        "seconds": round(time.time() - t)}
             json.dump(done, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+            if items is None:
+                fails += 1
+            else:
+                fails, readable = 0, readable + 1
             print(f"{model} {k}: {'unparsed' if items is None else len(items)} item(s), "
                   f"{done[k]['tokens']} tokens, {done[k]['seconds']}s", flush=True)
-
 
 if __name__ == "__main__":
     main()

@@ -108,7 +108,12 @@ the operator's business and is not tracked here.)
    renderings become glossary lines, the pattern pages are retranslated and
    re-reviewed, and single errors become `[[fix]]` entries
    (`docs/evaluation-and-tuning.md` §4). French and Italian books both
-   reviewed; round 4 of the glossary (2026-10-13) came from it.
+   reviewed; round 4 of the glossary (2026-10-13) came from it. A local
+   model doing the same read was tested on a 50-page answer key
+   (2026-10-20): the best one (Qwen3.5-35B-A3B, no reasoning) finds 76 % of
+   the known errors but buries them in nitpicks, and its fencing-term
+   knowledge is unreliable; filtered, it finds under half. Not adopted --
+   results and the bar in `docs/evaluation-and-tuning.md` §4a.
 
 ## Not yet tested
 
