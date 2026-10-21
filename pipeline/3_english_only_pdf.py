@@ -31,6 +31,7 @@ import glob
 import re
 
 import _render
+import _textlayer
 import _pageio
 import _cover
 
@@ -272,8 +273,11 @@ class Flow:
                        FS - 1, color=(0.3, 0.3, 0.3))
             self.y += FS * 0.3
 
-    def body(self, text):
+    def body(self, text, src_body="", src_page=None):
         body_txt, notes = _render.split_footnotes(text)
+        if not _render.toc_page(body_txt):
+            # paragraph starts as printed, where the scan has a text layer
+            body_txt = _textlayer.apply(body_txt, src_body, src_page)
         self._flow(_render.layout(body_txt, COL.width, FS, paras=PARAS, centre=CENTRE), FS)
         if notes:
             # end-of-section glossary block, smaller type
@@ -508,7 +512,8 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
             for _, c in placements)
 
         if not is_empty and not body_is_caption:
-            flow.body(tr)
+            src_body = extractions[i].split("BODY_TEXT:", 1)[-1] if i < len(extractions) else ""
+            flow.body(tr, src_body, src_page)
             rendered += 1
 
     sheets = doc.page_count

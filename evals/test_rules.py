@@ -3505,6 +3505,8 @@ def test_paragraph_style_layout():
     assert lay("Maestro:\nHolds the weapon in the high line\n\nI. TEMPO") == [0, 0, "GAP", 0]
     # a page opening mid-sentence: no indent
     assert lay("of the adversary, who then has to parry in quarte and return to his guard.") == [0]
+    # ... nor one the scan's text layer shows running on (_textlayer.CONT, pdf 14)
+    assert lay("\x02" + long1 + "\n" + long1) == [0, para]
     # a long numbered paragraph is a paragraph (Joseph-Renaud pdf 8)
     assert lay(long1 + "\n\n4° The right arm must be almost completely extended, as we shall see.") == [para, para]
     # the gap after a line ending ":" stays (Gomard scan 229)
@@ -3679,6 +3681,121 @@ def _run_plain() -> int:
             print(f"  ERR  {name}: {type(e).__name__}: {e}")
     print(f"\n{len(fns) - fails}/{len(fns)} passed")
     return 1 if fails else 0
+
+
+def test_text_layer_paragraph_starts():
+    # reviewer, 2026-10-21: the OCR's line breaks made new paragraphs beside a
+    # drop capital (Kirchhoffer pdf 12) and at the top of a page that runs on
+    # (pdf 14, a hyphenated word carried its line over). The scan's text
+    # layer shows the printed indents. (start, y, text, end) from the real pages.
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    T = importlib.import_module("_textlayer")
+    W = 1024
+    # scan 11: three lines round the drop capital L, then an indented paragraph
+    lines = [(212, 1012, "ESCRIME au fleuret étant classée parmi les exercices vio-", 843),
+             (212, 1039, "lents, il ne faudra pas l'enseigner aux enfants trop jeunes.", 843),
+             (212, 1065, "Jusqu'à l'âge de douze ans, il sera préférable de leur", 846),
+             (149, 1092, "faire exécuter les mouvements de « gymnastique de chambre »,", 843),
+             (150, 1119, "appelés encore « gymnastique suédoise ».", 599),
+             (173, 1146, "Les exercices de force (poids, haltères, etc.) et les exercices", 848),
+             (151, 1171, "aux agrès devront être pratiquée modérément, dans la crainte", 848),
+             (150, 1199, "des déformations du corps.", 444)]
+    rows = ["L'ESCRIME au fleuret étant classée parmi les exercices violents, il ne faudra pas l'enseigner aux enfants trop jeunes.",
+            "Jusqu'à l'âge de douze ans, il sera préférable de leur faire exécuter les mouvements",
+            "Les exercices de force (poids, haltères, etc.) et les exercices aux agrès devront être pratiqués modérément."]
+    opens, joins = T.hints(rows, lines, W)
+    assert joins == [False, True, False] and opens is False
+    # scan 13: running head and folio, then a first line at the margin
+    lines = [(141, 160, "1", 153), (590, 150, "ENTRAINEMENT", 841),
+             (144, 212, "fier de certains masques de prix modéré que l'on trouve dans le", 838),
+             (144, 239, "commerce, principalement dans les bazars, qui n'offrent pas", 839),
+             (145, 266, "toujours toutes les garanties de solidité nécessaire. Il sera égale-", 840),
+             (146, 346, "treillis métallique;", 300),
+             (170, 372, "Un gant rembourré avec crispin souple ou dur, de manière à", 842),
+             (148, 400, "amortir le choc dans les rencontres de garde qui peuvent se", 843)]
+    rows = ["Il faudra se méfier de certains masques de prix modéré", "Un gant rembourré avec crispin souple ou dur"]
+    opens, joins = T.hints(rows, lines, W)
+    assert opens is True and joins == [False, False]
+    # scan 12: a page opening with an indented line; one-line list items in a row stay starts
+    lines = [(229, 210, "Pour les futurs jeunes escrimeurs, les meilleurs exercices à", 871),
+             (207, 236, "pratiquer seront : la marche, la course, la natation, la danse,", 872),
+             (210, 263, "tation en un mot, tous les exercices dits « de souplesse ».", 801),
+             (237, 492, "Le garde-pouce, en cuir ou en étoffe rembourrée;", 730),
+             (238, 519, "La poignée, en bois garni de fil d'étoffe, de caoutchouc ou", 878),
+             (216, 544, "encore de filigrane et de différentes grosseurs ;", 701)]
+    rows = ["Pour les futurs jeunes escrimeurs, les meilleurs", "Le garde-pouce, en cuir ou en étoffe rembourrée;",
+            "La poignée, en bois garni de fil d'étoffe"]
+    opens, joins = T.hints(rows, lines, W)
+    assert opens is False and joins == [False, False, False]
+    # Joseph-Renaud scan 45: one-line dialogue paragraphs indented 4 %, one under
+    # the other -- the line above ends short, so each is its own paragraph
+    lines = [(231, 100, "que je ne vous touche pas. En effet, mon attaque fait une ligne", 790),
+             (233, 120, "brisée et votre contre-attaque fait une ligne droite; grâce au coup que", 791),
+             (231, 140, "je reçois, il m'est impossible de vous atteindre, vous le voyez.", 700),
+             (275, 160, "« Donc, travaillons cette défensive !...", 520),
+             (275, 180, "« Sur mon coup en cavant dessus à l'avant-bras, contre-atta-", 790),
+             (231, 200, "quez à l'avant-bras ! Non, ne baissez pas la main... Vous voyez,", 791)]
+    rows = ["que je ne vous touche pas. En effet", "« Donc, travaillons cette défensive", "« Sur mon coup en cavant dessus"]
+    assert T.hints(rows, lines, 1000) == (True, [False, False, False])
+    # Kirchhoffer pdf 24: «Pression. —» under the one-line «Battement. —»;
+    # the layer pads the short line's end to the margin, but both start at
+    # the page's indent, so each is its own paragraph
+    lines = [(151, 180, "Battement. — Frapper le fer ennemi d'un petit coup sec et net.", 823),
+             (153, 207, "Pression. — Appuyer assez fortement et sans saccade sur le", 825),
+             (129, 237, "fer ennemi. Froissé. — Frapper violemment", 827),
+             (131, 289, "sur le fer ennemi. Le froissé peut être employé", 829),
+             (132, 318, "désarmer l'adversaire,", 368),
+             (156, 342, "Coulé. — Glisser le long et en appuyant sur le fer", 829),
+             (133, 373, "ennemi.", 219)]
+    rows = ["Battement. — Frapper le fer ennemi", "Pression. — Appuyer assez fortement", "Coulé. — Glisser le long et en appuyant"]
+    assert T.hints(rows, lines, W)[1] == [False, False, False]
+    # Masiello 1887 pdf 128 (Internet Archive layer): line starts scattered off
+    # the printed ones -- not trusted, nothing changes
+    lines = [(35, 78, "tutti, molto più che le condizioni dell'Italia eran", 321),
+             (96, 89, "revolissime allo sviluppo progressivo della nostra sche", 321),
+             (58, 102, "ma. Ma come sempre tanto presumettero da non curarsi", 321),
+             (35, 118, "affatto degli altri, da non badare se in Italia si", 321),
+             (36, 133, "e si fosse scritto: la grande nazione ci credeva im", 323),
+             (36, 146, "e cadaveri. E fu grave errore.", 195),
+             (48, 169, "La cosa appare evidente dall'esame dei loro trattati.", 321),
+             (49, 184, "Dall'opera del Labat passano non pochi anni, prima", 323),
+             (35, 199, "che si abbia un nuovo trattato d'importanza, poiché", 323),
+             (62, 214, "cini, si può vedere già usata in Italia prima e rif", 322),
+             (36, 229, "in moltissimi trattati.", 144)]
+    rows = ["La cosa appare evidente dall'esame dei loro trattati.", "Dall'opera del Labat passano non pochi anni"]
+    assert T.hints(rows, lines, 382) == (None, [False, False])
+    # no text layer to speak of: nothing changes
+    assert T.hints(rows, [], W) == (None, [False, False])
+    # apply() on a page whose OCR kept the printed lines (Joseph-Renaud pdf 53):
+    # running-on rows are joined -- but never after a word split by a hyphen
+    # (it read "Then- after"; left as it was)
+    class Page:
+        class rect: width = 1000
+        def __init__(self, lines): self.lines = lines
+        def get_text(self, kind, flags=0):
+            return {"blocks": [{"lines": [{"bbox": (x0, y, x1, y + 12), "spans": [{"text": t}]}
+                                          for x0, y, t, x1 in self.lines]}]}
+    pg = Page([(308, 100, "Vous faites donc, sans les annoncer de la voix, des prises lentes,", 928),
+               (266, 120, "larges, visibles, en toutes les lignes. Vous veillez à ce que chaque", 929),
+               (265, 140, "faciles à dérober... mettez-y plus de vitesse, plus d'imprévu... En-", 920),
+               (265, 160, "suite exécutez-les en marchant... l'élève les dérobera en rompant", 929),
+               (266, 180, "pied droit ou du pied gauche), et au contact du fer, pas avant !...", 600),
+               (307, 200, "Puis, en rompant un peu davantage, l'élève dérobera à l'avant-", 929)])
+    src = "\n".join(l[2] for l in pg.lines)
+    eng = ("You therefore make, without announcing them by the voice, slow takings of the blade,\n"
+           "wide, visible, in all the lines. You see to it that each evasion is perfectly executed\n"
+           "easy to evade... put more speed, more unexpectedness into them... Then-\n"
+           "after execute them in advancing... the pupil will evade them in breaking ground\n"
+           "with the right foot or the left foot, and at the contact of the blade, not before!...\n"
+           "Then, in breaking ground a little more, the pupil will evade to the fore-")
+    assert T.apply(eng, src, pg).split("\n") == [
+        "You therefore make, without announcing them by the voice, slow takings of the blade, "
+        "wide, visible, in all the lines. You see to it that each evasion is perfectly executed "
+        "easy to evade... put more speed, more unexpectedness into them... Then-",
+        "after execute them in advancing... the pupil will evade them in breaking ground "
+        "with the right foot or the left foot, and at the contact of the blade, not before!...",
+        "Then, in breaking ground a little more, the pupil will evade to the fore-"]
 
 
 if __name__ == "__main__":

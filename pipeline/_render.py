@@ -472,9 +472,12 @@ def layout(text, width, size, paras=None, centre=False, toc=None):
     `centre` -- the book centres its headings (_layout.centres_headings):
     a heading line in capitals is centred too. `toc` -- the page is a
     contents / index page (None: decided from this text; a caller drawing
-    a page paragraph by paragraph decides once for the page)."""
+    a page paragraph by paragraph decides once for the page). Text starting
+    _textlayer.CONT opens mid-paragraph (the scan says so): no indent."""
+    cont = (text or "").startswith("\x02")
+    text = (text or "").lstrip("\x02")
     if paras:
-        return _layout_paras(text, width, size, paras, centre, toc)
+        return _layout_paras(text, width, size, paras, centre, toc, cont)
     out = []
     para_end = False            # the line before ended a prose sentence
     text = italian_low_high(italian_line_numerals(line_name_italics(text)))
@@ -664,7 +667,7 @@ def _pair_lesson(rows):
     return out
 
 
-def _layout_paras(text, width, size, style, centre=False, toc=None):
+def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
     """layout() with a paragraph style. A line is a paragraph of running
     text only when it reads as one: long (60+ letters), or ending a sentence
     or list item right after another paragraph (Kirchhoffer's "The thumb
@@ -673,7 +676,8 @@ def _layout_paras(text, width, size, style, centre=False, toc=None):
     scan 134), Gomard's braced feints (scan 232) -- and keep the OCR's own
     lines and blank lines. A blank line is dropped only between two
     paragraphs, at least one of them long (two short ones -- lines of
-    dialogue -- keep it)."""
+    dialogue -- keep it). `cont`: the page opens mid-paragraph (the scan's
+    text layer, _textlayer): its first paragraph gets no indent."""
     out = []
     prev, prev_long = "start", False    # start | prose | prose-open | other
     gap = brace = prev_colon = False
@@ -722,7 +726,7 @@ def _layout_paras(text, width, size, style, centre=False, toc=None):
         if prose:
             raw, n = body, 0
         new_para = prose and prev in ("start", "prose", "other") and not (
-            prev == "start" and (not long_ or re.match(r"(?:<i>)?[«“\"(]?[a-zà-ÿ]", raw)))
+            prev == "start" and (cont or not long_ or re.match(r"(?:<i>)?[«“\"(]?[a-zà-ÿ]", raw)))
         # ... but not before a run-in section title ("L'épée. — Tous les
         # assauts", "Tactique générale. — "): the book leaves space there
         run_in = bool(_RUN_IN.match(plain))

@@ -30,6 +30,7 @@ import glob
 import re
 
 import _render
+import _textlayer
 import _layout
 import _pageio
 import _cover
@@ -116,6 +117,10 @@ def render_aligned(page, y_top, tr, size, fracs, src_page, bottom=RIGHT.y1, toc=
         to 7 pt with full gaps);
       * otherwise render as-is."""
     paras = [p for p in re.split(r"\n\s*\n", tr.strip()) if p.strip()]
+    # the chunks split where the OCR left a blank line; in an indented book
+    # that is an ordinary paragraph break, not extra space (Kirchhoffer pdf
+    # 13, reviewer 2026-10-21) -- only the anchoring may push one down
+    para_gap = 0.0 if PARAS == "indented" else PARA_GAP
     span0, span1 = displayed_scan_span(src_page)
     span_h = span1 - span0
     laid = [_render.layout(p, RIGHT.width, size, paras=PARAS, centre=CENTRE, toc=toc) for p in paras]
@@ -128,7 +133,7 @@ def render_aligned(page, y_top, tr, size, fracs, src_page, bottom=RIGHT.y1, toc=
         anchor = (span0 + fracs[k] * span_h) if k < len(fracs) else None
         want = max(cur, anchor) if anchor is not None else cur
         gaps.append(want - cur)
-        cur = want + h + PARA_GAP
+        cur = want + h + para_gap
     W = sum(gaps)
     Gmax = max(gaps) if gaps else 0.0
     X = cur - bottom                                    # overflow (<=0 fits)
@@ -146,7 +151,7 @@ def render_aligned(page, y_top, tr, size, fracs, src_page, bottom=RIGHT.y1, toc=
     for k, L in enumerate(laid):
         cur = min(cur + gaps[k] * scale, bottom - size)
         _, cur = _render.draw(page, (RIGHT.x0, cur, RIGHT.x1, bottom), L, size)
-        cur += PARA_GAP
+        cur += para_gap
     return True
 
 
@@ -380,6 +385,10 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         # at the bottom of the right column.
         body_txt, notes = _render.split_footnotes(tr)
         TOC = _render.toc_page(body_txt)     # decided once for the page
+        if not TOC:
+            # paragraph starts as printed, where the scan has a text layer
+            body_txt = _textlayer.apply(body_txt, extractions[i].split("BODY_TEXT:", 1)[-1]
+                                        if i < len(extractions) else "", src[i])
         fn_lines = _render.footnote_lines(notes, RIGHT.width, 7) if notes else []
         fn_h = _render.measure(fn_lines, 7) + 4 if fn_lines else 0.0
         body_bottom = RIGHT.y1 - fn_h
