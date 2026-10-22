@@ -10,6 +10,7 @@ Runs with or without pytest:
     pytest evals/test_rules.py -q      # if pytest is installed
     python3 evals/test_rules.py        # plain, no deps
 """
+import re
 import sys
 from pathlib import Path
 
@@ -3685,6 +3686,113 @@ def _run_plain() -> int:
     return 1 if fails else 0
 
 
+def test_lesson_table_from_columns():
+    # format review, 2026-10-22: Masiello sets lessons as tables of paragraphs,
+    # Maestro | Allievo side by side; the OCR reads one column after the other.
+    # Rebuilt from where each paragraph starts on the scan (pdf 286, its pieces)
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    T = importlib.import_module("_textlayer")
+    src = ["Maestro.", "Invito di quarta.", "Parata terza.", "Allievo.",
+           "Inclinato leggermente un poco il tronco in avanti, e battendo contemporaneamente il piede",
+           "Evitando il contatto del ferro avversario, eseguirà la cavazione al fianco",
+           "Si eseguisce in due tempi dall'invito di quarta dell'avversario:"]
+    rows = ["Maestro.", "Invites in quarta.", "Parries terza.", "Student.",
+            "Inclining the trunk slightly forward, and stamping the right foot on the ground at the same time, he will simulate a straight thrust",
+            "Avoiding the contact of the enemy's sword, he will execute the cavazione to the flank as prescribed",
+            "It is executed in two tempi from the invitation of quarta of the opponent:"]
+    lines = [(85, 73, "Maestro.", 130), (200, 73, "Allievo.", 250),
+             (90, 90, "Invito di quarta.", 150), (190, 90, "Inclinato leggermente un poco il", 333),
+             (190, 103, "tronco in avanti, e battendo", 333), (90, 150, "Parata terza.", 140),
+             (190, 150, "Evitando il contatto del ferro av-", 333), (190, 163, "versario, eseguirà la cavazione", 333),
+             (63, 200, "Si eseguisce in due tempi dall'invito di quarta dell'av-", 336)]
+    found = T.lesson_columns(rows, src, lines, 400)
+    assert len(found) == 1
+    a, z, html = found[0]
+    assert (a, z) == (0, 6)
+    assert html.count("<tr>") == 3 and "<td>Invites in quarta.</td><td>Inclining" in html and "<th>Maestro.</th>" in html
+    # one column only (a drill's short lines): no table
+    assert T.lesson_columns(["A short command.", "Another command.", "A third one here."],
+                            ["Un ordre court.", "Un autre ordre.", "Un troisième ici."],
+                            [(90, 90, "Un ordre court.", 150), (90, 110, "Un autre ordre.", 150), (90, 130, "Un troisième ici.", 150)], 400) == []
+
+
+def test_columns_lesson_and_contents():
+    # format review, 2026-10-22: Barbasetti's Maestro/Allievo lessons came out one
+    # column after the other in the side-by-side (its aligned layout splits at the
+    # blank line between them, pdf 133); its two-column contents were read across
+    # the columns, out of order (pdf 9)
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        R = importlib.import_module("_render")
+        R._font("times-roman")
+    except Exception:
+        return
+    t = ("<i>Maestro</i>:\nInvites or engages in <i>terza</i>\nParries <i>quarta</i>\n\n"
+         "Student:\nI. TEMPO\nThreatens the thrust inside\nII. TEMPO\nThreatens the cavazione outside\n\n"
+         "To apply this double feint, one presumes a tendency in the opponent to use such parries.")
+    blocks = R.lesson_glue(t).split("\n\n")
+    assert len(blocks) == 2 and R._pair_lesson(R._rejoin(blocks[0]))[0].startswith("\x00TABLE")
+    assert R.lesson_glue("A heading\n\nMaestro:\nParries") == "A heading\n\nMaestro:\nParries"
+    toc = ("49. Circlings . . . Page 119 | 53. Feints . . . . Page 124\n"
+           "50. Feint Circling » 121 | 54. Beat and Circling . . » 126\n51. Feint . . » 122 |")
+    order = [re.match(r"\d+", "".join(x[0] for x in l.spans)).group(0)
+             for l in R.layout(toc, 400, 9, paras="indented", toc=True) if l.spans and l.spans[0][0][:1].isdigit()]
+    assert order == ["49", "50", "51", "53", "54"]
+
+
+def test_picture_caption_and_ornaments_from_layout():
+    # format review, 2026-10-22: a wide caption right under a picture (Kirchhoffer
+    # pdf 12) is drawn centred and level with it; a small centred mark between
+    # paragraphs is a divider (Joseph-Renaud's ⁂) -- boxes from the real pages
+    import json, os, tempfile
+    L = _layout_mod()
+    with tempfile.TemporaryDirectory() as t:
+        os.makedirs(f"{t}/intermediate")
+        pages = {"0": {"boxes": [["picture", 0.95, [0.24, 0.10, 0.70, 0.46]], ["caption", 0.69, [0.27, 0.47, 0.67, 0.50]],
+                                 ["text", 0.9, [0.13, 0.55, 0.70, 0.90]]]},
+                 "1": {"boxes": [["picture", 0.97, [0.09, 0.41, 0.68, 0.60]], ["caption", 0.86, [0.36, 0.63, 0.42, 0.64]],
+                                 ["text", 0.9, [0.09, 0.65, 0.68, 0.90]]]},
+                 "2": {"boxes": [["text", 0.9, [0.30, 0.20, 0.85, 0.32]], ["picture", 0.56, [0.558, 0.539, 0.586, 0.554]],
+                                 ["text", 0.9, [0.30, 0.57, 0.85, 0.80]]]}}
+        json.dump({"pages": pages}, open(f"{t}/intermediate/layout.json", "w"))
+        assert L.picture_caption(t, 0) == (0.47, 0.50)
+        assert L.picture_caption(t, 1) is None          # Barbasetti's «(Fig. 32)»: too narrow to be a caption block
+        assert L.ornaments(t, 2) == [0.546]
+
+
+def test_glossary_hanging_indents():
+    # format review, 2026-10-22: Prévost-Jollivet's glossary (pdf 315-317) is set
+    # with hanging indents -- entry flush, the lines after it indented
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    T = importlib.import_module("_textlayer")
+    lines = [(100, 100, "Coup d'arrêt. L'expression en donne la signification par elle-même:", 900),
+             (125, 120, "c'est faire une attaque simple sur la marche de l'adversaire pour", 900),
+             (125, 140, "l'arrêter quand il attaque en marchant.", 600),
+             (100, 160, "Coup jugé. C'est lorsqu'on a prévu le coup de son adversaire.", 860),
+             (100, 180, "Couvrir (se), ou prendre l'opposition. C'est, lorsqu'on attaque ou", 900),
+             (125, 200, "qu'on riposte, se garantir le corps, autant que possible, en fermant", 900),
+             (125, 220, "la ligne où l'on tire, c'est-à-dire en portant la main qui tient", 900),
+             (125, 240, "l'arme à la limite de la ligne.", 500),
+             (100, 260, "Croiser (se), être croisé. Pour un droitier, c'est, étant en garde ou", 900),
+             (125, 280, "fendu, avoir le pied droit trop à gauche, et n'avoir pas.", 700)]
+    kinds, places = T.profile(lines, 1000)
+    assert places.count("hanging") == 4 and kinds[1] == kinds[2] == "run"
+    rows = ["Coup d'arrêt. L'expression en donne", "Coup jugé. C'est lorsqu'on a prévu",
+            "Couvrir (se), ou prendre l'opposition", "Croiser (se), être croisé. Pour un droitier"]
+    assert T.row_places(rows, lines, 1000) == ["hanging"] * 4
+    try:
+        R = importlib.import_module("_render")
+        R._font("times-roman")
+    except Exception:
+        return
+    out = R.layout("\x05Coup jugé. " + "It is when one has foreseen the hit of the adversary, and so on. " * 3,
+                   200, 9, paras="indented")
+    assert out[0].indent == 0 and all(l.indent > 0 for l in out[1:])
+
+
 def test_divider_put_back_from_layout():
     # format review, 2026-10-22: Joseph-Renaud's ⁂ is dropped by the OCR on
     # about half its pages; the layout detector boxes it between paragraphs
@@ -3732,6 +3840,8 @@ def test_english_quotation_marks():
     assert q("terms:\n• The employment of the left hand\n• of fencing. We have seen\n• frequently to parry.»") == \
         "terms:\n“The employment of the left hand\nof fencing. We have seen\nfrequently to parry.”"
     assert q("• First item;\n• Second item;\n• Third item.") == "• First item;\n• Second item;\n• Third item."
+    t = '\x00TABLE<table><tr><th colspan="13">Fencers</th></tr></table>'     # table HTML untouched (pdf 75)
+    assert q('A "word"\n' + t) == "A “word”\n" + t
 
 
 def test_footnote_runs_split():

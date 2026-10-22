@@ -130,6 +130,24 @@ margin note the OCR also read into the running text (Gomard) is drawn
 once, as the note; `split_note_run` -- "(1) … (2) …" run together in one
 line are separate notes; `<sup>2</sup>` is drawn as ², not as the tag.
 
+**Columns and hanging indents** (format review, 2026-10-22). A page the
+book sets with *hanging indents* -- a glossary entry's first line flush,
+its other lines in (Prévost-Jollivet pdf 314-319) -- is recognised from
+the text layer (`_textlayer.profile`) and its entries drawn that way
+(`HANGING` row mark). A lesson set as a *table of paragraphs* --
+Maestro | Allievo (| Allievo) side by side, the OCR reading one column
+after the other (Masiello) -- is rebuilt as a table from where each
+paragraph's first line sits on the scan (`_textlayer.lesson_columns`, on
+the layer's unmerged pieces): 2+ columns beside each other, at least two
+rows pairing an action with a reply of 8+ words; an intro ending ":" or
+a § heading ends it. A lesson with numbered steps keeps `_pair_lesson`,
+and the side-by-side no longer splits it at the blank line between its
+halves (`lesson_glue`). A two-column contents ("49. … | 53. …") is read
+column by column. **Captions:** on a plate page the caption is centred
+(level with the scan's caption when the detector boxed it); a wide
+caption under a picture on a page of text (Kirchhoffer pdf 12) is drawn
+centred, level with it, above the text (`_layout.picture_caption`).
+
 - A line is a **paragraph of running text** only when it reads as one:
   60+ letters, or ending a sentence / list item (`. ! ? ; :`) right after
   another paragraph ("The thumb guard, ...;"). A long numbered paragraph

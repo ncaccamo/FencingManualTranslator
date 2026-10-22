@@ -390,6 +390,23 @@ def block_places(folder: str, i: int, n_paras: int):
             for g in groups]
 
 
+def picture_caption(folder: str, i: int):
+    """(top, bottom), 0-1 down the scan, of a wide caption set right under a
+    picture on a page of text (Kirchhoffer pdf 12, 42: «L'Éducation d'un
+    prince ...» under the woodcut) -- the English page draws its caption
+    there, centred (reviewer, 2026-10-22). None if there is no such box."""
+    lay = load(folder)
+    page = lay and lay["pages"].get(str(i))
+    if not page:
+        return None
+    pics = [b[2] for b in page["boxes"] if b[0] == "picture" and b[1] >= 0.5 and b[2][2] - b[2][0] >= 0.3]
+    for b in sorted((b for b in page["boxes"] if b[0] == "caption" and b[1] >= 0.5), key=lambda b: b[2][1]):
+        x0, y0, x1, y1 = b[2]
+        if x1 - x0 >= 0.3 and any(y0 - 0.06 <= p[3] <= y0 + 0.01 for p in pics):
+            return y0, y1
+    return None
+
+
 def caption_places(folder: str, i: int, n: int):
     """How far down the scan (0-1) the page's `n` picture captions sit --
     the detector's caption boxes, top to bottom, when there are exactly n

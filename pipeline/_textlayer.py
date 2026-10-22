@@ -29,6 +29,7 @@ CONT = "\x02"            # in front of a page's English: it opens mid-paragraph
 DIVIDER = "[[DIVIDER]]"  # _render.DIVIDER: a section divider
 INDENTED = "\x03"       # in front of a row: the book starts it at the paragraph indent
 FLUSH = "\x04"          # in front of a row: the book starts it at the margin, not indented
+HANGING = "\x05"        # in front of a row: first line at the margin, the rest indented (a glossary)
 
 INDENT = 0.012           # a paragraph indent: this much of the page width in from the margin
 FULL = 0.02              # a line ending this close to the right margin runs on to the next
@@ -70,6 +71,20 @@ def page_lines(page):
         else:
             merged.append([x0, y0, y1, t, x1])
     return [(x0, y, t, x1) for x0, y, _, t, x1 in merged]
+
+
+def page_pieces(page):
+    """The text layer's lines as it stores them, not merged along a
+    baseline: on a page set in columns, each column's piece of a printed
+    line apart (a lesson table, Masiello pdf 373). [(x0, y, text, x1)]."""
+    import fitz
+    out = []
+    for b in page.get_text("dict", flags=fitz.TEXTFLAGS_TEXT)["blocks"]:
+        for ln in b.get("lines", []):
+            t = "".join(s["text"] for s in ln["spans"]).strip()
+            if t:
+                out.append((ln["bbox"][0], ln["bbox"][1], t, ln["bbox"][2]))
+    return sorted(out, key=lambda l: (l[1], l[0]))
 
 
 def _body(lines, rows=None):
@@ -145,6 +160,11 @@ def profile(lines, width):
     same = [k > 0 and abs(xs[k] - xs[k - 1]) <= INDENT * width for k in range(len(xs))]
     ind = _indent(off, same)
     where = [place(o) for o in off]
+    # a page set with hanging indents (Prévost-Jollivet's glossary, pdf
+    # 315-317): an entry's first line at the margin, the lines after it
+    # at the indent -- the other way round from a paragraph
+    cont = [where[k] for k in range(1, len(xs)) if full[k - 1]]
+    hanging = cont.count("indent") >= 3 and cont.count("indent") > 2 * cont.count("margin")
     # far lines that aren't a drop capital's group or the page's first line:
     # misplaced starts (or a centred title) -- too many, and the layer is noise
     stray = sum(1 for k in range(1, len(xs)) if where[k] == "far" and not same[k]
@@ -152,6 +172,13 @@ def profile(lines, width):
     if stray > 0.1 * len(xs):
         return None, where
     out = []
+    if hanging:
+        for k in range(len(xs)):
+            if where[k] == "indent" and (k == 0 or full[k - 1]):
+                out.append("run")
+            else:
+                out.append("start")
+        return out, ["hanging" if (w == "margin" and o == "start") else w for w, o in zip(where, out)]
     for k in range(len(xs)):
         if k == 0:
             out.append("run" if where[0] == "margin" else "start")   # the page above is out of sight
@@ -270,9 +297,115 @@ def row_places(rows, lines, width):
         if k is None:
             continue
         at = k + 1
-        if kind[k] == "start" and where[k] in ("indent", "margin") and (k or where[k] == "indent"):
+        if kind[k] == "start" and where[k] in ("indent", "margin", "hanging") and (k or where[k] != "margin"):
             out[r] = where[k]
     return out
+
+
+_SPEAKER = re.compile(r"^(?:<i>)?(Maestro|Master|Maître|Allievo|Student|Pupil|Élève|Professeur)(?:</i>)?\s*[:.]?\s*$", re.I)
+_STEP = re.compile(r"^(?:[IVX]+|\d+)\.?\s+(?:TIME|TEMPO|TEMPS)\b", re.I)
+
+
+def lesson_columns(rows, src, lines, width):
+    """Lessons the book sets as tables of paragraphs -- Maestro | Allievo
+    (| Allievo) side by side, each row level across (Masiello pdf 373 and
+    its sword and sabre parts, where only a page's first lesson carries the
+    MAESTRO / ALLIEVO heads) -- which the OCR reads one column after
+    another. `rows`: the English rows, row k the translation of source row
+    `src[k]`; `lines`: the text layer's pieces (page_pieces). A run of 3+
+    rows whose printed pieces are narrow and fall in 2+ columns beside each
+    other (overlapping in height) is a table: its columns by where the
+    pieces start, its rows by their height, a speaker head as the column's
+    title. Returns [(first_row, end_row, html)], possibly empty. A lesson
+    with numbered steps ("I. TEMPO") is _render._pair_lesson's."""
+    plain = lambda k: re.sub(r"[\x02-\x05]", "", rows[k]).strip()
+    if any(_STEP.match(plain(k)) for k in range(len(rows))):
+        return []
+    full_w = max((l[3] - l[0] for l in lines), default=0)
+    if not full_w:
+        return []
+    used, info = set(), {}
+    for k in range(len(rows)):
+        if not plain(k):
+            continue
+        key = norm(src[k])[:15]
+        if len(key) < 5:
+            continue
+        best, at = 0.0, None
+        for n, l in enumerate(lines):
+            if n in used:
+                continue
+            r = difflib.SequenceMatcher(None, key, norm(l[2])[:len(key)]).ratio()
+            if r > best:
+                best, at = r, n
+        if at is not None and best >= 0.8:
+            used.add(at)
+            info[k] = lines[at]
+    head = lambda k: bool(_SPEAKER.match(plain(k)))
+    # an intro ("It is executed in two tempi:"), a § heading or a row of a
+    # table the OCR wrote with | is never a cell: it ends a run
+    breaker = lambda k: bool(re.search(r":$", plain(k)) or re.match(r"§|\d+\.\s*[—–-]", plain(k)) or " | " in rows[k])
+    narrow = lambda k: not breaker(k) and (head(k) or (k in info and info[k][3] - info[k][0] < 0.55 * full_w))
+    found, k, n = [], 0, len(rows)
+    while k < n:
+        if not plain(k) or not narrow(k):
+            k += 1
+            continue
+        run, j = [], k
+        while j < n and (not plain(j) or narrow(j)):
+            if plain(j):
+                run.append(j)
+            j += 1
+        k = j
+        if len(run) < 3:
+            continue
+        heads_run = [r for r in run if head(r)]
+        run_cells = [r for r in run if not head(r)]
+        if len(run_cells) < 3:
+            continue
+        xs = sorted({round(info[r][0]) for r in run_cells})
+        bounds = [xs[0]] + [b for a_, b in zip(xs, xs[1:]) if b - a_ > 0.12 * width]
+        col = lambda r: max(c for c, x in enumerate(bounds) if info[r][0] >= x - 0.03 * width)
+        cols = {}
+        for r in run_cells:
+            cols.setdefault(col(r), []).append(r)
+        if len(cols) < 2:
+            continue
+        ys = {c: [info[r][1] for r in rs] for c, rs in cols.items()}
+        order = sorted(cols)
+        if not all(min(ys[order[i + 1]]) <= max(ys[order[i]]) + 6 for i in range(len(order) - 1)):
+            continue                                     # one after the other on the page, not beside
+        # speaker heads title the columns, in the order they come
+        heads = {c: [heads_run[i]] if i < len(heads_run) else [] for i, c in enumerate(order)}
+        cells = [(order.index(c), info[r][1], r) for c, rs in cols.items() for r in rs]
+        gaps = [abs(p[1] - q[1]) for p in cells for q in cells if p[0] == q[0] and p[2] != q[2]]
+        tol = max(4.0, 0.5 * min(gaps)) if gaps else 12.0
+        table = []
+        for c, y, r in sorted(cells, key=lambda t: t[1]):
+            for row in table:
+                if abs(row[0] - y) <= tol and c not in row[1]:
+                    row[1][c] = [r]
+                    break
+            else:
+                table.append([y, {c: [r]}])
+        # a table's rows have cells side by side -- a title page's centred
+        # lines, each at its own height, never do (Masiello pdf 8)
+        if sum(len(row[1]) >= 2 for row in table) * 2 < len(table):
+            continue
+        # a lesson's rows pair a short action with the reply in full: at least
+        # two rows with both sides filled and 8+ words on the right -- not a
+        # title page's lines (Masiello pdf 8), not a ditto list (Barbasetti pdf 163)
+        last = len(order) - 1
+        if sum(1 for row in table if 0 in row[1] and last in row[1]
+               and len(" ".join(plain(r) for r in row[1][last]).split()) >= 8) < 2:
+            continue
+        title = ("<tr>" + "".join(f"<th>{plain(heads[c][0]) if heads[c] else ''}</th>" for c in order) + "</tr>"
+                 if any(heads.values()) else "")
+        body = "".join("<tr>" + "".join(f"<td>{' '.join(plain(r) for r in row[1].get(i, []))}</td>"
+                                         for i in range(len(order))) + "</tr>" for row in table)
+        found.append((run[0], run[-1] + 1, f"<table>{title}{body}</table>"))
+        # (a head standing apart before the run's first cell is part of it)
+    return found
 
 
 def _pitch(body):
@@ -398,6 +531,15 @@ def apply(english, src_body, page, prev_page=None, ornaments=()):
             if any(DIVIDER in x or re.match(r"\s*[★☆⁂✶✱*]", x) for x in near):
                 continue
             rows[filled[target]] = "\n" + DIVIDER + "\n\n" + rows[filled[target]]
+        # a lesson set as a table of paragraphs, read column after column by
+        # the OCR (Masiello pdf 373): back into its rows, level across
+        cols = lesson_columns([rows[b] or "" for b in filled], src, page_pieces(page), page.rect.width)
+        if cols:
+            for a, z, html_ in cols:
+                for k in range(filled[a], filled[z - 1] + 1):
+                    rows[k] = None                       # the lesson's rows and the blank lines between them
+                rows[filled[a]] = "\x00TABLE" + html_
+            return CONT * bool(opens) + "\n".join(r for r in rows if r is not None)
         # where each row starts in print: short lines the layout would set
         # flush (a drill's commands, the first of a numbered run, a dialogue
         # dash -- Jacob-André pdf 112) get the indent the book gives them,
@@ -407,7 +549,7 @@ def apply(english, src_body, page, prev_page=None, ornaments=()):
             b = filled[r]
             if rows[b] is None or not place[r] or re.search(r"[{}|⟦]|\x00TABLE", rows[b]):
                 continue
-            mark = INDENTED if place[r] == "indent" else FLUSH
+            mark = {"indent": INDENTED, "margin": FLUSH, "hanging": HANGING}[place[r]]
             rows[b] = re.sub(r"^(\n*)", lambda m: m.group(1) + mark, rows[b], count=1)
         english = "\n".join(r for r in rows if r is not None)
     if opens:

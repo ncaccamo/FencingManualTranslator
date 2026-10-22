@@ -490,7 +490,7 @@ def layout(text, width, size, paras=None, centre=False, toc=None):
     cont = (text or "").startswith("\x02")
     text = (text or "").lstrip("\x02")
     if not paras or (toc if toc is not None else False):
-        text = text.replace("\x03", "").replace("\x04", "")    # _textlayer's row marks: body text only
+        text = re.sub("[\x03-\x05]", "", text)    # _textlayer's row marks: body text only
     if paras:
         return _layout_paras(text, width, size, paras, centre, toc, cont)
     out = []
@@ -599,8 +599,21 @@ def _layout_toc(rows, width, size, centre):
     OCR's own indents and blank lines stay; headings centred."""
     out = []
     lines = []
+    # a two-column contents ("49. … Pag. 119 | 53. … Pag. 124", Barbasetti):
+    # a run of such rows is read column by column -- the left column down,
+    # then the right -- as the book is (format review, 2026-10-22, pdf 9)
+    run = []
+    def flush():
+        lines.extend([l for l, _ in run] + [r for _, r in run if r])
+        run.clear()
     for r in rows:
-        lines += [x for x in re.split(r"\s+\|\s+", r.rstrip(" |"))] if " | " in r else [r]
+        if " | " in r or r.rstrip().endswith(" |"):
+            parts = re.split(r"\s+\|\s*", r.rstrip(), maxsplit=1)
+            run.append((parts[0], parts[1].strip() if len(parts) > 1 else ""))
+        else:
+            flush()
+            lines.append(r)
+    flush()
     for raw in lines:
         # OCR debris in the leaders: "parry...... /...... 78" (Prévost-Jollivet)
         raw = re.sub(r"(\.{2,})\s*[/|\\]\s*(\.{2,})", r"\1\2", raw)
@@ -636,9 +649,29 @@ _STEP = re.compile(r"^(?:[IVX]+|\d+)\.?\s+(?:TIME|TEMPO|TEMPS)\b", re.I)
 _SPEAKER = re.compile(r"^(?:<i>)?(Maestro|Master|Allievo|Student|Pupil|Professeur|Élève)(?:</i>)?\s*[:.]?\s*$", re.I)
 
 
+def lesson_glue(text):
+    """The blank line between a lesson's two columns goes -- the master's
+    actions, then the pupil's numbered steps (or a "Student:" heading) --
+    so a caller that lays the page out block by block (the side-by-side's
+    aligned layout splits at blank lines) hands _pair_lesson both halves
+    (Barbasetti pdf 133, format review 2026-10-22)."""
+    blocks = re.split(r"\n[ \t]*\n", text or "")
+    out = [blocks[0]] if blocks else []
+    for b in blocks[1:]:
+        prev = [_unmarked(r) for r in out[-1].split("\n") if r.strip()]
+        first = _unmarked(b.split("\n", 1)[0])
+        master = bool(prev) and not any(_STEP.match(r) for r in prev) and (
+            _SPEAKER.match(prev[0]) or (len(prev) >= 2 and all(len(r) <= 70 for r in prev)))
+        if master and (_STEP.match(first) or (_SPEAKER.match(first) and _SPEAKER.match(prev[0]))):
+            out[-1] = out[-1].rstrip("\n") + "\n" + b.lstrip("\n")
+        else:
+            out.append(b)
+    return "\n\n".join(out)
+
+
 def _unmarked(row):
     """A row without _textlayer's start marks (INDENTED / FLUSH), stripped."""
-    return row.strip().lstrip("\x03\x04").strip()
+    return row.strip().lstrip("\x03\x04\x05").strip()
 
 
 def _pair_lesson(rows):
@@ -705,7 +738,7 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
     gap = brace = prev_colon = False
     text = italian_low_high(italian_line_numerals(line_name_italics(text)))
     if toc if toc is not None else _toc_page((text or "").split("\n")):
-        return _layout_toc((text or "").replace("\x03", "").replace("\x04", "").split("\n"), width, size, centre)
+        return _layout_toc(re.sub("[\x03-\x05]", "", text or "").split("\n"), width, size, centre)
     rows = _pair_lesson(_rejoin(text))
     for at, raw in enumerate(rows):
         if raw.startswith("\x00TABLE"):
@@ -727,8 +760,9 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
             continue
         # where the book starts this row (_textlayer): at the paragraph indent,
         # or flush -- what the print shows wins over the guesses below
-        forced = "indent" if raw.lstrip(" ").startswith("\x03") else "flush" if raw.lstrip(" ").startswith("\x04") else None
-        raw = raw.replace("\x03", "").replace("\x04", "")
+        head = raw.lstrip(" ")[:1]
+        forced = {"\x03": "indent", "\x04": "flush", "\x05": "hanging"}.get(head)
+        raw = raw.replace("\x03", "").replace("\x04", "").replace("\x05", "")
         m = _MARGIN_RE.match(raw)
         if m:
             if gap:
@@ -757,7 +791,7 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
             prev == "start" and (cont or not long_ or re.match(r"(?:<i>)?[«“\"(]?[a-zà-ÿ]", raw)))
         if forced == "indent" and not brace:
             new_para = True
-        elif forced == "flush":
+        elif forced in ("flush", "hanging"):
             new_para = False
         # ... but not before a run-in section title ("L'épée. — Tous les
         # assauts", "Tactique générale. — "): the book leaves space there
@@ -792,8 +826,14 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
         first = size * PARA_INDENT_EM if (style == "indented" and new_para) else 0.0
         indent = n * _SPACE_PT
         avail = max(width - indent, _MIN_WRAP)
-        for k, vline in enumerate(_wrap(_spans(raw[n:]), avail, size, first)):
-            out.append(Line(indent + (first if k == 0 else 0.0), vline))
+        if forced == "hanging" and not brace:
+            # a glossary entry as the book sets it: first line flush, the rest in
+            hang = size * PARA_INDENT_EM
+            for k, vline in enumerate(_wrap(_spans(raw[n:]), max(avail - hang, _MIN_WRAP), size, -hang)):
+                out.append(Line(indent + (0.0 if k == 0 else hang), vline))
+        else:
+            for k, vline in enumerate(_wrap(_spans(raw[n:]), avail, size, first)):
+                out.append(Line(indent + (first if k == 0 else 0.0), vline))
         prev = ("prose" if ends else "prose-open") if prose else "other"
         prev_long = long_
         # a line ending ":" introduces a list or table: the gap after it stays
@@ -998,10 +1038,14 @@ def english_quotes(text):
             res.append(c)
             i += 1
         out.append("".join(res))
-    text = "\n".join(out)
     # 3. straight double quotes, by position: opening after a space or start
-    text = re.sub(r'(^|[\s(\[—–-])"(?=\S)', "\\1“", text, flags=re.M)
-    return text.replace('"', "”")
+    # (never inside a table row: its HTML has colspan="13" -- Kirchhoffer pdf 75)
+    def straight(line):
+        if line.startswith("\x00TABLE"):
+            return line
+        line = re.sub(r'(^|[\s(\[—–-])"(?=\S)', "\\1“", line)
+        return line.replace('"', "”")
+    return "\n".join(straight(l) for l in out)
 
 
 def split_note_run(note):

@@ -375,9 +375,9 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
                 for k, c in enumerate(caps):
                     if where:
                         yy = min(max(yy, span0 + where[k] * (span1 - span0)), RIGHT.y1 - 30)
-                    for vl in _render.layout(c, RIGHT.width, 9):
-                        _, yy = _render.draw(page, (RIGHT.x0, yy, RIGHT.x1, RIGHT.y1),
-                                             [vl], 9)
+                    # centred, as the book sets a caption under its plate
+                    lines = _render.centre_lines(_render.layout(c, RIGHT.width, 9), RIGHT.width, 9)
+                    _, yy = _render.draw(page, (RIGHT.x0, yy, RIGHT.x1, RIGHT.y1), lines, 9)
                     yy += 6
             else:
                 page.insert_text((RIGHT.x0, y + 4), "[blank / no text in original]",
@@ -393,7 +393,7 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
             body_txt = _textlayer.apply(_render.english_quotes(body_txt), extractions[i].split("BODY_TEXT:", 1)[-1]
                                         if i < len(extractions) else "", src[i], src[i - 1] if i else None,
                                         _layout.ornaments(folder, i))
-            body_txt = _render.drop_margin_echoes(body_txt)
+            body_txt = _render.lesson_glue(_render.drop_margin_echoes(body_txt))   # a lesson's two columns, one block
         notes = [_render.english_quotes(n) for n in notes]
         fn_lines = _render.footnote_lines(notes, RIGHT.width, 7) if notes else []
         fn_h = _render.measure(fn_lines, 7) + 4 if fn_lines else 0.0
@@ -409,8 +409,23 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         # Skip it on a page with a figure -- the scan's text blocks span
         # the gap where the picture sits, so the anchors jump and the
         # translation ends up misaligned.
-        n_paras = len([p for p in re.split(r"\n\s*\n", body_txt.strip()) if p.strip()])
         has_fig = bool(fig_map.get(str(i)))
+        # a picture's caption that opens the page's text (Kirchhoffer pdf 12):
+        # centred, level with the caption under the picture on the scan, and
+        # the text after it (reviewer, 2026-10-22)
+        cb = None if has_fig else _layout.picture_caption(folder, i)
+        if cb and "\n\n" in body_txt.strip() and not re.search(r"\x00TABLE|\[table|\[\[TABLE", body_txt):
+            first, rest = body_txt.strip().split("\n\n", 1)
+            # running text must follow: a page of captions only keeps its
+            # block placement below (Kirchhoffer pdf 66)
+            if (len(re.sub(r"<[^>]+>", "", first).split()) <= 45 and not first.startswith("\x02")
+                    and any(len(q.split()) >= 60 for q in re.split(r"\n\s*\n", rest))):
+                span0, span1 = displayed_scan_span(src[i])
+                yc = min(max(y, span0 + cb[0] * (span1 - span0)), body_bottom - 60)
+                lines = _render.centre_lines(_render.layout(re.sub("[\x03-\x05]", "", first), RIGHT.width, 9), RIGHT.width, 9)
+                _, yc = _render.draw(page, (RIGHT.x0, yc, RIGHT.x1, body_bottom), lines, 9)
+                y, body_txt = yc + 8, rest
+        n_paras = len([p for p in re.split(r"\n\s*\n", body_txt.strip()) if p.strip()])
         fracs = (None if (has_fig or not book_align)
                  else reconcile_fracs(paragraph_fracs(src[i]), n_paras))
         if fracs and len(fracs) >= 2:
