@@ -14,7 +14,9 @@ indented paragraphs. Steps 3 and 4 call apply() on each page's English:
   * a row the text layer shows as running on (beside a drop capital, or not
     indented) is joined to the row above;
   * a page whose first printed line is not indented opens mid-paragraph --
-    the English gets CONT in front, and layout() gives it no indent.
+    the English gets CONT in front, and layout() gives it no indent;
+  * a run-in section title ("Le vêtement de l'escrimeur. — ") loses the
+    OCR's blank line before it where the book leaves no space (pdf 13).
 
 No text layer, or rows that can't be matched to it: the English is returned
 unchanged (the old rules). Nothing here changes a word of the text.
@@ -167,6 +169,34 @@ def hints(rows, lines, width):
     return opens, joins
 
 
+def spacing(rows, lines):
+    """Per row: True when the book leaves extra space above its line (the
+    gap from the line above is well over the page's usual line pitch),
+    False when it doesn't, None when the row's line isn't found or has no
+    line above on the page. Pure, for the tests."""
+    body = _body(lines)
+    ys = [l[1] for l in body]
+    pitch = [None] + [ys[k] - ys[k - 1] for k in range(1, len(ys))]
+    out, at = [None] * len(rows), 0
+    for r, row in enumerate(rows):
+        key = norm(row)[:15]
+        if len(key) < 8:
+            continue
+        k = _find(key, body, at)
+        if k is None:
+            continue
+        at = k + 1
+        near = sorted(p for p in pitch[max(1, k - 6):k + 7] if p and p > 0)
+        if k == 0 or len(near) < 3:
+            continue
+        normal = near[len(near) // 2]
+        if pitch[k] > 1.3 * normal:
+            out[r] = True
+        elif pitch[k] < 1.12 * normal:
+            out[r] = False
+    return out
+
+
 def _rows(text):
     return [r for r in (text or "").split("\n") if r.strip()]
 
@@ -186,6 +216,11 @@ def _source_rows(src_body):
 # Prévost-Jollivet pdf 318) -- and margin notes
 _ITEM = re.compile(r"\s*(?:<[^>]+>)*\s*(?:[—–\-•*«“\"]|\d+\s*[°.)]|[a-zA-Z]\)|[IVXLC]+\.\s"
                    r"|[^\W\d][^.!?—]{0,40}?[.:]\s*[—–]\s|(?:\S+\s){0,4}\S+\.\s+[A-ZÀ-Ý]|⟦)")
+
+
+# a run-in section title opening the row ("L'épée. — ", "The clothing of the
+# fencer. — "): _render._RUN_IN, which keeps a blank line before it
+_RUN_IN = re.compile(r"[^\W\d][^.!?—]{0,40}?[.:]\s*[—–]\s")
 
 
 def _prose(row, least=30):
@@ -223,6 +258,16 @@ def apply(english, src_body, page):
                     and not rows[a].rstrip().endswith(("-", "‐"))):  # a word split at the line end: left as it was
                 rows[a] = rows[a].rstrip() + " " + rows[b].strip()
                 rows[b] = None
+        # no space before a run-in title where the print has none: the OCR's
+        # blank lines there come and go (Kirchhoffer pdf 13). Never added: a
+        # line missing from the layer looks like a gap (pdf 38-40)
+        space = spacing(src, lines)
+        for r in range(1, len(src)):
+            a, b = filled[r - 1], filled[r]
+            if (rows[b] is not None and space[r] is False
+                    and _RUN_IN.match(re.sub(r"<[^>]+>", "", rows[b]).strip())):
+                for k in range(a + 1, b):
+                    rows[k] = None                       # the blank lines in between
         english = "\n".join(r for r in rows if r is not None)
     if opens:
         english = CONT + english.lstrip("\n")

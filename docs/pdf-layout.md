@@ -28,7 +28,7 @@ its primitives are used:
 | `page.draw_line`, `page.draw_rect` | the divider, the footnote rules |
 | `page.show_pdf_page(rect, src, i)` | paint page `i` of another PDF into a rectangle — this is how the scan gets onto the left of the side-by-side |
 | `src_page.get_pixmap(matrix, clip)` | rasterise (part of) a scan page to pixels; `.tobytes("jpeg", jpg_quality=…)` for embedding |
-| `src_page.get_text("blocks")` | the scan's own embedded OCR text layer, as positioned boxes — used only for paragraph alignment |
+| `src_page.get_text("blocks")` | the scan's own embedded OCR text layer, as positioned boxes — used for paragraph alignment and (`_textlayer`) printed paragraph starts; never for its words |
 
 Coordinates: origin is **top-left**, y grows **downward**. A "rect" is
 `(x0, y0, x1, y1)`.
@@ -86,6 +86,27 @@ The OCR marks paragraphs at random -- a blank line or a bare line break,
 body text is laid out in **one style per book**: `layout(...,
 paras="indented"|"spaced", centre=...)` (`_layout_paras`). The style is
 `[book] paragraphs` in the overrides file, `"indented"` unless set.
+
+**Where a paragraph starts** comes from the scan's text layer when it has
+one (`_textlayer.apply`, steps 3 and 4, before `layout()`): its words are
+too poor to use, but its line positions are the print's. A line runs on
+from the one above only when that one reaches the right margin and this
+one starts at the left margin (on a page that indents its paragraphs), or
+round a drop capital; a line at the page's indent always starts one. So
+an OCR row that runs on in print is joined to the row above (Kirchhoffer
+pdf 12: «Jusqu'à» beside the drop capital), and a page whose first printed
+line is not indented opens mid-paragraph -- `_textlayer.CONT` in front of
+the text, and `layout()` gives it no indent (pdf 14). The blank line the
+indented style keeps before a run-in title ("L'épée. — ") is dropped where
+the print has normal line spacing above it (pdf 13); a space is never
+added from the layer, since a line missing from it looks like a gap
+(pdf 38-40). Left as they were:
+pages without a layer or with a noisy one (Internet Archive pages whose
+line starts are scattered), table pages, rows that open a new item even
+when printed flush (dialogue dashes and quotes, `1°`, `a)`, run-in titles,
+italic glossary heads, margin notes) and words split by a hyphen. In the
+side-by-side, an indented book adds no space between the blocks
+`render_aligned` anchors (the OCR's blank lines; pdf 13).
 
 - A line is a **paragraph of running text** only when it reads as one:
   60+ letters, or ending a sentence / list item (`. ! ? ; :`) right after

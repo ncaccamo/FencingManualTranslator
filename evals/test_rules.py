@@ -3789,6 +3789,23 @@ def test_text_layer_paragraph_starts():
            "after execute them in advancing... the pupil will evade them in breaking ground\n"
            "with the right foot or the left foot, and at the contact of the blade, not before!...\n"
            "Then, in breaking ground a little more, the pupil will evade to the fore-")
+    # Kirchhoffer pdf 13: no space in print before «Le vêtement de l'escrimeur. —»,
+    # so the OCR's blank line goes; a gap the layer shows is never added
+    rows = ["être molle ; 2° ne pas être trop fine du bout; 3° ne pas être trop",
+            "lourde au talon.", "Le vêtement de l'escrimeur. — Une veste d'armes"]
+    lines = [(221, 748, "elle doit remplir les conditions suivantes : 1° être flexible sans", 884),
+             (221, 774, "être molle ; 2° ne pas être trop fine du bout; 3° ne pas être trop", 884),
+             (221, 800, "lourde au talon.", 385),
+             (244, 826, "Le vêtement de l'escrimeur. — Une veste d'armes, généralement", 886),
+             (222, 851, "en coutil blanc ou de couleur claire, doublée de toile à voile, afin", 885),
+             (223, 876, "d'empêcher les lames cassées de pénétrer. En salle d'armes, il", 884)]
+    assert T.spacing(rows, lines) == [False, False, False]
+    assert T.spacing(rows, lines[:3] + [(244, 852, lines[3][2], 886)] + lines[4:])[2] is True
+    pg13 = Page(lines)
+    eng13 = ("not to be too thin at the tip; 3° not to be too heavy at the heel, said of a blade in general.\n\n"
+             "The clothing of the fencer. — A fencing jacket, generally of white cotton, lined.")
+    assert T.apply(eng13, "\n".join(["elle doit remplir les conditions suivantes : 1° être flexible sans",
+                                      "Le vêtement de l'escrimeur. — Une veste d'armes"]), pg13) == T.CONT + eng13.replace("\n\n", "\n")
     assert T.apply(eng, src, pg).split("\n") == [
         "You therefore make, without announcing them by the voice, slow takings of the blade, "
         "wide, visible, in all the lines. You see to it that each evasion is perfectly executed "
