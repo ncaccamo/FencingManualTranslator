@@ -273,11 +273,13 @@ class Flow:
                        FS - 1, color=(0.3, 0.3, 0.3))
             self.y += FS * 0.3
 
-    def body(self, text, src_body="", src_page=None):
+    def body(self, text, src_body="", src_page=None, prev_page=None, ornaments=()):
         body_txt, notes = _render.split_footnotes(text)
         if not _render.toc_page(body_txt):
             # paragraph starts as printed, where the scan has a text layer
-            body_txt = _textlayer.apply(body_txt, src_body, src_page)
+            body_txt = _textlayer.apply(_render.english_quotes(body_txt), src_body, src_page, prev_page, ornaments)
+            body_txt = _render.drop_margin_echoes(body_txt)
+        notes = [_render.english_quotes(n) for n in notes]
         self._flow(_render.layout(body_txt, COL.width, FS, paras=PARAS, centre=CENTRE), FS)
         if notes:
             # end-of-section glossary block, smaller type
@@ -513,7 +515,8 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
 
         if not is_empty and not body_is_caption:
             src_body = extractions[i].split("BODY_TEXT:", 1)[-1] if i < len(extractions) else ""
-            flow.body(tr, src_body, src_page)
+            flow.body(tr, src_body, src_page, src_doc[i - 1] if (src_doc is not None and 0 < i <= len(src_doc)) else None,
+                      _layout.ornaments(folder, i))
             rendered += 1
 
     sheets = doc.page_count

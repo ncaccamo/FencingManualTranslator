@@ -244,20 +244,23 @@ CAPTION_SIZE = 8
 CAPTION_COLOR = (0.3, 0.3, 0.3)
 
 
-def missing_captions(figs, body):
+def missing_captions(figs, body, src_body=""):
     """English captions of a page's figures to draw above its text: only
     the ones a reviewer set ([pages.N] caption in the overrides file --
     Kirchhoffer pdf 76), and only when the English text doesn't already
     carry them. Not every recorded caption: many are the OCR model's own
     description of the picture ("Two fencers demonstrating...", "Immagine
     di una mano..."), not text the book prints -- checked 2026-10-07, no
-    automatic test tells them apart."""
+    automatic test tells them apart. The English can carry it in other
+    words (a retranslation, Kirchhoffer pdf 76 again, 2026-10-22), so the
+    book's own caption is looked for in the source page too (`src_body`)."""
     norm = lambda t: re.sub(r"[\W_]+", " ", re.sub(r"<[^>]+>", "", t or "")).lower().strip()
-    text = norm(body)
+    text, src = norm(body), norm(src_body)
     out = []
     for f in figs:
         cap = _render.figure_caption(f)
-        if f.get("decided") and cap and " ".join(norm(cap).split()[:5]) not in text:
+        in_src = bool(src) and " ".join(norm(f.get("caption")).split()[:5]) in src if f.get("caption") else False
+        if f.get("decided") and cap and " ".join(norm(cap).split()[:5]) not in text and not in_src:
             out.append(cap)
     return out
 
@@ -387,8 +390,11 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         TOC = _render.toc_page(body_txt)     # decided once for the page
         if not TOC:
             # paragraph starts as printed, where the scan has a text layer
-            body_txt = _textlayer.apply(body_txt, extractions[i].split("BODY_TEXT:", 1)[-1]
-                                        if i < len(extractions) else "", src[i])
+            body_txt = _textlayer.apply(_render.english_quotes(body_txt), extractions[i].split("BODY_TEXT:", 1)[-1]
+                                        if i < len(extractions) else "", src[i], src[i - 1] if i else None,
+                                        _layout.ornaments(folder, i))
+            body_txt = _render.drop_margin_echoes(body_txt)
+        notes = [_render.english_quotes(n) for n in notes]
         fn_lines = _render.footnote_lines(notes, RIGHT.width, 7) if notes else []
         fn_h = _render.measure(fn_lines, 7) + 4 if fn_lines else 0.0
         body_bottom = RIGHT.y1 - fn_h
@@ -441,7 +447,8 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         # A figure on a text page whose caption a reviewer set: the caption
         # goes above the text in small grey type, unless the English text
         # already carries it (Kirchhoffer pdf 76, 2026-10-07 review)
-        for cap in missing_captions(fig_map.get(str(i), []), body_txt):
+        for cap in missing_captions(fig_map.get(str(i), []), body_txt,
+                                    extractions[i].split("BODY_TEXT:", 1)[-1] if i < len(extractions) else ""):
             for vl in _render.layout(cap, RIGHT.width, CAPTION_SIZE):
                 _, y = _render.draw(page, (RIGHT.x0, y, RIGHT.x1, body_bottom), [vl],
                                     CAPTION_SIZE, color=CAPTION_COLOR)

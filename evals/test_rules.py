@@ -3515,6 +3515,8 @@ def test_paragraph_style_layout():
     # a heading in capitals is centred when the book centres them
     assert lay("LES CONTRE-TEMPS", centre=True)[0] > 100
     assert lay("LES CONTRE-TEMPS") == [0]
+    # a page's last line cut off mid-sentence is not a heading (Prévost-Jollivet pdf 210)
+    assert lay(long1 + "\n\nThis first movement consists in taking a pace forward, in", centre=True)[-1] < 100
 
 
 def test_render_line_helpers():
@@ -3683,6 +3685,75 @@ def _run_plain() -> int:
     return 1 if fails else 0
 
 
+def test_divider_put_back_from_layout():
+    # format review, 2026-10-22: Joseph-Renaud's ⁂ is dropped by the OCR on
+    # about half its pages; the layout detector boxes it between paragraphs
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    T = importlib.import_module("_textlayer")
+    class Page:
+        class rect:
+            width, height = 1000, 1000
+        def __init__(self, lines): self.lines = lines
+        def get_text(self, kind, flags=0):
+            return {"blocks": [{"lines": [{"bbox": (x0, y, x1, y + 12), "spans": [{"text": t}]}
+                                          for x0, y, t, x1 in self.lines]}]}
+    lines = [(270, 100, "difficile, soit parfaitement exécuté, et sans aucune hésitation de", 900),
+             (230, 120, "la part de l'élève qui doit suivre la leçon avec la plus grande", 900),
+             (230, 140, "attention jusqu'au bout.", 500),
+             (270, 200, "Dérober est fort difficile. Certes, on apprend aussi vite à dérober", 900),
+             (230, 220, "que l'on apprend à parer quand on a bien compris le mouvement.", 900)]
+    src = "difficile, soit parfaitement exécuté, et sans aucune\nDérober est fort difficile. Certes, on apprend"
+    eng = ("difficult, be perfectly executed, and without any hesitation on the part of the pupil until the end.\n"
+           "To evade is very difficult. Certainly, one learns to evade as quickly as one learns to parry.")
+    out = T.apply(eng, src, Page(lines), ornaments=[0.17])
+    assert T.DIVIDER in out and out.index(T.DIVIDER) < out.index("To evade")
+    # a word on that height (a heading's «ET») is text, not an ornament
+    assert T.DIVIDER not in T.apply(eng, src, Page(lines + [(560, 165, "ET", 590)]), ornaments=[0.17])
+
+
+def test_english_quotation_marks():
+    # reviewer, 2026-10-22: English quotation marks, not guillemets; a lone »
+    # is a ditto mark; per-line « (Gomard, Barbasetti) and the OCR's • for it
+    # (Prévost-Jollivet pdf 237: came out as a bulleted list) go
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        R = importlib.import_module("_render")
+    except ImportError:
+        return
+    q = R.english_quotes
+    assert q("called « of the foil » which") == "called “of the foil” which"
+    assert q('the "wall" said "go"') == "the “wall” said “go”"
+    assert q("4th  » wide imperfect defensive;") == "4th  » wide imperfect defensive;"
+    assert q("b) « third », »   »   »   on the inside") == "b) “third”, »   »   »   on the inside"
+    assert q("after the examination\n« approved, with patents") == "after the examination\napproved, with patents"
+    assert q("closing from before. » Then") == "closing from before.” Then"
+    assert q("terms:\n• The employment of the left hand\n• of fencing. We have seen\n• frequently to parry.»") == \
+        "terms:\n“The employment of the left hand\nof fencing. We have seen\nfrequently to parry.”"
+    assert q("• First item;\n• Second item;\n• Third item.") == "• First item;\n• Second item;\n• Third item."
+
+
+def test_footnote_runs_split():
+    # format review, 2026-10-22: the translation runs several author's notes
+    # into one line; each is its own note (Kirchhoffer pdf 26, Prévost-Jollivet pdf 210)
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        R = importlib.import_module("_render")
+    except ImportError:
+        return
+    f = R.split_note_run
+    assert f("(1) Too often, alas! the jurors are not chosen. (2) The regulation is the same.") == [
+        "(1) Too often, alas! the jurors are not chosen.", "(2) The regulation is the same."]
+    assert f("(1) F. MASIELLO. Op. cit. (2) F. MASIELLO. Op. cit.") == ["(1) F. MASIELLO. Op. cit.", "(2) F. MASIELLO. Op. cit."]
+    assert f("1. Drafted by the Academy. 2. The name wall, see p. 3. Then.") == [
+        "1. Drafted by the Academy.", "2. The name wall, see p. 3. Then."]
+    assert f("(1) Measures 2 metres (3) wide.") == ["(1) Measures 2 metres (3) wide."]     # not next in sequence
+    assert f("†1 French: riposte") == ["†1 French: riposte"]
+    assert R.split_footnotes("Body.\n___FOOTNOTES___\n(1) A. (2) B.")[1] == ["(1) A.", "(2) B."]
+
+
 def test_text_layer_paragraph_starts():
     # reviewer, 2026-10-21: the OCR's line breaks made new paragraphs beside a
     # drop capital (Kirchhoffer pdf 12) and at the top of a page that runs on
@@ -3691,6 +3762,7 @@ def test_text_layer_paragraph_starts():
     import importlib
     sys.path.insert(0, str(_PIPELINE))
     T = importlib.import_module("_textlayer")
+    unmark = lambda t: t.replace("\x03", "").replace("\x04", "")      # the row marks are the layout's business
     W = 1024
     # scan 11: three lines round the drop capital L, then an indented paragraph
     lines = [(212, 1012, "ESCRIME au fleuret étant classée parmi les exercices vio-", 843),
@@ -3799,14 +3871,14 @@ def test_text_layer_paragraph_starts():
              (244, 826, "Le vêtement de l'escrimeur. — Une veste d'armes, généralement", 886),
              (222, 851, "en coutil blanc ou de couleur claire, doublée de toile à voile, afin", 885),
              (223, 876, "d'empêcher les lames cassées de pénétrer. En salle d'armes, il", 884)]
-    assert T.spacing(rows, lines) == [False, False, False]
+    assert T.spacing(rows, lines) == [None, False, False]      # row 0 is the first text line: nothing above to measure
     assert T.spacing(rows, lines[:3] + [(244, 852, lines[3][2], 886)] + lines[4:])[2] is True
     pg13 = Page(lines)
     eng13 = ("not to be too thin at the tip; 3° not to be too heavy at the heel, said of a blade in general.\n\n"
              "The clothing of the fencer. — A fencing jacket, generally of white cotton, lined.")
-    assert T.apply(eng13, "\n".join(["elle doit remplir les conditions suivantes : 1° être flexible sans",
-                                      "Le vêtement de l'escrimeur. — Une veste d'armes"]), pg13) == T.CONT + eng13.replace("\n\n", "\n")
-    assert T.apply(eng, src, pg).split("\n") == [
+    assert unmark(T.apply(eng13, "\n".join(["elle doit remplir les conditions suivantes : 1° être flexible sans",
+                                      "Le vêtement de l'escrimeur. — Une veste d'armes"]), pg13)) == T.CONT + eng13.replace("\n\n", "\n")
+    assert unmark(T.apply(eng, src, pg)).split("\n") == [
         "You therefore make, without announcing them by the voice, slow takings of the blade, "
         "wide, visible, in all the lines. You see to it that each evasion is perfectly executed "
         "easy to evade... put more speed, more unexpectedness into them... Then-",

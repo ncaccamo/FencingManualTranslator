@@ -26,6 +26,9 @@ import re
 import unicodedata
 
 CONT = "\x02"            # in front of a page's English: it opens mid-paragraph
+DIVIDER = "[[DIVIDER]]"  # _render.DIVIDER: a section divider
+INDENTED = "\x03"       # in front of a row: the book starts it at the paragraph indent
+FLUSH = "\x04"          # in front of a row: the book starts it at the margin, not indented
 
 INDENT = 0.012           # a paragraph indent: this much of the page width in from the margin
 FULL = 0.02              # a line ending this close to the right margin runs on to the next
@@ -55,7 +58,12 @@ def page_lines(page):
     out.sort(key=lambda r: (r[1], r[0]))
     merged = []
     for x0, y0, y1, t, x1 in out:
-        if merged and abs(y0 - merged[-1][1]) < 0.5 * (y1 - y0):
+        # one printed line: the centres agree to within half the smaller
+        # height -- a taller bold run-in title ("Lignes. —", Kirchhoffer
+        # pdf 22) must not swallow the line above, and a descender («: par
+        # conséquent» beside «fer», Joseph-Renaud pdf 281) must not split one
+        if merged and abs((y0 + y1) / 2 - (merged[-1][1] + merged[-1][2]) / 2) < min(
+                y1 - y0, merged[-1][2] - merged[-1][1]) / 2:
             m = merged[-1]
             parts = sorted([(m[0], m[3]), (x0, t)])
             merged[-1] = [parts[0][0], m[1], max(m[2], y1), " ".join(p[1] for p in parts), max(m[4], x1)]
@@ -64,8 +72,31 @@ def page_lines(page):
     return [(x0, y, t, x1) for x0, y, _, t, x1 in merged]
 
 
-def _body(lines):
-    """Drop the running head, page number and other short lines at the top."""
+def _body(lines, rows=None):
+    """The printed lines of the text: from the first line that shares a run
+    of letters with the OCR's first rows (`rows`), so a running head, a page
+    number or a stamp above it is left out (Prévost-Jollivet's «THÉORIE
+    PRATIQUE DE L'ESCRIME.» is long enough to pass for text). Without rows,
+    or no such line among the first few: from the first line of 20+
+    letters. Lines with no letters (a number in the margin, «11» beside
+    Kirchhoffer pdf 22) are never text."""
+    lines = [l for l in lines if len(norm(l[2])) >= 2]
+    # the text column: scraps of the facing page in the gutter («x», «ulle-»,
+    # Jacob-André) and notes in the margin lie wholly outside it
+    long_ = sorted(l[0] for l in lines if len(norm(l[2])) >= 20)
+    if long_:
+        left = long_[len(long_) // 4]
+        right = sorted(l[3] for l in lines if len(norm(l[2])) >= 20)[-1]
+        lines = [l for l in lines if l[3] > left + 0.02 * (right - left) and l[0] < right - 0.02 * (right - left)]
+    keys = [norm(r) for r in (rows or [])[:2] if len(norm(r)) >= 12]
+    for k, l in enumerate(lines[:20]):     # lines above the first row went to the page before
+        t = norm(l[2])
+        letters = [c for c in l[2] if c.isalpha()]
+        if sum(c.isupper() for c in letters) > 0.7 * len(letters):
+            continue                        # a running head in capitals, never the text («CONTRE LE BRAS TENDU»)
+        if len(t) >= 12 and any(difflib.SequenceMatcher(None, t, key, autojunk=False)
+                                .find_longest_match(0, len(t), 0, len(key)).size >= 12 for key in keys):
+            return lines[k:]
     k = 0
     while k < len(lines) and len(norm(lines[k][2])) < 20:
         k += 1
@@ -83,7 +114,11 @@ def _indent(off, same):
 
 
 def kinds(lines, width):
-    """Each line: 'start' (opens a paragraph) or 'run' (the paragraph above
+    return profile(lines, width)[0]
+
+
+def profile(lines, width):
+    """(kinds, places). kinds -- each line: 'start' (opens a paragraph) or 'run' (the paragraph above
     runs on into it); None for the whole page when its text layer is too
     noisy to trust (Internet Archive layers put some line starts well off
     the printed ones -- Masiello 1887 pdf 128).
@@ -92,7 +127,9 @@ def kinds(lines, width):
     then only from the left margin -- or, round a drop capital (set in much
     further than an indent), from the same start as the line above. A line
     at the page's indent always starts one: two in a row are two one-line
-    paragraphs (Joseph-Renaud's dialogue, Masiello's «La cosa appare ...»)."""
+    paragraphs (Joseph-Renaud's dialogue, Masiello's «La cosa appare ...»).
+    places -- each line 'margin', 'indent' (the page's paragraph indent) or
+    'far' (a drop capital, a centred line); for evals/format_check.py."""
     xs = [l[0] for l in lines]
     ends = [l[3] for l in lines]
     margin = [sorted(xs[max(0, k - 5):k + 6])[min(1, len(xs[max(0, k - 5):k + 6]) - 1)] for k in range(len(xs))]
@@ -113,7 +150,7 @@ def kinds(lines, width):
     stray = sum(1 for k in range(1, len(xs)) if where[k] == "far" and not same[k]
                 and not (k + 1 < len(xs) and same[k + 1]))
     if stray > 0.1 * len(xs):
-        return None
+        return None, where
     out = []
     for k in range(len(xs)):
         if k == 0:
@@ -128,7 +165,7 @@ def kinds(lines, width):
             out.append("run")
         else:
             out.append("start")
-    return out
+    return out, where
 
 
 def _find(key, lines, start):
@@ -143,18 +180,34 @@ def _find(key, lines, start):
     return at if best >= 0.8 else None
 
 
-def hints(rows, lines, width):
+def hints(rows, lines, width, prev_lines=None):
     """rows: the page's OCR body rows (the source, non-blank); lines: the text
     layer (page_lines). Returns (opens_mid_paragraph, joins): the first a
     bool (None: no text layer), `joins` one bool per row -- True: run this row on to the
     row above. Pure, for the tests."""
-    body = _body(lines)
+    body = _body(lines, rows)
     if len(body) < 2:
         return None, [False] * len(rows)
     kind = kinds(body, width)
     if kind is None:
         return None, [False] * len(rows)
     opens = kind[0] == "run"
+    if prev_lines and rows:
+        # the first row may begin at the foot of the page before, moved here
+        # whole by the cross-page joining: if a line there starts with it,
+        # that line says whether it opened a paragraph (Prévost-Jollivet pdf
+        # 178: «Après la parade de tierce» is indented there). A fragment
+        # carried over mid-line («Il faudra se mé-», Kirchhoffer pdf 14)
+        # starts no line, and the page's own first line decides.
+        pb = _body(prev_lines)
+        pk = kinds(pb, width) if len(pb) >= 2 else None
+        key = norm(rows[0])[:25]
+        if pk and len(key) >= 15:
+            for k in range(max(0, len(pb) - 8), len(pb)):
+                head = norm(pb[k][2])[:len(key)]
+                if difflib.SequenceMatcher(None, key, head).ratio() >= 0.9:
+                    opens = pk[k] == "run"
+                    break
     joins, at = [False] * len(rows), 0
     for r, row in enumerate(rows):
         key = norm(row)[:15]
@@ -174,7 +227,7 @@ def spacing(rows, lines):
     gap from the line above is well over the page's usual line pitch),
     False when it doesn't, None when the row's line isn't found or has no
     line above on the page. Pure, for the tests."""
-    body = _body(lines)
+    body = _body(lines, rows)
     ys = [l[1] for l in body]
     pitch = [None] + [ys[k] - ys[k - 1] for k in range(1, len(ys))]
     out, at = [None] * len(rows), 0
@@ -195,6 +248,37 @@ def spacing(rows, lines):
         elif pitch[k] < 1.12 * normal:
             out[r] = False
     return out
+
+
+def row_places(rows, lines, width):
+    """Per row: 'indent' when the book starts it at the page's paragraph
+    indent, 'margin' when it starts a paragraph flush at the margin, None
+    otherwise (runs on, centred, not found, no usable layer). Pure."""
+    body = _body(lines, rows)
+    out = [None] * len(rows)
+    if len(body) < 2:
+        return out
+    kind, where = profile(body, width)
+    if kind is None:
+        return out
+    at = 0
+    for r, row in enumerate(rows):
+        key = norm(row)[:15]
+        if len(key) < 8:
+            continue
+        k = _find(key, body, at)
+        if k is None:
+            continue
+        at = k + 1
+        if kind[k] == "start" and where[k] in ("indent", "margin") and (k or where[k] == "indent"):
+            out[r] = where[k]
+    return out
+
+
+def _pitch(body):
+    """The page's usual line pitch."""
+    p = sorted(body[k][1] - body[k - 1][1] for k in range(1, len(body)) if body[k][1] > body[k - 1][1])
+    return p[len(p) // 2] if p else 20
 
 
 def _rows(text):
@@ -230,11 +314,14 @@ def _prose(row, least=30):
     return len(plain) >= least and not plain.isupper() and not plain.endswith(":")
 
 
-def apply(english, src_body, page):
+def apply(english, src_body, page, prev_page=None, ornaments=()):
     """The page's English body with the text layer's paragraph starts
     applied (see the module note); unchanged when there is nothing to go
     on. `src_body`: the OCR BODY_TEXT of the same page; `page`: its scan
-    page (PyMuPDF), or None."""
+    page (PyMuPDF), or None; `prev_page`: the scan page before it, if any;
+    `ornaments`: heights (0-1) of the small marks the layout detector found
+    between paragraphs (_layout.ornaments) -- a divider the OCR missed goes
+    back in before the paragraph that follows it."""
     if page is None or not (english or "").strip():
         return english
     if "<table" in (src_body or "") or "\x00TABLE" in english or "[[TABLE]]" in english:
@@ -246,7 +333,11 @@ def apply(english, src_body, page):
     if len(lines) < 4:
         return english
     src = _source_rows(src_body)
-    opens, joins = hints(src, lines, page.rect.width)
+    try:
+        prev_lines = page_lines(prev_page) if prev_page is not None else None
+    except Exception:                                # noqa: BLE001
+        prev_lines = None
+    opens, joins = hints(src, lines, page.rect.width, prev_lines)
     rows = english.split("\n")
     filled = [k for k, r in enumerate(rows) if r.strip()]
     if len(filled) == len(src):                      # row k of the English is row k of the source
@@ -268,6 +359,56 @@ def apply(english, src_body, page):
                     and _RUN_IN.match(re.sub(r"<[^>]+>", "", rows[b]).strip())):
                 for k in range(a + 1, b):
                     rows[k] = None                       # the blank lines in between
+        # a divider the OCR never read, where the detector saw one between
+        # two paragraphs and no line of text runs through it
+        body = _body(lines, src) if ornaments else []
+        for orn in ornaments or ():
+            y = orn * page.rect.height
+            pitch = _pitch(body)
+            # text, not an ornament, if any line of the layer runs through it
+            # («ET», «ou», «IV.°», a lettered label -- format review 2026-10-22)
+            if any(l[1] - 2 <= y <= l[1] + 0.8 * pitch and re.search(r"\w", l[2]) for l in lines):
+                continue
+            below = [k for k, l in enumerate(body) if l[1] > y]
+            if not below or below[0] == 0:
+                continue
+            if body[below[0]][1] - body[below[0] - 1][1] < 1.6 * pitch:
+                continue                                   # no gap in the text: not between paragraphs
+            places = profile(body, page.rect.width)[1]
+            if places[below[0]] == "far":
+                continue                                   # a centred title follows: a chapter number («IV.°», Masiello)
+            k0, at, target = below[0], 0, None
+            for r, row in enumerate(src):
+                key = norm(row)[:15]
+                if len(key) < 8:
+                    continue
+                k = _find(key, body, at)
+                if k is None:
+                    continue
+                at = k + 1
+                if k == k0:
+                    target = r
+                    break
+            if target is None or rows[filled[target]] is None:
+                continue
+            prev = re.sub(r"<[^>]+>", "", rows[filled[target - 1]] or "").strip() if target else ""
+            if prev and len(prev.split()) <= 8 and not re.search(r"[.!?:;»”…)]$", prev):
+                continue                                   # right after a title: a chapter number, not a divider
+            near = [rows[n] for n in range(max(0, filled[target] - 3), min(len(rows), filled[target] + 1)) if rows[n]]
+            if any(DIVIDER in x or re.match(r"\s*[★☆⁂✶✱*]", x) for x in near):
+                continue
+            rows[filled[target]] = "\n" + DIVIDER + "\n\n" + rows[filled[target]]
+        # where each row starts in print: short lines the layout would set
+        # flush (a drill's commands, the first of a numbered run, a dialogue
+        # dash -- Jacob-André pdf 112) get the indent the book gives them,
+        # and an OCR indent the book doesn't have goes (Joseph-Renaud «2°»)
+        place = row_places(src, lines, page.rect.width)
+        for r in range(len(src)):
+            b = filled[r]
+            if rows[b] is None or not place[r] or re.search(r"[{}|⟦]|\x00TABLE", rows[b]):
+                continue
+            mark = INDENTED if place[r] == "indent" else FLUSH
+            rows[b] = re.sub(r"^(\n*)", lambda m: m.group(1) + mark, rows[b], count=1)
         english = "\n".join(r for r in rows if r is not None)
     if opens:
         english = CONT + english.lstrip("\n")

@@ -21,6 +21,7 @@ Nothing here calls a model. It runs on the host with stock Python 3
 | `reports/` | check.py output, and the judge's (below). Git-ignored. |
 | `folio_choice_test.py` | the page-number re-read test: asks the OCR model about each labelled page's margins and scores confirmed / wrong / invented numbers (STATUS, "Page numbers"). |
 | `judge_key.py`, `meaning_judge.py`, `judge_score.py` | choosing a model for the local meaning review: an answer key built from the agent meaning reviews (`reports/meaning-review/`), a runner that sends each page pair to llama-swap models, and a scorer (`reports/judge/score.md`). See `docs/evaluation-and-tuning.md` §4a. |
+| `format_check.py` | the English layout against the print, per page: paragraph starts and gaps the scan's text layer shows against those the English draws (`reports/format/<stem>.md`). A measure, not a fix; noisy on skewed scans and on pages with side notes. |
 
 ## Workflow
 

@@ -305,9 +305,22 @@ def markdown_italics(s):
     return _MD_ITALIC.sub(lambda m: "<i>" + re.sub(r"</?i>", "", m.group(1)) + "</i>", s)
 
 
+_SUP = re.compile(r"<sup>\s*([^<]{1,4}?)\s*</sup>", re.I)
+_SUP_DIGITS = {"1": "¹", "2": "²", "3": "³"}          # the ones the PDF's base fonts have
+
+
+def _sup(m):
+    """A superscript the translation marked up (a note number in a heading
+    set in capitals came out as a literal "<SUP>2</SUP>", Prévost-Jollivet
+    pdf 210): drawn as ¹ ² ³ where the font has it, else as plain text."""
+    t = m.group(1)
+    return "".join(_SUP_DIGITS.get(c, c) for c in t) if all(c in _SUP_DIGITS for c in t) else t
+
+
 def _spans(s):
     """'a <i>b</i> c' -> [('a ', 0), ('b', 1), (' c', 0)]"""
     out, ital = [], 0
+    s = _SUP.sub(_sup, s or "")
     for part in _TAG.split(markdown_italics(s)):
         if not part:
             continue
@@ -476,6 +489,8 @@ def layout(text, width, size, paras=None, centre=False, toc=None):
     _textlayer.CONT opens mid-paragraph (the scan says so): no indent."""
     cont = (text or "").startswith("\x02")
     text = (text or "").lstrip("\x02")
+    if not paras or (toc if toc is not None else False):
+        text = text.replace("\x03", "").replace("\x04", "")    # _textlayer's row marks: body text only
     if paras:
         return _layout_paras(text, width, size, paras, centre, toc, cont)
     out = []
@@ -587,6 +602,8 @@ def _layout_toc(rows, width, size, centre):
     for r in rows:
         lines += [x for x in re.split(r"\s+\|\s+", r.rstrip(" |"))] if " | " in r else [r]
     for raw in lines:
+        # OCR debris in the leaders: "parry...... /...... 78" (Prévost-Jollivet)
+        raw = re.sub(r"(\.{2,})\s*[/|\\]\s*(\.{2,})", r"\1\2", raw)
         if not raw.strip():
             out.append(Line(gap=True))
             continue
@@ -619,6 +636,11 @@ _STEP = re.compile(r"^(?:[IVX]+|\d+)\.?\s+(?:TIME|TEMPO|TEMPS)\b", re.I)
 _SPEAKER = re.compile(r"^(?:<i>)?(Maestro|Master|Allievo|Student|Pupil|Professeur|Élève)(?:</i>)?\s*[:.]?\s*$", re.I)
 
 
+def _unmarked(row):
+    """A row without _textlayer's start marks (INDENTED / FLUSH), stripped."""
+    return row.strip().lstrip("\x03\x04").strip()
+
+
 def _pair_lesson(rows):
     """A lesson set in two columns in the book -- the master's actions left,
     the pupil's numbered steps right (Barbasetti: "Maestro: | Allievo: / I.
@@ -632,19 +654,19 @@ def _pair_lesson(rows):
     while k < len(rows):
         j = k
         heads = []
-        if _SPEAKER.match(rows[j].strip()):
-            heads.append(rows[j].strip()); j += 1
+        if _SPEAKER.match(_unmarked(rows[j])):
+            heads.append(_unmarked(rows[j])); j += 1
         left = []
-        while j < len(rows) and rows[j].strip() and not _STEP.match(rows[j].strip()) \
-                and not _SPEAKER.match(rows[j].strip()):
-            left.append(rows[j].strip()); j += 1
-        while j < len(rows) and not rows[j].strip():
+        while j < len(rows) and _unmarked(rows[j]) and not _STEP.match(_unmarked(rows[j])) \
+                and not _SPEAKER.match(_unmarked(rows[j])):
+            left.append(_unmarked(rows[j])); j += 1
+        while j < len(rows) and not _unmarked(rows[j]):
             j += 1
-        if j < len(rows) and _SPEAKER.match(rows[j].strip()):
-            heads.append(rows[j].strip()); j += 1
+        if j < len(rows) and _SPEAKER.match(_unmarked(rows[j])):
+            heads.append(_unmarked(rows[j])); j += 1
         steps = []
-        while j < len(rows) and rows[j].strip():
-            line = rows[j].strip()
+        while j < len(rows) and _unmarked(rows[j]):
+            line = _unmarked(rows[j])
             if _STEP.match(line):
                 steps.append([line])
             elif steps:
@@ -683,7 +705,7 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
     gap = brace = prev_colon = False
     text = italian_low_high(italian_line_numerals(line_name_italics(text)))
     if toc if toc is not None else _toc_page((text or "").split("\n")):
-        return _layout_toc((text or "").split("\n"), width, size, centre)
+        return _layout_toc((text or "").replace("\x03", "").replace("\x04", "").split("\n"), width, size, centre)
     rows = _pair_lesson(_rejoin(text))
     for at, raw in enumerate(rows):
         if raw.startswith("\x00TABLE"):
@@ -703,6 +725,10 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
             gap = prev != "start"
             brace = False
             continue
+        # where the book starts this row (_textlayer): at the paragraph indent,
+        # or flush -- what the print shows wins over the guesses below
+        forced = "indent" if raw.lstrip(" ").startswith("\x03") else "flush" if raw.lstrip(" ").startswith("\x04") else None
+        raw = raw.replace("\x03", "").replace("\x04", "")
         m = _MARGIN_RE.match(raw)
         if m:
             if gap:
@@ -723,10 +749,16 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
         numbered = bool(_LIST_START.match(body)) and long_ and not body.lstrip().startswith(("—", "-", "•", "*"))
         prose = (not brace and (n <= 4 or long_) and (_para_line(body) or numbered)
                  and (long_ or (ends and prev == "prose")))
+        if forced and not brace:
+            prose = True                  # the print says it's a paragraph of its own
         if prose:
             raw, n = body, 0
         new_para = prose and prev in ("start", "prose", "other") and not (
             prev == "start" and (cont or not long_ or re.match(r"(?:<i>)?[«“\"(]?[a-zà-ÿ]", raw)))
+        if forced == "indent" and not brace:
+            new_para = True
+        elif forced == "flush":
+            new_para = False
         # ... but not before a run-in section title ("L'épée. — Tous les
         # assauts", "Tactique générale. — "): the book leaves space there
         run_in = bool(_RUN_IN.match(plain))
@@ -735,7 +767,11 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
         alone = ((at == 0 or not rows[at - 1].strip()) and (at + 1 == len(rows) or not rows[at + 1].strip()))
         # a title ending "." ("Synoptic charts.") only after a heading or at
         # the top -- after running text it is a one-line paragraph ("He returns.")
-        title = alone and _title_line(plain) and (
+        # the page's last line breaking off mid-sentence ("... taking a pace
+        # forward, in", Prévost-Jollivet pdf 210) runs on to the next page
+        cut = (not any(r.strip() for r in rows[at + 1:]) and len(plain.split()) >= 6
+               and bool(re.search(r"[a-zà-ÿ,]$", plain)))
+        title = alone and not cut and _title_line(plain) and (
             not re.search(r"\.(?:</i>)?$", body) or prev in ("start", "other")
             or bool(re.match(r"(?:§\s*)?[\dIVXLC]+[.°]", plain)))
         if centre and not brace and (title or (not prose and _heading_line(plain))):
@@ -870,7 +906,129 @@ def split_footnotes(text):
     body, sep, rest = text.partition(FN_HEADER)
     if not sep:
         return text.rstrip(), []
-    return body.rstrip(), [l for l in rest.strip().splitlines() if l.strip()]
+    return body.rstrip(), [n for l in rest.strip().splitlines() if l.strip() for n in split_note_run(l)]
+
+
+def drop_margin_echoes(text):
+    """A margin note the OCR also read into the running text (Gomard pdf
+    310: "The gliding or glide." as a body line next to ⟦MARGIN: The
+    gliding or glide.⟧): the body copy goes. A body line is an echo when
+    it is short (12 words or fewer) and its words are a margin note's
+    within three lines of it."""
+    lines = (text or "").split("\n")
+    plain = lambda t: re.sub(r"[^\w]+", " ", re.sub(r"<[^>]+>", "", t)).strip().lower()
+    notes = [(k, plain(m.group(1))) for k, l in enumerate(lines) for m in [_MARGIN_RE.match(l)] if m]
+    if not notes:
+        return text
+    out = []
+    for k, l in enumerate(lines):
+        p = plain(l)
+        if p and not _MARGIN_RE.match(l) and len(p.split()) <= 12 and (
+                any(abs(k - j) <= 3 and n and (p == n or (len(p) > 8 and p in n)) for j, n in notes)):
+            continue
+        out.append(l)
+    return "\n".join(out)
+
+
+_LINE_QUOTE = re.compile(r"^(\s*)(?:«|•)\s*")
+
+
+def english_quotes(text):
+    """The book's quotation marks in English form (reviewer, 2026-10-22):
+    «…» -> “…”, straight "…" -> “…”. Old books open every printed line of a
+    quotation with « (Gomard, Barbasetti) -- the OCR sometimes reads it as
+    • (Prévost-Jollivet pdf 237, which came out as a bulleted list): a run
+    of 3+ such lines, one of them running on (a small letter), is one
+    quotation -- its first mark opens it, the rest go. A » standing alone
+    between spaces is a ditto mark ("4th  »  wide", contents "...... » 268")
+    and stays. Table rows are left alone; contents pages are not passed in."""
+    lines = (text or "").split("\n")
+    # 1. per-line marks: a run of lines opening with « or •
+    k = 0
+    while k < len(lines):
+        j = k
+        while j < len(lines) and _LINE_QUOTE.match(lines[j]) and not lines[j].startswith("\x00TABLE"):
+            j += 1
+        if j - k >= 3 and any(re.match(r"\s*(?:«|•)\s*[a-zà-ÿ]", lines[n]) for n in range(k + 1, j)):
+            lines[k] = _LINE_QUOTE.sub(lambda m: m.group(1) + "«", lines[k], count=1)
+            for n in range(k + 1, j):
+                lines[n] = _LINE_QUOTE.sub(lambda m: m.group(1), lines[n], count=1)
+        k = max(j, k + 1)
+    # 2. pair « with », dropping a « that reopens an open quotation, or that
+    # opens a line (or follows a split word) before a small letter -- the
+    # per-line mark of a quotation opened earlier: "after the examination /
+    # « approved", "out- « side"
+    out, open_ = [], False
+    for line in lines:
+        if line.startswith("\x00TABLE"):
+            out.append(line)
+            continue
+        res, i = [], 0
+        while i < len(line):
+            c = line[i]
+            if c == "«":
+                rest = line[i + 1:].lstrip(" \u00a0")
+                cont = bool(re.match(r"[a-zà-ÿ]", rest)) and (not line[:i].strip() or line[:i].rstrip().endswith("-"))
+                if open_ or cont:
+                    i += 1                                   # a continuation mark: gone
+                    while i < len(line) and line[i] == " ":
+                        i += 1
+                    continue
+                open_ = True
+                res.append("“")
+                i += 1
+                while i < len(line) and line[i] in " \u00a0":
+                    i += 1
+                continue
+            if c == "»":
+                before = line[:i].rstrip()
+                after = line[i + 1:i + 2]
+                # alone between spaces, not after the end of a sentence: a ditto mark
+                ditto = (not open_ and (not before or line[i - 1] in " \u00a0\t.") and (not after or after in " \u00a0\t")
+                         and not (re.search(r"[.!?…]$", before) and not re.search(r"(?:\.\s?){4,}$", before)))
+                if ditto:
+                    res.append(c)
+                else:
+                    while res and res[-1] in " \u00a0":
+                        res.pop()
+                    res.append("”")
+                    open_ = False
+                i += 1
+                continue
+            res.append(c)
+            i += 1
+        out.append("".join(res))
+    text = "\n".join(out)
+    # 3. straight double quotes, by position: opening after a space or start
+    text = re.sub(r'(^|[\s(\[—–-])"(?=\S)', "\\1“", text, flags=re.M)
+    return text.replace('"', "”")
+
+
+def split_note_run(note):
+    """One line holding several of the author's notes -- "(1) ... (2) ...",
+    "1. ... 2. ..." (the translation runs them together; Kirchhoffer pdf 26,
+    Prévost-Jollivet pdf 210) -> one string per note. Split only at the
+    next number in sequence, after the end of a sentence or a closing
+    mark, so a number inside a note never splits it."""
+    m = re.match(r"\s*(\()?(\d{1,3})(\))?[.)]?\s", note)
+    if not m or (m.group(1) and not m.group(3)) or (not m.group(1) and not re.match(r"\s*\d{1,3}\.\s", note)):
+        return [note]
+    paren, k = bool(m.group(1)), int(m.group(2))
+    out, rest = [], note
+    while True:
+        nxt = (rf"\({k + 1}\)\s" if paren else rf"{k + 1}\.\s+(?=[A-ZÀ-Ý«“\"(<])")
+        hit = None
+        for h in re.finditer(rf"(?<=[.!?»”)\]…:;])\s+(?={nxt})", rest):
+            # not after "p." / "fig." / "art." ...: "see p. 3. Then" is no note 3
+            # ("Op. cit." and "ibid." end a note, so they may come before one)
+            if not re.search(r"(?i)\b(?:p|pp|fig|figs|art|n|no|nos|vol|ch|chap|cf)\.$", rest[:h.start()]):
+                hit = h
+                break
+        if not hit:
+            break
+        out.append(rest[:hit.start()].rstrip())
+        rest, k = rest[hit.end():], k + 1
+    return out + [rest] if out else [note]
 
 
 def footnote_lines(notes, width, size):

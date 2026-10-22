@@ -108,6 +108,28 @@ italic glossary heads, margin notes) and words split by a hyphen. In the
 side-by-side, an indented book adds no space between the blocks
 `render_aligned` anchors (the OCR's blank lines; pdf 13).
 
+The text layer also says **where each row starts**: a row the book sets at
+the paragraph indent gets it even when it is a short line the layout would
+otherwise set flush as structure (drill commands, the first of a numbered
+run, a dialogue dash -- Jacob-André pdf 112), and a row the book sets flush
+loses an OCR indent (`_textlayer.INDENTED` / `FLUSH` in front of the row;
+`layout()` honours them). The **first text line** is found by its words
+(the OCR's first rows), so a running head in capitals or a number in the
+margin is never mistaken for it; when the first row began at the foot of
+the page before, the line there decides whether it opened a paragraph.
+**Dividers** the OCR never reads (Joseph-Renaud's ⁂) come back from the
+layout detector (`_layout.ornaments`): a small mark centred in the column,
+in a gap between paragraphs, with no line of text through it and no title
+right above.
+
+**Page text, before layout** (steps 3 and 4, `_render`):
+`english_quotes` -- «…» and straight "…" become “…” (a lone » is a ditto
+mark and stays; old books' per-line « -- read by the OCR as • on
+Prévost-Jollivet pdf 237 -- is one quotation); `drop_margin_echoes` -- a
+margin note the OCR also read into the running text (Gomard) is drawn
+once, as the note; `split_note_run` -- "(1) … (2) …" run together in one
+line are separate notes; `<sup>2</sup>` is drawn as ², not as the tag.
+
 - A line is a **paragraph of running text** only when it reads as one:
   60+ letters, or ending a sentence / list item (`. ! ? ; :`) right after
   another paragraph ("The thumb guard, ...;"). A long numbered paragraph

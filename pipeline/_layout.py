@@ -330,6 +330,33 @@ def two_part_heads(folder: str, headers: list) -> bool:
     return two >= 3
 
 
+def ornaments(folder: str, i: int) -> list:
+    """Small marks the detector boxes between paragraphs -- a section
+    divider (Joseph-Renaud's ⁂, which the OCR never reads: dropped on about
+    half its pages, format review 2026-10-22): boxes under 6 % of the page
+    wide and 3 % high, mid-page (not the head or foot margins), centred in
+    the text column. Their heights (0-1, top down), one per mark. The
+    caller still checks that no line of text runs through one (a note
+    marker, a short word)."""
+    pages = load(folder)
+    page = (pages or {}).get("pages", {}).get(str(i)) if pages else None
+    if not page:
+        return []
+    boxes = page.get("boxes", [])
+    text = [b for b in boxes if b[0] in ("text", "list_item") and _wid(b) > 0.3]
+    if not text:
+        return []
+    mid = statistics.median((b[2][0] + b[2][2]) / 2 for b in text)
+    out = []
+    for b in boxes:
+        x0, y0, x1, y1 = b[2]
+        if (x1 - x0) < 0.06 and (y1 - y0) < 0.03 and 0.15 < y0 < 0.9 and abs((x0 + x1) / 2 - mid) < 0.06:
+            y = round((y0 + y1) / 2, 3)
+            if all(abs(y - o) > 0.01 for o in out):
+                out.append(y)
+    return sorted(out)
+
+
 def block_places(folder: str, i: int, n_paras: int):
     """For a page of a few short paragraphs -- picture captions, a title
     page, a dedication: where each text block sits on the scan, top to
