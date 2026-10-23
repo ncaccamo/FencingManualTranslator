@@ -614,6 +614,19 @@ def _layout_toc(rows, width, size, centre):
             flush()
             lines.append(r)
     flush()
+    # the OCR doesn't always keep a two-column contents in pairs ("11. Lunge"
+    # alone on a row, Barbasetti pdf 7): its entries are numbered, so each run
+    # of numbered entries goes in number order
+    if any(" | " in r or r.rstrip().endswith(" |") for r in rows):
+        num = lambda l: re.match(r"\s*(\d+)\.\s", l)
+        k = 0
+        while k < len(lines):
+            j = k
+            while j < len(lines) and num(lines[j]):
+                j += 1
+            if j - k > 1:
+                lines[k:j] = sorted(lines[k:j], key=lambda l: int(num(l).group(1)))
+            k = max(j, k + 1)
     for raw in lines:
         # OCR debris in the leaders: "parry...... /...... 78" (Prévost-Jollivet)
         raw = re.sub(r"(\.{2,})\s*[/|\\]\s*(\.{2,})", r"\1\2", raw)
@@ -650,23 +663,50 @@ _SPEAKER = re.compile(r"^(?:<i>)?(Maestro|Master|Allievo|Student|Pupil|Professeu
 
 
 def lesson_glue(text):
-    """The blank line between a lesson's two columns goes -- the master's
-    actions, then the pupil's numbered steps (or a "Student:" heading) --
-    so a caller that lays the page out block by block (the side-by-side's
-    aligned layout splits at blank lines) hands _pair_lesson both halves
-    (Barbasetti pdf 133, format review 2026-10-22)."""
-    blocks = re.split(r"\n[ \t]*\n", text or "")
-    out = [blocks[0]] if blocks else []
-    for b in blocks[1:]:
-        prev = [_unmarked(r) for r in out[-1].split("\n") if r.strip()]
-        first = _unmarked(b.split("\n", 1)[0])
-        master = bool(prev) and not any(_STEP.match(r) for r in prev) and (
-            _SPEAKER.match(prev[0]) or (len(prev) >= 2 and all(len(r) <= 70 for r in prev)))
-        if master and (_STEP.match(first) or (_SPEAKER.match(first) and _SPEAKER.match(prev[0]))):
-            out[-1] = out[-1].rstrip("\n") + "\n" + b.lstrip("\n")
-        else:
-            out.append(b)
-    return "\n\n".join(out)
+    """A lesson with numbered steps -- the master's actions, then the
+    pupil's "I. TEMPO ..." steps -- as one block, its blank lines gone, so
+    _pair_lesson sees both halves (the side-by-side lays a page out block by
+    block; the OCR sometimes leaves a blank line between every line of a
+    lesson, Barbasetti pdf 141). The lesson runs back from its first step
+    over speaker heads and short lines to a heading ("IV. EXAMPLE") or a
+    long paragraph, and on to the line after its last step's text."""
+    rows = (text or "").split("\n")
+    plain = [_unmarked(r) for r in rows]
+    steps = [k for k, r in enumerate(plain) if _STEP.match(r)]
+    if not steps:
+        return text
+    drop = set()
+    k = 0
+    while k < len(steps):
+        first = steps[k]
+        # the steps: each with the lines straight under it; after a blank
+        # line only another step continues the lesson
+        j, last = first, first
+        while j < len(rows) and _STEP.match(plain[j]):
+            j += 1
+            while j < len(rows) and plain[j] and not _STEP.match(plain[j]):
+                j += 1
+            last = j - 1
+            while j < len(rows) and not plain[j]:
+                j += 1
+        start = first
+        n = first - 1
+        while n >= 0:
+            r = plain[n]
+            if not r:
+                n -= 1
+                continue
+            heading = r.isupper() or re.match(r"^[IVX]+\.\s+\w+$", r) or re.match(r"^[a-z]\)\s", r)
+            if heading or len(r.split()) > 40:
+                break
+            start = n
+            n -= 1
+        for m in range(start, last + 1):
+            if not rows[m].strip():
+                drop.add(m)
+        while k < len(steps) and steps[k] <= last:
+            k += 1
+    return "\n".join(r for m, r in enumerate(rows) if m not in drop)
 
 
 def _unmarked(row):
@@ -708,7 +748,7 @@ def _pair_lesson(rows):
                 break
             j += 1
         if left and len(steps) >= 2 and len(left) == len(steps) and all(len(x) >= 2 for x in steps) \
-                and all(len(re.sub(r"<[^>]+>", "", l).split()) <= 14 for l in left):
+                and all(len(re.sub(r"<[^>]+>", "", l).split()) <= 25 for l in left):    # (Barbasetti pdf 141: 19 words)
             cell = lambda t: re.sub(r"&lt;(/?i)&gt;", r"<\1>", _html.escape(t))
             body = ""
             if len(heads) == 2:
@@ -805,10 +845,12 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
         # forward, in", Prévost-Jollivet pdf 210) runs on to the next page
         cut = (not any(r.strip() for r in rows[at + 1:]) and len(plain.split()) >= 6
                and bool(re.search(r"[a-zà-ÿ,]$", plain)))
-        title = alone and not cut and _title_line(plain) and (
+        # a row the text layer placed (indent, flush, hanging) is text, not a
+        # heading (Prévost-Jollivet pdf 315: a glossary's last headword)
+        title = alone and not cut and not forced and _title_line(plain) and (
             not re.search(r"\.(?:</i>)?$", body) or prev in ("start", "other")
             or bool(re.match(r"(?:§\s*)?[\dIVXLC]+[.°]", plain)))
-        if centre and not brace and (title or (not prose and _heading_line(plain))):
+        if centre and not brace and not forced and (title or (not prose and _heading_line(plain))):
             # a heading: centred, its space before kept
             if gap:
                 out.append(Line(gap=True))
@@ -954,7 +996,7 @@ def drop_margin_echoes(text):
     310: "The gliding or glide." as a body line next to ⟦MARGIN: The
     gliding or glide.⟧): the body copy goes. A body line is an echo when
     it is short (12 words or fewer) and its words are a margin note's
-    within three lines of it."""
+    within eight lines of it."""
     lines = (text or "").split("\n")
     plain = lambda t: re.sub(r"[^\w]+", " ", re.sub(r"<[^>]+>", "", t)).strip().lower()
     notes = [(k, plain(m.group(1))) for k, l in enumerate(lines) for m in [_MARGIN_RE.match(l)] if m]
@@ -964,7 +1006,10 @@ def drop_margin_echoes(text):
     for k, l in enumerate(lines):
         p = plain(l)
         if p and not _MARGIN_RE.match(l) and len(p.split()) <= 12 and (
-                any(abs(k - j) <= 3 and n and (p == n or (len(p) > 8 and p in n)) for j, n in notes)):
+                # further than 3 lines only a phrase of 4+ words (Gomard pdf 65, 6 apart):
+                # a short lesson cell the margin step mistook for a note is text (Masiello pdf 581)
+                any((abs(k - j) <= 3 or (abs(k - j) <= 8 and len(p.split()) >= 4))
+                    and n and (p == n or (len(p) > 8 and p in n)) for j, n in notes)):
             continue
         out.append(l)
     return "\n".join(out)

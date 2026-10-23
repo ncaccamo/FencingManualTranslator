@@ -482,14 +482,16 @@ def apply(english, src_body, page, prev_page=None, ornaments=()):
                     and not rows[a].rstrip().endswith(("-", "‐"))):  # a word split at the line end: left as it was
                 rows[a] = rows[a].rstrip() + " " + rows[b].strip()
                 rows[b] = None
-        # no space before a run-in title where the print has none: the OCR's
-        # blank lines there come and go (Kirchhoffer pdf 13). Never added: a
+        # no space where the print has none -- before a run-in title or any
+        # row: the OCR's blank lines come and go (Kirchhoffer pdf 13). Never added: a
         # line missing from the layer looks like a gap (pdf 38-40)
         space = spacing(src, lines)
         for r in range(1, len(src)):
             a, b = filled[r - 1], filled[r]
-            if (rows[b] is not None and space[r] is False
-                    and _RUN_IN.match(re.sub(r"<[^>]+>", "", rows[b]).strip())):
+            # any row, not only a run-in title (Barbasetti pdf 84, 27, 32;
+            # Masiello pdf 115: blank lines the book doesn't have)
+            if (rows[b] is not None and space[r] is False and DIVIDER not in rows[b]
+                    and not rows[b].startswith("\x00TABLE")):
                 for k in range(a + 1, b):
                     rows[k] = None                       # the blank lines in between
         # a divider the OCR never read, where the detector saw one between
@@ -503,6 +505,12 @@ def apply(english, src_body, page, prev_page=None, ornaments=()):
             if any(l[1] - 2 <= y <= l[1] + 0.8 * pitch and re.search(r"\w", l[2]) for l in lines):
                 continue
             below = [k for k, l in enumerate(body) if l[1] > y]
+            if not below and len(body) >= 6 and y > body[-1][1] + 1.6 * pitch:     # (not a title page's rule, pdf 18)
+                # under the page's last line: a chapter's end ornament (Masiello pdf 373)
+                lastrow = max((b for b in filled if rows[b]), default=None)
+                if lastrow is not None and not any(DIVIDER in (rows[n] or "") for n in range(lastrow, len(rows))):
+                    rows[lastrow] = rows[lastrow] + "\n\n" + DIVIDER
+                continue
             if not below or below[0] == 0:
                 continue
             if body[below[0]][1] - body[below[0] - 1][1] < 1.6 * pitch:
@@ -550,7 +558,10 @@ def apply(english, src_body, page, prev_page=None, ornaments=()):
             if rows[b] is None or not place[r] or re.search(r"[{}|⟦]|\x00TABLE", rows[b]):
                 continue
             mark = {"indent": INDENTED, "margin": FLUSH, "hanging": HANGING}[place[r]]
-            rows[b] = re.sub(r"^(\n*)", lambda m: m.group(1) + mark, rows[b], count=1)
+            # on the row's own text -- a divider put back in front of it is
+            # its own line (Joseph-Renaud pdf 141 printed "[[DIVIDER]]")
+            head, _, own = rows[b].rpartition("\n")
+            rows[b] = (head + "\n" if _ else "") + mark + own
         english = "\n".join(r for r in rows if r is not None)
     if opens:
         english = CONT + english.lstrip("\n")

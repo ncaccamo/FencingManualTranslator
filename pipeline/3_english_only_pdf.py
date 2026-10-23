@@ -278,7 +278,7 @@ class Flow:
         if not _render.toc_page(body_txt):
             # paragraph starts as printed, where the scan has a text layer
             body_txt = _textlayer.apply(_render.english_quotes(body_txt), src_body, src_page, prev_page, ornaments)
-            body_txt = _render.drop_margin_echoes(body_txt)
+            body_txt = _render.lesson_glue(_render.drop_margin_echoes(body_txt))   # a lesson's halves, one block
         notes = [_render.english_quotes(n) for n in notes]
         self._flow(_render.layout(body_txt, COL.width, FS, paras=PARAS, centre=CENTRE), FS)
         if notes:

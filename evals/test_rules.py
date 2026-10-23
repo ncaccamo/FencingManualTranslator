@@ -3735,11 +3735,22 @@ def test_columns_lesson_and_contents():
     blocks = R.lesson_glue(t).split("\n\n")
     assert len(blocks) == 2 and R._pair_lesson(R._rejoin(blocks[0]))[0].startswith("\x00TABLE")
     assert R.lesson_glue("A heading\n\nMaestro:\nParries") == "A heading\n\nMaestro:\nParries"
+    # a blank line between every line of the lesson (pdf 141); the next lesson's heading stays apart
+    t2 = ("III. EXAMPLE\n\n<i>Maestro</i>:\n\nStands with the blade engaged\n\nAs if feinted, parries quarta\n\n"
+          "Student:\n\nI. TEMPO\nWithdraws the weapon\n\nII. TEMPO\nRe-extends the arm.\n\nIV. EXAMPLE\n\nHe stands in line")
+    g = R.lesson_glue(t2)
+    assert "\n\nIV. EXAMPLE\n\n" in g and "\x00TABLE" in R._pair_lesson(R._rejoin(g.split("\n\nIV.")[0]))[2]
     toc = ("49. Circlings . . . Page 119 | 53. Feints . . . . Page 124\n"
            "50. Feint Circling » 121 | 54. Beat and Circling . . » 126\n51. Feint . . » 122 |")
     order = [re.match(r"\d+", "".join(x[0] for x in l.spans)).group(0)
              for l in R.layout(toc, 400, 9, paras="indented", toc=True) if l.spans and l.spans[0][0][:1].isdigit()]
     assert order == ["49", "50", "51", "53", "54"]
+    # rows the OCR didn't keep in pairs (Barbasetti pdf 7): number order
+    toc2 = ("5. Guard . . . . . Page 37\n6. Target . . . . » 39 | 10. Step back . . . . Page 41\n"
+            "11. Lunge . . . . . » 42\n7. Line of offense . . . » 39 | 12. From the Lunge . » 43")
+    order = [re.match(r"\d+", "".join(x[0] for x in l.spans)).group(0)
+             for l in R.layout(toc2, 400, 9, paras="indented", toc=True) if l.spans and l.spans[0][0][:1].isdigit()]
+    assert order == ["5", "6", "7", "10", "11", "12"]
 
 
 def test_picture_caption_and_ornaments_from_layout():
@@ -3816,6 +3827,13 @@ def test_divider_put_back_from_layout():
            "To evade is very difficult. Certainly, one learns to evade as quickly as one learns to parry.")
     out = T.apply(eng, src, Page(lines), ornaments=[0.17])
     assert T.DIVIDER in out and out.index(T.DIVIDER) < out.index("To evade")
+    # the divider stays a line of its own, never behind a row mark (pdf 141)
+    assert any(l == T.DIVIDER for l in out.split("\n"))
+    # an ornament under the page's last line ends the section (pdf 72); not on a short page
+    six = lines + [(230, 240, "et la fin de cette leçon qui doit se faire avec le plus grand soin.", 800)]
+    end = T.apply(eng, src, Page(six), ornaments=[0.30])
+    assert end.rstrip().endswith(T.DIVIDER)
+    assert not T.apply(eng, src, Page(lines[:3]), ornaments=[0.30]).rstrip().endswith(T.DIVIDER)
     # a word on that height (a heading's «ET») is text, not an ornament
     assert T.DIVIDER not in T.apply(eng, src, Page(lines + [(560, 165, "ET", 590)]), ornaments=[0.17])
 
@@ -3842,6 +3860,26 @@ def test_english_quotation_marks():
     assert q("• First item;\n• Second item;\n• Third item.") == "• First item;\n• Second item;\n• Third item."
     t = '\x00TABLE<table><tr><th colspan="13">Fencers</th></tr></table>'     # table HTML untouched (pdf 75)
     assert q('A "word"\n' + t) == "A “word”\n" + t
+
+
+def test_margin_note_echoes_dropped():
+    # format review, 2026-10-22: Gomard's margin notes also read into the running
+    # text appeared twice (pdf 310, 65); a short lesson cell the margin step took
+    # for a note is real text and stays (Masiello pdf 581)
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        R = importlib.import_module("_render")
+    except ImportError:
+        return
+    g = ("He speaks of the riposte in an indirect manner.\nThe reprise named and used for the first time.\n\n"
+         "⟦MARGIN: He speaks of the riposte in an indirect manner.⟧\n\nriposte, but in an indirect manner.\n\n"
+         "⟦MARGIN: indirect. The reprise named and used for the first time.⟧\n\nHe knows the reprises.")
+    out = R.drop_margin_echoes(g)
+    assert out.count("He speaks of the riposte") == 1 and out.count("The reprise named") == 1
+    m = ("Invites in prima or quinta.\nParries seconda.\n\nFrom the guard of seconda he will incline the trunk.\n\n"
+         "⟦MARGIN: Parries seconda.⟧\n\n⟦MARGIN: Parries seconda.⟧\n\nAvoiding the contact he will deliver.")
+    assert R.drop_margin_echoes(m).count("Parries seconda.") == 3
 
 
 def test_footnote_runs_split():

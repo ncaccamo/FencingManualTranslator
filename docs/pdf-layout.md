@@ -96,8 +96,8 @@ round a drop capital; a line at the page's indent always starts one. So
 an OCR row that runs on in print is joined to the row above (Kirchhoffer
 pdf 12: «Jusqu'à» beside the drop capital), and a page whose first printed
 line is not indented opens mid-paragraph -- `_textlayer.CONT` in front of
-the text, and `layout()` gives it no indent (pdf 14). The blank line the
-indented style keeps before a run-in title ("L'épée. — ") is dropped where
+the text, and `layout()` gives it no indent (pdf 14). A blank line the OCR left
+before a row -- a run-in title ("L'épée. — ") or any other -- is dropped where
 the print has normal line spacing above it (pdf 13); a space is never
 added from the layer, since a line missing from it looks like a gap
 (pdf 38-40). Left as they were:
@@ -119,8 +119,8 @@ margin is never mistaken for it; when the first row began at the foot of
 the page before, the line there decides whether it opened a paragraph.
 **Dividers** the OCR never reads (Joseph-Renaud's ⁂) come back from the
 layout detector (`_layout.ornaments`): a small mark centred in the column,
-in a gap between paragraphs, with no line of text through it and no title
-right above.
+in a gap between paragraphs (or under the page's last line: a section's
+end), with no line of text through it and no title right above.
 
 **Page text, before layout** (steps 3 and 4, `_render`):
 `english_quotes` -- «…» and straight "…" become “…” (a lone » is a ditto
