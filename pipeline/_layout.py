@@ -384,6 +384,11 @@ def block_places(folder: str, i: int, n_paras: int):
     if len(groups) != n_paras or not n_paras:
         return None
     body = [b for b in page["boxes"] if b[0] in BODY + ("caption", "picture") and b[1] >= 0.5]
+    # the frame: boxes a fifth of the page wide or more -- a library stamp,
+    # a shelf mark or a corner badge is narrower and would pull the frame
+    # aside (Kirchhoffer pdf 6: the Larousse corner badge made the centred
+    # subtitles look flush left)
+    body = [b for b in body if _wid(b) >= 0.2] or body
     x0 = min((b[2][0] for b in body), default=0.1)
     x1 = max((b[2][2] for b in body), default=0.9)
     return [(g[0], abs((g[2] - x0) - (x1 - g[3])) < 0.06 * (x1 - x0) and (g[3] - g[2]) < 0.85 * (x1 - x0))

@@ -273,14 +273,19 @@ class Flow:
                        FS - 1, color=(0.3, 0.3, 0.3))
             self.y += FS * 0.3
 
-    def body(self, text, src_body="", src_page=None, prev_page=None, ornaments=()):
+    def body(self, text, src_body="", src_page=None, prev_page=None, ornaments=(), title="", centred=False):
         body_txt, notes = _render.split_footnotes(text)
         if not _render.toc_page(body_txt):
             # paragraph starts as printed, where the scan has a text layer
             body_txt = _textlayer.apply(_render.english_quotes(body_txt), src_body, src_page, prev_page, ornaments)
             body_txt = _render.lesson_glue(_render.drop_margin_echoes(body_txt))   # a lesson's halves, one block
+        if title:
+            body_txt = title + "\n\n" + body_txt.strip()
         notes = [_render.english_quotes(n) for n in notes]
-        self._flow(_render.layout(body_txt, COL.width, FS, paras=PARAS, centre=CENTRE), FS)
+        lines = _render.layout(body_txt, COL.width, FS, paras=PARAS, centre=CENTRE)
+        if centred:                      # a title page: every line centred
+            lines = _render.centre_lines(lines, COL.width, FS)
+        self._flow(lines, FS)
         if notes:
             # end-of-section glossary block, smaller type
             self.y += FS * 0.4
@@ -319,7 +324,7 @@ class Flow:
             h, w = FIGURE_MAX_H, FIGURE_MAX_H * (cw / ch)
         return w, h
 
-    def figure(self, src_page, band=None, caption="", rotate=None):
+    def figure(self, src_page, band=None, caption="", rotate=None, centred=False):
         """Embed src_page (optionally cropped to `band`, a
         (y0f,y1f,x0f,x1f) fraction rect) scaled into the column. Figures
         are embedded in their source orientation -- auto-rotation was
@@ -345,7 +350,10 @@ class Flow:
                                rotate=rotate)
         self.y += h + 4
         if caption.strip():
-            for vl in _render.layout(caption, COL.width, FS - 1):
+            cl = _render.layout(caption, COL.width, FS - 1)
+            if centred:                  # a title page's lines under its picture
+                cl = _render.centre_lines(cl, COL.width, FS - 1)
+            for vl in cl:
                 _, self.y = _render.draw(self.page,
                                          (COL.x0, self.y, COL.x1, COL.y1), [vl], FS - 1)
             self.y += FS * 0.6
@@ -497,12 +505,21 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         hdr_en = re.sub(r"</?i>", "", header_map.get(hdr, hdr))
         if not TWO_PART:                 # one printed line, split by step 1
             hdr_en = hdr_en.replace("\t", " ")
+        # a title page, half-title, plate title (_render.display_page): its
+        # lines centred, and a line the OCR took for a running head is the
+        # page's title, set first (Kirchhoffer pdf 10)
+        display = _render.display_page(_render.split_footnotes(tr or "")[0], st.get("page_num"))
+        title_hdr = ""
+        if display and hdr_en and "\t" not in hdr_en:
+            title_hdr, hdr_en = hdr_en, ""
         flow.section_label(st.get("page_num", ""), hdr_en,
                            reserve=(first_h + FS * 1.6) if placements else 0.0,
                            compact=bool(is_empty and placements),
                            side=sides[i] if i < len(sides) else None)
-        for band, caption in placements:
-            flow.figure(src_page, band, caption=caption, rotate=rot)
+        for k, (band, caption) in enumerate(placements):
+            if k == 0 and title_hdr and caption_only_page:
+                caption, title_hdr = title_hdr + "\n\n" + caption, ""   # the title stays with the page's text
+            flow.figure(src_page, band, caption=caption, rotate=rot, centred=display)
             figures += 1
 
         # Skip the body when it's just the plate caption again (the OCR body
@@ -516,7 +533,7 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         if not is_empty and not body_is_caption:
             src_body = extractions[i].split("BODY_TEXT:", 1)[-1] if i < len(extractions) else ""
             flow.body(tr, src_body, src_page, src_doc[i - 1] if (src_doc is not None and 0 < i <= len(src_doc)) else None,
-                      _layout.ornaments(folder, i))
+                      _layout.ornaments(folder, i), title=title_hdr, centred=display)
             rendered += 1
 
     sheets = doc.page_count

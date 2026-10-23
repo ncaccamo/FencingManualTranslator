@@ -883,6 +883,22 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
     return out
 
 
+def display_page(text, page_num):
+    """A display page -- title page, half-title, a plate's title leaf, a
+    publisher's notice: no printed page number (none read, or reconcile's
+    "[n]") and only a few short blocks (8 at most, 30 words each). The book
+    centres such a page's lines, and a line the OCR filed as its running
+    head is its title (Kirchhoffer pdf 10: «L'ESCRIME»), not a head."""
+    pn = str(page_num or "").strip()
+    if pn and not pn.startswith("[") and pn.lower() != "none":
+        return False
+    text = (text or "").strip()
+    paras = [p for p in re.split(r"\n\s*\n", text) if p.strip()]
+    return (bool(paras) and not text.startswith("[") and len(paras) <= 8
+            and all(len(p.split()) <= 30 for p in paras)
+            and not re.search(r"\[\[TABLE|\[table|<table", text) and not toc_page(text))
+
+
 def centre_lines(lines, width, size):
     """The same lines, each centred in `width` (a title page's lines)."""
     for ln in lines:

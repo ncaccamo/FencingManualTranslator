@@ -356,6 +356,14 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         tr = re.sub(r"(?m)^\s*\[\[TABLE\]\]\s*$",
                     "[table — see facing page]", tr or "")
 
+        # a title page, half-title, plate title (_render.display_page): its
+        # lines centred, and a line the OCR took for a running head is the
+        # page's title, drawn first (Kirchhoffer pdf 10)
+        DISPLAY = _render.display_page(_render.split_footnotes(tr)[0], struct.get("page_num"))
+        title_hdr = ""
+        if DISPLAY and struct.get("header") and "\t" not in struct["header"]:
+            title_hdr, struct["header"] = struct["header"], ""
+
         rot = _rot_pages.get(i, _rot[1] if (_rot and (_rot[0] == "all" or str(i) in fig_map)) else 0)
         page, y = new_spread(doc, src, i, struct, rotate=rot, side=sides[i])
 
@@ -394,6 +402,8 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
                                         if i < len(extractions) else "", src[i], src[i - 1] if i else None,
                                         _layout.ornaments(folder, i))
             body_txt = _render.lesson_glue(_render.drop_margin_echoes(body_txt))   # a lesson's two columns, one block
+        if title_hdr:
+            body_txt = title_hdr + "\n\n" + body_txt.strip()
         notes = [_render.english_quotes(n) for n in notes]
         fn_lines = _render.footnote_lines(notes, RIGHT.width, 7) if notes else []
         fn_h = _render.measure(fn_lines, 7) + 4 if fn_lines else 0.0
@@ -426,7 +436,7 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
                 _, yc = _render.draw(page, (RIGHT.x0, yc, RIGHT.x1, body_bottom), lines, 9)
                 y, body_txt = yc + 8, rest
         n_paras = len([p for p in re.split(r"\n\s*\n", body_txt.strip()) if p.strip()])
-        fracs = (None if (has_fig or not book_align)
+        fracs = (None if (has_fig or not book_align or DISPLAY)
                  else reconcile_fracs(paragraph_fracs(src[i]), n_paras))
         if fracs and len(fracs) >= 2:
             for s in SIZES:
@@ -446,6 +456,10 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         paras_ = [q for q in re.split(r"\n\s*\n", body_txt.strip()) if q.strip()]
         places = (_layout.block_places(folder, i, len(paras_))
                   if paras_ and len(paras_) <= 8 and all(len(q.split()) <= 30 for q in paras_) else None)
+        if DISPLAY and paras_:
+            # every block centred, as title pages are set; each level with its
+            # own on the scan when the blocks pair up, else one under another
+            places = [(f, True) for f, _ in places] if places else [(0.0, True)] * len(paras_)
         if places:
             span0, span1 = displayed_scan_span(src[i])
             cur = y

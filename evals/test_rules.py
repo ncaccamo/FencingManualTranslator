@@ -4035,5 +4035,20 @@ def test_text_layer_paragraph_starts():
         "Then, in breaking ground a little more, the pupil will evade to the fore-"]
 
 
+def test_display_pages_centred():
+    """A title page, half-title, plate title: no printed page number and a
+    few short blocks -- centred, its OCR "running head" taken as its title
+    (Kirchhoffer pdf 6, 10). A numbered page, a contents page or a page of
+    running text is not one."""
+    from _render import display_page
+    title = "FOIL, by Kirchhoffer\n<i>ÉPÉE</i>, by J. Joseph-Renaud\n\n48 ENGRAVINGS\n\nLarousse Library"
+    assert display_page(title, "[3]") and display_page(title, "") and display_page(title, "none")
+    assert not display_page(title, "12")
+    assert not display_page("[Empty page]", "")
+    assert not display_page("[[TABLE]]", "")
+    assert not display_page(" ".join(["word"] * 40), "")
+    assert not display_page("\n\n".join(["Line"] * 9), "")
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

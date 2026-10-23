@@ -266,7 +266,17 @@ for free (this is why figures were easy here and hard in step 3).
   level with its own block on the scan, and centred where the book centres
   it (`_layout.block_places`: the detector's text / caption / heading
   blocks, used only when there are as many as English paragraphs;
-  Kirchhoffer pdf 66, its title pages).
+  Kirchhoffer pdf 66, its title pages). Whether a block is centred is
+  measured against the frame of the page's boxes at least a fifth of the
+  page wide, so a library stamp or a corner badge doesn't skew it.
+- **Display pages** (`_render.display_page`: such a page with no printed
+  page number -- title page, half-title, a plate's title leaf, a
+  publisher's notice): every block centred, in both PDFs, since the
+  geometry can't tell centring on a page of two or three short lines; the
+  blocks still go level with the scan's when they pair up. A line the OCR
+  filed as the page's running head is the page's title there, drawn first,
+  not as a head (Kirchhoffer pdf 10). Display type sizes are not
+  reproduced: everything is body size.
 - **Tables**: step 2 translates each table's cells (`translate_tables`,
   `intermediate/tables.json`); the grid is drawn in the text where the
   page's `[[TABLE]]` marker is (`place_tables`, `draw_table`: rowspan /
