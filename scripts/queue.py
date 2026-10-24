@@ -8,10 +8,10 @@ the system doing the run. Runs on the host (it drives the container).
     scripts/queue.py add pages <stem> 12,40-42         retranslate these scan pages
     scripts/queue.py add flagged <stem> risposta       retranslate the pages the review
                                                        report flags for that (or kind:split)
-    scripts/queue.py add pdfs <stem>                   rebuild PDFs + review report
-    scripts/queue.py add captions <stem>               the caption reading + report
-    scripts/queue.py add tables <stem>                 translate the book's tables, then PDFs + report
-    scripts/queue.py add reprocess <stem>              re-derive step 1's text + report
+    scripts/queue.py add pdfs <stem> [<stem> ...]      rebuild PDFs + review report
+    scripts/queue.py add captions <stem> [<stem> ...]  the caption reading + report
+    scripts/queue.py add tables <stem> [<stem> ...]    translate the book's tables, then PDFs + report
+    scripts/queue.py add reprocess <stem> [<stem> ...] re-derive step 1's text + report
         ... add --front                                put it at the head of the queue
     scripts/queue.py list                              what's queued, running, done
     scripts/queue.py start                             run the queue in the background
@@ -342,8 +342,11 @@ def cmd_add(args):
     if not args or args[0] not in ACTIONS:
         sys.exit(f"✗ job must start with one of: {', '.join(ACTIONS)}")
     action, rest = args[0], args[1:]
-    if action == "book":
-        new = [f"book {s}" for s in rest]
+    if not ACTIONS[action]:
+        # a whole-book action: one job per book named ("pdfs a b c" is three)
+        if not rest:
+            sys.exit(f"✗ {action} needs a book")
+        new = [f"{action} {s}" for s in rest]
     else:
         if len(rest) < 1 + ACTIONS[action]:
             sys.exit(f"✗ {action} needs a book{' and pages / words' if ACTIONS[action] else ''}")
