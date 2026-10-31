@@ -133,10 +133,14 @@ the operator's business and is not tracked here.)
   means → "by", kept terms keep their italics) -- `docs/model-quirks.md`
   2.15. Judge prompt changes by closeness to the *source* as well as the
   published translations: those are mostly free and reward paraphrase.
-- **French line names italic at drawing time (2026-10-11).** *prime* …
-  *octave* in italics like *riposte* (the reviewer's choice; the Italian
-  books already did it); enforced in `_render.py`, not left to the model,
-  which left ~95% roman.
+- **Italics: original-language fencing words italic (2026-10-11,
+  confirmed 2026-10-31).** French line names *prime* … *octave* are italic
+  like *riposte*, matching the Italian *prima* … *ottava*; drawn italic in
+  `_render.py` (the text stores them plain, so `[[fix]]` finds match either
+  way). *riposte* / *remise* are italic as noun, plural and English verb
+  alike ("has *remised*"). `house_italics()` in step 2, also run by
+  `apply_overrides.py` and over the `[[fix]]` texts, so no fix needs
+  rewriting.
 
 - **Translation temperature 0 for the first try (2026-10-10; was 0.3).**
   0.3 dated from the 7B model and was never chosen for Qwen3.8. At 0 the

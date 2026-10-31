@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _rules import PIPELINE as _PIPELINE
 from _rules import match_dash_caps, apply_read_heads, match_case
 from _rules import (
-    apply_always_translate, match_case, enforce_kept_terms,
+    apply_always_translate, match_case, enforce_kept_terms, plain_line_names, house_italics,
     enforce_footnoted_terms, pull_footnotes, fix_subheading_spacing, is_toc_page,
     repair_mangled_terms, contains_too_much_non_english,
     match_boundary_punctuation, deshout, _phrase_repairs,
@@ -1731,10 +1731,10 @@ def test_caps_line_split_word_and_tac_au_tac():
     assert fix_known_garbles("He met McDonald at the salle.") == "He met McDonald at the salle."
     src = "RIPOSTES DU TAC AU TAC."
     out = enforce_kept_terms("RIPOSTES FROM THE TAC TO THE TAC.", src)
-    assert out == "RIPOSTES <i>TAC-AU-TAC</i>.", out
+    assert out == "<i>RIPOSTES</i> <i>TAC-AU-TAC</i>.", out   # riposte italic in every form (2026-10-31)
     # the older output's "ripostes of the tac-au-tac" (Prévost) reads the same way
     assert enforce_kept_terms("such as the ripostes of the tac au tac", "du tac au tac") \
-        == "such as the ripostes <i>tac-au-tac</i>"
+        == "such as the <i>ripostes</i> <i>tac-au-tac</i>"
     assert "<i>tac-au-tac</i>" in enforce_kept_terms("a riposte du tac au tac follows", "du tac au tac")
     # Qwen3.8 left the French article: "the du tac-au-tac riposte"
     assert enforce_kept_terms("The du <i>tac-au-tac</i> <i>riposte</i> is", "du tac au tac") \
@@ -4048,6 +4048,31 @@ def test_display_pages_centred():
     assert not display_page("[[TABLE]]", "")
     assert not display_page(" ".join(["word"] * 40), "")
     assert not display_page("\n\n".join(["Line"] * 9), "")
+
+
+def test_line_names_plain():
+    """A French book's line names are stored plain -- the PDF draws them all
+    italic (test_line_names_italic_at_render) -- so a [[fix]] matches however
+    the model wrote them (Joseph-Renaud had 111 italic, 1,585 plain). Kept
+    terms around them stay italic; Italian lines are left alone."""
+    assert plain_line_names("a <i>barré</i> in <i>octave</i>, <i>Sixtes</i>") == "a <i>barré</i> in octave, Sixtes"
+    assert plain_line_names("PARRY OF <i>QUARTE</i>") == "PARRY OF QUARTE"
+    assert plain_line_names("low <i>quarta</i> and <i>quarta bassa</i>") == "low <i>quarta</i> and <i>quarta bassa</i>"
+    assert enforce_kept_terms("parry <i>tierce</i> and riposte") == "parry tierce and <i>riposte</i>"
+    # riposte / remise italic in every form, the English verb too (reviewer,
+    # 2026-10-31; Kirchhoffer "has remised", JR "<i>riposted</i>" and "riposted")
+    assert house_italics("he has remised, riposting; RIPOSTES and <i>ripostes</i>") \
+        == "he has <i>remised</i>, <i>riposting</i>; <i>RIPOSTES</i> and <i>ripostes</i>"
+    assert house_italics("a counter-riposte; the premises; « <i>remise</i> »; the riposter") \
+        == "a counter-<i>riposte</i>; the premises; « <i>remise</i> »; the riposter"
+    assert house_italics("<i>quarte</i> then <i>quarta</i>", french=False) == "<i>quarte</i> then <i>quarta</i>"
+    # «bourrer» / «larder» are footnoted terms (reviewer, 2026-10-31): ram, jab,
+    # first use noted "French: bourrer" (Joseph-Renaud pdf 88, 61)
+    seen = set()
+    out = enforce_footnoted_terms("he attacks en bourrant, then another bourrade", seen)
+    assert out == "he attacks by ramming<fn>French: bourrer</fn>, then another ramming thrust<fn>French: bourrade</fn>", out
+    assert enforce_footnoted_terms("a fencer who will bourrer", seen) == "a fencer who will ram"
+    assert enforce_footnoted_terms("the bourreau's axe", set()) == "the bourreau's axe"
 
 
 if __name__ == "__main__":

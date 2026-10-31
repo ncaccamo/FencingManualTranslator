@@ -19,7 +19,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - German: Ausfallen, Zornhau, Versetzung, Absetzen, Winden
    - Latin: custodia, puncta
    EVERYTHING ELSE is translated — including garde, engagement, parade, coupé, dégagement, liement, prise de fer (see rules 3 and 3b).
-   A kept noun used as a VERB becomes English fencing usage, not the French verb: remiser → to remise (remises, remised, remising: "savent remiser" → know how to remise); croiser → make the <i>croisé</i> ("croisez en octave!" → <i>croisé</i> in octave!").
+   A kept noun used as a VERB becomes English fencing usage, not the French verb: remiser → to <i>remise</i> (<i>remises</i>, <i>remised</i>, <i>remising</i>: "savent remiser" → know how to <i>remise</i>), riposter → to <i>riposte</i> (<i>riposted</i>, <i>riposting</i>) — italic in every form, like the noun; croiser → make the <i>croisé</i> ("croisez en octave!" → <i>croisé</i> in octave!").
 
 3. TRANSLATE these to their standard English names — plain text, NO <i>…</i>:
    - garde → guard   |   engagement → engagement   |   parade → parry (a parade is never a riposte)
@@ -108,6 +108,8 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - caver → to angle ("en cavant" → by angling, "coup cavé" → angled hit)
    - barré → bar ("le barré de seconde" → the bar in seconde)
    - coup fourré → double hit (the same as coup double)
+   - bourrer → to ram ("en bourrant" → by ramming), bourrade → ramming thrust, bourreur → rammer (a thrust made by drawing the arm back and driving the point in hard; never "shove", "press", "stuff")
+   - larder, en lardant → to jab, jabbing (thrusting in and out like a larding needle; never "lard")
    - tendre la perche, la perche tendue, tendre la broche (slang for sticking the arm out stiffly at an attack, hoping the attacker runs onto the point; no English saying) → stick the arm out stiffly, the arm stuck out stiffly
    - à-propos → timing (plural: moments of timing); but "mal à propos" → at the wrong moment, "à propos" (opportunely) → at the right moment — never "at a lost tempo", which is à temps perdu
    - coup de temps → time-hit

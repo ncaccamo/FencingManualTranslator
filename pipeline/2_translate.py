@@ -208,6 +208,14 @@ _FOOTNOTED_FR = [
     ("coups fourrés",  "double hits"),             ("coup fourré",  "double hit"),
     ("tendre la perche", "stick the arm out stiffly"), ("tendre la broche", "stick the arm out stiffly"),
     ("la perche tendue", "the arm stuck out stiffly"),
+    # bourrer: drawing the arm back and driving the point in hard (Joseph-Renaud
+    # pdf 290, Kirchhoffer pdf 61, Cordelois); larder: in-and-out jabs.
+    # Reviewer's choices, 2026-10-31 (were shove / pressing / larding).
+    ("bourrades",      "ramming thrusts"),         ("bourrade",     "ramming thrust"),
+    ("bourreurs",      "rammers"),                 ("bourreur",     "rammer"),
+    ("en bourrant",    "by ramming"),              ("bourrant",     "ramming"),
+    ("bourrer",        "ram"),
+    ("en lardant",     "jabbing"),                 ("larder",       "jab"),
 ]
 
 # Italian footnoted terms (translated, first use footnoted "It. <term>"),
@@ -244,6 +252,8 @@ _FOOTNOTE_REF_FR = {
     "dégagements": "dégagement", "liements": "liement",
     "froissements": "froissement", "coupés": "coupé",
     "coulés": "coulé", "déroulé": "coulé", "appels": "appel",
+    "bourrades": "bourrade", "bourreurs": "bourreur", "en bourrant": "bourrer", "bourrant": "bourrer",
+    "en lardant": "larder",
 }
 
 # The book's source language (set per book with its prompt, see
@@ -996,6 +1006,34 @@ def fix_known_garbles(text: str, src: str = "") -> str:
     return caps_kept_terms(text, src)
 
 
+# A French book's line names are stored plain and drawn italic: the PDF
+# italicises every one (_render.line_name_italics, reviewer 2026-10-11,
+# confirmed 2026-10-31), and the model italicised only ~5%. One stored form
+# means a [[fix]] matches whichever way the model wrote them.
+_ITALIC_LINE_NAME = re.compile(
+    r"<i>((?:prime|seconde|tierce|quarte|quinte|sixte|septime|octave)s?)</i>", re.I)
+
+
+def plain_line_names(text: str) -> str:
+    return _ITALIC_LINE_NAME.sub(r"\1", text) if text else text
+
+
+# riposte / remise in every form -- the plural, and the English verb made
+# from the kept noun ("he ripostes", "has remised") -- italic like the noun
+# (reviewer, 2026-10-31: one word, one look; JR and Kirchhoffer had both).
+_BARE_KEPT_FORM = re.compile(r"(?<![\w>])(?:riposte[sd]?|riposting|remise[sd]?|remising)(?![\w<])", re.I)
+
+
+def house_italics(text: str, french: bool = True) -> str:
+    """The italics rules applied to finished text: line names stored plain
+    (French books; drawn italic), riposte / remise italic in every form."""
+    if not text:
+        return text
+    if french:
+        text = plain_line_names(text)
+    return _BARE_KEPT_FORM.sub(lambda m: f"<i>{m.group(0)}</i>", text)
+
+
 def enforce_kept_terms(text: str, src: str = "") -> str:
     """Make sure a kept term is present and italicised: repair a
     known mistranslation, then wrap any bare occurrence in <i>...</i>
@@ -1027,7 +1065,7 @@ def enforce_kept_terms(text: str, src: str = "") -> str:
         text = re.sub(
             rf"<i>\s*<i>({re.escape(term)})</i>\s*</i>",
             lambda m: f"<i>{m.group(1)}</i>", text, flags=re.IGNORECASE)
-    return text
+    return house_italics(text, BOOK_LANG != "Italian")
 
 
 _TITLE_STOPWORDS = {
@@ -2402,6 +2440,17 @@ def harmonize_titles_with_headers(folder: str) -> int:
     return n
 
 
+def _house_fixes(ov: dict, french: bool) -> dict:
+    """ov with each [[fix]]'s text under the italics rules, so a fix written
+    before a rule changed still finds the text and leaves it rule-true."""
+    out = []
+    for f in ov["fix"]:
+        g = {k: (house_italics(v, french) if k in ("find", "replace", "prepend") else v)
+             for k, v in f.items()}
+        out.append(f if "find" in g and g["find"] in g["replace"] else g)
+    return dict(ov, fix=out)
+
+
 def apply_book_overrides(folder: str, fixes: bool = True) -> None:
     """Re-apply the reviewer's decisions (books/<stem>.overrides.toml) to
     headers.json and translation.txt. Runs after every translation pass,
@@ -2420,10 +2469,20 @@ def apply_book_overrides(folder: str, fixes: bool = True) -> None:
         if _overrides.apply_headers(hmap, ov):
             with open(hp, "w", encoding="utf-8") as fh:
                 _json.dump(hmap, fh, ensure_ascii=False, indent=1)
+    french = book_language(stem) != "Italian"
+    if fixes and os.path.exists(tp):
+        # the italics rules first, so text written before a rule changed
+        # matches the [[fix]] finds, which follow the rules (and again after)
+        t = open(tp, encoding="utf-8").read()
+        if house_italics(t, french) != t:
+            with open(tp, "w", encoding="utf-8") as fh:
+                fh.write(house_italics(t, french))
     if fixes and ov["fix"] and os.path.exists(tp):
         tr = _pageio.split_pages(open(tp, encoding="utf-8").read())
-        applied, missing = _overrides.apply_fixes(tr, ov)
-        if applied:
+        applied, missing = _overrides.apply_fixes(tr, _house_fixes(ov, french))
+        tr2 = [house_italics(pg, french) for pg in tr]
+        if applied or tr2 != tr:
+            tr = tr2
             with open(tp, "w", encoding="utf-8") as fh:
                 fh.write(_pageio.join_pages(tr))
         missing = [m for m in missing if m not in _overrides.load_edits(stem)]   # page edited by hand
@@ -2445,6 +2504,7 @@ def apply_book_overrides(folder: str, fixes: bool = True) -> None:
             for fg in figs:
                 if fg.get("caption_en"):
                     fixed = match_dash_caps(fg.get("caption", ""), fg["caption_en"])
+                    fixed = house_italics(fixed, french)
                     if fixed != fg["caption_en"]:
                         fg["caption_en"] = fixed
                         changed += 1
