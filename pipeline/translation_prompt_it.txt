@@ -35,7 +35,9 @@
    - parata di appoggio → support parry   |   pugno → fist   |   mano prona / supina → hand prone (palm down) / supine (palm up)
    - sopra / sotto, of a target or line ("petto sopra", "braccio sopra") → above / below (never "outside" / "inside", which are dentro / fuori)   |   destramente → deftly (never "to the right")
    - 1ª, 2ª … 8ª, 1.a … → the line name: <i>prima</i>, <i>seconda</i> … <i>ottava</i> (never "1st", "4th")
-   - legatura, arma legata, legaccio — the strap tying the sword to the wrist → binding, tied (to the wrist); spada legata all'avversa, the blades in contact → engaged
+   - legatura, arma legata, legaccio — the strap tying the sword to the wrist → strapping, tied (to the wrist), strap (never "binding": a bind is a blade action); spada legata all'avversa, the blades in contact → engaged
+   - giuoco, giuochi, the fencing sense ("giuoco misto", "il giuoco della spada italiana") → play, plays (never "game")   |   corrispondere (alla finta, con la parata), corrispondenza → respond, response   |   la finale (del colpo, dell'azione), botta finale → the finish, the final thrust
+   - colpo d'occhio → the quick eye   |   tatto di ferro → feel of the blade   |   graduazione del ferro, azioni di graduazione → the degrees of the blade, actions on the degrees   |   aggredire → assail
    - arma, armi of the army (infantry, cavalry, artillery) → arm, arms of the service ("l'arma di cavalleria" → the cavalry arm); armi as swords → weapons   |   col destro, col mancino (fencing against one) → against a right-hander, against a left-hander (never "with the right hand")
    - pattinando, pattinare (the skating step) → keep in Italian: <i>pattinando</i>   |   slancio (of the rear foot) → drive   |   tempista → tempo-fencer   |   cavalleria, the code of knights → chivalry (the mounted troops → cavalry)   |   sala d'armi → fencing hall   |   padrini → seconds   |   garetti → hamstrings   |   piastrone → plastron   |   minacciare → threaten
    - "a più fermo", "più fermo" in a fencing sense is an OCR misreading of "a piè fermo" → firm-footed
@@ -54,6 +56,9 @@
    - striscio, di striscio → graze, grazing (along the opponent's blade — not filo, which is glide)
    - volante, volanti (an action made with no contact with the opponent's blade — "finta volante", "azioni volanti") → off the blade: "feint off the blade", "actions off the blade"; but "volanti sul ferro" (flying actions made on the blade) → flying actions on the blade; "punta volante" (the old French "pointe volante") → flying point
    - spratico (a directed teaching bout) → practice bout
+   - camminando (made while advancing: "botta dritta camminando", "battuta camminando", "misura camminando") → advancing: "straight thrust advancing", "beat advancing", "advancing measure"
+   - forconatore (a fencer who jabs about like a pitchfork), forconare → pitchforker, to pitchfork
+   - lezione muta → silent lesson
    - parata di tasto (the simple parry that keeps contact, as against parata di picco, the beat parry) → opposition parry
    Example:  "… with an engagement<fn>It. legamento</fn> of <i>terza</i> he closed the line."
    In a HEADING (rule 4) translate the term but omit the <fn> tag.

@@ -216,7 +216,15 @@ _FOOTNOTED_FR = [
     ("en bourrant",    "by ramming"),              ("bourrant",     "ramming"),
     ("bourrer",        "ram"),
     ("en lardant",     "jabbing"),                 ("larder",       "jab"),
+    # fencer types and slang, reviewer's choices 2026-10-31 (terms questionnaire)
+    ("picoteurs",      "prickers"),                ("picoteur",     "pricker"),
+    ("tendeurs à outrance", "extenders to excess"), ("tendeur à outrance", "extender to excess"),
+    ("bricoleurs",     "tinkerers"),               ("bricoleur",    "tinkerer"),
 ]
+# footnoted terms left to the model (accepted as source references in its
+# <fn> notes) -- ordinary words elsewhere, so the backstop must not rewrite them
+_FOOTNOTED_FR_REFS = {"se loger", "au pied levé", "tension à outrance", "se désunir", "s'enferrer",
+                      "filer", "fléchard", "d'emblée", "coup amené", "temps moral"}
 
 # Italian footnoted terms (translated, first use footnoted "It. <term>"),
 # 2026-09-30. "filo" (glide) is left to the model -- as a bare word it also
@@ -235,16 +243,17 @@ _FOOTNOTED_IT = [
     ("volanti",         "off the blade"),   ("volante",     "off the blade"),
     ("spratico",        "practice bout"),
     ("parate di tasto", "opposition parries"), ("parata di tasto", "opposition parry"),
+    ("forconatori",     "pitchforkers"),    ("forconatore", "pitchforker"),
 ]
 # accepted as source references in the model's <fn> notes, beyond _FOOTNOTED_IT
-_FOOTNOTED_IT_REFS = {"filo"}
+_FOOTNOTED_IT_REFS = {"filo", "camminando", "forconare", "lezione muta"}
 
 # canonical singular French for the "Fr. <term>" note, so a plural form
 # ("appels") doesn't produce a second note distinct from "Fr. appel".
 _FOOTNOTE_REF_IT = {"parate di tasto": "parata di tasto", "legamenti": "legamento", "trasporti": "trasporto",
                  "deviamenti": "deviamento", "controazioni": "controazione",
                  "circolazioni": "circolazione", "di striscio": "striscio",
-                 "volanti": "volante"}
+                 "volanti": "volante", "forconatori": "forconatore"}
 _FOOTNOTE_REF_FR = {
     "en cavant": "caver", "cavant": "caver", "barrés": "barré", "coups fourrés": "coup fourré",
     "rassemblements": "rassemblement", "rassemblant": "rassemblement",
@@ -253,7 +262,11 @@ _FOOTNOTE_REF_FR = {
     "froissements": "froissement", "coupés": "coupé",
     "coulés": "coulé", "déroulé": "coulé", "appels": "appel",
     "bourrades": "bourrade", "bourreurs": "bourreur", "en bourrant": "bourrer", "bourrant": "bourrer",
-    "en lardant": "larder",
+    "en lardant": "larder", "picoteurs": "picoteur", "tendeurs à outrance": "tendeur à outrance",
+    "bricoleurs": "bricoleur", "vous loger": "se loger", "se logeant": "se loger", "loger": "se loger",
+    "désuni": "se désunir", "se désunit": "se désunir", "s'enferre": "s'enferrer",
+    "en filant": "filer", "filer au corps": "filer", "fléchards": "fléchard",
+    "attaque d'emblée": "d'emblée", "coups amenés": "coup amené",
 }
 
 # The book's source language (set per book with its prompt, see
@@ -334,7 +347,7 @@ def pull_footnotes(text: str, source_text: str = "", seen: set = None):
         seen = set()
     numbered = []
 
-    _footnoted_refs = {t for t, _ in _footnoted()} | (_FOOTNOTED_IT_REFS if BOOK_LANG == "Italian" else set())
+    _footnoted_refs = {t for t, _ in _footnoted()} | (_FOOTNOTED_IT_REFS if BOOK_LANG == "Italian" else _FOOTNOTED_FR_REFS)
     ab, label = _LANG_REF.get(BOOK_LANG, _LANG_REF["French"])
 
     def take(m):
@@ -354,10 +367,10 @@ def pull_footnotes(text: str, source_text: str = "", seen: set = None):
                 return ""
             numbered.append(f"{q.group(1).capitalize()} in the original")
             return f"{FN_MARK}{len(numbered)}"
-        ref = re.sub(rf"^(?:{ab}\.|{label.lower()}:)\s*", "", note, flags=re.I).lower().rstrip(".")
+        ref = re.sub(rf"^(?:{ab}\.|{label.lower()}:)\s*", "", note, flags=re.I).lower().rstrip(".").replace("\u2019", "'")
+        ref = _footnote_ref().get(ref, ref)  # "vous loger" -> "se loger"
         if not note or ref not in _footnoted_refs:
             return ""                       # drop the tag, keep the phrase
-        ref = _footnote_ref().get(ref, ref)
         note = f"{label}: {ref}"            # canonical rendered form
         key = _strip_accents(ref)
         if key in seen or len(numbered) >= FN_MAX_PER_PAGE:

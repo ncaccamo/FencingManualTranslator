@@ -4075,5 +4075,27 @@ def test_line_names_plain():
     assert enforce_footnoted_terms("the bourreau's axe", set()) == "the bourreau's axe"
 
 
+def test_footnoted_terms_questionnaire():
+    """Terms questionnaire, 2026-10-31: slang and fencer types translated with
+    a first-use note. «picoteur» etc. have a backstop; «se loger», «s'enferrer»
+    ... are ordinary words elsewhere, so only the model's own note is accepted
+    (canonical form, curly apostrophe too). Italian: camminando, forconatore."""
+    from _rules import TX
+    seen = set()
+    assert enforce_footnoted_terms("against picoteurs and a picoteur", seen) \
+        == "against prickers<fn>French: picoteur</fn> and a pricker"
+    body, n = pull_footnotes("to lodge yourself<fn>Fr. vous loger</fn>, he runs onto the point<fn>Fr. s\u2019enferrer</fn>; "
+                             "a <i>lodging</i><fn>Fr. loger</fn>; a hint<fn>Fr. indice</fn>", "", set())
+    assert n == 2 and body.endswith("___FOOTNOTES___\n†1 French: se loger\n†2 French: s'enferrer"), body
+    assert "a hint;" not in body and "a hint" in body
+    TX["BOOK_LANG"] = "Italian"
+    try:
+        body, n = pull_footnotes("straight thrust advancing<fn>It. camminando</fn>", "", set())
+        assert n == 1 and body.endswith("†1 Italian: camminando"), body
+        assert TX["enforce_footnoted_terms"]("un forconatore", set()) == "un pitchforker<fn>Italian: forconatore</fn>"
+    finally:
+        TX["BOOK_LANG"] = "French"
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

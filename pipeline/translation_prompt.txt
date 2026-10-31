@@ -13,7 +13,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
 1. Translate EVERYTHING into modern English. The output must be entirely English (Latin script only). Do not leave French / Italian / German / Spanish / Latin sentences, phrases, headings, or captions untranslated. Never write a note to yourself in any language.
 
 2. KEEP in the original language, wrapped in <i>…</i>, ONLY this small set — the terms English-language fencing literature itself retains:
-   - French: riposte, remise, reprise, croisé, corps à corps, volte, sentiment du fer, tac-au-tac, flanconnade (also spelled flanconade — write <i>flanconnade</i>), appel (the stamp of the foot: <i>appel</i>, plural <i>appels</i>), pointe d'arrêt (the pointed tip fixed to the épée's button — a device, never an action), doublé and dédoublé (a double, and a double in the reverse direction: <i>doublé</i>, <i>dédoublé</i>; the verbs "doubler", "dédoubler" → make a <i>doublé</i>, make a <i>dédoublé</i>; where the book DEFINES the word, keep the defined word itself: "dédoubler signifie doubler en sens inverse du premier doublé" → "<i>dédoubler</i> means to double in the direction opposite to the first <i>doublé</i>"), and the numbered lines/parries prime, seconde, tierce, quarte, quinte, sixte, septime, octave.
+   - French: riposte, remise, reprise, croisé, corps à corps, volte, sentiment du fer, tac-au-tac, flanconnade (also spelled flanconade — write <i>flanconnade</i>), appel (the stamp of the foot: <i>appel</i>, plural <i>appels</i>), pointe d'arrêt (the pointed tip fixed to the épée's button — a device, never an action), doublé and dédoublé (a double, and a double in the reverse direction: <i>doublé</i>, <i>dédoublé</i>; the verbs "doubler", "dédoubler" → make a <i>doublé</i>, make a <i>dédoublé</i>; where the book DEFINES the word, keep the defined word itself: "dédoubler signifie doubler en sens inverse du premier doublé" → "<i>dédoubler</i> means to double in the direction opposite to the first <i>doublé</i>"), and the numbered lines/parries prime, seconde, tierce, quarte, quinte, sixte, septime, octave; belle (the deciding hit when the score is level: "le dernier, dénommé belle" → the last, called the <i>belle</i>).
    - "parade de tierce" = "parry of tierce" — translate "parade" (rule 3), keep the number.
    - épée — keep as "épée" (it IS the English term), wrap in <i>épée</i>.
    - German: Ausfallen, Zornhau, Versetzung, Absetzen, Winden
@@ -84,6 +84,8 @@ CRITICAL RULES — FOLLOW EXACTLY:
      plastron: the master's padded jacket → plastron; the lesson at it ("le plastron", "pendant le plastron", "donner le plastron", "quelques minutes de plastron") → plastron work; au plastron → at the plastron; plastronner → work at the plastron (unless the book defines it otherwise)
      passe d'armes → passage of arms   |   assaut en un → one-touch bout   |   riposte d'opposition → <i>riposte</i> with opposition (never "counter-riposte")
      riposteur (the fencer who ripostes) → riposter   |   martingale → martingale   |   prévôt → provost   |   salut, salut des armes (the formal salute before a bout) → salute, salute of arms   |   tantôt … tantôt → sometimes … sometimes
+     chasser le fer, chasser l'épée, chasser la lame → drive the blade aside (never "chase")   |   fuyard (a fencer who keeps breaking ground) → runaway   |   tireur d'allonge → long-reach fencer
+     tireur de tête / tireur de tempérament → thinking fencer / impulsive fencer   |   à mains contraires / à mains pareilles → opposite-handed / same-handed   |   départs d'ensemble → simultaneous starts   |   se coucher (dropping the body under the opponent's point) → duck
      "parer tierce" → parry tierce   |   "de quarte en seconde" → from quarte to seconde   |   septime enveloppée → septime enveloped
    - ordinary words these books use in a sense the model misreads:
      défendre (l'usage de …) → forbid   |   ne … plus que → now only (never "no longer")   |   ajuster (a hit) → aim
@@ -111,6 +113,15 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - bourrer → to ram ("en bourrant" → by ramming), bourrade → ramming thrust, bourreur → rammer (a thrust made by drawing the arm back and driving the point in hard; never "shove", "press", "stuff")
    - larder, en lardant → to jab, jabbing (thrusting in and out like a larding needle; never "lard")
    - tendre la perche, la perche tendue, tendre la broche (slang for sticking the arm out stiffly at an attack, hoping the attacker runs onto the point; no English saying) → stick the arm out stiffly, the arm stuck out stiffly
+   - se loger, vous loger, se logeant (working one's way into striking distance) → lodge oneself, lodge yourself, lodging oneself
+   - picoteur (a fencer who pricks at the wrist and forearm) → pricker
+   - au pied levé (a stop-thrust taken as the attacker lifts his foot) → with the foot raised
+   - tendeur à outrance, tension à outrance → extender to excess, extension to excess
+   - se désunir, désuni (losing the unity of body and arm) → become disunited, disunited
+   - s'enferrer (running oneself onto the opponent's point) → run oneself onto the point
+   - filer au corps, en filant (the point running straight on to the body) → run through to the body, running on
+   - bricoleur → tinkerer   |   fléchard → <i>flèche</i> fencer   |   attaque d'emblée, d'emblée au corps → attack straight off, straight off to the body
+   - coup amené → drawn attack   |   temps moral (the fencer's mental reaction time) → mental time
    - à-propos → timing (plural: moments of timing); but "mal à propos" → at the wrong moment, "à propos" (opportunely) → at the right moment — never "at a lost tempo", which is à temps perdu
    - coup de temps → time-hit
    - rompre → to break ground, but "rompre la mesure" → break the measure   (a single deliberate step back, NOT "romp" -- and NOT "retreat"/"retraite", a different, more general backward movement; keep the two distinct if both appear)

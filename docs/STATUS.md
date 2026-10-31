@@ -142,6 +142,17 @@ the operator's business and is not tracked here.)
   `apply_overrides.py` and over the `[[fix]]` texts, so no fix needs
   rewriting.
 
+- **Fencing slang translated, original noted once (2026-10-31).** Slang and
+  coined terms with no ready English (fencer types, figurative verbs) are
+  translated literally with a bare "French: …" / "Italian: …" note at first
+  use per book, like rule 3b: «se loger» → lodge oneself, «picoteur» →
+  pricker, «s'enferrer» → run oneself onto the point, «camminando» →
+  advancing, «forconatore» → pitchforker, and others in the prompts. Terms
+  that are ordinary words elsewhere are in `_FOOTNOTED_FR_REFS` /
+  `_FOOTNOTED_IT_REFS` (the model's note is accepted, no backstop rewrite).
+  «legatura» (the wrist strap) is "strapping", never "binding", which reads
+  as the blade action.
+
 - **Translation temperature 0 for the first try (2026-10-10; was 0.3).**
   0.3 dated from the 7B model and was never chosen for Qwen3.8. At 0 the
   normal entry repeats itself (35 of 36 test pages word for word; two runs
