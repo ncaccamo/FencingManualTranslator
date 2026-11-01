@@ -79,6 +79,11 @@ TERM_RULES = [
     # Vauresmont pdf 115: "point cut", "cutting blow"; 2026-10-02)
     (r"\bcoups? de pointe\b", r"\bpoint[- ]cuts?\b", "coup de pointe → thrust"),
     (r"\bcoups? de (?:taille|tranchant)\b", r"\bcutting blows?\b", "coup de taille → cut"),
+    # "stiffly" belongs only to the slang tendre la perche / la broche; plain
+    # tendre (le bras, le fer, l'épée) is extend (Gomard, Jacob-André
+    # 2026-11-01). «raide» is stiff in its own right
+    (r"^(?![\s\S]*\b(?:perche|broche|raid|roid))[\s\S]*\bt[eé]nd", r"\bstiffly\b",
+     "tendre → extend; stiffly only for tendre la perche / la broche"),
     (r"\bplanches?\b", r"\bplanks?\b", "planche → plate"),
     (r"\btac[- ]au[- ]tac\b", r"\btac[- ]to[- ]the[- ]tac\b", "du tac au tac → tac-au-tac"),
     (r"\brompre|\brompez|\brompu", r"\bromp(?!re\b|ez\b|u\b)", "rompre → break ground"),

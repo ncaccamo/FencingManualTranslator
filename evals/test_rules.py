@@ -2531,6 +2531,14 @@ def test_report_point_cut_and_cutting_blow():
     assert not hits(Q.TERM_RULES, "Feinte de coup de pointe", "Feint of a thrust")
     assert "coup de taille → cut" in hits(Q.TERM_RULES, "de coup de taille", "of a cutting blow")
     assert "colpo di punta → thrust" in hits(Q.TERM_RULES_IT, "colpo di punta", "a point cut")
+    # Gomard scan 264, Jacob-André scan 56: plain tendre came out "stiffly";
+    # the slang tendre la perche (Kirchhoffer scan 60) is the one place it belongs
+    stiff = "tendre → extend; stiffly only for tendre la perche / la broche"
+    assert stiff in hits(Q.TERM_RULES, "apprendre à tendre le fer sur les attaques",
+                         "to stick the arm out stiffly on the attacks")
+    assert stiff in hits(Q.TERM_RULES, "ceux-ci tendent le bras à tout propos", "stick the arm out stiffly")
+    assert not hits(Q.TERM_RULES, "au lieu de lui tendre simplement la perche", "sticking the arm out stiffly")
+    assert not hits(Q.TERM_RULES, "tendre le bras", "extend the arm")
 
 
 def test_italian_low_high_at_render():
