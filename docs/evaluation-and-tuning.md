@@ -323,18 +323,20 @@ English right?
   It does not see a page cut off mid-sentence that is not much shorter:
   step 2 now rejects a reply that ran out of room (`finish_reason:
   length`), and the meaning review checks page endings.
-- **Meaning review** (`evals/meaning_review.md`): a Claude agent reads the
-  source against the English page by page, about 130-190 pages per agent,
-  two or three agents at a time, and lists each place the English says
-  something different -- source words, the English now (an exact quote, so
-  it can become a `[[fix]]` find), a literal correction, a plain
-  explanation, marked where a fencing term is involved, by side-by-side pdf
-  page. It reads the prompt's glossary rules first, so the reviewer's
-  decided renderings are not reported, and skips what a `[[fix]]` already
-  corrects. It catches what no check can: a lost negation, a reversed
-  clause, a term guessed wrong, a page cut off, a table that vanished.
-  Check a few of each report's worst items against the page before using
-  it.
+- **Meaning review** (`evals/meaning_review.md`): Claude agents read the
+  source against the English page by page (~95 pages each, up to four at a
+  time) and write each error as a finding with an exact `find` /
+  `replace`. A second agent checks every finding **blind** (the first
+  fix withheld) and writes its own. What both call an error is applied as
+  `[[fix]]` / `[[table_fix]]`; the owner sees only the rest -- "unsure"
+  verdicts and open term choices. It reads the prompt's glossary first,
+  so decided renderings are not reported, and skips what a `[[fix]]`
+  already corrects. It catches what no check can: a lost negation, a
+  reversed clause, a word sense, an idiom taken literally, an OCR misread
+  translated as a word. On three reviewed books (2026-11) it found one
+  error every ~7 pages; the blind reader confirmed nearly all of the 171.
+  Recurring kinds then become review-report checks
+  (`docs/model-quirks.md` 2.21).
 
   **The loop.** Recurring errors across books become a decision list for
   the reviewer (one line each: source, now, proposed, where); the decided

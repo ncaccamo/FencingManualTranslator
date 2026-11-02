@@ -20,6 +20,7 @@ Nothing here calls a model. It runs on the host with stock Python 3
 | `baselines/<book>/` | the frozen artifacts (`translation.txt`, `extracted.txt`, `figures.json`, `headers.json`, `page_numbers.txt`) + `MANIFEST.json` (git commit, timestamp). **Git-ignored**: the books are the operator's own, so their baselines stay on this system (~1–2 MB/book, text only — never the PDFs). |
 | `reports/` | check.py output, and the judge's (below). Git-ignored. |
 | `folio_choice_test.py` | the page-number re-read test: asks the OCR model about each labelled page's margins and scores confirmed / wrong / invented numbers (STATUS, "Page numbers"). |
+| `meaning_review.md` | the meaning review: Claude agents read source against English, a second agent checks each finding blind, agreed fixes are applied, the owner decides the rest. The two briefs are in it. |
 | `judge_key.py`, `meaning_judge.py`, `judge_score.py` | choosing a model for the local meaning review: an answer key built from the agent meaning reviews (`reports/meaning-review/`), a runner that sends each page pair to llama-swap models, and a scorer (`reports/judge/score.md`). See `docs/evaluation-and-tuning.md` §4a. |
 | `format_check.py` | the English layout against the print, per page: paragraph starts and gaps the scan's text layer shows against those the English draws (`reports/format/<stem>.md`). A measure, not a fix; noisy on skewed scans and on pages with side notes. |
 

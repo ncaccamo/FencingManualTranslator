@@ -338,6 +338,11 @@ prepend = "OF DISARMING."        # skipped if the page already starts with it
 scan = 153
 find = "ON THE COUNTER-<i>RIPOSTE</i>"
 replace = "OF THE COUNTER-<i>RIPOSTE</i>"
+
+[[table_fix]]                    # the same, in a table drawn on that page (tables.json)
+scan = 709
+find = "transport of <i>quarta</i>"
+replace = "transport of <i>terza</i>"
 ```
 
 Apply it to a book's existing outputs (no model, seconds), then rebuild
@@ -438,6 +443,7 @@ second sheet there). The review report lists pages as scan pages.
 | The problem | The fix | Where it's described |
 |---|---|---|
 | A word or sentence in the English is wrong | `[[fix]]` find/replace in `<stem>.overrides.toml` | III.5b |
+| A table cell's English is wrong | `[[table_fix]]` find/replace in `<stem>.overrides.toml` | III.5b |
 | A paragraph or page needs rewriting, or a line is missing | `python3 pipeline/edit_page.py <stem> N` (on the host), edit `books/<stem>.edits/scan-NNNN.txt` | below |
 | A book is finished and must not change by accident | `[book] final = true` | III.1 |
 | A heading / running head is translated badly | `[headers]` in the overrides file | III.5b |
@@ -458,12 +464,12 @@ run again before you see it:
 
 | Correction | Read by | To see it | GPU? |
 |---|---|---|---|
-| `[headers]`, `[[fix]]`, `caption_en`, page edits (`<stem>.edits/`) | end of step 2; `apply_overrides.py` | `apply_overrides.py`, rebuild PDFs | no |
+| `[headers]`, `[[fix]]`, `[[table_fix]]`, `caption_en`, page edits (`<stem>.edits/`) | end of step 2 (`--tables` too); `apply_overrides.py` | `apply_overrides.py`, rebuild PDFs | no |
 | `[book] running_heads` | step 1 / `reprocess_extracted.py` | `reprocess_extracted.py`, `2_translate.py <stem>` (changed pages only), rebuild PDFs | yes, changed pages |
 | `<stem>.rotate` | steps 3 and 4 | rebuild PDFs | no |
 | `source_changes` in `<stem>.meta.json` (cover note) | steps 3 and 4 | rebuild PDFs | no |
 | `[pages.N]` `page_number`, `header` | step 1 / `reprocess_extracted.py` (after the automatic logic, so the decision wins) | `apply_overrides.py`, rebuild PDFs | no |
-| `[pages.N] caption` | step 1 / `reprocess_extracted.py`, and step 2 (translates it) | `apply_overrides.py`, `2_translate.py --pages <stem> N`, rebuild PDFs | yes, seconds |
+| `[pages.N] caption` | step 1 / `reprocess_extracted.py`, and step 2 (translates it) | `apply_overrides.py`, `2_translate.py --pages <stem> N` (not needed when `caption_en` is set too), rebuild PDFs | yes, seconds (no, with `caption_en`) |
 | `[terms]`, `[pages.N] retranslate` | step 2 | `2_translate.py --pages <stem> <pages>`, rebuild PDFs | yes, ~10–30 s per page |
 | `<stem>.crop` | step 1 (trims the image before OCR) | a full rerun: remove `processed/<stem>_translated/` (III.2), then steps 1–4 — so set it before a book's first run | yes, whole book |
 | patched scan (`patch_scan.py`) | step 1 (new pages only) | the `patch_scan.py` sequence | yes, new pages only |

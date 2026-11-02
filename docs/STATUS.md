@@ -99,21 +99,22 @@ the operator's business and is not tracked here.)
    `[low-confidence]` pages partly untranslated.
 6. **`rocm714` backend** — wired, not compiled; `docker/ROCM714_NOTES.md`.
 7. **Meaning review — a reader for what the checks can't see
-   (2026-10-11).** The automatic checks catch form (lost italics, length,
-   untranslated text), not a wrong sense. A Claude agent reads the source
-   against the English page by page (`evals/meaning_review.md`) and lists
-   each place the English says something different, with the source words,
-   the exact English, a literal correction and a plain explanation, by pdf
-   page. Recurring errors go to the reviewer as a decision list; decided
-   renderings become glossary lines, the pattern pages are retranslated and
-   re-reviewed, and single errors become `[[fix]]` entries
-   (`docs/evaluation-and-tuning.md` §4). French and Italian books both
-   reviewed; round 4 of the glossary (2026-10-13) came from it. A local
-   model doing the same read was tested on a 50-page answer key
-   (2026-10-20): the best one (Qwen3.5-35B-A3B, no reasoning) finds 76 % of
-   the known errors but buries them in nitpicks, and its fencing-term
-   knowledge is unreliable; filtered, it finds under half. Not adopted --
-   results and the bar in `docs/evaluation-and-tuning.md` §4a.
+   (2026-10-11, two readers since 2026-11-01).** The automatic checks catch
+   form and a list of recurring wrong renderings, not a wrong sense. Claude
+   agents read the source against the English page by page, a second agent
+   checks each finding blind, and what both call an error is applied as a
+   `[[fix]]` / `[[table_fix]]`; the owner decides only the rest
+   (`evals/meaning_review.md`, `docs/evaluation-and-tuning.md` §4). On three
+   books already reviewed it found 171 errors, one every ~7 pages; about
+   60% are comprehension errors (false friends, old words, idioms) that are
+   limits of the 27B model and that no prompt line fixed, so a book needs
+   this reading before release. The recurring kinds are now review-report
+   checks (`docs/model-quirks.md` 2.21). A local model doing the same read
+   was tested on a 50-page answer key (2026-10-20): the best one
+   (Qwen3.5-35B-A3B, no reasoning) finds 76 % of the known errors but
+   buries them in nitpicks, and its fencing-term knowledge is unreliable;
+   filtered, it finds under half. Not adopted -- results and the bar in
+   `docs/evaluation-and-tuning.md` §4a.
 
 ## Not yet tested
 
