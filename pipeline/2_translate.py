@@ -2509,6 +2509,16 @@ def apply_book_overrides(folder: str, fixes: bool = True) -> None:
         if _overrides.apply_edits(tr, edits):
             with open(tp, "w", encoding="utf-8") as fh:
                 fh.write(_pageio.join_pages(tr))
+    tbp = f"{I}/tables.json"
+    if fixes and ov["table_fix"] and os.path.exists(tbp):
+        tmap = _json.load(open(tbp, encoding="utf-8"))
+        applied, missing = _overrides.apply_table_fixes(tmap, ov)
+        if applied:
+            with open(tbp, "w", encoding="utf-8") as fh:
+                _json.dump(tmap, fh, ensure_ascii=False, indent=1)
+        if missing:
+            print(f"  ⚠ overrides: [[table_fix]] text not found on scan page(s) {missing} "
+                  f"-- obsolete after a retranslation? Review {_overrides.path_for(stem)}")
     gp = f"{I}/figures.json"
     if fixes and os.path.exists(gp):
         fmap = _json.load(open(gp, encoding="utf-8"))
@@ -3136,6 +3146,7 @@ if len(sys.argv) > 1 and sys.argv[1] == "--tables":
             print(f"tables: {Path(folder).name}")
             PROMPT_TEMPLATE = prompt_for_book(Path(folder).name.replace("_translated", ""))
             translate_tables(folder)
+            apply_book_overrides(folder)    # [[table_fix]] decisions win over the new English
     finally:
         if translation_proc is not REMOTE_SERVER and translation_proc:
             translation_proc.terminate()

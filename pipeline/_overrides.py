@@ -56,6 +56,10 @@ continuation sheet, so it can't key anything durable.)
                          prepend = "..." (added as the first line unless the
                          page already starts with it) or find = "..." +
                          replace = "..." (a no-op if find isn't there).
+    [[table_fix]]        the same find + replace edit for the English of a
+                         page's TABLES (intermediate/tables.json, which the
+                         [[fix]] edits never reach): scan = N, find, replace;
+                         applied after every table translation run.
 
 Hand edits of whole pages live beside it, in books/<stem>.edits/: one file
 per page, scan-0091.txt, made by edit_page.py. Everything below the file's
@@ -69,7 +73,7 @@ import re
 import tomllib
 
 _PAGE_KEYS = {"page_number", "header", "retranslate", "note", "caption", "caption_en", "figure"}
-_TOP_KEYS = {"book", "headers", "terms", "pages", "fix"}
+_TOP_KEYS = {"book", "headers", "terms", "pages", "fix", "table_fix"}
 _BOOK_KEYS = {"running_heads": bool, "final": bool, "paragraphs": str, "page_numbers": str}
 _PARAGRAPHS = ("indented", "spaced")
 _PAGE_NUMBERS = ("outer", "inner", "centre", "bottom-outer", "bottom-inner", "bottom-centre")
@@ -98,7 +102,7 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
     decision is the failure this file exists to prevent."""
     p = path_for(stem, books_dir)
     if not os.path.exists(p):
-        return {"book": {}, "headers": {}, "terms": {}, "pages": {}, "fix": []}
+        return {"book": {}, "headers": {}, "terms": {}, "pages": {}, "fix": [], "table_fix": []}
     try:
         with open(p, "rb") as fh:
             raw = tomllib.load(fh)
@@ -123,6 +127,14 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
         if has_prepend == has_find or (has_find and "replace" not in f):
             raise OverridesError(f"{p}: [[fix]] #{n} (scan {f['scan']}) needs either "
                                  f"prepend, or find + replace")
+    table_fixes = raw.get("table_fix") or []
+    for n, f in enumerate(table_fixes, 1):
+        if not isinstance(f.get("scan"), int) or f["scan"] < 1:
+            raise OverridesError(f"{p}: [[table_fix]] #{n} needs scan = <page number>")
+        if set(f) - {"scan", "find", "replace"} or not isinstance(f.get("find"), str) \
+                or not isinstance(f.get("replace"), str):
+            raise OverridesError(f"{p}: [[table_fix]] #{n} (scan {f['scan']}) needs exactly "
+                                 f"scan, find and replace")
     book = raw.get("book") or {}
     for k, v in book.items():
         if k not in _BOOK_KEYS:
@@ -139,11 +151,11 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
                 raise OverridesError(f"{p}: [{sec}] {k!r} must be a string")
     return {"book": dict(book),
             "headers": dict(raw.get("headers") or {}), "terms": dict(raw.get("terms") or {}),
-            "pages": pages, "fix": list(fixes)}
+            "pages": pages, "fix": list(fixes), "table_fix": list(table_fixes)}
 
 
 def _check_range(ov: dict, n_pages: int, where: str) -> None:
-    for s in list(ov["pages"]) + [f["scan"] for f in ov["fix"]]:
+    for s in list(ov["pages"]) + [f["scan"] for f in ov["fix"] + ov.get("table_fix", [])]:
         if s > n_pages:
             raise OverridesError(f"{where}: scan page {s} is past the end of the book "
                                  f"({n_pages} pages)")
@@ -263,6 +275,25 @@ def apply_fixes(tr_pages: list, ov: dict) -> tuple:
                 continue
             tr_pages[i] = t.replace(f["find"], f["replace"])
             applied += 1
+    return applied, missing
+
+
+def apply_table_fixes(tmap: dict, ov: dict) -> tuple:
+    """tables.json ({0-based page: {"src": [...], "en": [html or None]}}):
+    find -> replace in the English of the page's tables. Returns (applied,
+    not_found) like apply_fixes: a find already replaced is silent, a find
+    gone after the table was retranslated is reported."""
+    applied, missing = 0, []
+    for f in ov.get("table_fix", []):
+        en = (tmap.get(str(f["scan"] - 1)) or {}).get("en") or []
+        hit = [k for k, h in enumerate(en) if h and f["find"] in h]
+        if not hit:
+            if not any(h and f["replace"] in h for h in en):
+                missing.append(f["scan"])
+            continue
+        for k in hit:
+            en[k] = en[k].replace(f["find"], f["replace"])
+        applied += 1
     return applied, missing
 
 

@@ -1645,6 +1645,22 @@ def test_overrides_fix_find_reports_obsolete():
     assert ov.apply_fixes(tr, o) == (0, [2])                # already applied: silent
 
 
+def test_overrides_table_fix():
+    # Masiello 1887 scan 709: a table cell said "transport of quarta" where
+    # the scan prints «trasporto di terza». Table English lives in
+    # tables.json, which [[fix]] never reached; [[table_fix]] edits it,
+    # re-applying changes nothing, a vanished find is reported.
+    ov = _load_overrides_module()
+    o = {"headers": {}, "terms": {}, "pages": {}, "fix": [], "table_fix": [
+        {"scan": 709, "find": "transport of <i>quarta</i>", "replace": "transport of <i>terza</i>"},
+        {"scan": 2, "find": "gone", "replace": "new"}]}
+    tmap = {"708": {"src": ["<table>…</table>"], "en": [None, "<td>transport of <i>quarta</i></td>"]},
+            "1": {"src": ["x"], "en": ["<td>retranslated</td>"]}}
+    assert ov.apply_table_fixes(tmap, o) == (1, [2])
+    assert tmap["708"]["en"][1] == "<td>transport of <i>terza</i></td>"
+    assert ov.apply_table_fixes(tmap, o) == (0, [2])        # already applied: silent
+
+
 def test_overrides_extraction_wins_and_validation():
     # Gomard scan 314/315: two adjacent 9->0 misreads the reconciler can't
     # catch -- the recorded decision must win over reconciliation.

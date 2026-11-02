@@ -112,6 +112,21 @@ page was retranslated since) is reported, not an error: update or remove
 it. For more than a sentence, use a page edit (below). **Rerun:**
 `apply_overrides.py`, then the PDFs.
 
+### `[[table_fix]]`: a small edit to a table's English
+
+```toml
+[[table_fix]]              # a wrong cell in the table drawn on this page
+scan = 709
+find = "transport of <i>quarta</i>"
+replace = "transport of <i>terza</i>"
+```
+
+Tables are translated cell by cell into `intermediate/tables.json`, which
+`[[fix]]` never reaches. `find` is matched in the page's table HTML (all
+the tables on that page); it is applied after every table translation run
+and reported when it no longer matches, like `[[fix]]`. **Rerun:**
+`apply_overrides.py`, then the PDFs.
+
 ---
 
 ## `<stem>.edits/`: pages edited by hand
@@ -201,6 +216,7 @@ III.5a). The original is kept in `books/_alt/`.
 | A running head's English is wrong | `[headers]` |
 | A term should always be rendered one way in this book | `[terms]`, then retranslate the pages that use it |
 | A word or sentence in the English is wrong | `[[fix]]` |
+| A table cell's English is wrong | `[[table_fix]]` |
 | A paragraph or page needs rewriting, or a line is missing | `edit_page.py` (`<stem>.edits/`) |
 | A page's translation is poor and a retranslation may fix it | `2_translate.py --pages <stem> N` or `[pages.N] retranslate` |
 | A plate caption is misread | `[pages.N] caption` (+ `caption_en`) |
