@@ -170,11 +170,17 @@ side-by-side PDF. What it checks:
 
 - **Translation:** pages step 2 flagged low-confidence or couldn't
   translate, paragraphs left in French, English much shorter than the French
-  (something dropped), model chatter, and a plate's "Planche N." label
-  missing from the English.
+  (something dropped), model chatter, a plate's "Planche N." label
+  missing from the English, and a line left in Latin (or French in an
+  Italian book) that rule 0 says to translate, with an "… in the original"
+  note.
 - **Wording:** misspellings the model is known to make (THUST, THROUGHS) and
   renderings against the glossary ("THROWS" for *coup*, "romp" for *rompre*,
-  "plank" for *planche*). This covers running heads too.
+  "plank" for *planche*). This covers running heads too. In Italian books
+  also: *tempo* counting movements as "time" ("on the first time"),
+  *slancio* as anything but "drive", *col mancino* as "with the left hand",
+  the blade's *taglio* as "the cut", and a translated word kept in Italian
+  in italics (*affondo*, *puntata*, *elsa*).
 - **Page numbers:** a shown number that goes backwards or jumps further than
   the scans allow. Both pages involved are listed.
 - **Terminology to settle:** a book-wide section, not per page. One French
@@ -193,7 +199,14 @@ side-by-side PDF. What it checks:
 - **Table:** table cells left in the original language.
 - **False friend:** a source word rendered by its English look-alike that
   means something else («ignorer» → "ignore" for "not know», «sensible» →
-  "sensible" for "perceptible", «actuellement» → "actually").
+  "sensible" for "perceptible", «actuellement» → "actually", «soggezione» →
+  "subjection" for "awe", «arme blanche» → "white weapon" for "edged
+  weapon").
+- **Caption** (a note): a plate caption with a word found nowhere else in
+  the book but one or two letters from a word the book uses often: an OCR
+  misread of an engraved or sideways caption ("Segamento" for *Legamento*,
+  "Pavata" for *Parata*). Check the scan, then `[pages.N] caption`. A misread
+  that is itself a real word ("terra" for *terza*) isn't caught.
 - **Negation:** a page whose source has two or more negations more than its
   English: a "not" lost (the sentence now says the opposite), or a passage
   left out.
@@ -209,7 +222,10 @@ side-by-side PDF. What it checks:
   (about 0.5 s per page). Pages where the detector and the OCR disagree are
   listed as notes.
 
-Not covered yet: a title the OCR never transcribed (Gomard pdf 316).
+Not covered yet: a title the OCR never transcribed (Gomard pdf 316), and
+most meaning errors: a wrong word sense, an idiom taken literally, a garbled
+OCR word translated as if real. These need a reading against the source;
+the checks above catch the recurring ones only.
 
 The review loop: read the report → look at those pages → record decisions
 in the overrides file (III.5b) → `apply_overrides.py` and/or

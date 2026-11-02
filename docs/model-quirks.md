@@ -1816,6 +1816,40 @@ at the start of a line, then a word) than the source is retried too, kept on the
 try (a table of "(2)" cells looks the same), and the review report flags
 the page. 25 pages in all the books had lost a note this way.
 
+### 2.21 Meaning errors a careful reading still finds (2026-11-02)
+
+A page-by-page reading against the source, with a blind second reader for
+each finding, found 171 errors in three books that had already been
+reviewed (Jacob-André, Barbasetti, Masiello 1887), about one every 7 pages.
+By kind:
+
+- **~26% a rule the prompt states, not followed**: *tempo* counting
+  movements as "time" (rule 3 names it), *slancio* as "spring" / "swing" /
+  "impulse", *col mancino* as "with the left hand", *affondo* / *puntata*
+  kept in Italian. Prompt wording doesn't fix these; the review report now
+  flags them (TERM_RULES_IT, ITALIC_RULES_IT), and the PDF corrects
+  "quarta bassa" as it draws (`italian_low_high`).
+- **~12% OCR and layout**: a note or a table heading split across a
+  two-page spread and read page by page, sideways plate captions misread
+  (37 of Masiello's 39; the caption check had marked garbage readings as
+  printed), a misread word translated as if real («finite» for *finte* →
+  "finished battles"). The report now notes a caption word found nowhere
+  else in the book but close to a common one.
+- **~3% a Latin or French quotation left as printed**, inside an English
+  paragraph, where the retry of 2.20 (whole paragraphs only) doesn't reach.
+  Flagged by the report (`latin_lines`).
+- **~60% comprehension**: false friends («fanali» → "lanterns",
+  «soggezione» → "subjection"), old Italian («trattasi» → "having worn" for
+  "taken off"), idioms taken literally («a pezzi e bocconi»), Italian word
+  order kept, an expletive *non* rendered as a negation although rule 0
+  names it. These are limits of the 27B model; only a reading finds them.
+  The recurring false friends are in the report's FALSE_FRIENDS list.
+
+The new checks found further cases in books not yet read this way: "white
+weapon" for *arme blanche* / *arma bianca* on 25 pages of 11 books, a dozen
+Latin quotations in Florio, «scoprire» as "discover" a target in Bruno and
+Marchionni.
+
 ## Part 3 — shared / architectural
 
 - **Page separator** — `pipeline/_pageio.py::PAGE_SEP` (U+001E). Every

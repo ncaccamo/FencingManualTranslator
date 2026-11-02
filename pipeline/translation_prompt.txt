@@ -90,7 +90,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - ordinary words these books use in a sense the model misreads:
      défendre (l'usage de …) → forbid   |   ne … plus que → now only (never "no longer")   |   ajuster (a hit) → aim
      grande force, de première force → great skill, first-rate   |   vicieux → faulty
-     juste, justesse → correct, accuracy (never "just")   |   venir à bout de → get the better of   |   faire des armes → fence   |   Or (opening a sentence) → Now
+     juste, justesse → correct, accuracy (never "just")   |   venir à bout de → get the better of   |   faire des armes → fence   |   Or (opening a sentence) → Now   |   arme blanche, armes blanches → by context: edged weapon(s), bladed weapon(s), or "cold steel" in a set phrase ("charger à l'arme blanche" → charge with cold steel); never "white weapon"
    - du tac au tac → tac-au-tac   |   à temps perdu → at a lost tempo
    - divers (as a heading) → miscellaneous   |   avant-propos → foreword
    - première partie, deuxième partie … → First Part, Second Part … (ordinal first, never "Part One")

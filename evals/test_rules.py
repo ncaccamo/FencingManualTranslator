@@ -2557,6 +2557,59 @@ def test_report_point_cut_and_cutting_blow():
     assert not hits(Q.TERM_RULES, "tendre le bras", "extend the arm")
 
 
+def test_report_meaning_check_rules():
+    # 2026-11-02, from the Masiello 1887 / Barbasetti meaning checks: glossary
+    # rules the model broke, words kept in Italian, false friends, Latin left
+    # as printed, misread plate captions. Each case is the real page.
+    import importlib, re
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        Q = importlib.import_module("quality_report")
+    except (OSError, ImportError, SystemExit):   # reads /app paths: runs in the image
+        return
+    def hits(rules, fr, en):
+        return [r for f, w, r in rules if re.search(f, fr, re.I) and re.search(w, en, re.I)]
+    IT = Q.TERM_RULES_IT
+    # Masiello pdf 322 / 585: tempo counting movements came out "time"
+    assert "tempo counting movements → tempo" in hits(IT, "al primo tempo si eseguirà", "on the first time it will")
+    assert "tempo counting movements → tempo" in hits(IT, "eseguita in due tempi", "It is executed in two times:")
+    assert not hits(IT, "per la prima volta", "for the first time")
+    # pdf 541 / 575: slancio of the rear foot -> drive
+    assert "slancio → drive" in hits(IT, "collo slancio del piede sinistro", "with the thrust of the left foot back")
+    # pdf 451: col destro / col mancino; Florio scan 137 "grip ... with the left hand" is right
+    cm = "col destro / col mancino → against a right-hander / left-hander"
+    assert cm in hits(IT, "che col destro terminerebbe", "which with the right hand would end at the chest")
+    assert not hits(IT, "col mancino feriscono da fuori", "they grip the sword with the left hand; in the defenses")
+    # pdf 472: the edge, not "the cut"; Blengini scan 51 "delivering the cut to the right of" is a cut
+    assert "taglio → edge" in hits(IT, "col taglio a destra", "and the cut to the right;")
+    assert not hits(IT, "col taglio in su, vibrando", "delivering the cut to the right of the opponent")
+    assert "tocco di cambiamento → <i>tocco</i> of change" in hits(IT, "tocco di cambiamento", "a change beat")
+    assert "andare a vuoto → miss" in hits(IT, "vanno a vuoto", "especially those of thrust, go to waste")
+    # pdf 544 / 648: Italian kept in italics
+    assert "a fondo / affondo → lunge" in hits(Q.ITALIC_RULES_IT, "slanciarsi a-fondo", "to drive into the <i>affondo</i>")
+    assert "puntata → thrust" in hits(Q.ITALIC_RULES_IT, "puntata", "<i>puntata</i> to the chest")
+    # false friends: Masiello pdf 98, 725, 360; arme blanche (Grisier scan 160)
+    ff = lambda fr, en: Q.false_friends(fr, en)
+    assert ff("fanali", "the lanterns of the street")
+    assert ff("per soggezione", "whether from subjection or")
+    assert ff("scoprire la stessa parte", "puts to discover the same part of the target")
+    assert not ff("per scoprire se para", "to discover whether he parries simply")
+    assert ff("l'arme blanche", "the white weapon")
+    assert not ff("il valore", "an artistic value")
+    # Latin left as printed (Masiello pdf 39) -- not an English line quoting one word
+    assert Q.latin_lines("Armorum tractandorum meditatio militibus est tradita.")
+    assert Q.latin_lines("Munera nunc edunt, et verso pollice vulgi")
+    assert not Q.latin_lines("He wrote that the art is et cetera, and the rest of it is lost.")
+    # misread plate captions (Masiello scan 231, 499): a word near a common book word
+    ex = ["BODY_TEXT:\n" + "Il legamento di seconda. La parata di quarta. " * 3]
+    figs = {"230": [{"kind": "plate", "caption": "Segamento di seconda"}],
+            "498": [{"kind": "plate", "caption": "Pavata di terra"}],
+            "500": [{"kind": "plate", "caption": "Parata di quarta"}],
+            "502": [{"kind": "plate", "caption": "Segamento di prima", "decided": True}]}
+    got = {(s, w, like) for s, c, w, like in Q.caption_misreads(figs, ex)}
+    assert got == {(231, "Segamento", "legamento"), (499, "Pavata", "parata")}, got
+
+
 def test_italian_low_high_at_render():
     # 2026-10-12: "quarta bassa" -> "low quarta" (reviewer); Masiello 1887 had
     # it three ways. Applied when the PDF is drawn.

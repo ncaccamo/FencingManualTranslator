@@ -113,6 +113,44 @@ TERM_RULES_IT = [
     (r"\bfil[oi]\b", r"\b(?:threads?|wires?)\b", "filo → glide / edge"),
     (r"\brispost[ae]\b", r"\b(?:responses?|repl(?:y|ies)|answers?)\b(?!\s+to\s+(?:the|his|a)\s+letter)",
      "risposta → riposte"),
+    # From the meaning checks of Masiello 1887 / Barbasetti (2026-11-02):
+    # rules the prompt states that the model still broke. tempo COUNTING the
+    # movements ("al primo tempo", "in due tempi") -> tempo, never "time"
+    # (Masiello pdf 322, 585)
+    (r"\b(?:prim|second|terz|quart)[oa]\s+tempo\b|\b(?:due|tre|quattro|cinque)\s+tempi\b"
+     r"|\bun\s+tempo\s+solo\b|\bin\s+un\s+(?:sol\s+)?tempo\b",
+     r"\b(?:on|in|at|with|of) the (?:first|second|third|fourth) times?\b"
+     r"|\b(?:in|executed in|of|composed of) (?:two|three|four|five) times\b"
+     r"|\bthe other (?:two|three) times\b|\bin (?:a single|one single|one) time\b",
+     "tempo counting movements → tempo"),
+    # slancio of the rear foot -> drive (Masiello pdf 541, 575, 741, 746)
+    (r"\bslanci", r"\b(?:spring|swing|impulse|thrust|throw|push|lunge|launch|dash)\s+of\s+the\s+"
+     r"(?:left|rear|back|hind)\s+foot\b", "slancio → drive"),
+    # col destro / col mancino, fencing against one (Masiello pdf 451, 453);
+    # only where the hand would do the action -- "grip the sword with the
+    # left hand" (Florio scan 137) is right
+    (r"\bcol\s+(?:destro|mancino)\b|\bcon(?:tro)?\s+il\s+mancino\b",
+     r"\bwith the (?:right|left) hand\b(?=[^.;]{0,20}\b(?:will|would|must|end|ends|ending|terminat))"
+     r"|\bas well as with the (?:right|left)\b",
+     "col destro / col mancino → against a right-hander / left-hander"),
+    # the blade's edge, in positions of the fist (Masiello pdf 472);
+    # "delivering the cut to the right" (Blengini scan 51) is a cut
+    (r"\b(?:il|col|del)\s+taglio\s+(?:a|in|verso|rivolto|volto)\b",
+     r"\b(?:the|its|with the) cut (?:up|down|upward|downward|turned|facing|to the ground"
+     r"|to the (?:right|left)\s*[;,.])|\bturning the cut\b", "taglio → edge"),
+    (r"\bcolp[oi] di punta\b", r"\bhits? (?:of|with) the point\b", "colpo di punta → thrust"),
+    (r"\btocc[oh]i? di cambiament", r"\bchange[- ]beats?\b", "tocco di cambiamento → <i>tocco</i> of change"),
+    (r"\ba studio\b", r"\bby study\b", "a studio → on purpose"),
+    (r"\ba vuoto\b", r"\b(?:go|goes|went|gone|going) to waste\b", "andare a vuoto → miss"),
+]
+# Italian words the glossary translates that the model kept, in italics, as
+# if they were kept terms -- the TERM_RULES above skip italic text, so these
+# match the English with its tags (Masiello pdf 94, 544, 648, 685)
+ITALIC_RULES_IT = [
+    (r"\ba[- ]?fondo\b|\baffondo\b", r"<i>(?:a[- ]?)?f+ondo</i>", "a fondo / affondo → lunge"),
+    (r"\bpuntat[ae]\b", r"<i>puntat[ae]</i>", "puntata → thrust"),
+    (r"\bel[sz]a\b", r"<i>el[sz]a</i>", "elsa → hilt"),
+    (r"\bcavazion[ei]\s+(?:sopra|sotto)\b", r"\b(?:high|low)\s+<i>cavazion", "cavazione sopra / sotto → above / below"),
 ]
 # Misspellings the model has produced repeatedly (fix_known_garbles() repairs
 # new output; this catches output translated before the repair existed).
@@ -209,6 +247,67 @@ def _words(s: str) -> int:
     return len(re.findall(r"[^\W\d_]+", re.sub(r"</?i>", "", s)))
 
 
+# Latin quotations the model left as printed (Masiello pdf 39, 49; a dozen in
+# Florio): a sentence with two or more words found only in Latin, and at
+# least as many of them as common English words
+_LATIN = re.compile(r"\b(?:et|est|quod|atque|enim|sed|cum|vel|nunc|quem|quae|quam|sunt|esse|nec|ab|"
+                    r"ad|qui|ex|tamen|autem|ergo|igitur|ubi|ita|apud|mihi|tibi|nobis|vobis|eius|"
+                    r"eorum|omnia|omnes)\b|\b[^\W\d_]{3,}(?:orum|arum|ibus|untur|antur|entur)\b", re.I)
+_ENGLISH = re.compile(r"\b(?:the|and|of|to|is|was|that|with|which|his|it|be|by|for|this|he|they|"
+                      r"from)\b", re.I)
+
+
+def latin_lines(body: str) -> list:
+    out = []
+    for ln in re.split(r"\n|(?<=[.;:])\s+", body or ""):
+        plain = re.sub(r"<[^>]+>", "", ln)
+        if len(re.findall(r"[^\W\d_]+", plain)) < 4:
+            continue
+        lat = len(_LATIN.findall(plain))
+        if lat >= 2 and lat >= len(_ENGLISH.findall(plain)):
+            out.append(plain.strip()[:70])
+    return out
+
+
+def caption_misreads(figs: dict, ex: list) -> list:
+    """Plate captions with a word that appears nowhere else in the book but
+    is one or two letters away from a word the book uses often: an OCR
+    misread of an engraved or sideways caption (Masiello 1887: "Segamento"
+    for Legamento, "Pavata" for Parata, "Bolla" for Botta -- 37 of its 39
+    plates were misread and only a scan-by-scan check found them).
+    [(scan, caption, word, likely word)]. Inflections of a book word, line
+    names and short capitals (FIG, TAV) are not flagged."""
+    vocab = defaultdict(int)
+    for p in ex:
+        for w in re.findall(r"[^\W\d_]{4,}", p.split("BODY_TEXT:", 1)[-1]):
+            vocab[w.lower()] += 1
+    common = [w for w, c in vocab.items() if c >= 3]
+    lines = set("prime seconde tierce quarte quinte sixte septime octave prima seconda terza "
+                "quarta quinta sesta settima ottava prof chap figs".split())
+    out = []
+    for k, fl in figs.items():
+        for f in fl:
+            if f.get("kind") != "plate" or f.get("decided"):
+                continue
+            cap = re.sub(r"\s+--\s.*", "", f.get("caption") or "")
+            for w in re.findall(r"[^\W\d_]{4,}", cap):
+                lw = w.lower()
+                if vocab[lw] > 2 or lw in lines or (w.isupper() and len(w) <= 5):
+                    continue
+                def kin(c):
+                    n = len(os.path.commonprefix([c, lw]))
+                    return n >= 4 and n >= len(c) - 2 and n >= len(lw) - 2
+                if any(kin(c) for c in common if c[:3] == lw[:3]):
+                    continue
+                near = [c for c in common if abs(len(c) - len(lw)) <= 2 and c[0] == lw[0]
+                        and _edits(c, lw) <= 2] or \
+                       [c for c in common if abs(len(c) - len(lw)) <= 1 and _edits(c, lw) <= 1]
+                if near:
+                    out.append((int(k) + 1, cap, w, max(near, key=lambda c: vocab[c])))
+                    break
+    return out
+
+
 def translation_issues(src: str, t: str) -> list:
     """The per-page checks on a translation: [(level, kind, detail)].
     `src` is the page's French body, `t` its translation.txt entry. Shared
@@ -233,6 +332,16 @@ def translation_issues(src: str, t: str) -> list:
             w = re.search(wrong, re.sub(r"<i>.*?</i>", "", body), re.I)
             if w:
                 out.append((CHECK, "wording", f"{w.group(0)!r} against the glossary ({rule})"))
+    if _rules is TERM_RULES_IT:
+        for fr, wrong, rule in ITALIC_RULES_IT:
+            w = re.search(fr, src, re.I) and re.search(wrong, body, re.I)
+            if w:
+                out.append((CHECK, "wording", f"{w.group(0)!r} kept in Italian, against the "
+                            f"glossary ({rule})"))
+    for line in latin_lines(body):
+        out.append((CHECK, "translation", f"a line left untranslated, in Latin or another "
+                    f"language (rule 0: translate it, with an \"… in the original\" note): {line!r}"))
+        break
     # one of the author's footnotes missing from the English (the count is
     # step 2's note_bodies: a marker opening a line, or any marker in the
     # footnote block, followed by the note's first word)
@@ -419,6 +528,27 @@ FALSE_FRIENDS = [
     (r"\bprét(?:end|endre|endent|endait)|\bpretend(?:e|ere|ono)\b", r"\bpretend(?:s|ed|ing)?\b", "claim"),
     (r"\bachev(?:er|ez|é|ée|ait|ant)\b", r"\bachiev(?:e|es|ed|ing)\b", "finish, complete"),
     (r"\bparenti\b", r"\bparents\b", "relatives"),
+    # Italian, from the meaning checks (2026-11-02): Masiello 1887 pdf 98,
+    # 113, 116, 117, 119, 360, 725, 727, 737 and Barbasetti pdf 191; the same
+    # words turned up in Descalzi, Florio, Bruno, Masiello 1902. Not valore
+    # -> value: "artistic value", "a debatable value" were right.
+    (r"\bsoggezion", r"\bsubjection\b", "awe, self-consciousness; tenere in soggezione = keep in check"),
+    (r"\balternativ[oi]\b", r"\balternative\b", "alternating"),
+    (r"\bpreventiv[oaie]\b", r"\bpreventive\b", "prior, made in advance"),
+    (r"\bgentilizi", r"\bgentile\b", "of a (noble) family"),
+    # of a target or body part only: "discover whether he parries" is right
+    (r"\bscopr(?:ire|e|ono|endo|irsi|endosi)\b",
+     r"\bdiscover(?:s|ing|ed)?\s+(?:a|the|his|some|one's|its|their|the same)?\s*"
+     r"(?:part|target|line|chest|body|flank|himself|arm|breast|side)", "uncover, expose"),
+    (r"\bpietos[oaie]\b", r"\bpitiful\b", "merciful, compassionate"),
+    (r"\binconsult[oaie]\b", r"\bunconsulted\b", "rash, ill-considered"),
+    (r"\bsi conviene\b|\bconviene di\b", r"\bagrees? (?:to|on)\b", "one has to, it is fitting"),
+    (r"\bfanal[ei]\b", r"\blanterns?\b", "street lamps"),
+    (r"\bstatut[oi]\b", r"\bstates\b", "statutes"),
+    (r"\barringo\b", r"\btrade\b", "arena, lists"),
+    # arme blanche / arma bianca (André, Blengini, Cordelois, Grisier, Lambertini)
+    (r"\barmes? blanches?\b|\barm[ai] bianc[ah]e?\b", r"\bwhite (?:weapons?|arms?)\b",
+     "edged / bladed weapon, or \"cold steel\" in a set phrase -- never white"),
 ]
 
 
@@ -700,6 +830,10 @@ def check_book(folder: str) -> list:
             add(v[0], CHECK, "kept term", f"<i>{w}</i> left in the original, but it is not one of the "
                 f"kept terms{' (also scan ' + str(v[1]) + ')' if len(v) > 1 else ''} -- translate it, "
                 "or add it to the kept terms")
+
+    for scan, cap, w, like in caption_misreads(figs, ex):
+        add(scan, NOTE, "caption", f"plate caption {cap[:50]!r}: {w!r} appears nowhere else in the "
+            f"book -- a misread of {like!r}? Check the scan; correct it with [pages.{scan}] caption")
 
     # (c) table cells still in the source language (tables.json)
     tables = json.load(open(f"{I}/tables.json", encoding="utf-8")) if os.path.exists(f"{I}/tables.json") else {}
