@@ -52,7 +52,12 @@ the operator's business and is not tracked here.)
   models and the pipeline revision and date behind each page, and the
   translation's licence (CC BY-NC-SA 4.0).
 - **PDFs:** side-by-side (scan left, translation right) is the primary
-  output; English-only is deferred (open item 2). Both render through
+  output, and the one reviewed page by page. The English-only reading copy
+  places the scan's pictures from the layout detector's boxes, leaves out
+  covers, endpapers, blank leaves and stamps, and holds a page's notes and
+  figures until a sentence running over the page break has ended; its
+  decorative pictures are chosen on an offline review page
+  (`decoration_sheet.py` → `books/<stem>.pictures`). Both render through
   `pipeline/_render.py`: italics, drill/brace indentation, footnote blocks,
   margin notes. Details: `docs/pdf-layout.md`.
 - **Backends:** `backend.env` switches local (`vulkan` | `rocm7` | `rocm714`)
@@ -75,10 +80,18 @@ the operator's business and is not tracked here.)
    PDF listing the kept terms that occur in that book, with one-line
    definitions. Book-independent, unlike the dropped per-use notes
    (model-quirks 2.8).
-2. **English-only PDF — deferred (2026-09-25).** Review has been
-   side-by-side only; expect a backlog of layout problems. When it resumes,
-   consider decoupling the English-only renderer from code shared with the
-   side-by-side, so fixes to one stop regressing the other. Content
+2. **English-only PDF — resumed 2026-11-04.** Pictures, captions, notes
+   across page breaks and decorations were reworked after an agent review
+   of seven books (`docs/pdf-layout.md`, step 3). Still open, all seen in
+   that review: a footnote continued from the page before is printed as
+   body text; a running head or section title can be taken for a plate
+   caption; a figure label the OCR split from its picture ("Fig." / "50")
+   stays in the text; tables that came out blank or as pictures on a few
+   synoptic-table pages; a stray offset print read as text. Each is a book
+   data fix today (`[[fix]]`, `[pages.N] caption`, `.pictures`) until a
+   second book shows the same failure. Consider decoupling the
+   English-only renderer from code shared with the side-by-side, so fixes
+   to one stop regressing the other. Content
    difference: book titles in bibliographies are translated, which suits
    the side-by-side (the original is on the facing scan); English-only
    should keep them in the original language.
@@ -127,6 +140,19 @@ the operator's business and is not tracked here.)
   the side-by-side falls back to plain flow for the whole book.
 
 ## Non-obvious decisions / don't-retry-this
+
+- **English-only pictures: the detector's boxes, a person picks the
+  decorations (2026-11-04).** The density profiler and the OCR model's
+  figure list missed line engravings and second figures and drew covers
+  and stamps; the layout detector's picture boxes replaced both. Figures
+  (recorded, captioned on the scan, a large picture on a caption or
+  "PLATE N" page) go in automatically; everything else is a decoration,
+  drawn unless `books/<stem>.pictures` drops it. Which ornaments to keep
+  is taste, not a classification a model would do better, so there is no
+  AI pre-sort: `decoration_sheet.py` shows them for a quick Keep / Drop.
+  The book's `.rotate` turns figures only (it turned stamps and endpapers
+  before), and the sideways-caption trim runs only on pages `.rotate`
+  turns: without that gate it touched 74 pages in 11 books.
 
 - **Literal translation (2026-10-11).** The reviewer prefers the author's
   words to paraphrase even where both read fine. Rule 0 of the prompt asks

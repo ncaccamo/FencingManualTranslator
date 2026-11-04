@@ -123,10 +123,13 @@ Every per-book setting and correction, including hand edits:
 
 ## Status
 
-- **French:** nine manuals (1818–1912) translated and under review.
-- **Italian:** ten manuals (1844–1905) in progress.
-- **English Only PDF:** has known layout issues; the side-by-side edition
-  is the primary output.
+The pipeline works end to end for French and Italian manuals and is in
+use; changes now are refinements found while reviewing books. Current
+state and open items: [`docs/STATUS.md`](docs/STATUS.md).
+
+- **Side-by-side PDF:** the primary output, reviewed page by page.
+- **English Only PDF:** pictures, captions and footnotes reworked
+  (2026-11); a few layout issues remain.
 
 ## Source scans
 

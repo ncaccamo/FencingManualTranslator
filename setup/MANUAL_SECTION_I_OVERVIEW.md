@@ -175,10 +175,14 @@ deleted when the book finishes.
 
 Builds the **English-only reading copy** — portrait, US Letter. Text flows
 continuously across as many pages as it needs (it is not one source page
-per sheet). Figures detected in the scan are placed inline with an
-`[illustration from the original]` caption. Footnote blocks are rendered
-at the end of their section in small grey type under a rule. Opens with
-the disclosure cover page.
+per sheet). The scan's pictures are cropped from the layout detector's
+boxes and placed in reading order, each with its English caption; covers,
+endpapers, blank leaves and library stamps are left out, and decorative
+pictures (ornaments, tailpieces) are kept unless the book's `.pictures`
+file drops them — chosen on the decoration review page (manual III.5d).
+Footnote blocks are rendered at the end of their page's text in small grey
+type under a rule; when a sentence runs on to the next page, the notes and
+figures wait until it ends. Opens with the disclosure cover page.
 
 ### Step 4 — `4_side_by_side_pdf.py`
 

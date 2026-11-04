@@ -4174,5 +4174,41 @@ def test_footnoted_terms_questionnaire():
         TX["BOOK_LANG"] = "French"
 
 
+def test_place_tables_hand_written_table():
+    # Gomard scan 159 (pdf 161): the four-lines table written as HTML in a
+    # hand edit is drawn as a table; [[TABLE]] markers still take tables.json
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        R = importlib.import_module("_render")
+        f = R.place_tables
+    except (TypeError, AttributeError, ImportError):   # needs real PyMuPDF (in the image)
+        return
+    tb = "<table><tr><th>Outside-high line.</th></tr><tr><td>The <i>tierce</i></td></tr></table>"
+    text, ok = f("the four lines:\n\n" + tb + "\n\n1° There are four", None)
+    assert ok and "\n\x00TABLE" + tb + "\n" in text, text
+    text, ok = f("before\n[[TABLE]]\nafter", {"en": ["<table><tr><td>x</td></tr></table>"]})
+    assert ok and text == "before\n\x00TABLE<table><tr><td>x</td></tr></table>\nafter", text
+    assert f("a <table> mentioned in a sentence", None) == ("a <table> mentioned in a sentence", True)
+
+
+def test_pictures_file_kept_line_ignored():
+    # decoration_sheet.py writes "kept:" (reviewed, kept); step 3 reads only
+    # "decoration:" and "drop:" from books/<stem>.pictures
+    import importlib, os, tempfile
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        L = importlib.import_module("_layout")
+    except ImportError:
+        return
+    with tempfile.TemporaryDirectory() as d:
+        folder = os.path.join(d, "zz_test_book_translated")
+        os.makedirs(folder)
+        open(os.path.join(folder, "zz_test_book.pictures"), "w").write(
+            "# comment\ndrop: 3.1, 17, 20-21\nkept: 5.2, 7.1\n")
+        off, drop = L.picture_rules(folder)
+    assert not off and drop == {(2, 1), (16, 0), (19, 0), (20, 0)}, drop
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

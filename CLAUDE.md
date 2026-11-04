@@ -87,7 +87,9 @@ no ROCm/Vulkan). `scripts/setup.sh --remote` + `docker-compose.override.yml`
   (the work queue — use it instead of one-off shell loops), `pipeline/show_page.py`
   (one page's data), `2_translate.py --flagged`, `scripts/dry_run.py` (what a
   step-1 code change would do to every book — run it before reprocessing),
-  `pipeline/review_sheet.py` (checklist section / caption entries).
+  `pipeline/review_sheet.py` (checklist section / caption entries),
+  `pipeline/decoration_sheet.py` (offline Keep/Drop page for a book's
+  decorative pictures → `books/<stem>.pictures`).
 
 ## Workflow notes
 - Ask for my input on decisions you think need it.

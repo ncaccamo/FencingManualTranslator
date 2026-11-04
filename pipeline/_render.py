@@ -1286,7 +1286,11 @@ def place_tables(text, entry):
     as one layout row ("\x00TABLE<html>"); more tables than markers -> the
     rest follow the last marker. Returns (text, all_placed): a marker with
     no translated table (none yet, or one the OCR read as headings only)
-    stays as the marker, for the caller's pointer to the scan."""
+    stays as the marker, for the caller's pointer to the scan. A table
+    written as HTML in the English itself (a hand edit, <stem>.edits/ --
+    Gomard's four-lines table, scan 159) is drawn as one too."""
+    text = re.sub(r"(?m)^[ \t]*(<table\b.*?</table\s*>)[ \t]*$",
+                  lambda m: "\x00TABLE" + m.group(1), text or "", flags=re.S | re.I)
     marks = len(re.findall(r"(?m)^[ \t]*\[\[TABLE\]\][ \t]*$", text or ""))
     tables = (entry or {}).get("en") or []
     if not marks or not tables:

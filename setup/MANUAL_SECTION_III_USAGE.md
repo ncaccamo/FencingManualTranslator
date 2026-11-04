@@ -540,12 +540,22 @@ its one odd heading.
    fix from III.5c — an override (page number, running head, caption), a
    `[[fix]]`, or a hand edit (`edit_page.py`). For captions,
    `review_sheet.py <stem> --captions` prints the entries to fill in.
-5. **Read.** About 15 pages spread through the book, side by side, plus front
+5. **Decorations.** The English-only PDF draws the scan's uncaptioned
+   pictures too: ornaments, tailpieces, but also library stamps and labels.
+   `docker exec fmt-translator python3 /app/decoration_sheet.py <stem>` writes
+   `processed/<stem>_translated/<stem> — Decoration Review.html` (after step
+   3 has run). Open it in a browser — it works offline — and mark each
+   picture Keep or Drop; pictures you haven't decided on before are marked
+   New. Then *Save .pictures file* (or copy the text it shows) into
+   `books/<stem>.pictures` and rebuild the English-only PDF. A real figure
+   the PDF draws wrongly can be dropped the same way, e.g. a table already
+   translated as text (see `docs/per-book-files.md`).
+6. **Read.** About 15 pages spread through the book, side by side, plus front
    matter and plates. What you find goes in your checklist; a problem on many
    pages or in several books is a pipeline issue to report, not a list of fixes.
-6. **Apply and rebuild:** `apply_overrides.py <stem>`, then queue `pdfs <stem>`
+7. **Apply and rebuild:** `apply_overrides.py <stem>`, then queue `pdfs <stem>`
    (or run steps 3 and 4). Check the report again: decided pages drop off.
-7. **Finish:** `[book] final = true` in the overrides file (nothing changes the
+8. **Finish:** `[book] final = true` in the overrides file (nothing changes the
    book by accident after this), then `python3 scripts/release.py <stem>` for
    the files to share.
 

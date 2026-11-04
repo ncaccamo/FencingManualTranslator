@@ -29,6 +29,7 @@ was added.
 | `<stem>.crop` | a border to trim off every page before OCR |
 | `<stem>.split` | corrections for cutting two-page spreads apart |
 | `<stem>.rotate` | which plates to turn upright in the PDFs |
+| `<stem>.pictures` | decorative pictures left out of the English-only PDF |
 | `_alt/<stem>_original.pdf` | the untouched scan, kept when a scan is split or patched |
 
 ---
@@ -143,7 +144,11 @@ would cost more than fixing it by hand.
    with the page's original text for reference, a `---` line, then the
    page's current English.
 2. Edit the English **below the `---` line** in any editor. Keep the
-   markup (`<i>…</i>`, `<fn>…</fn>`, `⟦MARGIN: …⟧`) as it is.
+   markup (`<i>…</i>`, `<fn>…</fn>`, `⟦MARGIN: …⟧`) as it is. A table the
+   OCR read as plain lines can be written as one HTML `<table>` on a line
+   of its own (`<th>` heading cells, `<br>` inside a cell); both PDFs draw
+   it as a ruled grid. If the scan picture of that table is also drawn,
+   drop it in `<stem>.pictures`.
 3. In the container:
    ```bash
    python3 /app/apply_overrides.py florio_1844_scienza
@@ -198,6 +203,7 @@ step 1 for the whole book.
 | `<stem>.crop` | `left,top,right,bottom` as fractions, e.g. `0.06,0.04,0.06,0.08` | Trims that much off each page image before OCR: a dark scanner-bed border or a gutter shadow that the vision model keeps transcribing. |
 | `<stem>.split` | `140: 0.512` (cut at that share of the width) or `66-95: whole`, one per line | Corrections for `split_spreads.py`, which cuts a scan of two-page spreads into single pages. |
 | `<stem>.rotate` | `cw` / `ccw` / `180` (every plate), or page lists: `cw: 35, 39, 55-229` and `ccw: 241` | Turns sideways plates upright in both PDFs (read by steps 3 and 4 only, so it can be changed any time; rebuild the PDFs). |
+| `<stem>.pictures` | `decoration: none` (the book has no decorations, only stamps: Jacob-André), `drop: 17, 103` (every decoration on those scan pages), `drop: 103.2` (the second picture down the page), `kept: 55.1, 85.1` (reviewed and kept) | Pictures the English-only PDF leaves out. `decoration: none` touches only decorations (no caption, no figure record); a page listed under `drop:` loses the listed pictures whatever they are. `kept:` changes nothing in the PDF: it tells the review sheet which pictures were already decided, so only new ones are marked New. Written by the decoration review sheet (`decoration_sheet.py`, manual III.5d); read by step 3 only, rebuild the PDFs. |
 
 A page missing, scanned twice, or a folded plate is fixed by patching the
 scan with pages from another digitised copy: `patch_scan.py` (manual

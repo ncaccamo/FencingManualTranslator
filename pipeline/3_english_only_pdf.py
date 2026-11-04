@@ -21,6 +21,8 @@ drill / command-table structure. Now:
     the profiler finds nothing the whole page is embedded so the picture
     is never dropped. For a book OCR'd before figures.json existed, the
     profiler alone drives detection (misses line art / faint half-tones).
+    With a layout.json (every book since 2026-10) the layout detector's
+    picture boxes place and crop every picture (docs/pdf-layout.md).
 """
 import fitz
 import os
@@ -197,6 +199,82 @@ def interior_ink_fraction(page) -> float:
     return dark / tot if tot else 0.0
 
 
+def page_contrast(page) -> float:
+    """Share of the page's interior darker than its paper by 20+ grey
+    levels: about 0.001-0.008 on a blank leaf (Jacob-André), 0.01+ on
+    Saint-Martin's faint pencil-grey plates."""
+    r = page.rect
+    clip = fitz.Rect(r.x0 + .12 * r.width, r.y0 + .1 * r.height, r.x1 - .12 * r.width, r.y1 - .1 * r.height)
+    s = page.get_pixmap(matrix=fitz.Matrix(.5, .5), colorspace=fitz.csGRAY, clip=clip).samples
+    if not s:
+        return 0.0
+    med = sorted(s)[len(s) // 2]
+    return sum(1 for v in s if v < med - 20) / len(s)
+
+
+def page_tone(page) -> str:
+    """"dark" for a cover or a marbled endpaper (median grey under 168:
+    74-158 on Gomard, Danet, Cordelois, Vauresmont), "blank" for a white
+    leaf with no ink, else "paper". A plate is light paper with ink:
+    Lambertini's 181-190, Robaglia's faint blue drawings 217-222 (contrast
+    near 0 but not white), 2026-11-04."""
+    r = page.rect
+    clip = fitz.Rect(r.x0 + .12 * r.width, r.y0 + .1 * r.height, r.x1 - .12 * r.width, r.y1 - .1 * r.height)
+    s = page.get_pixmap(matrix=fitz.Matrix(.5, .5), colorspace=fitz.csGRAY, clip=clip).samples
+    if not s:
+        return "blank"
+    med = sorted(s)[len(s) // 2]
+    if med < 168:
+        return "dark"
+    if med >= 240 and sum(1 for v in s if v < med - 20) / len(s) < 0.006:
+        return "blank"
+    return "paper"
+
+
+def box_ink(page, box) -> float:
+    """Share of dark pixels inside a detector box (0-1): a near-blank box
+    (Joseph-Renaud pdf 113, 316) holds no picture."""
+    r = page.rect
+    clip = fitz.Rect(r.x0 + box[0] * r.width, r.y0 + box[1] * r.height,
+                     r.x0 + box[2] * r.width, r.y0 + box[3] * r.height)
+    s = page.get_pixmap(matrix=fitz.Matrix(0.5, 0.5), colorspace=fitz.csGRAY, clip=clip).samples
+    if not s:
+        return 0.0
+    # darker than the box's own paper: a faint line diagram on yellowed
+    # paper has few truly dark pixels (Masiello pdf 182, 253)
+    paper = sorted(s)[int(len(s) * 0.9)]
+    return sum(1 for v in s if v < paper - 40) / len(s)
+
+
+def runs_on(src_body, next_tr):
+    """The page's sentence runs on to the next page: the scan's text stops
+    mid-sentence (its last line, the page's own notes left out, ends in a
+    letter, a comma or a hyphen), or the next English page starts with a
+    small letter. The English can end a page on a full stop where the
+    French runs on (Joseph-Renaud pdf 34, 52, 74; 2026-11-04)."""
+    lines = [l.strip() for l in (src_body or "").strip().splitlines() if l.strip()]
+    note = re.compile(r"^(\(\d+\)|\d+\)|\*|†)")
+    starts = [j for j, l in enumerate(lines) if j >= len(lines) * 0.5 and note.match(l)]
+    if starts:                           # the page's own notes, at its foot, can run several lines
+        lines = lines[:starts[0]]
+    src_open = bool(lines) and bool(re.search(r"[a-zà-ÿ,\-]$", re.sub(r"</?i>|\*", "", lines[-1])))
+    nxt = re.sub(r"^\s*(<i>)?", "", next_tr or "")
+    return src_open or bool(re.match(r"[a-zà-ÿ]", nxt))
+
+
+DECOR_LOG = []      # (page index, n-th picture, box, figure?, dropped?) per book: every decoration,
+                    # and every picture the .pictures file drops -> intermediate/decorations.json
+                    # for the decoration review sheet (decoration_sheet.py)
+
+
+# a page whose English opens on a plate heading: "PLATE V." over a two-line
+# caption (Gomard's unrecorded Planches, too long for a caption-only page)
+PLATE_HEAD = re.compile(r"^\s*(?:<i>)?(?:plate|planche)\s+[ivxlcdm\d]+\b", re.I)
+
+
+FIG_LABEL = re.compile(r"(?im)^[ \t]*(?:<i>)?(fig(?:ure|\.)?\s*\d+[a-z]?\.?)(?:</i>)?[ \t]*$")
+
+
 class Flow:
     """Owns the current output page and vertical cursor; opens new pages
     on demand so callers never have to think about page breaks."""
@@ -206,6 +284,8 @@ class Flow:
         self.page = None
         self.rotate = rotate               # per-book plate rotation (0/90/180/270)
         self.y = COL.y1  # forces a new page on first write
+        self.open = False                  # the last page's text stopped mid-sentence
+        self.held = []                     # its notes, drawn once the sentence ends
 
     def _newpage(self):
         self.page = self.doc.new_page(width=PAGE_W, height=PAGE_H)
@@ -273,7 +353,24 @@ class Flow:
                        FS - 1, color=(0.3, 0.3, 0.3))
             self.y += FS * 0.3
 
-    def body(self, text, src_body="", src_page=None, prev_page=None, ornaments=(), title="", centred=False):
+    def _notes(self, notes):
+        self.y += FS * 0.4
+        self._flow(_render.footnote_lines(notes, COL.width, FS - 2), FS - 2,
+                   color=(0.25, 0.25, 0.25))
+
+    def release(self):
+        """Draw notes held back from a page whose sentence ran on."""
+        if self.held:
+            held, self.held = self.held, []
+            self._notes(held)
+
+    def body(self, text, src_body="", src_page=None, prev_page=None, ornaments=(), title="", centred=False,
+             interject=None, after=None, runs_on=False):
+        """`interject` (figures) and notes held from the page before are drawn
+        after this page's first paragraph when the last page's sentence ran
+        on to this one -- not in the middle of it (Barbasetti pdf 63:
+        "(fig. [picture] 24)"; 27 note blocks in the release books,
+        2026-11-04)."""
         body_txt, notes = _render.split_footnotes(text)
         if not _render.toc_page(body_txt):
             # paragraph starts as printed, where the scan has a text layer
@@ -282,15 +379,36 @@ class Flow:
         if title:
             body_txt = title + "\n\n" + body_txt.strip()
         notes = [_render.english_quotes(n) for n in notes]
-        lines = _render.layout(body_txt, COL.width, FS, paras=PARAS, centre=CENTRE)
-        if centred:                      # a title page: every line centred
-            lines = _render.centre_lines(lines, COL.width, FS)
-        self._flow(lines, FS)
+        def lay(t):
+            ls = _render.layout(t, COL.width, FS, paras=PARAS, centre=CENTRE)
+            return _render.centre_lines(ls, COL.width, FS) if centred else ls  # a title page: every line centred
+        waiting = bool(self.held) or interject is not None
+        head, sep, rest = body_txt.partition("\n\n") if (waiting and self.open) else ("", "", "")
+        if sep and rest.strip():         # the run-on sentence's paragraph first
+            self._flow(lay(head), FS)
+            if interject:
+                interject()
+            self.release()
+            body_txt = rest
+        elif waiting:                    # one paragraph: things that waited go after it
+            self._flow(lay(body_txt), FS)
+            if interject:
+                interject()
+            self.release()
+            body_txt = ""
+        if body_txt:
+            self._flow(lay(body_txt), FS)
+        if after:                        # pictures printed below the page's text
+            after()
+        tail = re.sub(r"</?i>|\s+$", "", body_txt or head or "")
+        self.open = (runs_on or bool(re.search(r"(?:[a-zà-ÿ,\-–—]|\([Ff]ig\.)$", tail))) and not _render.toc_page(tail)
         if notes:
-            # end-of-section glossary block, smaller type
-            self.y += FS * 0.4
-            self._flow(_render.footnote_lines(notes, COL.width, FS - 2), FS - 2,
-                       color=(0.25, 0.25, 0.25))
+            # end-of-section glossary block, smaller type; held while the
+            # page's last sentence runs on to the next page
+            if self.open:
+                self.held += notes
+            else:
+                self._notes(notes)
 
     def _flow(self, lines, size, color=(0, 0, 0)):
         while True:
@@ -313,18 +431,18 @@ class Flow:
             return (x1f - x0f) * r.width, (y1f - y0f) * r.height
         return r.width, r.height
 
-    def _fig_size(self, src_page, band, rotate=None):
+    def _fig_size(self, src_page, band, rotate=None, frac=1.0):
         rotate = self.rotate if rotate is None else rotate
         cw, ch = self._clip_dims(src_page, band)
         if rotate in (90, 270):
             cw, ch = ch, cw
-        w = COL.width
+        w = COL.width * min(1.0, frac)
         h = w * (ch / cw)
         if h > FIGURE_MAX_H:
             h, w = FIGURE_MAX_H, FIGURE_MAX_H * (cw / ch)
         return w, h
 
-    def figure(self, src_page, band=None, caption="", rotate=None, centred=False):
+    def figure(self, src_page, band=None, caption="", rotate=None, centred=False, frac=None):
         """Embed src_page (optionally cropped to `band`, a
         (y0f,y1f,x0f,x1f) fraction rect) scaled into the column. Figures
         are embedded in their source orientation -- auto-rotation was
@@ -339,7 +457,7 @@ class Flow:
         else:
             clip = r
         rotate = self.rotate if rotate is None else rotate
-        w, h = self._fig_size(src_page, band, rotate)
+        w, h = self._fig_size(src_page, band, rotate, frac or 1.0)
         need = h + FS * 1.6
         if self.page is None or self.y + need > COL.y1:
             self._newpage()
@@ -351,7 +469,7 @@ class Flow:
         self.y += h + 4
         if caption.strip():
             cl = _render.layout(caption, COL.width, FS - 1)
-            if centred:                  # a title page's lines under its picture
+            if centred or frac is not None:  # a title page's lines, or a picture placed from its detector box
                 cl = _render.centre_lines(cl, COL.width, FS - 1)
             for vl in cl:
                 _, self.y = _render.draw(self.page,
@@ -416,6 +534,12 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
     flow = Flow(doc, rotate=_rot[1] if _rot else 0)
 
     rendered = figures = 0
+    LAYOUT = _layout.load(folder) is not None
+    DECOR_OFF, DECOR_DROP = _layout.picture_rules(folder)
+    DECOR_LOG.clear()
+    _texty = [k for k, t in enumerate(translations)
+              if len(re.sub(r"<[^>]+>|___FOOTNOTES___.*", "", t or "", flags=re.S).split()) >= 30]
+    FIRST_TEXT, LAST_TEXT = (_texty[0], _texty[-1]) if _texty else (0, len(translations) - 1)
     for i, tr in enumerate(translations):
         st = parse_vlm_output(extractions[i]) if i < len(extractions) else {}
         src_page = src_doc[i] if (src_doc is not None and i < len(src_doc)) else None
@@ -499,8 +623,108 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         if is_empty and not placements:
             continue  # genuinely blank sheet
 
+        # The layout detector's picture boxes (2026-11-04): the VLM and the
+        # density profiler miss line engravings and pages of several figures
+        # (Barbasetti pdf 42, 63; Masiello's plates; Gomard's Planches), and
+        # the profiler took covers, endpapers and stamps for pictures
+        # (Jacob-André). With a layout.json, every detected picture is drawn
+        # cropped to its box, a figure-record plate keeps the old whole-page
+        # path, and a decoration (no caption, no record) is drawn unless the
+        # book's .pictures file leaves it out; nothing outside the pages of
+        # text (covers, endpapers) unless recorded.
+        frac = [None] * len(placements)
+        below = [False] * len(placements)
+        turn = [True] * len(placements)
+        _plate = any(f.get("kind") == "plate" for f in (figs_here if use_vlm_figs else []))
+        if LAYOUT and src_page is not None and _plate and is_empty and (i < FIRST_TEXT or i > LAST_TEXT) \
+                and not _layout.pictures(folder, i, 0.6, whole=False) and page_tone(src_page) in ("dark", "blank"):
+            continue    # a "plate" before / after the text that is a cover, a marbled endpaper or a blank leaf (Gomard pdf 5)
+        if LAYOUT and src_page is not None and not body_is_table and (
+                not _plate or _layout.pictures(folder, i, 0.6 if (is_empty or caption_only_page) else 0.8, whole=False)):
+            # a recorded plate is cropped to the detector's box when it has a
+            # sure one, without the French running head and caption around it
+            matter = i < FIRST_TEXT or i > LAST_TEXT
+            recorded = bool(figs_here) if use_vlm_figs else False
+            bare = is_empty or caption_only_page          # a page with no text of its own
+            plate_head = bool(PLATE_HEAD.match(tr or "")) and len((tr or "").split()) <= 60
+            pics = [b for b in _layout.pictures(folder, i, 0.6 if (bare or recorded) else 0.8, whole=not bare,
+                                                sideways=bool(_rot) or i in _rot_pages)
+                    if box_ink(src_page, b) >= 0.01]
+            keep = []
+            for k, b in enumerate(pics, 1):
+                # a figure: recorded, captioned on the scan, or a large picture on a
+                # page whose only text is its caption (an unrecorded plate: Masiello
+                # pdf 220, Gomard's Planches). The rest are decorations.
+                big = (b[2] - b[0]) * (b[3] - b[1]) >= 0.15
+                is_fig = (recorded and (big or not _plate)) or _layout.picture_captioned(folder, i, b) or (
+                    (caption_only_page or plate_head) and big)
+                dropped = (i, 0) in DECOR_DROP or (i, k) in DECOR_DROP or (not is_fig and DECOR_OFF)
+                if not is_fig or dropped:
+                    DECOR_LOG.append((i, k, tuple(b), is_fig, dropped))   # for the decoration review sheet
+                if dropped:
+                    continue                    # the reviewer's drop wins over any classification
+                keep.append((b, is_fig))
+            if bare and not pics and not recorded:
+                # nothing the detector can crop: before / after the text a
+                # cover, an endpaper or a blank leaf (left out); inside the
+                # book the old whole-page plate (Saint-Martin's)
+                dropped = DECOR_OFF or (i, 0) in DECOR_DROP or (i, 1) in DECOR_DROP
+                if dropped and placements and not matter and page_contrast(src_page) >= 0.006:
+                    DECOR_LOG.append((i, 1, (0.0, 0.0, 1.0, 1.0), False, True))
+                if matter or page_contrast(src_page) < 0.006 or dropped:
+                    placements = []      # blank leaves have no ink darker than the paper (Jacob-André pdf 13, 41)
+                    if is_empty:
+                        continue
+                elif placements:
+                    DECOR_LOG.append((i, 1, (0.0, 0.0, 1.0, 1.0), False, False))
+                keep = None
+            if keep is not None and (keep or not recorded or pics):
+                fw = _layout.text_frame(folder, i)
+                caps = ([_render.figure_caption(f) for f in figs_here] if (use_vlm_figs and figs_here) else [c for _, c in placements])
+                # a bare "Fig." / "Figure" with no number is no caption (Prévost-Jollivet pdf 48)
+                caps = [c for c in caps if c and not re.fullmatch(r"(?i)\s*fig(ure|\.)?\s*\.?\s*", c)]
+                labels = FIG_LABEL.findall(_render.split_footnotes(tr or "")[0]) if not caption_only_page else []
+                _body = _render.split_footnotes(tr or "")[0]
+                paras = [q.strip() for q in re.split(r"\n\s*\n", _body) if q.strip()]
+                cap_paras = len(keep) >= 2 and len(paras) == len(keep) and (
+                    all(re.match(r"(?i)(<i>)?fig(ure|\.)?\s*\d", q) for q in paras) or len(_body.split()) <= 80)
+                placements, frac, below, turn = [], [], [], []
+                for k, (b, is_fig) in enumerate(keep):
+                    pad = 0.006
+                    band = (max(0.0, b[1] - pad), min(1.0, b[3] + pad), max(0.0, b[0] - pad), min(1.0, b[2] + pad))
+                    if cap_paras:
+                        # one caption paragraph per picture (Kirchhoffer pdf 59, 66)
+                        cap = paras[k]
+                    elif caption_only_page or is_empty:
+                        # a short page's text is the caption of its figure; under a
+                        # decoration it stays the page's text (Jacob-André pdf 10, 11, 40)
+                        cap = (caps[0] if caps else (tr if (caption_only_page and is_fig) else "")) if k == len(keep) - 1 else ""
+                    elif len(labels) == len(keep):
+                        cap = labels[k]
+                    elif len(caps) == len(keep):
+                        cap = caps[k]
+                    else:
+                        cap = " ".join(caps) if k == len(keep) - 1 else ""
+                    placements.append((band, cap))
+                    below.append(not is_empty and not caption_only_page and _layout.text_after(folder, i, b))
+                    turn.append(i in _rot_pages or (is_fig and (b[2] - b[0]) * (b[3] - b[1]) >= 0.15))
+                    small_bare = (caption_only_page or is_empty) and (b[2] - b[0]) * (b[3] - b[1]) < 0.15
+                    frac.append(min(1.0, (b[2] - b[0]) / (fw if not (caption_only_page or is_empty) else 0.75))
+                                if (small_bare or not (caption_only_page or is_empty)) else 1.0)
+                if cap_paras:
+                    _sep_notes = (tr or "").partition("___FOOTNOTES___")
+                    tr = ("___FOOTNOTES___" + _sep_notes[2]) if _sep_notes[1] else ""
+                    is_empty = not tr
+                elif len(labels) == len(keep) and keep and not caption_only_page:
+                    # the "Fig. N" lines go under their pictures, not in the text
+                    body, sepn, notes_ = (tr or "").partition("___FOOTNOTES___")
+                    body = FIG_LABEL.sub("", body)
+                    tr = re.sub(r"\n{3,}", "\n\n", body).strip() + (("\n\n" + sepn + notes_) if sepn else "")
+                if is_empty and not placements:
+                    continue  # a blank leaf, a cover or an endpaper
+
         rot = _rot_pages.get(i)      # a listed page's own direction, else the book's
-        first_h = flow._fig_size(src_page, placements[0][0], rot)[1] if placements else 0.0
+        first_h = flow._fig_size(src_page, placements[0][0], rot, (frac[0] if frac else None) or 1.0)[1] if placements else 0.0
         hdr = st.get("header", "")
         hdr_en = re.sub(r"</?i>", "", header_map.get(hdr, hdr))
         if not TWO_PART:                 # one printed line, split by step 1
@@ -516,11 +740,19 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
                            reserve=(first_h + FS * 1.6) if placements else 0.0,
                            compact=bool(is_empty and placements),
                            side=sides[i] if i < len(sides) else None)
-        for k, (band, caption) in enumerate(placements):
-            if k == 0 and title_hdr and caption_only_page:
-                caption, title_hdr = title_hdr + "\n\n" + caption, ""   # the title stays with the page's text
-            flow.figure(src_page, band, caption=caption, rotate=rot, centred=display)
-            figures += 1
+        def draw_figures(part=None):
+            nonlocal_title = [title_hdr]
+            for k, (band, caption) in enumerate(placements):
+                if part is not None and (k < len(below) and below[k]) != part:
+                    continue
+                if k == 0 and nonlocal_title[0] and caption_only_page:
+                    caption, nonlocal_title[0] = nonlocal_title[0] + "\n\n" + caption, ""   # the title stays with the page's text
+                # the book's plate rotation turns its plates, not a stamp or an
+                # endpaper on the same kind of page (Gomard pdf 10, 11)
+                r_k = rot if (k >= len(turn) or turn[k]) else 0
+                flow.figure(src_page, band, caption=caption, rotate=r_k, centred=display,
+                            frac=frac[k] if k < len(frac) else None)
+            return nonlocal_title[0]
 
         # Skip the body when it's just the plate caption again (the OCR body
         # of a plate page is its caption line; figure() already drew it).
@@ -530,11 +762,29 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
             _norm(tr) and _norm(c) and (_norm(tr) in _norm(c) or _norm(c) in _norm(tr))
             for _, c in placements)
 
-        if not is_empty and not body_is_caption:
+        has_body = not is_empty and not body_is_caption
+        late = has_body and placements and flow.open and not (caption_only_page or display)
+        split = has_body and any(below[:len(placements)])
+        if placements and not late:
+            title_hdr = draw_figures(False if split else None)
+        if has_body:
             src_body = extractions[i].split("BODY_TEXT:", 1)[-1] if i < len(extractions) else ""
+            nxt = next((t for t in translations[i + 1:i + 3] if t and t not in SKIP_MARKERS), "")
             flow.body(tr, src_body, src_page, src_doc[i - 1] if (src_doc is not None and 0 < i <= len(src_doc)) else None,
-                      _layout.ornaments(folder, i), title=title_hdr, centred=display)
+                      _layout.ornaments(folder, i), title=title_hdr, centred=display,
+                      interject=(lambda: draw_figures(False if split else None)) if late else None,
+                      after=(lambda: draw_figures(True)) if split else None,
+                      runs_on=runs_on(src_body, nxt))
             rendered += 1
+        figures += len(placements)
+
+    flow.release()                       # notes still held at the end of the book
+
+    if LAYOUT:
+        json.dump({"decoration_off": DECOR_OFF,
+                   "pictures": [{"scan": i + 1, "k": k, "box": [round(x, 4) for x in b],
+                                 "figure": f, "dropped": d} for i, k, b, f, d in DECOR_LOG]},
+                  open(f"{int_dir}/decorations.json", "w", encoding="utf-8"), indent=1)
 
     sheets = doc.page_count
     out = f"{folder}/{book} — English Only (Portrait).pdf"

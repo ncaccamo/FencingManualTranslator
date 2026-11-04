@@ -228,9 +228,57 @@ the rest of the code never thinks about page breaks:
    - If `figures.json` flagged **nothing**, run `find_figure_band()`
      anyway — the VLM under-reports. A profiler hit → an `inset`
      placement with a generic `[illustration from the original]` caption.
+   - **With a `layout.json`** (every book since 2026-10), the layout
+     detector's picture boxes replace both for every page but a
+     `figures.json` plate: `_layout.pictures()` (score 0.8+, or 0.6 on a
+     page with no text of its own; slivers, the "Digitized by Google"
+     strip, decorated capitals and near-blank boxes left out) → one
+     placement per picture, cropped to its box (a printed caption inside
+     the box's foot cut off), drawn at its size against the text column.
+     Captions: a page's standalone "Fig. N" lines move under their
+     pictures when the counts match, else the `figures.json` captions.
+     A picture with no caption box and no figure record is a
+     **decoration**: drawn unless `books/<stem>.pictures` leaves it out
+     (the decoration review sheet writes that file). Step 3 lists every
+     decoration it meets, and every picture `.pictures` drops, in
+     `intermediate/decorations.json`; `decoration_sheet.py` turns that
+     into the review page. A page with no text
+     and nothing the detector can crop is left out before / after the
+     text (covers, endpapers, blank leaves) and drawn whole inside the
+     book (Saint-Martin's plates). A recorded "plate" before / after the
+     text is left out only when its page is dark (a cover, a marbled
+     endpaper: median grey under 168) or a white blank (`page_tone()`).
+     Further rules from the agent review of the release books:
+     - a figure is recorded, captioned on the scan, or a large picture
+       (15 %+ of the page) on a page whose only text is its caption (an
+       unrecorded plate); only figures take that text as their caption;
+     - the book's `.rotate` turns figures only, never a stamp or an
+       endpaper on a plate-like page;
+     - pictures go in reading order (rows, then left to right); one with
+       more of the page's text above it than below is drawn after the
+       text; a page whose text is one caption paragraph per picture puts
+       each paragraph under its picture;
+     - a printed caption inside or across the box's edge is cut off (any
+       side: Gomard's sideways plates); small pictures keep their size
+       against the text column; small ornaments the detector is sure of
+       (0.85+) are kept; ink is measured against the box's own paper;
+     - a picture listed in `.pictures` is dropped whatever it is;
+     - a large picture on a page whose English opens on a plate heading
+       ("PLATE V." over a two-line caption: Gomard's unrecorded Planches)
+       is a figure, so the book's `.rotate` turns it;
+     - on a page the book's `.rotate` turns, a sideways printed caption
+       (a tall thin strip down the picture's side that the detector rates
+       only 0.35-0.5) is cut off too.
+     Found 2026-11-04: the profiler missed
+     line engravings and second / third figures (Barbasetti pdf 42, 63;
+     Masiello's plates; Gomard's Planches) and drew covers and stamps
+     (Jacob-André).
 3. `section_label`, then draw each figure, then `body(tr)` — **unless**
    the body is just the figure's caption again (≤ 20 words, matches a
-   caption), in which case the body is skipped.
+   caption), in which case the body is skipped. When the page before
+   stopped mid-sentence, its notes and this page's figures wait until
+   this page's first paragraph is drawn, so neither lands inside the
+   sentence.
 
 Text flows continuously — consecutive source pages pack onto a sheet;
 a page's text can resume mid-sentence after an inserted run of plates,

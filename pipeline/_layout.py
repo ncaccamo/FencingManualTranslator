@@ -429,3 +429,170 @@ def caption_places(folder: str, i: int, n: int):
         else:
             merged.append([b[2][1], b[2][3]])
     return [m[0] for m in merged] if len(merged) == n and n else None
+
+
+# ---- pictures (English-only PDF, 2026-11-04) -------------------------------
+
+_LAY_CACHE = {}
+
+
+def _lay(folder):
+    if folder not in _LAY_CACHE:
+        _LAY_CACHE[folder] = load(folder)
+    return _LAY_CACHE[folder]
+
+
+def _overlap(a, b):
+    return max(0.0, min(a[2], b[2]) - max(a[0], b[0])) * max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+
+
+def pictures(folder: str, i: int, score: float = 0.8, whole: bool = True, sideways: bool = False) -> list:
+    """The pictures the detector boxed on page i: (x0, y0, x1, y1) fractions,
+    top to bottom. Confident boxes only (0.8+), a box mostly inside a
+    stronger one dropped, and the detector's usual non-pictures left out: a
+    sliver (under 15 % wide or 5 % high), the scanner's watermark strip at
+    the foot ("Digitized by Google": Gomard, Prévost-Jollivet), and a
+    decorated capital -- a small box at the text's left edge (Joseph-Renaud
+    pdf 28, 74), whose letter is already in the English. The step-3 caller
+    still checks the box holds ink. `score`: 0.6 on a page with no text of
+    its own, where the detector rates plates and frontispieces 0.6-0.75;
+    `whole=False` leaves out a box that is the whole scan. `sideways`: the
+    book's .rotate turns this page, so a printed caption runs down the
+    picture's side as a tall thin strip the detector rates low (0.35-0.5,
+    as caption, text or page header: Gomard's Planches) -- cut those off
+    too. Checked on the scans of Barbasetti,
+    Masiello, Gomard, Prévost-Jollivet, Joseph-Renaud, Kirchhoffer,
+    2026-11-04."""
+    lay = _lay(folder)
+    page = lay and lay["pages"].get(str(i))
+    if not page:
+        return []
+    boxes = page.get("boxes", [])
+    text = [b[2] for b in boxes if b[0] in ("text", "list_item") and b[1] >= 0.5 and _wid(b) > 0.3]
+    left = min((t[0] for t in text), default=None)
+    out = []
+    for b in sorted((b for b in boxes if b[0] == "picture" and b[1] >= score), key=lambda b: -b[1]):
+        x0, y0, x1, y1 = b[2]
+        w, h = x1 - x0, y1 - y0
+        small = w < 0.15 or h < 0.05 or w * h < 0.012
+        if small and not (b[1] >= 0.85 and w >= 0.08 and h >= 0.015 and w * h >= 0.0015):
+            continue                                    # a sliver; a small ornament the detector is sure of stays
+                                                        # (Joseph-Renaud's title vignettes pdf 12, 18, tailpiece pdf 310; Barbasetti's leaf tailpieces pdf 86, 106)
+        if not whole and w > 0.9 and h > 0.9:           # the whole scan: a cover, an endpaper
+            continue
+        if y0 > 0.85 and h < 0.08:                      # watermark strip at the foot
+            continue
+        if left is not None and w < 0.2 and h < 0.15 and abs(x0 - left) < 0.03:
+            continue                                    # a decorated capital
+        if any(_overlap(b[2], o) > 0.5 * w * h for o in out):
+            continue
+        out.append(b[2])
+    caps = [c[2] for c in boxes if c[0] == "caption" and c[1] >= 0.5]
+    strips = [c[2] for c in boxes if sideways and c[0] in ("caption", "text", "page_header") and c[1] >= 0.3
+              and c[2][2] - c[2][0] < 0.1 and c[2][3] - c[2][1] > 0.25]
+    trimmed = []
+    for x0, y0, x1, y1 in out:
+        # the printed "Fig. 14" inside the box's foot: cut above it, the
+        # English caption is set under the picture (Barbasetti pdf 54)
+        for c in caps:
+            if c[0] >= x0 - 0.01 and c[2] <= x1 + 0.01 and y0 + 0.6 * (y1 - y0) < c[1] < y1:
+                y1 = min(y1, c[1] - 0.003)
+            elif c[1] >= y0 - 0.01 and c[3] <= y1 + 0.01 and x0 + 0.6 * (x1 - x0) < c[0] < x1:
+                x1 = min(x1, c[0] - 0.003)   # a sideways plate's caption down its right edge (Gomard pdf 351-367)
+            elif c[1] >= y0 - 0.01 and c[3] <= y1 + 0.01 and x0 < c[2] < x0 + 0.4 * (x1 - x0):
+                x0 = max(x0, c[2] + 0.003)
+        for c in strips:                # a sideways plate's caption lines, low-rated
+            if c[1] >= y0 - 0.03 and c[3] <= y1 + 0.03 and x0 + 0.6 * (x1 - x0) < c[0] < x1:
+                x1 = min(x1, c[0] - 0.003)
+            elif c[1] >= y0 - 0.03 and c[3] <= y1 + 0.03 and x0 < c[2] < x0 + 0.4 * (x1 - x0):
+                x0 = max(x0, c[2] + 0.003)
+        trimmed.append((x0, y0, x1, y1))
+    # reading order: rows (boxes whose heights overlap by half), then left to right
+    # (Kirchhoffer pdf 59: Fig. 8 left, Fig. 9 right)
+    rows = []
+    for bx in sorted(trimmed, key=lambda r: r[1]):
+        for row in rows:
+            ry0, ry1 = min(q[1] for q in row), max(q[3] for q in row)
+            if min(ry1, bx[3]) - max(ry0, bx[1]) > 0.5 * min(ry1 - ry0, bx[3] - bx[1]):
+                row.append(bx)
+                break
+        else:
+            rows.append([bx])
+    return [bx for row in rows for bx in sorted(row, key=lambda r: r[0])]
+
+
+def picture_captioned(folder: str, i: int, box) -> bool:
+    """A caption box set right under (or just over) the picture: a numbered
+    figure ("Fig. 25"), not a decoration."""
+    lay = _lay(folder)
+    page = lay and lay["pages"].get(str(i))
+    if not page:
+        return False
+    for b in page.get("boxes", []):
+        if b[0] != "caption" or b[1] < 0.5:
+            continue
+        x0, y0, x1, y1 = b[2]
+        across = min(x1, box[2]) - max(x0, box[0]) > 0
+        if across and (-0.01 <= y0 - box[3] <= 0.07 or -0.01 <= box[1] - y1 <= 0.05):
+            return True
+    return False
+
+
+def text_after(folder: str, i: int, box) -> bool:
+    """More of the page's text sits above the picture than below it: the
+    picture is printed after the page's text in the English (a tailpiece,
+    a figure under its paragraph; Kirchhoffer pdf 74, 103)."""
+    lay = _lay(folder)
+    page = lay and lay["pages"].get(str(i))
+    above = below = 0.0
+    for b in (page or {}).get("boxes", []):
+        if b[0] not in BODY + ("section_header", "title") or b[1] < 0.5:
+            continue
+        a = _wid(b) * _hgt(b)
+        if b[2][3] <= box[1] + 0.01:
+            above += a
+        elif b[2][1] >= box[3] - 0.01:
+            below += a
+    return above > below
+
+
+def text_frame(folder: str, i: int) -> float:
+    """How wide (0-1 of the scan) the page's text column is, so a picture
+    keeps its size relative to the text; 0.65 when unknown."""
+    lay = _lay(folder)
+    page = lay and lay["pages"].get(str(i))
+    text = [b[2] for b in (page or {}).get("boxes", []) if b[0] in ("text", "list_item") and b[1] >= 0.5 and _wid(b) > 0.3]
+    if not text:
+        return 0.65
+    return max(t[2] for t in text) - min(t[0] for t in text)
+
+
+def picture_rules(folder: str):
+    """books/<stem>.pictures -> (decoration_off, drop). Decorative pictures
+    (no caption, no figure record) are drawn in the English-only PDF unless
+    the book says "decoration: none" (Jacob-André: library stamps only) or
+    lists the scan page under "drop:" -- "drop: 17, 103" for every
+    decorative picture on those pages, "drop: 103.2" for the second one
+    down the page. Written from the decoration review sheet."""
+    stem = os.path.basename(folder.rstrip("/")).replace("_translated", "")
+    path = next((q for q in (f"/data/books/{stem}.pictures", f"{folder}/{stem}.pictures") if os.path.exists(q)), None)
+    off, drop = False, set()
+    if not path:
+        return off, drop
+    for line in open(path, encoding="utf-8"):
+        line = line.split("#")[0].strip().lower()
+        if not line:
+            continue
+        if re.match(r"^decoration\s*:\s*none$", line):
+            off = True
+            continue
+        m = re.match(r"^drop\s*:\s*(.+)$", line)
+        if m:
+            for part in re.split(r"[,\s]+", m.group(1).strip()):
+                if not part:
+                    continue
+                n, _, k = part.partition(".")
+                a, _, b = n.partition("-")
+                for x in range(int(a), int(b or a) + 1):
+                    drop.add((x - 1, int(k) if k else 0))
+    return off, drop
