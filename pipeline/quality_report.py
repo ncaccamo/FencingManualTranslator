@@ -25,14 +25,8 @@ from collections import Counter, defaultdict
 import _layout
 import _overrides
 import _pageio
-
-# step 2's helpers, without starting a translation server
-_src = open(os.path.join(os.path.dirname(__file__), "2_translate.py"), encoding="utf-8").read()
-_ns = {"__name__": "_tx_prefix"}
-exec(compile(_src.split('\nprint("\\n" + "="*60)\nprint("STEP 2')[0], "2_translate.py", "exec"), _ns)
-clean_vlm_extraction = _ns["clean_vlm_extraction"]
-contains_too_much_non_english = _ns["contains_too_much_non_english"]
-FN_HEADER = _ns["FN_HEADER"]
+import _translate as _tx
+from _translate import FN_HEADER, clean_vlm_extraction, contains_too_much_non_english
 
 CHECK, NOTE = "CHECK", "NOTE"
 ACCEPTED = "ACCEPTED"      # marked "fine as is" on the review page (books/<stem>.review)
@@ -562,7 +556,7 @@ def fix_status(tr: list, ov: dict, french: bool, edited=()) -> list:
     # take back an earlier one (Jacob-André scan 141: "halfway" -> "with a
     # half-lunge", then the decision changed back)
     pages, touched = list(tr), set()
-    for f in _ns["_house_fixes"](ov, french)["fix"]:
+    for f in _tx._house_fixes(ov, french)["fix"]:
         s = f["scan"]
         if s > len(tr) or s in edited:            # a hand edit replaces the page
             continue
@@ -570,7 +564,7 @@ def fix_status(tr: list, ov: dict, french: bool, edited=()) -> list:
         if missing:
             out.append((s, what(f), "not found"))
         touched.add(s)
-    hi = _ns["house_italics"]
+    hi = _tx.house_italics
     for s in sorted(touched):
         if hi(pages[s - 1], french) != tr[s - 1]:
             out.append((s, "on this page", "pending"))
@@ -766,15 +760,15 @@ def false_friends(src: str, en: str) -> list:
     return out
 
 
-# Negations: the rule lives in 2_translate.py (a try that loses one is
+# Negations: the rule lives in _translate.py (a try that loses one is
 # retried there); the report lists the pages where every try lost it.
-lost_negations = _ns["lost_negations"]
-_NEG_FR, _NEG_IT, _NEG_EN = _ns["_NEG_FR"], _ns["_NEG_IT"], _ns["_NEG_EN"]
+lost_negations = _tx.lost_negations
+_NEG_FR, _NEG_IT, _NEG_EN = _tx._NEG_FR, _tx._NEG_IT, _tx._NEG_EN
 
 
 def check_book(folder: str) -> list:
     global _rules
-    _rules = TERM_RULES_IT if _ns["book_language"](
+    _rules = TERM_RULES_IT if _tx.book_language(
         os.path.basename(folder)[:-len("_translated")]) == "Italian" else TERM_RULES
     I = f"{folder}/intermediate"
     ex = _pageio.split_pages(open(f"{I}/extracted.txt", encoding="utf-8").read())
@@ -1120,7 +1114,7 @@ def check_book(folder: str) -> list:
                 add(f["scan"], CHECK, "override", f"[[table_fix]] {f['find'][:50]!r}: not in "
                     "the table yet -- run apply_overrides.py")
     if edits:
-        fp = _ns["page_fingerprint"]
+        fp = _tx.page_fingerprint
         stale = {s for s, e in edits.items()
                  if s <= len(ex) and e["source"] and e["source"] != fp(ex[s - 1])}
         issues[:] = [x for x in issues if x["scan"] not in edits or x["level"] in ("TERMS", "BOOK")]

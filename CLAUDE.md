@@ -31,8 +31,8 @@ no ROCm/Vulkan). `scripts/setup.sh --remote` + `docker-compose.override.yml`
   real container-bounce bug.
 - The pipeline owns server lifecycle, not the container entrypoint. The
   entrypoint does not auto-start llama-servers; start/stop logic lives in
-  the pipeline scripts (`1_ocr_and_extract_vlm.py`, `2_translate.py`,
-  `pipeline/start_servers.sh`).
+  the pipeline code (`_ocr.py` and `_translate.py`, run by the step commands
+  `1_ocr_and_extract_vlm.py` / `2_translate.py`, and `pipeline/start_servers.sh`).
 - VLM/olmOCR-2-7B-1025 is the default and only OCR path (vision on port
   11435, translation on 11434) — decided after an 8-page comparison
   against forced-Tesseract and Gallica's text layer. No Tesseract

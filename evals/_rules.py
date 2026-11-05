@@ -1,15 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Nicholas A. Caccamo
-"""Load the *pure* helper functions out of the pipeline scripts without
-running their `main` bodies (which start llama-servers and read /app paths).
-
-`2_translate.py` and `1_ocr_and_extract_vlm.py` are plain scripts, not
-importable modules -- everything above the "STEP N" banner is definitions,
-everything below is the run. We exec the top slice in a throwaway namespace.
-
-If either split marker or an /app path in those files changes, the exec
-here breaks loudly and `test_rules.py` fails -- that's intentional, it
-keeps the harness honest about drift.
+"""The pipeline's step 1 / step 2 code (_ocr.py, _translate.py) for the
+regression tests, with stubs for heavy dependencies the tests never touch.
+`TX` / `OCR` are the modules' namespaces: a test that sets TX["BOOK_LANG"]
+changes the module itself, so it puts the value back afterwards.
 """
 from pathlib import Path
 import importlib
@@ -25,13 +19,14 @@ sys.path.insert(0, str(PIPELINE))
 def _stub_missing(*names: str) -> None:
     """The pipeline scripts import heavy deps (fitz, PIL, numpy) at module
     top that the pure helpers here never touch. Inject inert stubs for any
-    that aren't installed so the exec of the definitions slice succeeds."""
+    that aren't installed so the modules import."""
     for name in names:
         try:
             importlib.import_module(name.split(".")[0])
         except ImportError:
             mod = types.ModuleType(name)
-            mod.__getattr__ = lambda _n: types.SimpleNamespace()  # type: ignore
+            # .Image: _ocr.py's type hints (img: Image.Image) need the name
+            mod.__getattr__ = lambda _n: types.SimpleNamespace(Image=object)  # type: ignore
             sys.modules.setdefault(name, mod)
             if "." in name:
                 sys.modules.setdefault(name.split(".")[0], mod)
@@ -40,31 +35,11 @@ def _stub_missing(*names: str) -> None:
 _stub_missing("fitz", "PIL", "PIL.Image", "PIL.ImageOps", "numpy")
 
 
-def _load_prefix(filename: str, split_marker: str) -> dict:
-    src = (PIPELINE / filename).read_text(encoding="utf-8")
-    if split_marker not in src:
-        raise RuntimeError(
-            f"{filename}: split marker {split_marker!r} not found -- the "
-            f"file's structure changed; update evals/_rules.py")
-    src = src.split(split_marker)[0]
-    # the scripts hard-code container paths and do exit(1) on missing model
-    # files; point the prompt reads at the repo copies and skip the
-    # model-file checks (the pure helpers don't need a model).
-    for cp, real in {
-        "/app/translation_prompt.txt": PIPELINE / "translation_prompt.txt",
-        "/app/vlm_ocr_prompt.txt": PIPELINE / "vlm_ocr_prompt.txt",
-    }.items():
-        src = src.replace(f'"{cp}"', repr(str(real)))
-        src = src.replace(f'path="{cp}"', f"path={str(real)!r}")
-    src = src.replace("VLM_MMPROJ_PATH = _find_matching_mmproj(VLM_MODEL_PATH)",
-                      'VLM_MMPROJ_PATH = "unused-in-eval"')
-    ns: dict = {"__name__": f"_rules::{filename}"}
-    exec(compile(src, f"{filename}:prefix", "exec"), ns)
-    return ns
+import _ocr  # noqa: E402
+import _translate  # noqa: E402
 
-
-TX = _load_prefix("2_translate.py", '\nprint("\\n" + "="*60)')
-OCR = _load_prefix("1_ocr_and_extract_vlm.py", "\ndef preprocess_for_ocr")
+TX = vars(_translate)
+OCR = vars(_ocr)
 
 # --- translation-side pure helpers ---
 apply_always_translate = TX["apply_always_translate"]

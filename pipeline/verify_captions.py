@@ -179,10 +179,8 @@ def main():
         for stem in stems:
             summary(stem)
         return
-    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "1_ocr_and_extract_vlm.py"),
-               encoding="utf-8").read()
-    ns = {"__name__": "_captions"}
-    exec(compile(src.split('\nprint("\\n" + "="*60)\nprint("STEP 1')[0], "step1", "exec"), ns)
+    import _ocr
+    ns = vars(_ocr)
     fitz, Image = ns["fitz"], ns["Image"]
     if ns["start_vlm_server"]() is None:
         sys.exit("✗ cannot reach / start the OCR server")

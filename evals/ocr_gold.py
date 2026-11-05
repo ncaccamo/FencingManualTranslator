@@ -26,11 +26,9 @@ from PIL import Image
 
 sys.path.insert(0, "/app")   # backend_config, _pageio live here
 
-# --- reuse step 1's helpers without running its corpus loop ------------
-_STEP1 = Path("/app/1_ocr_and_extract_vlm.py")
-_src = _STEP1.read_text()
-_ns = {"__name__": "_ocr_gold"}
-exec(compile(_src.split('\nprint("\\n" + "="*60)')[0], str(_STEP1), "exec"), _ns)
+# --- step 1's helpers (_ocr.py), without its corpus loop -----------------
+import _ocr  # noqa: E402
+_ns = vars(_ocr)
 
 start_vlm_server = _ns["start_vlm_server"]
 preprocess_for_ocr = _ns["preprocess_for_ocr"]

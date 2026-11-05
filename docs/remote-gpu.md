@@ -187,7 +187,7 @@ single name the server reports.
 - Firewall: allow inbound TCP on the port, scoped to the FencingManualTranslator
   host's IP.
 - The OCR step needs the vision model **and** its `mmproj` projector GGUF.
-- `1_`/`2_` probe `GET /health` **without** the auth header. Stock
+- Steps 1 and 2 probe `GET /health` **without** the auth header. Stock
   `llama-server` leaves `/health` open, so this is fine; if your server
   rejects unauthenticated `/health` you'll get a spurious "server down".
 

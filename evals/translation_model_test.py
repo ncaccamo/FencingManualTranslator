@@ -154,11 +154,9 @@ def _folder(prefix):
 
 
 def _load_tx():
-    """step 2's functions, without starting its server."""
-    src = open("/app/2_translate.py", encoding="utf-8").read()
-    ns = {"__name__": "_tx_prefix"}
-    exec(compile(src.split('\nprint("\\n" + "="*60)\nprint("STEP 2')[0], "2_translate.py", "exec"), ns)
-    return ns
+    """step 2's functions (_translate.py), without starting its server."""
+    import _translate
+    return vars(_translate)
 
 
 def _pages():

@@ -94,10 +94,8 @@ def predicted(nums, i):
 
 def load_ns():
     sys.path.insert(0, PIPE)
-    src = open(f"{PIPE}/1_ocr_and_extract_vlm.py", encoding="utf-8").read()
-    ns = {"__name__": "_folios"}
-    exec(compile(src.split('\nprint("\\n" + "="*60)\nprint("STEP 1')[0], "step1", "exec"), ns)
-    return ns
+    import _ocr
+    return vars(_ocr)
 
 
 def page_image(fitz, Image, stem, scan):

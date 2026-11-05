@@ -20,12 +20,7 @@ import sys
 
 import _overrides
 import _pageio
-
-# reuse step 2's helpers without starting a translation server
-_src = open(os.path.join(os.path.dirname(__file__), "2_translate.py"), encoding="utf-8").read()
-_ns = {"__name__": "_tx_prefix"}
-exec(compile(_src.split('\nprint("\\n" + "="*60)\nprint("STEP 2')[0], "2_translate.py", "exec"), _ns)
-apply_book_overrides = _ns["apply_book_overrides"]
+from _translate import apply_book_overrides
 
 
 def apply_page_overrides(folder: str, ov: dict) -> int:

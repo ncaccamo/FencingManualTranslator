@@ -1,0 +1,3364 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Nicholas A. Caccamo
+"""Step 2, translation: everything `2_translate.py` runs, importable without
+starting a translation server (apply_overrides.py, quality_report.py and the
+evals use the term rules and checks here). The command itself is main()."""
+
+import glob
+import os
+import time
+import re
+import requests
+import subprocess
+import sys
+from collections import Counter
+from pathlib import Path
+
+import backend_config as bc
+import _pageio
+import _overrides
+import _pagekind
+import _progress
+
+PROMPT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "translation_prompt.txt")
+TRANSLATION_MODEL = os.environ.get("TRANSLATION_MODEL_PATH", "/models/Qwen3.8-27B.i1-Q4_K_S.gguf")
+# Qwen3.8-27B 4-bit is ~15.8 GB: it doesn't fit whole in 16 GB of VRAM, so a
+# fixed number of its 64 layers go on the GPU and the rest on the CPU. 46
+# fits a dedicated 16 GB card (local mode); the Windows GPU system uses 42
+# in its llama-swap entry, where the driver allows one program ~11.8 GB and
+# other programs share the card (docs/remote-gpu.md). A smaller model can
+# take 999 (= all).
+TRANSLATION_GPU_LAYERS = os.environ.get("TRANSLATION_GPU_LAYERS", "46")
+# Request "model" label. Ignored by a single-model llama-server (local /
+# simple remote); the routing key under llama-swap. Kept in sync with the
+# actual model via env, falling back to the model file's own name.
+TRANSLATION_MODEL_NAME = (os.environ.get("TRANSLATION_MODEL_NAME")
+                          or os.environ.get("MODEL_NAME")
+                          or Path(TRANSLATION_MODEL).stem)
+LLAMA_API_URL = f"{bc.translate_base_url()}/v1/chat/completions"
+
+# First try at temperature 0 (2026-10-10, was 0.3 since the 7B days): the
+# model's most likely translation, so a retranslated page keeps its wording
+# (35 of 36 test pages repeat word for word) and terms don't drift by chance.
+# Scored against published translations (evals/gold_passages.py, 60
+# passages): 46.49 chrF++ at 0 vs 46.31 / 46.22 for two runs at 0.3 -- no
+# loss, a small consistent gain. Retries stay hotter (0.55, 0.8) to break a
+# failed answer; the 3-sample majority votes for headers and captions keep
+# their own temperatures (they need samples that can differ).
+FIRST_TRY_TEMPERATURE = 0.0
+
+# Deterministic mode for the eval harness: temp 0 + a fixed seed so a
+# re-run of an unchanged book reproduces byte-for-byte and `evals/check.py`
+# page-diffs mean something. Off by default (production: first try at temp 0, see above, with
+# the 3-try retry ladder).
+EVAL_DETERMINISTIC = os.environ.get("EVAL_DETERMINISTIC", "").lower() in (
+    "1", "true", "yes", "on")
+EVAL_SEED = int(os.environ.get("EVAL_SEED", "1234"))
+
+# Returned by start_translation_server() when BACKEND_MODE=remote.
+REMOTE_SERVER = object()
+
+if not os.path.exists(PROMPT_FILE):
+    print(f"\n✗ ERROR: Missing {PROMPT_FILE}\n")
+    exit(1)
+
+with open(PROMPT_FILE, "r", encoding="utf-8") as f:
+    PROMPT_TEMPLATE = f.read().strip()
+BASE_PROMPT = PROMPT_TEMPLATE   # + each book's [terms] from its overrides file
+PROMPT_FILE_IT = os.path.join(os.path.dirname(PROMPT_FILE), "translation_prompt_it.txt")
+
+
+def prompt_for_language(lang: str) -> str:
+    """The base prompt for a source language. translation_prompt.txt is the
+    French prompt; for an Italian book its language-specific parts -- rules
+    2-3b (kept / translated / footnoted terms) and the examples -- are
+    replaced by translation_prompt_it.txt. Everything else is shared."""
+    if lang != "Italian" or not os.path.exists(PROMPT_FILE_IT):
+        return BASE_PROMPT
+    it = open(PROMPT_FILE_IT, encoding="utf-8").read().strip()
+    rules, _, examples = it.partition("=== EXAMPLES ===")
+    p = BASE_PROMPT
+    a, b = p.index("2. KEEP"), p.index("4. Headings")
+    p = p[:a] + rules.strip() + "\n\n" + p[b:]
+    c, d = p.index("EXAMPLES\n"), p.index("Text to translate:")
+    return p[:c] + "EXAMPLES\n\n" + examples.strip() + "\n\n" + p[d:]
+
+
+def book_language(stem: str) -> str:
+    """The book's source language: books/<stem>.meta.json "language" (an
+    evaluation copy's meta file sits next to it in evals/gold/), else a
+    guess from the extracted text's function words."""
+    import json as _json
+    for base in (os.environ.get("BOOKS_DIR", "/data/books"), "/data/books", "/data/books/_skip"):
+        mp = os.path.join(base, f"{stem}.meta.json")
+        if os.path.exists(mp):
+            try:
+                lang = _json.load(open(mp, encoding="utf-8")).get("language", "")
+                if lang:
+                    return lang
+            except (OSError, ValueError):
+                pass
+    for mp in glob.glob(f"/data/evals/gold/*/{stem}.meta.json"):
+        try:
+            return _json.load(open(mp, encoding="utf-8")).get("language", "French") or "French"
+        except (OSError, ValueError):
+            pass
+    ep = f"/data/processed/{stem}_translated/intermediate/extracted.txt"
+    if os.path.exists(ep):
+        words = re.findall(r"[a-zàèéìòù]+", open(ep, encoding="utf-8").read(200000).lower())
+        it = sum(w in {"il", "della", "di", "che", "si", "nel", "sono", "gli", "colpo", "sciabola"} for w in words)
+        fr = sum(w in {"le", "les", "des", "du", "que", "est", "une", "dans", "coup", "épée"} for w in words)
+        if it > fr:
+            return "Italian"
+    return "French"
+
+
+def prompt_for_book(stem: str) -> str:
+    """Set BOOK_LANG for this book and return its full prompt: the base
+    prompt for its language + its own [terms] (overrides file)."""
+    global BOOK_LANG
+    BOOK_LANG = book_language(stem)
+    return prompt_for_language(BOOK_LANG) + _overrides.terms_addendum(_overrides.load(stem))
+
+FRENCH_WORDS = {
+    "le", "la", "les", "un", "une", "des", "du", "de", "d", "et", "est", "sont", "était", "étaient",
+    "dans", "sur", "sous", "par", "pour", "avec", "sans", "vers", "chez", "entre", "depuis",
+    "au", "aux", "en", "il", "ils", "elle", "elles", "on", "je", "tu", "nous", "vous",
+    "ne", "n", "pas", "plus", "point", "rien", "jamais", "mais", "ou", "où", "si", "donc",
+    "que", "qu", "qui", "quoi", "dont", "quel", "quelle", "quels", "quelles",
+    "ce", "cet", "cette", "ces", "cela", "ceci", "celui", "celle", "ceux",
+    "son", "sa", "ses", "leur", "leurs", "mon", "ma", "mes", "ton", "ta", "tes", "notre", "votre",
+    "à", "se", "s", "lui", "moi", "toi", "soi", "l", "c", "j", "m", "t",
+    "être", "avoir", "fait", "faire", "faites", "était", "être", "sera", "ont", "avait", "avaient",
+    "tout", "tous", "toute", "toutes", "bien", "très", "aussi", "ainsi", "alors", "comme",
+    "quand", "lorsque", "puisque", "parce", "afin", "selon", "malgré", "cependant", "toutefois",
+    "encore", "déjà", "toujours", "peut", "doit", "peu", "trop", "assez",
+}
+ITALIAN_WORDS = {"il", "lo", "la", "i", "gli", "le", "un", "uno", "una", "del", "della", "di", "e", "è", "sono", "in", "su", "per", "con", "da", "a", "che", "questo", "questa", "quello", "quella", "mio", "tuo", "suo"}
+GERMAN_WORDS = {"der", "die", "das", "ein", "eine", "und", "ist", "sind", "in", "im", "auf", "zu", "von", "mit", "den", "dem", "des", "als", "wie", "dass", "aus", "nach", "bei", "an", "vor", "hinter", "über"}
+SPANISH_WORDS = {"el", "la", "los", "las", "un", "una", "y", "es", "son", "en", "de", "del", "por", "para", "con", "al", "que", "este", "esta", "ese", "esa", "mi", "tu", "su", "nuestro", "vuestro"}
+LATIN_WORDS = {"et", "in", "ad", "ab", "cum", "ex", "per", "pro", "sub", "super", "non", "est", "sunt", "ut", "si", "aut", "vel", "sed", "atque", "neque", "quod", "qui", "quo", "quam", "ubi", "unde"}
+
+NON_ENGLISH_INDICATORS = FRENCH_WORDS | ITALIAN_WORDS | GERMAN_WORDS | SPANISH_WORDS | LATIN_WORDS
+
+def clean_vlm_extraction(text: str) -> str:
+    """Extract only the body text from VLM structured output"""
+    # Try to extract just the BODY_TEXT section
+    body_match = re.search(r'BODY_TEXT:\s*(.+)', text, re.IGNORECASE | re.DOTALL)
+    if body_match:
+        return body_match.group(1).strip()
+
+    if re.search(r'(?im)^BODY_TEXT:\s*$', text):
+        # The label is there but nothing follows -- a genuinely empty body
+        # (a plate leaf with no prose), not a malformed record. Don't fall
+        # through to the label-stripping heuristic below: it used to strip
+        # "PAGE_NUMBER:\s*\S+" greedily enough to eat the "HEADER:" label
+        # along with it (\S+ doesn't stop at a colon), leaving the header's
+        # own text stranded and unlabeled -- mistaken for body text, sent
+        # through the translator, and rendered in place of the real plate
+        # caption (already captured correctly and separately in
+        # figures.json).
+        return ""
+
+    # No BODY_TEXT marker at all (malformed record) -- strip the known
+    # labels line by line, not with a run-on \s* that can cross into the
+    # next label.
+    cleaned = re.sub(r'(?im)^PAGE_NUMBER:.*$', '', text)
+    cleaned = re.sub(r'(?im)^HEADER:.*$', '', cleaned)
+    cleaned = re.sub(r'(?im)^BODY_TEXT:.*$', '', cleaned)
+
+    return cleaned.strip()
+
+FN_MARK = "†"          # dagger, used as the footnote reference mark
+FN_HEADER = "___FOOTNOTES___"
+FN_MAX_PER_PAGE = 4
+
+
+def _strip_accents(s: str) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", s)
+                   if unicodedata.category(c) != "Mn")
+
+
+# Footnoted terms (see translation_prompt.txt): translate to the English
+# rendering, and on the FIRST occurrence in a book mark it as
+# "English<fn>Fr. <term></fn>" -- a bare source reference, never an
+# explanatory gloss. The model does this from the prompt;
+# enforce_footnoted_terms() is the backstop for when it leaves the term in
+# French or forgets the note. Plural before singular so the longer pattern
+# wins.
+_FOOTNOTED_FR = [
+    ("prise de fer",   "taking the blade"),
+    ("rassemblements", "gatherings of the feet"), ("rassemblement", "gathering of the feet"),
+    ("rassemblant",    "gathering the feet"),     ("rassembler",   "to gather the feet"),
+    ("dérobements",    "evasions of the blade"),   ("dérobement",   "evasion of the blade"),
+    ("dégagements",    "disengagements"),          ("dégagement",   "disengagement"),
+    ("liements",       "binds"),                   ("liement",      "bind"),
+    ("froissements",   "grazes"),                  ("froissement",  "graze"),
+    ("coup de temps",  "time-hit"),
+    ("coupés",         "cut-overs"),               ("coupé",        "cut-over"),
+    ("coulés",         "glides"), ("coulé", "glide"), ("déroulé", "glide"),
+    ("à-propos",       "timing"),
+    # caver was "to drop the point" until 2026-10-11 -- wrong: the books define it
+    # as the opposite of opposition, an angled thrust (Kirchhoffer, Joseph-Renaud
+    # scan 144). barré: Robaglia's "croisé de seconde ... chasse vigoureusement le
+    # fer"; coup fourré = coup double (Kirchhoffer's glossary). Reviewer's choices.
+    ("en cavant",      "by angling"),             ("cavant",       "angling"),
+    ("caver",          "angle"),
+    ("barrés",         "bars"),                    ("barré",        "bar"),
+    ("coups fourrés",  "double hits"),             ("coup fourré",  "double hit"),
+    ("tendre la perche", "stick the arm out stiffly"), ("tendre la broche", "stick the arm out stiffly"),
+    ("la perche tendue", "the arm stuck out stiffly"),
+    # bourrer: drawing the arm back and driving the point in hard (Joseph-Renaud
+    # pdf 290, Kirchhoffer pdf 61, Cordelois); larder: in-and-out jabs.
+    # Reviewer's choices, 2026-10-31 (were shove / pressing / larding).
+    ("bourrades",      "ramming thrusts"),         ("bourrade",     "ramming thrust"),
+    ("bourreurs",      "rammers"),                 ("bourreur",     "rammer"),
+    ("en bourrant",    "by ramming"),              ("bourrant",     "ramming"),
+    ("bourrer",        "ram"),
+    ("en lardant",     "jabbing"),                 ("larder",       "jab"),
+    # fencer types and slang, reviewer's choices 2026-10-31 (terms questionnaire)
+    ("picoteurs",      "prickers"),                ("picoteur",     "pricker"),
+    ("tendeurs à outrance", "extenders to excess"), ("tendeur à outrance", "extender to excess"),
+    ("bricoleurs",     "tinkerers"),               ("bricoleur",    "tinkerer"),
+]
+# footnoted terms left to the model (accepted as source references in its
+# <fn> notes) -- ordinary words elsewhere, so the backstop must not rewrite them
+_FOOTNOTED_FR_REFS = {"se loger", "au pied levé", "tension à outrance", "se désunir", "s'enferrer",
+                      "filer", "fléchard", "d'emblée", "coup amené", "temps moral"}
+
+# Italian footnoted terms (translated, first use footnoted "It. <term>"),
+# 2026-09-30. "filo" (glide) is left to the model -- as a bare word it also
+# means the blade's edge, so the backstop must not rewrite it.
+_FOOTNOTED_IT = [
+    ("legamenti",       "engagements"),     ("legamento",   "engagement"),
+    ("filo sottomesso", "forced glide"),
+    ("trasporti",       "transports"),      ("trasporto",   "transport"),
+    ("uscita in tempo", "action in tempo"),
+    ("deviamenti",      "deviations"),      ("deviamento",  "deviation"),
+    ("parata di picco", "beat parry"),
+    ("controtempo",     "countertime"),
+    ("controazioni",    "counter-actions"), ("controazione", "counter-action"),
+    ("circolazioni",    "circlings"),       ("circolazione", "circling"),
+    ("di striscio",     "grazing"),         ("striscio",    "graze"),
+    ("volanti",         "off the blade"),   ("volante",     "off the blade"),
+    ("spratico",        "practice bout"),
+    ("parate di tasto", "opposition parries"), ("parata di tasto", "opposition parry"),
+    ("forconatori",     "pitchforkers"),    ("forconatore", "pitchforker"),
+]
+# accepted as source references in the model's <fn> notes, beyond _FOOTNOTED_IT
+_FOOTNOTED_IT_REFS = {"filo", "camminando", "forconare", "lezione muta"}
+
+# canonical singular French for the "Fr. <term>" note, so a plural form
+# ("appels") doesn't produce a second note distinct from "Fr. appel".
+_FOOTNOTE_REF_IT = {"parate di tasto": "parata di tasto", "legamenti": "legamento", "trasporti": "trasporto",
+                 "deviamenti": "deviamento", "controazioni": "controazione",
+                 "circolazioni": "circolazione", "di striscio": "striscio",
+                 "volanti": "volante", "forconatori": "forconatore"}
+_FOOTNOTE_REF_FR = {
+    "en cavant": "caver", "cavant": "caver", "barrés": "barré", "coups fourrés": "coup fourré",
+    "rassemblements": "rassemblement", "rassemblant": "rassemblement",
+    "rassembler": "rassemblement", "dérobements": "dérobement",
+    "dégagements": "dégagement", "liements": "liement",
+    "froissements": "froissement", "coupés": "coupé",
+    "coulés": "coulé", "déroulé": "coulé", "appels": "appel",
+    "bourrades": "bourrade", "bourreurs": "bourreur", "en bourrant": "bourrer", "bourrant": "bourrer",
+    "en lardant": "larder", "picoteurs": "picoteur", "tendeurs à outrance": "tendeur à outrance",
+    "bricoleurs": "bricoleur", "vous loger": "se loger", "se logeant": "se loger", "loger": "se loger",
+    "désuni": "se désunir", "se désunit": "se désunir", "s'enferre": "s'enferrer",
+    "en filant": "filer", "filer au corps": "filer", "fléchards": "fléchard",
+    "attaque d'emblée": "d'emblée", "coups amenés": "coup amené",
+}
+
+# The book's source language (set per book with its prompt, see
+# prompt_for_book): picks the footnoted-term list, the "Fr."/"It." reference
+# and the kept-term backstop.
+BOOK_LANG = "French"
+_LANG_REF = {"French": ("fr", "French"), "Italian": ("it", "Italian")}
+
+
+def _footnoted():
+    return _FOOTNOTED_IT if BOOK_LANG == "Italian" else _FOOTNOTED_FR
+
+
+def _footnote_ref():
+    return _FOOTNOTE_REF_IT if BOOK_LANG == "Italian" else _FOOTNOTE_REF_FR
+
+
+
+# a footnoted term inside an ordinary phrase is not the fencing action:
+# "froissement d'amour-propre" is hurt pride, not a graze (Jacob 1887, 2026-10-13)
+_FOOTNOTED_NOT_BEFORE = {"froissement": r"(?!\s+d['’]\s*amour)",
+                         "froissements": r"(?!\s+d['’]\s*amour)"}
+
+
+def enforce_footnoted_terms(text: str, seen: set, footnote: bool = True) -> str:
+    """Backstop for footnoted terms. Translate EVERY occurrence the model
+    left in French (bare or italicised) to its English rendering, and on
+    the FIRST one in a book append "<fn>Fr. <term></fn>". Case of the
+    surrounding token is preserved. `<fn>...</fn>` spans already in the
+    text (the model's own source refs) are masked so a French term inside
+    one is never re-wrapped."""
+    if not text:
+        return text
+    masked = []
+
+    def _mask(m):
+        masked.append(m.group(0))
+        return f"\x00{len(masked) - 1}\x00"
+
+    text = re.sub(r"<fn>.*?</fn>", _mask, text, flags=re.DOTALL | re.IGNORECASE)
+
+    label = _LANG_REF.get(BOOK_LANG, _LANG_REF["French"])[1]
+    for fr, en in _footnoted():
+        pat = re.compile(r"(?:<i>\s*)?(?<![\w-])" + re.escape(fr)
+                         + r"(?![\w-])" + _FOOTNOTED_NOT_BEFORE.get(fr, "")
+                         + r"(?:\s*</i>)?(?!\s*(?:</i>\s*)?\()", re.I)   # not a glossary headword: "<i>Caver</i> (to angle)"
+        first = [True]
+        note_fr = _footnote_ref().get(fr, fr)
+
+        def _sub(m, en=en, note_fr=note_fr, first=first):
+            g = m.group(0)
+            r = (en.upper() if g.isupper()
+                 else en.capitalize() if g[:1].isupper() else en)
+            if footnote and first[0] and note_fr not in seen:
+                # mask the tag we add too, so a later footnoted-term pass can't
+                # match the French term sitting inside it
+                masked.append(f"<fn>{label}: {note_fr}</fn>")
+                r += f"\x00{len(masked) - 1}\x00"
+                seen.add(note_fr)
+            first[0] = False
+            return r
+
+        text = pat.sub(_sub, text)
+
+    text = re.sub(r"\x00(\d+)\x00", lambda m: masked[int(m.group(1))], text)
+    return text
+
+
+def pull_footnotes(text: str, source_text: str = "", seen: set = None):
+    """Turn the model's inline `phrase<fn>note</fn>` tags into `†N` markers
+    plus a trailing ___FOOTNOTES___ block (the header can't collide with
+    the page separator). A note whose text was already used earlier in the
+    book -- tracked in `seen` -- is dropped to its bare phrase, so a
+    footnoted-term source reference like "Fr. liement" appears once per book.
+    `source_text` is unused; kept for call-site compatibility.
+    Returns (text, n_notes)."""
+    if seen is None:
+        seen = set()
+    numbered = []
+
+    _footnoted_refs = {t for t, _ in _footnoted()} | (_FOOTNOTED_IT_REFS if BOOK_LANG == "Italian" else _FOOTNOTED_FR_REFS)
+    ab, label = _LANG_REF.get(BOOK_LANG, _LANG_REF["French"])
+
+    def take(m):
+        note = re.sub(r"</?fn>", "", re.sub(r"\s+", " ", m.group(1))).strip()
+        # accept only a bare source reference ("Fr. liement" / "French:
+        # liement", "It. legamento") for a footnoted term -- the model
+        # sometimes footnotes a kept term or puts the English in the note.
+        # "French in the original" after a quotation the model translated
+        # from a third language (prompt rule 0): kept on every quotation
+        q = re.fullmatch(r"(French|Italian|Latin|Spanish|German|Greek|English) in the original\.?", note, re.I)
+        # never the book's own language: a French quotation in a French book
+        # is just the text (LaMarche scan 56 got three such notes)
+        if q and q.group(1).lower() == BOOK_LANG.lower():
+            return ""
+        if q:
+            if len(numbered) >= FN_MAX_PER_PAGE:
+                return ""
+            numbered.append(f"{q.group(1).capitalize()} in the original")
+            return f"{FN_MARK}{len(numbered)}"
+        ref = re.sub(rf"^(?:{ab}\.|{label.lower()}:)\s*", "", note, flags=re.I).lower().rstrip(".").replace("\u2019", "'")
+        ref = _footnote_ref().get(ref, ref)  # "vous loger" -> "se loger"
+        if not note or ref not in _footnoted_refs:
+            return ""                       # drop the tag, keep the phrase
+        note = f"{label}: {ref}"            # canonical rendered form
+        key = _strip_accents(ref)
+        if key in seen or len(numbered) >= FN_MAX_PER_PAGE:
+            return ""
+        seen.add(key)
+        numbered.append(note)
+        return f"{FN_MARK}{len(numbered)}"
+
+    body = re.sub(r"<fn>(.*?)</fn>", take, text,
+                  flags=re.DOTALL | re.IGNORECASE).strip()
+    body = re.sub(r"</?fn>", "", body)       # sweep any stray/dangling tag
+    if not numbered:
+        return body, 0
+    lines = [f"{FN_MARK}{i} {n}" for i, n in enumerate(numbered, 1)]
+    return f"{body}\n\n{FN_HEADER}\n" + "\n".join(lines), len(lines)
+
+
+# Rule-3 "always translate" terms the 7B drops inconsistently (leaves
+# "an arm called a fleuret" in the body, "ENTRAINEMENT" as a header).
+# Only unambiguous ones -- these have no other meaning in this corpus.
+# Longest first so "fleurettiste" wins before "fleuret".
+_ALWAYS_TRANSLATE = [
+    # "LISTE DES OUVRAGES" -> "LISTE OF WORKS" (Gomard bibliography section
+    # header): "DES OUVRAGES" translates fine but bare "LISTE" survives
+    # untranslated on this specific isolated header string, even though
+    # the SAME word translates correctly as part of the two-part header
+    # "LISTE DES OUVRAGES\tCONSULTÉS." -- a one-off model quirk on the
+    # shorter isolated string, consistent enough across sampling that
+    # majority-vote alone doesn't catch it.
+    (r"listes", "lists"), (r"liste", "list"),
+    (r"fleurettistes", "foil fencers"), (r"fleurettiste", "foil fencer"),
+    (r"fleurets", "foils"), (r"fleuret", "foil"),
+    # "contre-" as a compound prefix = "counter-", not "against-"
+    (r"contre-dégagements", "counter-disengagements"),
+    (r"contre-dégagement", "counter-disengagement"),
+    (r"contre-dégagez", "counter-disengage"), (r"contre-dégager", "counter-disengage"),
+    # equipment / material vocab the model hedges on and leaves in French
+    (r"crispins", "cuffs"), (r"crispin", "cuff"),
+    (r"cuissards", "thigh guards"), (r"cuissard", "thigh guard"),
+    (r"schémas", "diagrams"), (r"schéma", "diagram"),
+    (r"entra[iî]nements", "training sessions"), (r"entra[iî]nement", "training"),
+    (r"escrimes", "fencing"), (r"escrime", "fencing"),
+    (r"sociétés", "societies"), (r"société", "society"),
+    (r"divers", "miscellaneous"),
+    (r"demi-fentes", "half-lunges"), (r"demi-fente", "half-lunge"),
+    (r"fentes", "lunges"), (r"fente", "lunge"),
+    # "leçon d'assaut" = a free-play lesson; the 7B collapses it to just
+    # "the bout" (drops "leçon"). Bare "assaut" -> "bout" is left to the
+    # prompt (rule 3) -- "assaut" alone is sometimes "assault" in a duel.
+    (r"leçons d['’]assaut", "bout lessons"), (r"leçon d['’]assaut", "bout lesson"),
+    # "fer" (the opponent's steel) -> "the blade" (Category 1). NOT bare
+    # "fer": leave "prise de fer" / "sentiment du fer" for their own
+    # handlers (Cat 3 / Cat 2).
+    (r"attaques au fer", "attacks on the blade"), (r"attaque au fer", "attack on the blade"),
+    (r"sur le fer", "on the blade"), (r"au fer", "on the blade"),
+    (r"le fer", "the blade"),
+    # "l'escrime au fleuret" -> "foil fencing"; the 7B renders it
+    # "épée fencing with the fleuret" / "épée fencing with the foil".
+    (r"escrime au fleuret", "foil fencing"), (r"au fleuret", "with the foil"),
+    (r"escrime à l['’]épée", "épée fencing"), (r"à l['’]épée", "with the épée"),
+    # "au bout d'épée" -- idiom for a bout fenced with the épée, not a
+    # literal "at the point of the sword"; the 7B renders it word-for-word.
+    (r"au bout d['’]épée", "an épée bout"),
+    # "un assaut d'épée" is just an épée bout -- there is no "leçon" in it,
+    # but the 7B pulls "lesson" in from the leçon-d'assaut rule and writes
+    # "a bout lesson with the épée". Repair the output.
+    (r"a bout lesson with the épée", "an épée bout"),
+    (r"bout lesson with the épée", "épée bout"),
+]
+
+
+# French around the word: it is inside a French title or quotation kept as
+# written ("L'exercice des armes ou le maniement du fleuret", "Escrime
+# pratique", "Histoire de l'escrime" -- Masiello scans 102, 113, 128), not
+# an English sentence, which never has "du foil" or "fencing pratique".
+_FRENCH_BEFORE = re.compile(r"(?:\b(?:du|de|des|au|aux)\s+|\b[dl][’'])$", re.I)
+_FRENCH_AFTER = re.compile(r"^\s+(?:pratique|française|italienne|ancienne|moderne|théorique|"
+                           r"simplifiée|militaire|nouvelle|et\s+de|en\s+)", re.I)
+
+
+def apply_always_translate(text: str) -> str:
+    if not text:
+        return text
+    for pat, repl in _ALWAYS_TRANSLATE:
+        def _sub(m, r=repl):
+            g = m.group(0)
+            if _FRENCH_BEFORE.search(m.string[max(0, m.start() - 8):m.start()]) \
+                    or _FRENCH_AFTER.match(m.string[m.end():m.end() + 24]):
+                return g
+            # a glossary headword kept in French (prompt rule 7b): "<i>Escrime</i> (fencing)"
+            if m.string[max(0, m.start() - 3):m.start()] == "<i>" \
+                    and re.match(r"\s*</i>\s*\(", m.string[m.end():m.end() + 8]):
+                return g
+            return r.upper() if g.isupper() else r.capitalize() if g[:1].isupper() else r
+        text = re.sub(r"\b" + pat + r"\b", _sub, text, flags=re.IGNORECASE)
+    return _phrase_repairs(text)
+
+
+# Free-standing repairs for known 7B phrasings that _ALWAYS_TRANSLATE's
+# \b-anchored substitution can't reach (e.g. a phrase split by an <i> tag).
+def _phrase_repairs(text: str) -> str:
+    if not text:
+        return text
+    # "épée fencing with the foil/fleuret" (épée possibly tagged) -> foil fencing
+    text = re.sub(r"(?:<i>)?épée(?:</i>)?\s+fencing with the (?:foil|fleuret)",
+                  "foil fencing", text, flags=re.IGNORECASE)
+    # "Nᵉ temps" -> "Nth tempo"  (leaves "coup de temps", "temps d'arrêt" alone)
+    text = re.sub(
+        r"\b(\d{1,2}(?:er|re|nd|e|ème)?\.?)\s+temps\b",
+        lambda m: m.group(1) + (" TEMPO" if m.group(0).isupper() else " tempo"),
+        text, flags=re.IGNORECASE)
+    # model already wrote "against-disengage..." for "contre-dégage..."
+    text = re.sub(r"\b([Aa])gainst-(?=(?:dis)?engag|dégag)",
+                  lambda m: ("C" if m.group(1).isupper() else "c") + "ounter-", text)
+    # "glacé fabric" / "neither varnished nor glacé" -> glazed
+    text = re.sub(r"\bglac[ée]s?\b",
+                  lambda m: "Glazed" if m.group(0)[:1].isupper() else "glazed", text)
+    # a title-page byline: French "PAR X ET Y" -> "By X and Y", not
+    # "Translated by ..." (the model reads "par" as the translation credit).
+    text = re.sub(
+        r"(?m)^([ \t]*)Translated by(?=[ \t]+[\"“'’A-ZÀ-Þ][^\n]{0,60}$)",
+        r"\1By", text)
+    return text
+
+
+# Kept terms: "keep in the source language, italic" that the 7B
+# drops the <i>...</i> off or mistranslates -- plate captions especially.
+# Only the tight retained set; riposte / remise / reprise / the parry
+# numbers the model handles on its own. Each entry: term -> English
+# mistranslations to snap back to it.
+_KEEP_TERMS_FR = [
+    ("corps à corps", [r"body[- ]to[- ]body", r"body contact"]),
+    ("sentiment du fer", [r"feeling of (?:the )?(?:blade|iron|steel)"]),
+    ("croisé", []),
+    ("volte", []),
+    # riposte / remise / reprise: normally kept by the model, but a bare
+    # heading ("DE LA RIPOSTE.") gets mangled -- "OF THE RAPIER RAPIER".
+    # Isolated-heading translation (no body context, no retry ladder) is
+    # where this shows up -- "PARADES ET RIPOSTES" -> "PARRIES AND
+    # RAPISES" is the same failure with a different garbled spelling.
+    ("riposte", [r"rapier(?:[- ]?(?:rapier|response|riposte|reply))?",
+                 r"riposte response", r"rapises?"]),
+    # kept, never "stop-point(s)" (Joseph-Renaud pdf 46, Kirchhoffer pdf 39)
+    ("pointes d'arrêt", [r"stop[- ]points"]), ("pointe d'arrêt", [r"stop[- ]point"]), ("pointe d’arrêt", []),
+    ("flanconnade", []),
+    ("appels", []), ("appel", []),
+    ("remise", []),
+    ("reprise", []),
+    # doublé / dédoublé kept in French (reviewer, 2026-10-13: the books explain
+    # them; Prévost-Jollivet had seven renderings). Plurals first.
+    ("dédoublés", []), ("dédoublé", []), ("doublés", []), ("doublé", []),
+    # "du tac au tac": parry and riposte in one instant -- kept in French in
+    # English fencing writing. Qwen3.8 rendered it word for word ("FROM THE
+    # TAC TO THE TAC", Gomard scan 239); older output left it bare/unitalic.
+    ("tac-au-tac", [r"(?:(?:from|of)\s+the\s+|du\s+)?tac[- ]to[- ]the[- ]tac",
+                    r"(?:(?:from|of)\s+the\s+|du\s+)?tac[- ]au[- ]tac"]),
+]
+
+# Italian kept terms (translation_prompt_it.txt rule 2), 2026-09-30. Only
+# words that never occur as ordinary English -- the hand positions and
+# Maestro are left to the model.
+_KEEP_TERMS_IT = [(t, []) for t in (
+    "controcavazione", "cavazione", "cartoccio", "fianconata", "inquartata",
+    "intrecciata", "appuntata", "passata sotto", "intagliata", "molinello",
+    "molinelli", "fendente", "traversone", "raddoppio", "ripigliata",
+    "copertino", "balestrata", "scandaglio", "traccheggio", "ricasso",
+    "imbroccata", "mandritto", "coupé", "sforzi", "sforzo", "rimessa", "ripresa")] + [
+    # riposte: kept in the body, but an isolated heading can garble it
+    # (the French "RAPISES"; "RIPONSES" is fixed in fix_known_garbles)
+    ("riposte", [r"rapier(?:[- ]?(?:rapier|response|riposte|reply))?",
+                 r"riposte response", r"rapises?"])]
+
+
+# Maestro is kept every time in an Italian book (reviewer, 2026-10-11), in the
+# book's case (2026-10-18: "il maestro" -> <i>maestro</i>, "Maestro Parise"): the
+# lesson's master, a named one (Maestro Parise) and masters in general. The
+# literal prompt had the model write "master" in prose (Masiello scan 434,
+# 74 -> 56 kept). Each "master(s)" outside <i>...</i> becomes <i>Maestro</i> /
+# <i>Maestri</i>, no more of them than the page's source has maestro/maestri
+# (a "master" can render padrone); the verb ("to master") is left alone.
+_MAESTRO_SRC = re.compile(r"(?<!\w)maestr[oi](?!\w)", re.I)
+_MASTER_EN = re.compile(r"(?<![\w-])(?<!to )(master)(s?)(?![\w-])", re.I)
+
+
+# rapière → "riposte": the model reads the weapon as the fencing term even
+# with a glossary line (Prévost-Jollivet scans 21, 248; LaMarche 289 twice).
+# The source's riposte / rapière words are paired in order with the English's
+# riposte / rapier words; only when the counts match does a "riposte" standing
+# where the source has rapière become "rapier". Otherwise nothing changes.
+_RIPOSTE_OR_RAPIER_SRC = re.compile(r"\b(?:ripost\w*|rapi[eè]res?)\b", re.I)
+_RIPOSTE_OR_RAPIER_EN = re.compile(r"(?:<i>)?\b(ripost(?:e|es|ed|ing)|rapiers?)\b(?:</i>)?", re.I)
+
+
+def restore_rapier(text: str, src: str) -> str:
+    if not text or not src or not re.search(r"rapi[eè]re", src, re.I):
+        return text
+    src_words = _RIPOSTE_OR_RAPIER_SRC.findall(src)
+    out = list(_RIPOSTE_OR_RAPIER_EN.finditer(text))
+    if len(src_words) != len(out):
+        return text
+    for sw, m in reversed(list(zip(src_words, out))):
+        if sw.lower().startswith("rapi") and m.group(1).lower().startswith("ripost"):
+            word = "rapiers" if m.group(1).lower().endswith("s") else "rapier"
+            word = word.capitalize() if m.group(1)[:1].isupper() else word
+            text = text[:m.start()] + word + text[m.end():]
+    return text
+
+
+# épée meaning the blade in set phrases (prompt rule 3): the model kept "the
+# épée" on six Prévost-Jollivet pages and many Gomard ones after the rule
+# said otherwise, headings included ("ATTACKS WITH THE ÉPÉE"). Only where the
+# French page has the phrase.
+_E = r"(?:the\s+)?(?:<i>\s*)?[ée]p[ée]es?(?:\s*</i>)?"
+_BLADE_PHRASES = [
+    (r"\battaques?\s+à\s+l['’]\s*épée", r"\b(attacks?)\s+(?:with|on|to|against)\s+" + _E + r"(?!\w)", r"\1 on the blade"),
+    (r"\babsences?\s+d['’]\s*épée", r"\b(absences?)\s+of\s+" + _E + r"(?!\w)", r"\1 of blade"),
+    (r"\bdonne\w*\s+(?:l['’]|de\s+l['’])\s*épée", r"\b(giv(?:e|es|en|ing)|gave)\s+(?:the\s+)?(?:<i>\s*)?[ée]p[ée]e(?:\s*</i>)?(?!\w)(?!(?:\s*</i>)?\s+or\s+the\s+blade)", r"\1 the blade"),
+    (r"\b(?:joindre|joint|joignez|engager|engagez|engage)\s+l['’]\s*épée", r"\b(join\w*|engag\w*)\s+(?:the\s+)?(?:<i>\s*)?[ée]p[ée]e(?:\s*</i>)?(?!\w)", r"\1 the blade"),
+]
+
+
+def restore_blade_phrases(text: str, src: str) -> str:
+    if not text or not src or BOOK_LANG == "Italian":
+        return text
+    for fr, en, repl in _BLADE_PHRASES:
+        if re.search(fr, src, re.I):
+            def sub(m, repl=repl):
+                out = m.expand(repl)
+                return out.upper() if re.sub(r"</?i>", "", m.group(0)).isupper() else out
+            text = re.sub(en, sub, text, flags=re.I)
+    return text
+
+
+# "reprise d'attaque" written as "re-attack" despite prompt rule 0
+# (Kirchhoffer scan 23, Joseph-Renaud scans 158, 226; 2026-10-12): back to
+# the kept term, never more times than the source has the phrase. Italian
+# books are untouched -- their source has no "reprise d'attaque".
+_REPRISE_SRC = re.compile(r"\breprises?\s+d['’]\s*attaques?\b", re.I)
+_REATTACK_EN = re.compile(r"(?:<i>\s*)?\b(re-attack)(s?)\b(?![-\w])(?:\s*</i>)?", re.I)
+
+
+def restore_reprise(text: str, src: str) -> str:
+    budget = [len(_REPRISE_SRC.findall(src or ""))]
+    if not text or not budget[0]:
+        return text
+
+    def sub(m):
+        if budget[0] <= 0:
+            return m.group(0)
+        budget[0] -= 1
+        word = "reprises" if m.group(2) else "reprise"
+        if m.group(1).isupper():
+            return f"<i>{word.upper()}</i> OF ATTACK"
+        word = word.capitalize() if m.group(1)[:1].isupper() else word
+        return f"<i>{word}</i> of attack"
+    return _REATTACK_EN.sub(sub, text)
+
+
+# Italian «colpo diritto / dritto / diretto» is the straight thrust (rule 3);
+# the model keeps its "colpo → hit" habit and writes "straight hit" even with
+# the spelling in the rule (Marchionni 1847: 120 of 142, 2026-10-14). As many
+# as the source has, Italian books only.
+_STRAIGHT_SRC = re.compile(r"(?i)\bcolp[oi]\s+(?:di?ritt[oi]|dritt[oi]|dirett[oi])\b")
+_STRAIGHT_EN = re.compile(r"\b(straight|Straight|STRAIGHT)\s+(hit|attack|HIT|ATTACK)(s|S)?\b")
+
+
+def restore_straight_thrust(text: str, src: str) -> str:
+    if BOOK_LANG != "Italian":
+        return text
+    budget = [len(_STRAIGHT_SRC.findall(src or ""))]
+    if not text or not budget[0]:
+        return text
+
+    def sub(m):
+        if budget[0] <= 0:
+            return m.group(0)
+        budget[0] -= 1
+        word = "THRUST" if m.group(2).isupper() else "thrust"
+        return f"{m.group(1)} {word}{m.group(3) or ''}"
+    return _STRAIGHT_EN.sub(sub, text)
+
+
+def enforce_maestro(text: str, src: str) -> str:
+    if BOOK_LANG != "Italian" or not text:
+        return text
+    budget = [len(_MAESTRO_SRC.findall(src or ""))]
+    if not budget[0]:
+        return text
+
+    def sub(m):
+        if budget[0] <= 0:
+            return m.group(0)
+        budget[0] -= 1
+        word = "Maestri" if m.group(2) else "Maestro"
+        if m.group(1).isupper():
+            word = word.upper()
+        return f"<i>{word}</i>"
+
+    out = []
+    for part in re.split(r"(<i>.*?</i>)", text, flags=re.S | re.I):
+        if not part.lower().startswith("<i>"):
+            part = _MASTER_EN.sub(sub, part)
+        else:
+            budget[0] -= len(re.findall(r"maestr[oi]", part, re.I))
+        out.append(part)
+    # in the book's case (reviewer, 2026-10-18): "il maestro" -> <i>maestro</i>
+    return source_case_kept_terms("".join(out), src)
+
+
+def _keep_terms():
+    return _KEEP_TERMS_IT if BOOK_LANG == "Italian" else _KEEP_TERMS_FR
+
+
+# A source-language token the 7B reliably garbles. rassemblant is now a
+# footnoted (translated) term, so snap the garble back to the BARE French
+# word -- enforce_footnoted_terms() then translates it and adds the note.
+_MANGLE_PRONE = [(r"rassembl", "rassemblant")]
+
+
+def repair_mangled_terms(dst: str, src: str) -> str:
+    """When the SOURCE has a term the 7B is known to mangle and the output
+    has lost it, swap the first quoted non-English token back to the term."""
+    if not dst or not src:
+        return dst
+    for needle, term in _MANGLE_PRONE:
+        if re.search(needle, src, re.I) and not re.search(needle, dst, re.I):
+            dst = re.sub(
+                r'([«"“(])\s*[A-Za-zÀ-ÿ]{5,}\s*([»"”)])',
+                lambda m: f'{m.group(1)}{term}{m.group(2)}', dst, count=1)
+    return dst
+
+
+def _match_term_case(term: str, sample: str) -> str:
+    # Same convention as apply_always_translate's own case-preserving
+    # substitution: match the case of whatever text prompted this
+    # insertion, rather than always forcing one fixed case. A technical
+    # term of art normally sits lowercase-italic mid-sentence, but when
+    # it lands inside an all-caps body-level title line (Prévost "DE LA
+    # RIPOSTE" opening Part Four) it should read as part of that title,
+    # not switch to lowercase against the rest of the caps -- there was
+    # never an intent to force lowercase in EVERY context, only to fix
+    # the garbled-word substitution this originally guarded.
+    return term.upper() if sample.isupper() \
+        else term.capitalize() if sample[:1].isupper() else term
+
+
+def caps_kept_terms(text: str, src: str = "") -> str:
+    """A kept term (<i>épée</i>) inside a line set in capitals takes capitals
+    too: "OF THE <i>épée</i>." -> "OF THE <i>ÉPÉE</i>." (20 cases over 8
+    books). Rule: its neighbouring words are capitals (missing neighbour =
+    line edge), at least one exists; or it stands alone on its line and the
+    French has it in capitals (Kirchhoffer's "ÉPÉE" section title). A
+    sentence-case caption keeps it lowercase ("(An <i>épée</i> bout.)")."""
+    def _is_caps(w):
+        letters = [c for c in w if c.isalpha()]
+        return len(letters) >= 2 and all(c.isupper() for c in letters)
+
+    def _line(line):
+        parts = re.split(r"(<i>[^<]*</i>)", line)
+        for k, part in enumerate(parts):
+            m = re.fullmatch(r"<i>([^<]*)</i>", part)
+            if not m or m.group(1).isupper() or not any(c.isalpha() for c in m.group(1)):
+                continue
+            before = re.findall(r"[^\W\d_][\w'’-]*", re.sub(r"<[^>]+>", " ", "".join(parts[:k])))
+            after = re.findall(r"[^\W\d_][\w'’-]*", re.sub(r"<[^>]+>", " ", "".join(parts[k + 1:])))
+            prev, nxt = (before[-1] if before else None), (after[0] if after else None)
+            alone = prev is None and nxt is None
+            if alone:
+                # a title line of its own: copy the case of the same word
+                # standing alone in the French ("Épée", Kirchhoffer scan 41)
+                same = [l.strip(" .") for l in (src or "").split("\n")
+                        if l.strip(" .").lower() == m.group(1).lower()]
+                if same:
+                    parts[k] = f"<i>{_match_term_case(m.group(1), same[0])}</i>"
+                continue
+            if all(_is_caps(w) for w in (prev, nxt) if w is not None):
+                parts[k] = f"<i>{m.group(1).upper()}</i>"
+        return "".join(parts)
+    return "\n".join(_line(l) for l in text.split("\n"))
+
+
+# Before a word: the start of a sentence (or of the line), so its capital is
+# grammar, not the book's choice -- opening quote, bracket or dash allowed.
+_SENT_START = re.compile(r"(?:^|[.!?…])[\s«“\"(\[—–-]*$")
+
+
+def _case_class(w: str):
+    letters = [c for c in w if c.isalpha()]
+    if not letters:
+        return None
+    if all(c.islower() for c in letters):
+        return "lower"
+    if len(letters) >= 2 and all(c.isupper() for c in letters):
+        return "upper"
+    if letters[0].isupper() and all(c.islower() for c in letters[1:2]):
+        return "cap"
+    return None
+
+
+def _apply_case(w: str, cls: str) -> str:
+    if cls == "upper":
+        return w.upper()
+    if cls == "lower":
+        return w[:1].lower() + w[1:]
+    return w[:1].upper() + w[1:]
+
+
+def source_case_kept_terms(text: str, src: str = "") -> str:
+    """A kept term takes the letter case the book gives it (reviewer rule,
+    2026-10-18: case matches the book, no exceptions). Kirchhoffer scan 74
+    prints «(Fleuret — Épée — Sabre.)»; the model wrote "(Foil — <i>épée</i>
+    — Saber.)". Only the book's mid-sentence uses count -- a capital at a
+    sentence start is grammar -- and a term at the start of an English
+    sentence is left as it is, as is one in capitals (caps_kept_terms).
+    Paragraph by paragraph when the English has the book's paragraphs,
+    else the whole page; the book's uses must agree on one case, or there
+    must be as many in the English paragraph as in the French one (then
+    in order). A word in a capitals heading takes the line's case, so it
+    doesn't count."""
+    if not src or "<i>" not in text:
+        return text
+    plain_src = re.sub(r"<[^>]+>", "", src)
+    lines = text.split("\n")
+    en_paras = [n for n, l in enumerate(lines) if l.strip() and l.strip() != FN_HEADER]
+    src_paras = [l for l in plain_src.split("\n") if l.strip()]
+    aligned = len(en_paras) == len(src_paras)
+    if aligned:
+        groups = [([n], [s]) for n, s in zip(en_paras, src_paras)]
+    else:
+        groups = [(en_paras, src_paras)]
+
+    def _caps_line(line):
+        letters = [c for c in line if c.isalpha()]
+        return len(letters) >= 4 and sum(c.isupper() for c in letters) > 0.7 * len(letters)
+
+    def _mids(term, src_lines):
+        out = []
+        for line in src_lines:
+            if _caps_line(line):           # a heading in capitals: the line's case, not the word's
+                continue
+            for m in re.finditer(r"(?<![\w’'-])" + re.escape(term) + r"(?![\w-])", line, re.I):
+                if not _SENT_START.search(line[:m.start()]):
+                    out.append(_case_class(m.group(0)))
+        return out
+
+    edits = {}
+    for en_lines, src_lines in groups:
+        uses = {}
+        for n in en_lines:
+            line = lines[n]
+            for m in re.finditer(r"<i>([^<]+)</i>", line):
+                term = m.group(1)
+                if _case_class(term) in (None, "upper"):
+                    continue
+                before = re.sub(r"<[^>]+>", "", line[:m.start()])
+                if not _SENT_START.search(before):
+                    uses.setdefault(term.lower(), []).append((n, m.start(), term))
+                elif (aligned and _case_class(term) == "lower" and not before.strip(" «“\"(")
+                      and re.match(r"[\s«“\"(]*" + re.escape(term) + r"(?![\w-])",
+                                   src_lines[0], re.I)
+                      and _case_class(re.match(r"[\s«“\"(]*(\S+)", src_lines[0]).group(1)) != "lower"):
+                    # opening its line, as the book's line opens with it capitalised
+                    # (Gomard scan 113's word list: "<i>épée</i>." for «Épée.»)
+                    edits[(n, m.start())] = (term, _apply_case(term, "cap"))
+        for key, found in uses.items():
+            mids = _mids(found[0][2], src_lines)
+            if not mids or None in mids:
+                continue
+            if len(set(mids)) == 1:
+                want = mids * len(found)
+            elif len(mids) == len(found) and aligned:
+                want = mids
+            else:
+                continue
+            for (n, at, term), cls in zip(found, want):
+                if _case_class(term) != cls:
+                    edits[(n, at)] = (term, _apply_case(term, cls))
+    for (n, at), (old, new) in sorted(edits.items(), reverse=True):
+        line = lines[n]
+        lines[n] = line[:at] + f"<i>{new}</i>" + line[at + len(old) + 7:]
+    return "\n".join(lines)
+
+
+_MARKUP = re.compile(r"(</?(?:i|b|sup|fn)>)", re.I)   # not a stray "<" (Gomard scan 245)
+
+
+def _mostly_caps(line: str, share: float = 0.85) -> bool:
+    letters = [c for c in _MARKUP.sub("", line) if c.isalpha()]
+    return len(letters) >= 4 and sum(c.isupper() for c in letters) > share * len(letters)
+
+
+def source_caps_lines(text: str, src: str = "") -> str:
+    """A short line the book sets in capitals is in capitals in the English
+    too (reviewer rule, 2026-10-18: case matches the book). The model often
+    sets them in title or sentence case: "PREMIÈRE PARTIE." -> "First Part.",
+    "ALLIEVO." -> "Student.", "RIPOSTES A TEMPS PERDU PAR COUPS SIMPLES." ->
+    lower case (Gomard scan 245). Only when the English has the book's
+    paragraphs one for one and the two lines are of a like length (Florio
+    scan 81 has as many paragraphs, shifted). A word the book prints in
+    small letters on that line keeps its case ("PAR LE Dr. W. HAMSTRONG")."""
+    if not src:
+        return text
+    lines = text.split("\n")
+    body_end = next((n for n, l in enumerate(lines) if l.strip() == FN_HEADER), len(lines))
+    en_paras = [n for n in range(body_end) if lines[n].strip()]
+    src_paras = [l for l in re.sub(r"<[^>]+>", "", src).split("\n")
+                 if l.strip() and not re.match(r"\s*\(\d+\)", l)]
+    if len(en_paras) != len(src_paras):
+        return text
+    for n, s_line in zip(en_paras, src_paras):
+        line = lines[n]
+        sw, ew = len(s_line.split()), len(_MARKUP.sub("", line).split())
+        if (not _mostly_caps(s_line) or sw > 15 or ew > 2 * sw + 3 or "<fn>" in line
+                or re.fullmatch(r"\s*\[[^\]]*\]\s*", line) or _mostly_caps(line, 0.5)):
+            continue
+        keep = {w for w in re.findall(r"[^\W\d_][\w.'’-]*", s_line) if not w.isupper()}
+        lines[n] = "".join(
+            part if _MARKUP.fullmatch(part) else
+            re.sub(r"[^\W\d_][\w.'’-]*", lambda m: m.group(0) if m.group(0) in keep
+                   else m.group(0).upper(), part)
+            for part in _MARKUP.split(line))
+    return "\n".join(lines)
+
+
+# A section divider printed between paragraphs -- stars, an asterism, a row
+# of bullets or a tilde rule (Joseph-Renaud's ⁂, LaMarche's * * *). The OCR
+# writes it as its own line on many pages; the translation dropped it (the
+# model, and a clean-up that took it for Markdown). Reviewer, 2026-10-18:
+# keep a divider, drawn centred with space around it (_render).
+DIVIDER = "[[DIVIDER]]"
+_DIVIDER_SRC = re.compile(r"^\s*(?:[*★☆✶✱•·~]\s*){2,}\s*$|^\s*[⁂]\s*$|^\s*~{3,}\s*$")
+
+
+def restore_dividers(text: str, src: str) -> str:
+    """Put each divider of the source back as a [[DIVIDER]] line, before
+    the English line that has as many lines above it as the source line
+    after the divider has -- only when the English has exactly the source's
+    lines (else nothing: a divider in the wrong place is worse than none)."""
+    if not src or not text:
+        return text
+    src_lines = [l for l in re.sub(r"<[^>]+>", "", src).split("\n") if l.strip()]
+    marks = [k for k, l in enumerate(src_lines) if _DIVIDER_SRC.match(l)]
+    if not marks:
+        return text
+    body, sep, notes = text.partition(FN_HEADER)
+    en = body.split("\n")
+    en_idx = [n for n, l in enumerate(en) if l.strip() and l.strip() != DIVIDER]
+    words = [l for l in src_lines if not _DIVIDER_SRC.match(l)]
+    if len(en_idx) != len(words) or DIVIDER in body:
+        return text
+    for j in sorted(marks, reverse=True):
+        before = sum(1 for k in range(j) if not _DIVIDER_SRC.match(src_lines[k]))
+        if before == 0 or before >= len(en_idx):
+            continue
+        at = en_idx[before]
+        en[at:at] = ["", DIVIDER, ""]
+    return "\n".join(en) + sep + notes
+
+
+def fix_known_garbles(text: str, src: str = "") -> str:
+    """Deterministic repairs for REPEATABLE model mistakes -- ones that
+    survive the 3-sample majority vote because the model makes them the
+    same way every time (Gomard, batch-2 pass 8):
+      * "THUST" for "thrust" -- in headers AND body, 13 lines + 4 headers.
+        Also "SIMPLE THROUGHS" (pdf 174 retranslation). Neither is an
+        English word, so safe to fix anywhere.
+      * "THRUST/HIT" -- the prompt glossary's old "botte -> thrust/hit"
+        copied verbatim. botte -> thrust (coup -> attack: Gomard pdf 158
+        defines the coup as the whole action, the botte as its finish).
+      * "plank(s)" for planche(s) -- the carpentry sense; in these books a
+        planche is always an illustration plate. Only when the source
+        actually has "planche", so a genuine plank elsewhere survives."""
+    if not text:
+        return text
+
+    def _case(m, word):
+        g = m.group(0)
+        plural = g.lower().endswith("s")
+        w = word + ("s" if plural else "")
+        return w.upper() if g.isupper() else w.capitalize() if g[:1].isupper() else w
+    text = re.sub(r"\bthusts?\b", lambda m: _case(m, "thrust"), text, flags=re.I)
+    text = re.sub(r"\bthroughs\b", lambda m: _case(m, "thrust"), text, flags=re.I)
+    # "RIPONSES" for riposte(s) -- an Italian heading "DELLE RISPOSTE"
+    # (Masiello 1902, sample 2026-09-30), already italicised. Not a word in
+    # any of the languages here, so safe to fix anywhere.
+    text = re.sub(r"\briponses?\b", lambda m: _case(m, "riposte"), text, flags=re.I)
+    # "Parrhes" for parades (Kirchhoffer scans 22, 105 -- three times, the
+    # same way). Not a word in any of the languages here.
+    text = re.sub(r"\bparrhes\b", lambda m: "PARRIES" if m.group(0).isupper()
+                  else "Parries" if m.group(0)[0].isupper() else "parries", text, flags=re.I)
+    # "the du tac-au-tac riposte": the French article left in front. Only
+    # after an English article -- French kept in a translation ("je ne
+    # parle pas du tac au tac", LaMarche scan 128) must stay as it is
+    text = re.sub(r"\b(the|a|an)\s+du\s+((?:<i>)?tac[- ]au[- ]tac)", r"\1 \2", text, flags=re.I)
+    # a French book title with its *escrime* turned into English by the
+    # glossary: "Traité d'Fencing pratique" (Joseph-Renaud scan 35),
+    # "Bibliographie de l'Fencing" (Barbasetti). English never writes
+    # "d'Fencing" / "l'Fencing", so it is always such a title -- or French
+    # quoted as it stands, lower case: "Histoire de l'fencing" (Masiello
+    # scan 133), "dans l'fencing" (Barbasetti scan 36).
+    text = re.sub(r"(\b[dlDL][’'])(fencing|Fencing|FENCING)\b",
+                  lambda m: m.group(1) + {"fencing": "escrime", "Fencing": "Escrime",
+                                          "FENCING": "ESCRIME"}[m.group(2)], text)
+    # "RIPOSTES AT THE <i>TAC-AU-TAC</i>." (Gomard scans 242, 246): the
+    # idiom read as a place. Only "at the" -- "of the" can be a real noun
+    # use ("the speed of the tac-au-tac")
+    text = re.sub(r"\bat\s+the\s+((?:<i>)?tac[- ]au[- ]tac)", r"\1", text, flags=re.I)
+    text = re.sub(r"\bripposte(s?)\b", lambda m: _case(m, "riposte") + m.group(1).lower()
+                  if not m.group(0).isupper() else "RIPOSTE" + m.group(1).upper(), text, flags=re.I)
+    # A capitals line with one word the model split while spelling it
+    # ("RIPostes AFTER THE PARRIES", Gomard scan 239): the model reads an
+    # all-caps word as fragments and can reassemble it in mixed case.
+    # Restore capitals when the rest of the line is capitals.
+    def _caps_line(line):
+        plain = re.sub(r"</?i>", "", line)
+        words = re.findall(r"[^\W\d_]+", plain)
+        # "RIPostes" (scan 239) and "RIPostES" (scan 244)
+        odd = [w for w in words if re.fullmatch(r"[A-Z]{2,}[a-z]+[A-Z]*", w)]
+        rest = [w for w in words if w not in odd and len(w) > 1]
+        if odd and rest and all(w.isupper() for w in rest):
+            for w in odd:
+                line = re.sub(r"\b" + w + r"\b", w.upper(), line)
+        return line
+    text = "\n".join(_caps_line(l) for l in text.split("\n"))
+    text = re.sub(r"\bthrusts?\s*/\s*hits?\b",
+                  lambda m: _case(re.search(r"thrusts?", m.group(0), re.I), "thrust"),
+                  text, flags=re.I)
+    if src and re.search(r"\bplanches?\b", src, re.I):
+        text = re.sub(r"\bplanks?\b", lambda m: _case(m, "plate"), text, flags=re.I)
+    # a plate's label and its caption on one line: "Plate V. — Blow
+    # delivered …" (operator preference, Gomard review 2026-09-28)
+    text = re.sub(r"\A(\s*)((?:<i>)?(?:PLATE|Plate|PLANCHE|Planche)\s+[IVXLC]+[a-z]*\.?(?:</i>)?)[ \t]*\n\s*\n?(?=\S)(?![\s\S]*\n\s*\n[\s\S]*\n\s*\n)",
+                  lambda m: m.group(1) + m.group(2).rstrip() + " — ", text, count=1)
+    # ",," -- a print mark beside a comma read as a second one (Prévost scan 157)
+    text = re.sub(r",\s*,(?!,)", ",", text)
+    # a name's particle translated: "Mr. A. OF LA FORGE" -> "A. DE LA FORGE"
+    # (Jacob), "Count F. of L'Angle-Beaumanoir" (Spinnewyn) -- after an initial
+    text = re.sub(r"\b([A-Z]\.\s+)(of|OF|Of)(\s+(?:La|LA|Le|LE|L['’]))",
+                  lambda m: m.group(1) + ("DE" if m.group(2) == "OF" else "de") + m.group(3), text)
+    # a lesson's step label printed "I. TEMPO" stays "I. TEMPO", never
+    # "I. TIME" (Barbasetti, 38 of 86; reviewer, 2026-10-18)
+    if src and re.search(r"(?im)^\s*[IVX]+\.?\s+TEMPO\b", src):
+        text = re.sub(r"(?m)^(\s*[IVX]+\.?\s+)(TIME|Time)\b",
+                      lambda m: m.group(1) + ("TEMPO" if m.group(2).isupper() else "Tempo"), text)
+    text = source_caps_lines(source_case_kept_terms(text, src), src)
+    return caps_kept_terms(text, src)
+
+
+# A French book's line names are stored plain and drawn italic: the PDF
+# italicises every one (_render.line_name_italics, reviewer 2026-10-11,
+# confirmed 2026-10-31), and the model italicised only ~5%. One stored form
+# means a [[fix]] matches whichever way the model wrote them.
+_ITALIC_LINE_NAME = re.compile(
+    r"<i>((?:prime|seconde|tierce|quarte|quinte|sixte|septime|octave)s?)</i>", re.I)
+
+
+def plain_line_names(text: str) -> str:
+    return _ITALIC_LINE_NAME.sub(r"\1", text) if text else text
+
+
+# riposte / remise in every form -- the plural, and the English verb made
+# from the kept noun ("he ripostes", "has remised") -- italic like the noun
+# (reviewer, 2026-10-31: one word, one look; JR and Kirchhoffer had both).
+_BARE_KEPT_FORM = re.compile(r"(?<![\w>])(?:riposte[sd]?|riposting|remise[sd]?|remising)(?![\w<])", re.I)
+
+
+def house_italics(text: str, french: bool = True) -> str:
+    """The italics rules applied to finished text: line names stored plain
+    (French books; drawn italic), riposte / remise italic in every form."""
+    if not text:
+        return text
+    if french:
+        text = plain_line_names(text)
+    return _BARE_KEPT_FORM.sub(lambda m: f"<i>{m.group(0)}</i>", text)
+
+
+def enforce_kept_terms(text: str, src: str = "") -> str:
+    """Make sure a kept term is present and italicised: repair a
+    known mistranslation, then wrap any bare occurrence in <i>...</i>
+    (skipping what is already inside a tag), matching the case of
+    whatever prompted the wrap."""
+    if not text:
+        return text
+    text = repair_mangled_terms(text, src)
+    text = fix_known_garbles(text, src)
+    for term, wrongs in _keep_terms():
+        for w in wrongs:
+            def _sub_term(m, term=term):
+                # preserve plurality of the garbled match ("RAPISES" ->
+                # "ripostes", not the always-singular "riposte")
+                g = m.group(0)
+                plural = (g.rstrip().lower().endswith("s") and not term.endswith("s")
+                          and not term.split()[0].endswith("s"))   # "pointes d'arrêt" is already plural
+                disp = term + ("s" if plural else "")
+                return f"<i>{_match_term_case(disp, g)}</i>"
+            text = re.sub(r"(?<!<i>)\b" + w + r"\b(?!</i>)",
+                          _sub_term, text, flags=re.IGNORECASE)
+        # wrap a bare occurrence not already tagged
+        text = re.sub(
+            r"(?<![\w>])" + term.replace(" ", r"\s+") + r"(?![\w<])",
+            lambda m: f"<i>{_match_term_case(term, m.group(0))}</i>",
+            text, flags=re.IGNORECASE)
+        # collapse any accidental double-wrap, keeping whichever case is
+        # already inside it rather than reinserting the lower-cased term
+        text = re.sub(
+            rf"<i>\s*<i>({re.escape(term)})</i>\s*</i>",
+            lambda m: f"<i>{m.group(1)}</i>", text, flags=re.IGNORECASE)
+    return house_italics(text, BOOK_LANG != "Italian")
+
+
+_TITLE_STOPWORDS = {
+    "a", "an", "the", "and", "or", "nor", "but", "of", "to", "in", "on", "at",
+    "by", "for", "with", "from", "as", "per", "via",
+    # French particles, so "Parade de Sixte." still reads as Title Case
+    "de", "du", "des", "la", "le", "les", "à", "au", "aux", "et", "ou",
+    "d", "l", "en", "sur", "par", "dans",
+}
+
+
+def match_case(src: str, dst: str) -> str:
+    """Make a translated heading / caption follow the CASE STYLE of its
+    source line, faithfully -- a book that sets a running head in capitals
+    gets an all-caps English head, a sentence-case caption gets a
+    sentence-case English caption (even if the model shouted it).
+      source ALL CAPS   -> dst.upper()  (incl. kept <i> terms)
+      source Title Case -> Title Case (particles stay lower)
+      anything else     -> sentence case: first letter up, the rest down
+                           (acronyms present in the source are preserved)
+    Words the model kept in the source language (<i>..</i>) keep their own
+    case, EXCEPT under ALL CAPS where the whole line goes up together."""
+    if not dst:
+        return dst
+
+    # A caption can combine a main title with a trailing parenthetical
+    # annotation set in a DIFFERENT case register (Kirchhoffer: "LE
+    # CROISÉ AU FLANC." all-caps, then "(La main de l'attaquant reste
+    # haute.)" in ordinary sentence case -- confirmed against the real
+    # scan). Measuring case over the whole combined string dilutes an
+    # all-caps main title's upper_ratio below the 0.8 threshold, so the
+    # real all-caps title fell through to a broken middle case instead.
+    # Split off a trailing "(...)" and case-match each side separately,
+    # only when BOTH src and dst end in one -- otherwise fall through to
+    # the single-mode behaviour below unchanged.
+    _PAREN_TAIL = re.compile(r"^(.*?)([ \t]*\([^()]*\))\s*$", re.S)
+    sm = _PAREN_TAIL.match(src)
+    dm = _PAREN_TAIL.match(dst)
+    if sm and dm and sm.group(1).strip() and dm.group(1).strip():
+        main = match_case(sm.group(1), dm.group(1))
+        paren = match_case(sm.group(2).strip(), dm.group(2).strip())
+        return f"{main.rstrip()} {paren}"
+
+    # Same combined-case-register problem, different separator: a main
+    # title followed by a trailing "-- <clause>" annotation ALSO set in
+    # ordinary lower case in print (Kirchhoffer "PRISE DE FER SUR LE
+    # BRAS TENDU. -- 1er TEMPS : feinte de liement de seconde." -- the
+    # title is genuinely all-caps, the "1er TEMPS : ..." clause genuinely
+    # lower case, confirmed by the same pattern repeating identically
+    # across 3 plates in one run). Only split at the LAST em-dash when
+    # the trailing segment actually STARTS lower-case (letter or digit,
+    # for ordinals like "1er"/"3rd") -- a caption that only uses "--" to
+    # separate two SAME-case segments ("FIG. 4. -- LE CROISÉ AU FLANC.",
+    # both all-caps) must stay whole. Recurses, so a caption with more
+    # than one such trailing clause peels them off one at a time.
+    #
+    # *2026-09-20:* "1er" doesn't have as natural a digit-form as "2e"/
+    # "3e" (no bare "1st" the model reaches for as readily), so on this
+    # exact caption's FIRST plate the model spelled it "FIRST TEMPO"
+    # instead of "1st Tempo" -- still visually part of the caps run, so
+    # the tail no longer starts lower-case/digit and the split silently
+    # stopped firing (Fig. 6/7 in the SAME plate run use "2nd"/"3rd" and
+    # split fine; only Fig. 5's "1er" hit this). Also accept a spelled-
+    # out ordinal word as a tail-start, case-insensitively -- it's the
+    # same "this is really the lower-case-register clause" signal as a
+    # bare digit, just spelled differently.
+    _ORDINAL_WORD = r"(?i:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\b"
+    _DASH_TAIL = re.compile(
+        rf"^(.*\S)[ \t]*[—-][ \t]+([a-zà-ÿ0-9].*|{_ORDINAL_WORD}.*)$", re.S)
+    sm2 = _DASH_TAIL.match(src)
+    dm2 = _DASH_TAIL.match(dst)
+    if sm2 and dm2:
+        main = match_case(sm2.group(1), dm2.group(1))
+        tail = match_case(sm2.group(2), dm2.group(2))
+        return f"{main.rstrip()} — {tail}"
+
+    letters = [c for c in src if c.isalpha()]
+    if not letters:
+        return dst
+    words = [w for w in re.findall(r"[^\W\d_]+(?:['’-][^\W\d_]+)*", src)
+             if any(c.isalpha() for c in w)]
+    upper_ratio = sum(c.isupper() for c in letters) / len(letters)
+    src_acronyms = {w.upper() for w in words if w.isupper() and len(w) >= 2}
+
+    if upper_ratio >= 0.8 and len(letters) >= 2:
+        # uppercase everything, then restore the lowercase markup tags
+        return re.sub(r"</?(?:i|fn)>", lambda m: m.group(0).lower(),
+                      dst.upper(), flags=re.I)
+
+    sig = [w for w in words if w.lower() not in _TITLE_STOPWORDS]
+    if sig and all(w[0].isupper() for w in sig):
+        def _title(m, first=[True]):
+            w = m.group(0)
+            lead = first[0]
+            first[0] = False
+            if len(w) == 1:
+                return w.upper()                       # figure label ("Schéma A")
+            if w.upper() in src_acronyms:
+                return w.upper()
+            if not lead and w.lower() in _TITLE_STOPWORDS:
+                return w.lower()
+            return w[:1].upper() + w[1:].lower()
+        return _recase(dst, lambda s, first: re.sub(r"[^\W\d_]+(?:['’-][^\W\d_]+)*", _title, s))
+
+    # sentence case: lower the model's over-capitalisation, keep source
+    # acronyms, then upper the very first letter.
+    def _sent(s, first=True):
+        s = re.sub(r"[^\W\d_]+",
+                   lambda m: m.group(0) if (m.group(0).upper() in src_acronyms
+                                            and len(m.group(0)) >= 2)
+                   else m.group(0).lower(), s)
+        # Capitalise the first GENUINE word-initial letter, not just the
+        # first letter found -- a clause starting with an ordinal ("3rd
+        # tempo...", "3e TEMPS...") has its first letter mid-token ("r"
+        # in "3rd"), and force-capitalising that produced a broken "3Rd".
+        if not first:
+            return s
+        return re.sub(r"(?<![\dA-Za-zÀ-ÿ])[A-Za-zÀ-ÿ]",
+                      lambda m: m.group(0).upper(), s, count=1)
+    return _recase(dst, _sent)
+
+
+def _recase(text: str, fn) -> str:
+    """Apply fn to the parts of `text` that are NOT inside <i>...</i>
+    (kept-in-source terms keep their own casing). fn(part, first): `first`
+    only for the part at the very start -- sentence case capitalises that
+    one alone, not the word after every italic term ("the <i>riposte</i>
+    Is hit", Baudry Fig. 7)."""
+    out, i, k = [], 0, 0
+    for m in re.finditer(r"<i>.*?</i>", text, re.DOTALL | re.IGNORECASE):
+        out.append(fn(text[i:m.start()], k == 0 and i == 0))
+        out.append(m.group(0))
+        i = m.end()
+        k += 1
+    out.append(fn(text[i:], i == 0))
+    return "".join(out)
+
+
+# NOTE: an earlier "glossary mode" kept every headword of a "termes
+# techniques" section in the source language (italic) and translated only
+# the definition. Dropped 2026-09-01: leaving the term untranslated left
+# the reader without the English word the body text uses for it. A
+# glossary section now goes through the normal term policy like body text
+# (the facing page still carries the original). See docs/model-quirks.md.
+
+
+def extract_source_footnotes(text: str, state: dict) -> str:
+    """Pull the book's own numbered footnotes ("(1) L'origine de ...") out
+    of the body and into the ___FOOTNOTES___ block, so a reader can tell
+    body from note. A footnote that runs off the bottom of a page (no
+    terminal punctuation) sets state['open']; the next page's leading
+    lower-case paragraph is then taken as its continuation and rendered in
+    that page's note strip, prefixed '…'."""
+    parts = text.split("\n" + FN_HEADER + "\n", 1)
+    body = parts[0]
+    existing = parts[1] if len(parts) > 1 else ""
+    paras = re.split(r"\n\s*\n", body.strip())
+    keep, notes = [], []
+
+    _NOTE_START = re.compile(r"^\(?(\d{1,2})[.)]\s+\S")
+
+    def _leads_lowercase(s):
+        # The first actual letter, skipping a leading <i>/<b>-style tag --
+        # a continuation can open on a kept term ("<i>riposte</i>, but…"),
+        # and "<" isn't a letter so a bare [:1].islower() check misses it
+        # (Gomard p220/221 footnote stitch).
+        m = re.match(r"(?:<[^>]+>)*(\S)", s)
+        return bool(m) and m.group(1).islower()
+
+    if state.get("open") and paras:
+        if _leads_lowercase(paras[0]) and not _NOTE_START.match(paras[0].strip()):
+            notes.append("… " + re.sub(r"\s+", " ", paras.pop(0)).strip())
+            state["open"] = False
+        elif (len(paras) > 1 and _leads_lowercase(paras[-1])
+              and not _NOTE_START.match(paras[-1].strip())):
+            # The continuation isn't always the very next thing OCR
+            # reads -- it can be deferred to the FOOT of this page,
+            # after the page's own unrelated new body text (P-review,
+            # Gomard p220/221: footnote (1) on "tac au tac" truncates on
+            # p220, and its remainder lands as the LAST paragraph of
+            # p221, below several paragraphs of p221's own body).
+            notes.append("… " + re.sub(r"\s+", " ", paras.pop()).strip())
+            state["open"] = False
+
+    # A bare "1. .. 2. .." run at the FOOT of the page is the book's own
+    # footnote block (Prévost sets notes this way, not "(1)"). Guard
+    # against a numbered drill/procedure: not when the first body
+    # paragraph is itself numbered, not when the line above the run ends
+    # with ':', require the run sequential from 1, and either >=2 notes or
+    # a single substantial (>=12-word) one.
+    _tail = len(paras)
+    while _tail > 0 and _NOTE_START.match(paras[_tail - 1].strip()):
+        _tail -= 1
+    _tnums = [int(_NOTE_START.match(paras[k].strip()).group(1))
+              for k in range(_tail, len(paras))]
+    _treat_tail = (
+        0 < _tail < len(paras)
+        and not _NOTE_START.match(paras[0].strip())
+        and not paras[_tail - 1].rstrip().endswith(":")
+        and _tnums == list(range(1, len(_tnums) + 1))
+        and (len(_tnums) >= 2 or len(paras[-1].split()) >= 12))
+
+    for _idx, p in enumerate(paras):
+        s = re.sub(r"\s+", " ", p).strip()
+        _is_tail_note = _treat_tail and _idx >= _tail
+        if _is_tail_note or re.match(r"\(\d{1,2}\)[ . ]", s):
+            notes.append(s)
+            state["open"] = not re.search(r"[.!?»”\"')\]]\s*$", s)
+        else:
+            keep.append(p)
+
+    if not notes:
+        return text
+    block = "\n".join(notes)
+    if existing.strip():
+        block = existing.rstrip() + "\n" + block
+    new_body = "\n\n".join(keep).strip()
+    return f"{new_body}\n\n{FN_HEADER}\n{block}".strip()
+
+
+# Margin (shoulder) notes: no text heuristic here any more. The old
+# label_margin_notes() guessed that a short, sentence-ending paragraph near the
+# end of a page was a margin note and deleted it from the page (2026-09-18
+# review decision). Guessing from text shape can't tell a note from a
+# sub-heading, a signature or a closing sentence: Qwen3.8's paragraphing
+# made it delete Prévost's "Le rôle du médecin." heading outright. Removed
+# 2026-09-25 -- the pipeline must never silently lose source text. Proper
+# classification belongs to the layout detector, which sees where a block
+# sits on the page (docs/STATUS.md).
+
+
+def _looks_like_subheading(s: str) -> bool:
+    s = s.strip()
+    if re.search(r"[.!?:;,]$", s):
+        return False
+    words = s.split()
+    letters = [c for c in s if c.isalpha()]
+    return (1 <= len(words) <= 8 and len(s) <= 55 and len(letters) >= 3
+            and sum(c.isupper() for c in letters) >= 0.85 * len(letters))
+
+
+def fix_subheading_spacing(text: str) -> str:
+    """A run-in sub-heading ("LES GRANDS ESCRIMEURS") often comes back
+    jammed against the paragraph above it with a blank line *below* — the
+    reverse of how it should read. Move the blank: gap before the
+    sub-heading, tight to the paragraph it introduces.
+
+    NOTE: a stop-gap. Superseded once the heading-hierarchy feature lands
+    (docs/STATUS.md, "Heading hierarchy") -- that will space headings from a real
+    signal instead of this all-caps heuristic. Guarded tight (line above
+    ends a sentence, line below opens one) so a mis-fire can't glue two
+    real paragraphs together."""
+    lines = text.split("\n")
+    out, i, n = [], 0, len(lines)
+    while i < n:
+        cur = lines[i]
+        if (out and out[-1].strip()
+                and re.search(r"[.!?»”\"')\]]\s*$", out[-1])
+                and _looks_like_subheading(cur)
+                and i + 2 < n and not lines[i + 1].strip()
+                and lines[i + 2].strip() and lines[i + 2].lstrip()[:1].isupper()):
+            out += ["", cur]        # blank before; skip the blank after
+            i += 2
+            continue
+        out.append(cur)
+        i += 1
+    return "\n".join(out)
+
+
+_DEF_ENTRY_RE = re.compile(
+    r"(?m)^([ \t]*)(<i>)?([a-zà-ÿ])([\wà-ÿ’'\- ]{0,40}?)(</i>)?([ \t]*\.[ \t]*[—–-][ \t])")
+
+
+def _capitalize_definition_entries(text: str) -> str:
+    """A glossary / definition-list entry headword is capitalised in the
+    source ("Riposte. — ...", "Coup d'arrêt. — ..."). A kept term
+    kept lowercase-italic loses that capital ("<i>riposte</i>. — ...",
+    Kirchhoffer TERMES TECHNIQUES). Restore it: upper-case the first
+    letter of any line shaped "<short headword>. — <definition>",
+    preserving an <i> wrapper."""
+    def _up(m):
+        head = m.group(4) or ""
+        if len(head.split()) > 3:
+            return m.group(0)
+        return (m.group(1) + (m.group(2) or "") + m.group(3).upper()
+                + head + (m.group(5) or "") + m.group(6))
+    return _DEF_ENTRY_RE.sub(_up, text)
+
+
+_CAPTION_JUNK = re.compile(
+    r"biblioth[eè]que\s+nationale|british\s+museum|library\s+of\s+congress"
+    r"|\b\d{5,}\b|high\s+holborn|\blondres\b|\bimp\.\b|\blith\.\b|\bdel\.\b"
+    r"|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\s+\d{4}\b",
+    re.I)
+
+
+def match_dash_caps(fr: str, en: str) -> str:
+    """A caption's segments after a dash start with a capital in the French
+    ("Fig. 2. — Garde classique vue de face.") but the model lowercases them
+    ("Fig. 2. — classical guard ..."; Baudry, Gomard plates). Capitalise the
+    first letter after each dash in the English when the French segment at
+    the same position starts with a capital."""
+    split = r"\s*[—–]\s*"
+    fr_parts = re.split(split, fr or "")
+    en_parts = re.split(r"(\s*[—–]\s*)", en or "")
+    if len(fr_parts) < 2 or len(en_parts) != 2 * len(fr_parts) - 1:
+        return en
+    for k in range(1, len(fr_parts)):
+        f = fr_parts[k].lstrip()
+        if not (f[:1].isalpha() and f[:1].isupper()):
+            continue
+        seg = en_parts[2 * k]
+        m = re.match(r"(\s*(?:<i>)?)([a-zà-ÿ])", seg)
+        if m:
+            en_parts[2 * k] = m.group(1) + m.group(2).upper() + seg[m.end():]
+    return "".join(en_parts)
+
+
+def _clean_caption(cap: str) -> str:
+    """Strip Markdown image refs, hallucinated scene descriptions and
+    library/printer stamps from a raw figure caption."""
+    if not cap:
+        return cap
+    cap = re.sub(r"!?\[[^\]]*\]\([^)]*\)", "", cap)          # ![alt](url)
+    cap = re.sub(r"\((?:two|a|an|the)\s+fencers?\b[^)]*\)", "", cap, flags=re.I)
+    # hallucinated scene description ("Image of a hand holding a sword in
+    # the sixth position", "Photograph of a man in fencing attire ...") --
+    # drop any such segment, keep a real caption line that follows it.
+    _SCENE = (r"(?:an?\s+)?(?:image|photo(?:graph)?|drawing|illustration|picture"
+              r"|sketch|depiction|engraving|figure)\s+(?:of|showing|depicting)\b")
+    cap = " ".join(
+        s for s in re.split(r"(?<=[.!?])\s+|\n+", cap)
+        if not re.match(r"(?i)\s*" + _SCENE, s)).strip()
+    cap = re.sub(r"(?i)^\s*" + _SCENE + r"[^.\n]*", "", cap).strip()
+    cap = re.sub(r"(?i)\bcorrect(?:ing|ed)?\b[^.:]*\btranslation\b[^.:]*[.:]", "", cap)
+    cap = re.sub(r"(?i)\bbased on the (?:given|critical) rules?\b[^.]*\.?", "", cap)
+    # model commentary leaking into a caption: a "(NOTE: ...)" aside (often
+    # long, sometimes unclosed) and the "GIVEN THE ... RULES, ... THUS:
+    # <restated line>" tail it appends (Kirchhoffer Fig. 7).
+    cap = re.sub(r"(?is)\s*[\(\[]\s*note\s*:.*?(?:[\)\]]|$)", "", cap)
+    cap = re.sub(r"(?is)\s*\b(?:given the (?:critical|provided|above) rules?"
+                 r"|there (?:appears|seems) to be an error"
+                 r"|strictly translating the provided text)\b.*$", "", cap)
+    cap = re.sub(r"(?is)\s*,?\s*\bthus\s*:\s*$", "", cap)
+    cap = re.sub(r"^\s*[—–\-]\s*", "", cap.strip())
+    # a trailing empty-caption placeholder the VLM tacked on ("... (La
+    # Garde) none", "... au tac none")
+    cap = re.sub(r"(?i)[\s—–-]*\b(?:none|no\s+caption|n/?a)\s*\.?\s*$", "", cap).strip()
+    cap = re.sub(r"\s{2,}", " ", cap).strip(" —–-")
+    if _CAPTION_JUNK.search(cap):
+        return ""
+    return cap.strip()
+
+
+_PARRY_WRONG = {
+    "first": "prime", "second": "seconde", "third": "tierce", "fourth": "quarte",
+    "fifth": "quinte", "sixth": "sixte", "seventh": "septime", "eighth": "octave",
+    # the name cut short in a capitals caption ("PARRY OF QUINT.", Kirchhoffer
+    # scan 31, on two separate translations)
+    "quint": "quinte",
+}
+
+
+def fix_parry_names(en: str, src: str) -> str:
+    """Numbered parries (prime..octave) are kept terms -- kept, not
+    translated. When the source names one and the model turned it into an
+    English ordinal, snap it back."""
+    if not en or not re.search(
+            r"parade\s+d|de\s+(?:prime|seconde|tierce|quarte|quinte|sixte|septime|octave)",
+            src, re.I):
+        return en
+    for wrong, right in _PARRY_WRONG.items():
+        en = re.sub(r"\b(of\s+|parry\s+of\s+)(" + wrong + r")\b",
+                    lambda m, r=right: m.group(1) + (r.upper() if m.group(2).isupper() else r),
+                    en, flags=re.I)
+    return en
+
+
+def _french_token_count(line: str) -> int:
+    toks = re.findall(r"\b[\wàâäéèêëïîôùûüç]+\b", line.lower())
+    n = sum(1 for w in toks if w in FRENCH_WORDS)
+    n += len(re.findall(r"\b[cdjlmnqst]['’][aeiouyhàâäéèêëïîôùûü]", line, re.I))
+    return n
+
+
+_PART_ORDINALS_EN = {
+    "première": "First", "premiere": "First",
+    "deuxième": "Second", "deuxieme": "Second", "seconde": "Second",
+    "troisième": "Third", "troisieme": "Third",
+    "quatrième": "Fourth", "quatrieme": "Fourth",
+    "cinquième": "Fifth", "cinquieme": "Fifth",
+    "sixième": "Sixth", "sixieme": "Sixth",
+    "septième": "Seventh", "septieme": "Seventh",
+    "huitième": "Eighth", "huitieme": "Eighth",
+    "neuvième": "Ninth", "neuvieme": "Ninth",
+    "dixième": "Tenth", "dixieme": "Tenth",
+}
+
+_PART_TITLE_RE = re.compile(
+    r"(?im)^\s*(" + "|".join(_PART_ORDINALS_EN) + r")\s+partie\s*$")
+
+
+def restore_dropped_part_title(candidate: str, source: str) -> str:
+    """A "<Ordinal> PARTIE" division title as the body's own first line
+    (Prévost: PREMIÈRE/DEUXIÈME/QUATRIÈME/CINQUIÈME/SIXIÈME PARTIE, each
+    confirmed dropped from the translated output on every single
+    occurrence in the book -- 5/5 -- while the very next title line on
+    the same page translates fine) gets silently omitted by the
+    translation model, treating it like a structural marker rather than
+    body text to translate. Narrow, evidence-based fix (like
+    _OCR_PHRASE_FIXES in step 1): if the source's first line is exactly
+    this shape and the candidate's own first line doesn't already
+    contain "part", prepend the correct translation instead of trying to
+    re-run the whole page."""
+    m = _PART_TITLE_RE.match((source or "").lstrip("\n").split("\n", 1)[0])
+    if not m:
+        return candidate
+    first_out = (candidate or "").lstrip("\n").split("\n", 1)[0]
+    if re.search(r"(?i)\bpart\b", first_out):
+        return candidate
+    ordinal_en = _PART_ORDINALS_EN[m.group(1).lower()]
+    title = m.group(0).strip()
+    en_title = match_case(title, f"{ordinal_en} Part")
+    return f"{en_title}\n\n{(candidate or '').lstrip(chr(10))}"
+
+
+def retranslate_stray_french_headings(text: str) -> str:
+    """A short all-caps display heading on an otherwise-good page can come
+    back half-translated ("COMMENT ON DOIT HOLD THE SABER") -- the per-page
+    French ratio is too diluted by the good body to trip the quality gate.
+    Re-translate just those lines through the full prompt (as translate_headers
+    does), and keep the result only if it is less French than what we had."""
+    out = []
+    for line in text.split("\n"):
+        s = line.strip()
+        # a pipeline marker ("[[TABLE]]", "[Empty page]", a margin note) is
+        # not a heading: sent to the model it came back as "TABLE" or nothing,
+        # and the table was lost (Masiello 1887, 9 pages, 2026-10-12)
+        if re.fullmatch(r"\[\[?[^\[\]\n]*\]\]?|⟦[^⟧]*⟧", s):
+            out.append(line)
+            continue
+        letters = [c for c in s if c.isalpha()]
+        is_heading = (
+            0 < len(s.split()) <= 9
+            and len(letters) >= 4
+            and sum(c.isupper() for c in letters) >= 0.6 * len(letters)
+        )
+        plain = re.sub(r"</?i>", "", s)
+        # The stop-word count below only has a signal for FUNCTION words
+        # (le, de, et...) -- a heading that's a single content word has
+        # none to detect and was never even attempted (Prévost src 23:
+        # "ROMPRE" standing alone as its own body-level title line stayed
+        # untranslated, even though the same word translates correctly
+        # mid-paragraph on the very same page, where sentence context
+        # carries stop words around it). A short (<=2 word) all-caps
+        # heading is checked regardless of the stop-word count.
+        looks_french = (_french_token_count(plain) > 0
+                        or (is_heading and len(s.split()) <= 2))
+        if not is_heading or not looks_french:
+            out.append(line)
+            continue
+        en = translate_with_llama(f"{PROMPT_TEMPLATE}\n\nText to translate:\n{s}")
+        en = strip_model_preamble((en or "").strip()).strip()
+        en = re.sub(r"(?m)^\s*#{1,6}\s+", "", en)
+        en = re.sub(r"</?i>", "", en).splitlines()[0].strip() if en else ""
+        en = apply_always_translate(en)
+        # this second answer skips the page's repairs -- run the known-
+        # garble ones ("RIPPOSTES TAC-AU-TAC.", Gomard scan 242: the kept
+        # term's "AU" made the heading look French and sent it back here)
+        en = fix_known_garbles(en, s)
+        # For the single-word case the old "strictly less French" gate is
+        # blind (0 < 0 is never true) -- accept a genuinely different,
+        # non-French result instead of requiring the stop-word count to
+        # have dropped.
+        if en and not contains_too_much_non_english(en) \
+                and en.strip().lower() != re.sub(r"</?i>", "", s).strip().lower() \
+                and (_french_token_count(en) < _french_token_count(s) or len(s.split()) <= 2):
+            out.append(match_case(s, en))
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
+_SENT_END = tuple('.!?:;»)"”’…—')
+
+
+def match_boundary_punctuation(dst: str, src: str) -> str:
+    """A page is one leaf of a longer work; it can begin or end mid-sentence.
+    The model tends to "finish" a dangling sentence with a full stop (and
+    the next page then opens with what looks like a fragment). If the
+    SOURCE page doesn't end on sentence-ending punctuation, strip whatever
+    terminal punctuation the model tacked on -- and add NOTHING; the page
+    just ends on its last word and continues on the next. If the source
+    page STARTS lower-case (a continuation) but the translation capitalised
+    its first word, lower-case it back."""
+    if not dst or not src:
+        return dst
+    s = src.rstrip()
+    d = dst.rstrip()
+    tail = dst[len(d):]
+    # a trailing hyphen / en-dash at a page foot is hyphenation the
+    # cross-page de-hyphenation couldn't join (next page starts with a
+    # capital) -- never terminal punctuation, so strip it too.
+    if s and (s[-1] in "-–"
+              or (s[-1] not in _SENT_END
+                  and not re.search(r'\b(?:etc|cf|ibid|op)\.$', s))):
+        d2 = re.sub(r'[\s.…—–-]+$', '', d)
+        if d2:
+            d = d2
+    dst = d + tail
+    s0 = src.lstrip()
+    if s0[:1].islower():
+        dst = re.sub(r'^(\s*)([A-Z])(?=[a-zà-ÿ])',
+                     lambda m: m.group(1) + m.group(2).lower(), dst, count=1)
+    return dst
+
+
+def _shout_ratio(text: str) -> float:
+    """Fraction of letters that are uppercase. Only meaningful with enough
+    letters to average over -- returns 0 for short strings (a plate caption
+    or a heading is legitimately all-caps)."""
+    letters = [c for c in text if c.isalpha()]
+    if len(letters) < 25:
+        return 0.0
+    return sum(c.isupper() for c in letters) / len(letters)
+
+
+def deshout(text: str, source: str) -> str:
+    """Qwen sometimes latches onto a source paragraph that opens with a
+    small-caps word ('L'ESCRIME au fleuret ...') and renders the WHOLE page
+    in capitals. Last-resort repair: lowercase a shouting line, re-capitalise
+    sentence starts, and keep any token that is genuinely all-caps in the
+    source line (acronyms, a section title)."""
+    keep = {w for w in re.findall(r"\b[A-ZÀ-Þ]{2,}\b", source)}
+    out = []
+    for line in text.split("\n"):
+        if _shout_ratio(line) <= 0.85:
+            out.append(line)
+            continue
+        lowered = re.sub(r"[A-Za-zÀ-ÿ]+",
+                         lambda m: m.group(0) if m.group(0) in keep
+                         else m.group(0).capitalize() if m.group(0).istitle()
+                         else m.group(0).lower(),
+                         line)
+        lowered = re.sub(r"(^\s*[\"«(]?\s*[a-zà-ÿ])",
+                         lambda m: m.group(1).upper(), lowered)
+        lowered = re.sub(r"([.!?]\s+[\"«(]?)([a-zà-ÿ])",
+                         lambda m: m.group(1) + m.group(2).upper(), lowered)
+        lowered = re.sub(r"\bi\b", "I", lowered)
+        out.append(lowered)
+    return "\n".join(out)
+
+
+def has_wrong_script(text: str) -> bool:
+    """Sources are all Latin-script (French/Italian/German/Spanish/Latin).
+    CJK / Cyrillic / Hebrew / Arabic characters in the output mean the model
+    glitched -- e.g. it wrote a note to itself in Chinese mid-sentence.
+    (Greek is deliberately allowed: classical treatises do quote it.)
+    """
+    return bool(re.search(
+        r"[Ѐ-ӿ֐-׿؀-ۿ　-ヿ㐀-鿿가-힯]",
+        text))
+
+
+# The numbered lines / parries. At temperature 0 the model can copy another
+# line name from the same page in place of the right one -- "la riposte
+# droite après quarte" -> "after tierce", three times on one page (Kirchhoffer
+# scan 52), sixte -> septime eight times (Joseph-Renaud scans 49, 178), each
+# time a name that also appears on the page; the 0.3 translations had it too
+# (Joseph-Renaud scans 81, 140, 243; Gomard 190, 265; Prévost 96). A wrong
+# line is a wrong action, so such a try is rejected like a too-short one.
+_LINE_NAMES_FR = ("prime", "seconde", "tierce", "quarte", "quinte", "sixte", "septime", "octave")
+_LINE_NAMES_IT = ("prima", "seconda", "terza", "quarta", "quinta", "sesta", "settima", "ottava")
+# the English ordinal a source word may rightly become ("la seconde fois" ->
+# "the second time", "prima" -> "before"): counted with the line name, so it
+# isn't taken for a line that went missing
+_LINE_ORDINALS = {"prime": "first", "seconde": "second", "tierce": "third", "quarte": "fourth",
+                  "quinte": "fifth", "sixte": "sixth", "septime": "seventh", "octave": "eighth",
+                  "prima": "first|before|earlier", "seconda": "second|according", "terza": "third",
+                  "quarta": "fourth", "quinta": "fifth", "sesta": "sixth", "settima": "seventh",
+                  "ottava": "eighth"}
+# source spellings of the same lines: old French "quart" / "carte" / OCR
+# "quarté", "septième" (Gomard scans 82, 87; Danet 300); Italian "3.a" for
+# terza, and "diterza" with the space lost (Enrichetti 81, Masiello 381)
+_LINE_SPELLINGS_FR = [(r"(?<!\w)(?:quart|quarté|carte)(s?)(?!\w)", r"quarte\1"),
+                      (r"(?<!\w)septième(s?)(?!\w)", r"septime\1")]
+_LINE_SPELLINGS_IT = [(rf"(?<![\w.]){n}\s?(?:\.?\s?[aª])(?!\w)", w)
+                      for n, w in zip(range(1, 9), _LINE_NAMES_IT)] + [
+                     (r"(?<!\w)di(?=(?:prima|seconda|terza|quarta|quinta|sesta|settima|ottava)(?!\w))", "di ")]
+
+
+def _line_name_counts(text: str, source: bool = False, ordinals: bool = False) -> dict:
+    italian = BOOK_LANG == "Italian"
+    names = _LINE_NAMES_IT if italian else _LINE_NAMES_FR
+    text = re.sub(r"</?i>", "", text).lower()
+    if source:
+        for pat, rep in (_LINE_SPELLINGS_IT if italian else _LINE_SPELLINGS_FR):
+            text = re.sub(pat, rep, text)
+    out = {}
+    for w in names:
+        alt = f"{w}|{_LINE_ORDINALS[w]}" if ordinals else w
+        out[w] = len(re.findall(rf"(?<!\w)(?:{alt})s?(?!\w)", text))
+    return out
+
+
+def line_names_swapped(text: str, src: str) -> str:
+    """'' if the English names the same lines as the source; otherwise what
+    went wrong: a line the source never names (twice or more, so one stray
+    word can't trip it), or a line the source names that is gone -- not even
+    as an English ordinal -- while another line's count went up: the swap.
+    "prime" / "prima" never count as extra ("prime importance")."""
+    s = _line_name_counts(src, source=True)
+    t = _line_name_counts(text)
+    extra = [w for w in t if t[w] >= 2 and s[w] == 0 and w not in ("prime", "prima")]
+    if extra:
+        return "names " + ", ".join(extra) + " (not in the source)"
+    t_ord = _line_name_counts(text, ordinals=True)
+    gone = [w for w in s if s[w] >= 1 and t_ord[w] == 0]
+    grew = [w for w in t if t[w] > s[w]]
+    if gone and grew:
+        return f"{', '.join(gone)} -> {', '.join(grew)}"
+    return ""
+
+
+def contains_too_much_non_english(text: str) -> bool:
+    # Technical terms the prompt instructs the model to KEEP in the source
+    # language are wrapped in <i>...</i> -- those are correct output, not a
+    # translation failure, so drop them before measuring.
+    text = re.sub(r"<i>.*?</i>", " ", text, flags=re.DOTALL | re.IGNORECASE)
+    words_cased = re.findall(r"\b\w+\b", text)
+    if not words_cased:
+        return True
+    words = [w.lower() for w in words_cased]
+    # A French article/preposition sitting directly in front of a
+    # Capitalized word is very likely a correctly-untranslated proper name
+    # ("Cte J. de Reverseaux", "Parc des Princes"), not failed prose --
+    # a page that's mostly a list of duel participants' names legitimately
+    # stays almost entirely unchanged and shouldn't count against it
+    # (Kirchhoffer src 38: "DUEL ANDRÉ GAUCHER... TOURNOI DE MONTE-CARLO").
+    non_english_count = sum(
+        1 for i, w in enumerate(words)
+        if w in NON_ENGLISH_INDICATORS
+        and not (i + 1 < len(words_cased) and words_cased[i + 1][:1].isupper()))
+    if non_english_count / len(words) > 0.35:
+        return True
+    # Backstop for a page that stayed mostly French but is short on the
+    # stop words above: elision (consonant + apostrophe + vowel, "d'une" /
+    # "qu'il" -- English contractions put a consonant after the apostrophe)
+    # and endings that need French-specific letters. An elision straight
+    # into a Capitalized letter ("d'Hurcourt") is the same proper-name
+    # case as above, not genuine untranslated prose.
+    fr = sum(1 for m in re.finditer(
+                r"\b[cdjlmnqst]['’]([aeiouyhàâäéèêëïîôùûü])", text, re.I)
+             if not m.group(1).isupper()) \
+        + len(re.findall(r"\w(?:ité|eaux|aient|âtre|euse|eux|oué)\b", text, re.I))
+    return fr / len(words) > 0.045
+
+
+# An optional leading politeness token the model likes to prepend to both
+# preambles and refusals ("Certainly. Here is...", "Sure, please provide...").
+_LEAD_POLITE = r"(?:(?:sure|certainly|of course|okay|ok|yes|alright|understood)[,.!]?\s+)?"
+
+# Prose preambles the model emits despite the prompt's "output ONLY the
+# translation" rule. Matched only at the very start of the output, one per
+# line, case-insensitively. The Markdown sanitizers already handle '#'/'**'.
+#
+# Every alternative must reference the ACT of translating or be a known
+# fixed filler phrase -- loose patterns like "any line ending in a colon"
+# strip real page-initial sentences ("In this case, the appreciation of
+# the thrust ... Example:" is genuine fencing prose).
+_PREAMBLE_RE = re.compile(
+    r"^\s*" + _LEAD_POLITE + r"(?:"
+    r"here(?:'s| is)\b[^\n]*\b(?:translat\w+|rendering|english version)\b[^\n]*|"
+    r"[^\n]*\bhere(?:'s| is) the translation\b[^\n]*|"      # "... Here is the translation:"
+    r"below is\b[^\n]*\btranslat\w+[^\n]*|"
+    r"the (?:following is|translation (?:is|follows))\b[^\n]*|"
+    r"i(?:'ll| will| can)\b[^\n]*\btranslat\w+[^\n]*|"
+    r"(?:sure|certainly|of course|okay|ok)[,.!]?|"          # bare filler token
+    r"note:\s*[^\n]*|"
+    r"following the (?:critical )?rules[^\n]*:|"
+    r"this (?:one )?may take a step back[^\n]*"
+    r")\s*$",
+    re.IGNORECASE)
+
+# Whole-output shapes that mean "the model had nothing to translate" or
+# refused -- never a usable page, not even as a low-confidence fallback.
+_REFUSAL_RE = re.compile(
+    r"^\s*" + _LEAD_POLITE + r"(?:"
+    r"please provide (?:the|some) (?:source )?(?:text|content)\b|"
+    # "I am ready to translate the text. Please provide the source text"
+    # (Rossi gold run, 2026-10-07: a page with nothing to translate)
+    r"i(?: am|'m) ready to translate\b|"
+    r"(?:the\s+)?(?:text|content)\s+(?:you\s+)?provided\s+(?:does\s+not|doesn't|is\s+not)\b|"
+    r"there (?:is|was) no (?:text|content)\b|"
+    r"it (?:seems|appears) (?:that )?(?:there is|no) \b|"
+    r"this text does not appear to (?:be|contain)\b|"
+    r"no (?:text|content) (?:was )?provided\b"
+    r")",
+    re.IGNORECASE)
+
+
+_ENGLISH_FUNCTION_WORDS = {"the", "of", "and", "to", "is", "an", "that", "with",   # not "a", "in", "on": French / Italian too
+                           "it", "for", "by", "his", "be", "not", "as", "which", "on", "or",
+                           "he", "one", "without", "from", "at", "are", "was", "this"}
+
+
+# function words, for telling which language a paragraph is in (the review
+# report's lists, quality_report.py, plus Latin)
+_PARA_EN = set("the and of to is are in that with for on it by as be this from his their which "
+               "was were one an at or not but have has its".split())
+_PARA_LANG = {
+    "French": set("le la les des du de et est sont qui que dans pour avec une un sur pas ne se il "
+                  "elle au aux ce cette son sa ses leur leurs nous vous on en par plus".split()),
+    "Italian": set("il lo la i gli le di da del della dei delle degli che non è sono per con una "
+                   "un uno nel nella nei si ma come più anche questo questa quello essere al alla".split()),
+    "Latin": set("et est sunt qui quae quod non ad cum ex ab sive nam enim ut aut vel sed atque neque "
+                 "quam ubi esse eius ipse ipsis idest omnis".split()),
+}
+
+
+def untranslated_paragraph(text: str):
+    """(paragraph start, language) of a paragraph of eight words or more
+    still in French / Italian / Latin, or None. Kept terms (<i>), notes,
+    margin notes and a bibliography's [original titles] don't count. The
+    review report flagged such paragraphs after the fact: Latin footnotes
+    (Marchionni pdf 34-35, Danet pdf 338), French quoted in Italian books
+    (Florio pdf 55, Masiello 1887 pdf 129), verse left as printed (Blengini
+    pdf 82, Florio pdf 38)."""
+    body = text.split(FN_HEADER)[0]
+    for para in re.split(r"\n\s*\n", body):
+        bare = re.sub(r"<i>.*?</i>|<fn>.*?</fn>|⟦[^⟧]*⟧|\[[^\]\n]*\]", " ", para, flags=re.S)
+        w = [x.lower() for x in re.findall(r"[^\W\d_]+", bare)]
+        if len(w) < 8:
+            continue
+        en = sum(x in _PARA_EN for x in w)
+        lang, n = max(((l, sum(x in ws for x in w)) for l, ws in _PARA_LANG.items()), key=lambda t: t[1])
+        if n >= 5 and n > 2 * en:
+            return " ".join(para.split()[:6]), lang
+    return None
+
+
+# the author's own footnotes: "(1) …", "(*) …" -- a marker, then the note
+
+# Negations: a page whose source has clearly more negations than its English
+# -- a "not" lost turns the meaning round (Kirchhoffer pdf 87 «nous ne
+# cesserons» -> "we shall cease"), or a passage was left out. French counts
+# only a real negation (ne ... pas / jamais / plus / rien ...; not the
+# expletive ne, not ne ... que "only"); Italian "non". Whole pages, notes
+# included on both sides.
+_NEG_FR = re.compile(r"\b(?:ne|n['’])\s*(?:\S+\s+){0,4}?(?:pas|point|jamais|plus|rien|guère|personne|"
+                     r"aucun|aucune|nullement)\b"
+                     # literary: no "pas" after cesser, oser, pouvoir, savoir ("nous ne cesserons")
+                     r"|\bne\s+(?:l[ae]s?\s+|[mts]e\s+)?(?:cess|os[ae]|osi|pu[ie]?s|peu[xt]|pourr|sau|sai[ts]?\b|sav)\w*(?!\s+(?:\S+\s+){0,3}?(?:pas|point|jamais|plus|rien|guère)\b)"
+                     r"(?![^.;:!?]{0,60}\bqu)",          # ne peut ... que = "can only" (Gomard scan 27)
+                     re.I)
+# Italian: not "non ... che" ("only", like ne ... que) nor "se non" ("except")
+_NEG_IT = re.compile(r"(?<![Ss]e )\bnon\b(?!\s+(?:\S+\s+){0,4}?che\b)", re.I)
+_NEG_EN = re.compile(r"\b(?:not|never|no|nor|none|nothing|nobody|neither|cannot|without|nowhere|"
+                     r"hardly|scarcely|seldom|rarely)\b|n't\b", re.I)
+
+
+def lost_negations(src: str, en: str, italian: bool) -> int:
+    """How many more negations the source page has than its English, notes
+    included on both sides: a page that opens with the end of the previous
+    page's footnote has that text in the English notes block (Marchionni
+    scan 107, Danet scan 69), so body against body would count it as lost."""
+    src = re.sub(r"<table\b.*?(?:</table\s*>|\Z)", " ", src or "", flags=re.S | re.I)
+    if len((en or "").split()) < 40:
+        return 0
+    return len((_NEG_IT if italian else _NEG_FR).findall(src)) - len(_NEG_EN.findall(en or ""))
+
+
+_NOTE_MARK = r"\((?:\d{1,2}|\*{1,3})\)"
+
+
+def note_bodies(text: str) -> int:
+    """How many of the author's footnotes a page holds: a marker at the start
+    of a line, then the note's first word (a call in the running text,
+    "(1), ma siccome …", is not a note). In a finished page the notes are
+    gathered in the footnote block, where they can follow one another on a
+    line: there any marker followed by a word counts."""
+    body, _, block = (text or "").partition(FN_HEADER)
+    word = r"[ \t.]*(?:<i>|[«“\"])?[^\W\d_]"
+    return (len(re.findall(r"(?m)^[ \t]*" + _NOTE_MARK + word, body))
+            + len(re.findall(_NOTE_MARK + word, block)))
+
+
+def quotation_left_untranslated(text: str) -> bool:
+    """A "<fn>French in the original</fn>" (or Latin, …) note after a
+    quotation still in that language: the text before the note, back to
+    the opening quotation mark or the start of the line, has no English
+    function word and some foreign one (Masiello 1887 pdf 73: "Sans le
+    bouter d'estocq ou hachier.<fn>French in the original</fn>")."""
+    for m in re.finditer(r"<fn>\s*\w+ in the original\.?\s*</fn>", text, re.I):
+        seg = text[max(0, m.start() - 400):m.start()].split("\n")[-1]
+        opened = max(seg.rfind(q) for q in "«“\"")
+        if opened > 0:
+            seg = seg[opened:]
+        seg = re.sub(r"<fn>.*?</fn>|<i>.*?</i>", " ", seg)
+        words = [w.lower() for w in re.findall(r"\b\w+\b", seg)]
+        if len(words) < 3 or any(w in _ENGLISH_FUNCTION_WORDS for w in words):
+            continue
+        if any(w in NON_ENGLISH_INDICATORS for w in words) \
+                or re.search(r"\b[cdjlmnqst]['’][aeiouyh]", seg, re.I):
+            return True
+    return False
+
+
+def strip_model_preamble(text: str) -> str:
+    """Drop leading 'Here is the translation:' / 'Sure:' / 'Note: ...' lines
+    the model prepends despite the prompt. Stops at the first real line."""
+    lines = text.split("\n")
+    while lines and (not lines[0].strip() or _PREAMBLE_RE.match(lines[0])):
+        lines.pop(0)
+    return "\n".join(lines).strip()
+
+
+def looks_like_refusal(text: str) -> bool:
+    """True when the whole output is a 'give me something to translate' /
+    'this isn't fencing text' message rather than a translation."""
+    return bool(_REFUSAL_RE.match(text.strip()))
+
+
+def is_near_blank(text: str) -> bool:
+    """A page whose OCR body is just a stray mark / page number / one word --
+    not worth a model call (the model answers 'Please provide the text...').
+    Kept conservative so real terse content (a plate caption like
+    'Planche IV') still goes through."""
+    letters = re.findall(r"[^\W\d_]", text, flags=re.UNICODE)
+    return len(text.split()) < 2 or len(letters) < 8
+
+
+_TOC_LINE_RE = re.compile(r"^.{1,70}?[.·•…\s]{4,}\s*\d{1,4}\s*$")
+
+
+def is_toc_page(text: str) -> bool:
+    """A table-of-contents / index page: most lines are
+    `entry text … dot-leader … page number`. Such a page is neither prose
+    nor a clean heading list -- the model applies the term policy
+    unevenly and (worse) staples a once-per-book `<fn>` footnote onto a
+    contents line. Detected pages translate with footnotes suppressed."""
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    if len(lines) < 4:
+        return False
+    hits = sum(1 for l in lines if _TOC_LINE_RE.match(l))
+    return hits >= 0.5 * len(lines)
+
+def _llama_server_env() -> dict:
+    """A `docker exec` of this script inherits only the image-level
+    LD_LIBRARY_PATH; llama-server links its backend impl .so
+    (libllama-server-impl.so) at runtime from /usr/local/lib/llama-<suffix>/,
+    a dir set only in the entrypoint's own environment, which a `docker
+    exec` doesn't get -- so a server we spawn dies immediately with
+    "cannot open shared object file". Set it for the configured backend
+    (validated; rocm714 errors clearly if it isn't built). This path, not
+    the /usr/local/bin/llama-server link (fixed at build time, vulkan), is
+    what picks the backend: every llama-server-* loads the impl it finds
+    here (checked 2026-10-19: with the rocm dir, libggml-hip loads)."""
+    suffix = bc.local_backend_suffix()
+    env = dict(os.environ)
+    env["LD_LIBRARY_PATH"] = f"/usr/local/lib/llama-{suffix}:" + env.get("LD_LIBRARY_PATH", "")
+    return env
+
+
+def start_translation_server():
+    if bc.is_remote():
+        base = bc.translate_base_url()
+        print(f"\n[remote] using translation endpoint {base}")
+        print("[remote] make sure the TEXT model is loaded on that host.")
+        try:
+            r = requests.get(f"{base}/health", headers=bc.auth_headers(), timeout=5)
+            if r.status_code == 200:
+                print("[remote] /health OK\n")
+                return REMOTE_SERVER
+            print(f"[remote] /health returned HTTP {r.status_code}")
+        except Exception as e:
+            print(f"[remote] cannot reach {base}: {e}")
+        return None
+
+    print("\n" + "="*60)
+    print("LOADING TRANSLATION MODEL")
+    print("="*60 + "\n")
+    print(f"Model: {Path(TRANSLATION_MODEL).name}")
+    print(f"Port:  11434 | GPU layers: {TRANSLATION_GPU_LAYERS}\n")
+
+    if not os.path.exists(TRANSLATION_MODEL):
+        print(f"✗ Model not found: {TRANSLATION_MODEL}\n")
+        return None
+    
+    model_size = os.path.getsize(TRANSLATION_MODEL) / (1024**3)
+    print(f"✓ Model verified ({model_size:.2f} GB)\n")
+    
+    print("Checking for existing servers...")
+    subprocess.run(["pkill", "-f", "llama-server.*11434"], stderr=subprocess.DEVNULL)
+    time.sleep(5)
+    print("✓ Port cleared\n")
+
+    cmd = [
+        "llama-server",
+        "--model", TRANSLATION_MODEL,
+        "--host", "0.0.0.0",
+        "--port", "11434",
+        # Not 4096: PROMPT_TEMPLATE (term policy + EXAMPLES) is ~1.5k
+        # tokens and prepended to every call, so a long source page + a
+        # full-length response overran a 4096 window ("Context size has
+        # been exceeded" -> empty response -> "kept original text"). 8192,
+        # not 6144, since 2026-10-12: the French prompt grew to ~4.9k tokens
+        # and long pages were cut mid-sentence (see LAST_CUT).
+        "--ctx-size", "8192",
+        "--n-gpu-layers", TRANSLATION_GPU_LAYERS,
+        # llama.cpp now defaults to 4 slots = 4x the context memory
+        "--parallel", "1",
+        # the model's own chat template, thinking off (Qwen3.x reasons by
+        # default, which only slows translation)
+        "--jinja", "--reasoning-budget", "0",
+        "--threads", str(os.cpu_count())
+    ]
+
+    print("Starting server (~60s warm, up to ~4min on a cleared GPU shader "
+          "cache)...\n")
+
+    log_file = open("/tmp/translation_server.log", "w")
+    proc = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT,
+                            env=_llama_server_env())
+    
+    dots = 0
+    for attempt in range(120):   # 240s: cold RADV shader compile can take ~4min
+        time.sleep(2)
+        dots = (dots + 1) % 4
+        elapsed = (attempt+1)*2
+        sys.stdout.write(f"\r  Loading{'.' * dots}{' ' * (3-dots)} {elapsed}s")
+        sys.stdout.flush()
+        
+        if proc.poll() is not None:
+            print("\n\n✗ Server process died!")
+            print("Check logs: docker exec fmt-translator cat /tmp/translation_server.log\n")
+            log_file.close()
+            return None
+        
+        try:
+            resp = requests.get(f"{bc.translate_base_url()}/health", timeout=2)
+            if resp.status_code == 200:
+                print(f"\n\n✓ Translation server ready! (took {elapsed}s)")
+                print("="*60 + "\n")
+                log_file.close()
+                return proc
+        except requests.exceptions.ConnectionError:
+            pass
+        except Exception:
+            pass
+    
+    print(f"\n\n✗ Server timeout after 240s")
+    print("Check logs: docker exec fmt-translator cat /tmp/translation_server.log\n")
+    log_file.close()
+    proc.terminate()
+    return None
+
+LAST_MODEL = ""   # model file of the last reply (set by translate_with_llama)
+MODEL_CALLS = 0   # replies so far -- tells a page that used the model from one skipped as blank
+LAST_CUT = False  # the last reply stopped because it ran out of room (finish_reason "length")
+
+
+def translate_with_llama(prompt: str, temperature: float = FIRST_TRY_TEMPERATURE) -> str:
+    body = {
+        "model": TRANSLATION_MODEL_NAME,
+        "messages": [
+            {"role": "system", "content": "You are an expert translator of historical fencing texts."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.0 if EVAL_DETERMINISTIC else temperature,
+        # a translated page is never longer than its source; the >2500-word
+        # oversized guard handles the rare monster page. Leaves room in the
+        # 8192 window for prompt+source.
+        "max_tokens": 3000,
+    }
+    if EVAL_DETERMINISTIC:
+        body["seed"] = EVAL_SEED
+    attempt = 0
+    while attempt < 3:
+        try:
+            response = requests.post(
+                LLAMA_API_URL,
+                headers={"Content-Type": "application/json", **bc.auth_headers()},
+                json=body,
+                timeout=1800
+            )
+            if response.status_code in _SERVER_DOWN_STATUS and wait_for_remote_server():
+                continue                    # the server came back: same request again
+            if response.status_code == 200:
+                result = response.json()
+                if "choices" in result and len(result["choices"]) > 0:
+                    # the model file the server actually ran (llama-server
+                    # reports its path) -- what the cover page credits
+                    global LAST_MODEL, MODEL_CALLS, LAST_CUT
+                    MODEL_CALLS += 1
+                    # out of room: the context window (prompt + source + reply)
+                    # filled and the reply stops mid-sentence. 2026-10-12: the
+                    # French prompt reached 4,891 tokens of a 6,144 window and
+                    # long pages were cut at ~330 words (Kirchhoffer scans 26,
+                    # 35, 52, 70), only one caught by the too-short check.
+                    LAST_CUT = result["choices"][0].get("finish_reason") == "length"
+                    m = str(result.get("model") or "")
+                    LAST_MODEL = re.sub(r"\.gguf$", "", re.split(r"[\\/]", m)[-1]) or LAST_MODEL
+                    # A reasoning model (Qwen3.x, Gemma 4) run with thinking
+                    # left on puts its reasoning in a separate field (ignored
+                    # here) or inline as <think>...</think> -- never let that
+                    # reach a translation.
+                    text = result["choices"][0]["message"].get("content") or ""
+                    text = re.sub(r"(?is)<think>.*?</think>", "", text)
+                    text = re.sub(r"(?is)^.*?</think>", "", text)   # opening tag cut off
+                    return text.strip()
+            
+            if attempt < 2:
+                time.sleep(5)
+        except (requests.ConnectionError, requests.exceptions.ConnectTimeout):
+            if wait_for_remote_server():
+                continue                    # the server came back: same request again
+            if attempt < 2:
+                time.sleep(10)
+        except Exception:
+            if attempt < 2:
+                time.sleep(10)
+        attempt += 1
+
+    return None
+
+
+# The remote GPU system unreachable (power cut, reboot, llama-swap restart)
+# is not a translation failure: wait for it and send the same request again,
+# instead of using up the page's attempts and keeping the original text --
+# which on 2026-10-02 marked 33 pages of a book "[translation unavailable]"
+# in a few minutes. Local mode doesn't wait: the pipeline owns that server,
+# and it won't come back by itself.
+_SERVER_DOWN_STATUS = (502, 503, 504)
+SERVER_WAIT_HOURS = float(os.environ.get("SERVER_WAIT_HOURS", "24"))
+
+
+def wait_for_remote_server(poll: int = 60) -> bool:
+    """Remote mode, server down: block until it answers /health again (True),
+    or give up after SERVER_WAIT_HOURS (False). Server up -- the error was
+    something else -- or local mode: False at once, so the caller counts it
+    as a failed attempt (no endless retry against a server that answers)."""
+    if not bc.is_remote():
+        return False
+    base = bc.translate_base_url()
+    def up():
+        try:
+            return requests.get(f"{base}/health", headers=bc.auth_headers(),
+                                timeout=10).status_code == 200
+        except requests.RequestException:
+            return False
+    if up():
+        return False
+    print(f"\n  [{time.strftime('%H:%M')}] GPU server not answering -- waiting "
+          f"(up to {SERVER_WAIT_HOURS:g} h)", flush=True)
+    t0 = time.time()
+    _progress.waiting(True)
+    deadline = t0 + SERVER_WAIT_HOURS * 3600
+    while time.time() < deadline:
+        time.sleep(poll)
+        if up():
+            print(f"  [{time.strftime('%H:%M')}] GPU server back -- continuing", flush=True)
+            _progress.waiting(False, since=t0)
+            return True
+    return False
+
+
+def translate_figure_captions(folder: str, force: bool = False) -> int:
+    """Translate the source captions in figures.json (written by step 1) in
+    place, adding a 'caption_en' to each. Uses the full translation prompt
+    -- plate captions are headings ("PARADE DE SIXTE" etc.) and need the
+    same term policy as body text. Skips captions already done unless
+    `force`. Returns the number translated."""
+    import json as _json
+    fig_path = f"{folder}/intermediate/figures.json"
+    if not os.path.exists(fig_path):
+        return 0
+    with open(fig_path, encoding="utf-8") as fh:
+        fig_map = _json.load(fh)
+    # the reviewer's caption decisions first, so a corrected caption is
+    # translated in this same pass
+    _overrides.apply_captions(fig_map, _overrides.load(Path(folder).name.replace("_translated", "")))
+    n = 0
+    for figs in fig_map.values():
+        for fig in figs:
+            raw = (fig.get("caption") or "").strip()
+            cap = raw if fig.get("decided") else _clean_caption(raw)
+            if cap != (fig.get("caption") or "").strip():
+                fig["caption"] = cap            # persist the cleaned source caption
+            if not cap:
+                fig.pop("caption_en", None)
+                continue
+            if fig.get("caption_en") and not force:
+                continue
+            # Like translate_headers(), a caption is translated in total
+            # isolation with no other quality gate -- a one-off garbled
+            # word ("THRUST" -> "THUST", a duplicated gloss like "GATHERING
+            # THE FEET" OF THE FEET") is unlikely to repeat identically
+            # across independent samples, so collect all 3 and majority-
+            # vote instead of stopping at the first that merely passes the
+            # non-English check.
+            candidates = []
+            fallback = ""
+            for attempt in range(3):
+                en = translate_with_llama(
+                    f"{PROMPT_TEMPLATE}\n\nText to translate:\n{cap}",
+                    temperature=0.3 + 0.25 * attempt)
+                en = strip_model_preamble((en or "").strip()).strip()
+                en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
+                if not en:
+                    continue
+                # a caption is one line -- join a multi-line rendering
+                cand = " ".join(l.strip() for l in en.splitlines() if l.strip())
+                # reject a caption the model just echoed back in French
+                if contains_too_much_non_english(cand):
+                    fallback = fallback or cand
+                    continue
+                cand = _clean_caption(cand)
+                cand = enforce_kept_terms(apply_always_translate(cand), cap)
+                cand = fix_parry_names(cand, cap)
+                # captions don't render a footnote block: translate the
+                # footnoted terms but drop any <fn> marker (backstop's and
+                # a stray one from the model).
+                cand = re.sub(r"<fn>.*?</fn>|</?fn>", "", cand,
+                              flags=re.DOTALL | re.IGNORECASE)
+                cand = enforce_footnoted_terms(cand, set(), footnote=False)
+                if cand:
+                    candidates.append(cand)
+            if candidates:
+                counts = Counter(c.lower() for c in candidates)
+                best_norm, _ = counts.most_common(1)[0]
+                one = next(c for c in candidates if c.lower() == best_norm)
+                fig["caption_en"] = caps_kept_terms(source_case_kept_terms(match_case(cap, one) or cap, cap), cap)
+            elif fallback:
+                fig["caption_en"] = caps_kept_terms(source_case_kept_terms(match_case(cap, fallback) or cap, cap), cap)
+            else:
+                fig["caption_en"] = cap
+            n += 1
+    with open(fig_path, "w", encoding="utf-8") as fh:
+        _json.dump(fig_map, fh, ensure_ascii=False, indent=1)
+    if n:
+        print(f"  translated {n} figure caption(s)")
+    return n
+
+
+def _cell_text(cell_html: str) -> str:
+    import html as _html
+    return _html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", cell_html))).strip()
+
+
+def number_cells_or_and(table_html: str) -> str:
+    """A table cell of numbers joined by Italian "o" / "e" (Bruno: "3. o 1.
+    e 2.") has no word for the model, so it is never sent; its or / and are
+    put in English here (2026-10-18)."""
+    return re.sub(r"(<t[hd]\b[^>]*>)([\d.,\s]*\d[\d.,\s]*(?:\s[oe]\s[\d.,\s]+)+)(</t[hd]>)",
+                  lambda m: m.group(1) + re.sub(r"\s([oe])\s", lambda w: " or " if w.group(1) == "o"
+                                                else " and ", m.group(2)) + m.group(3), table_html)
+
+
+def translate_tables(folder: str, force: bool = False) -> int:
+    """Translate the tables of the book (reviewer, 2026-10-18: the side-by-side
+    showed only "[table — see facing page]"; Masiello 1887 has 135 table
+    pages). The OCR gives each table as HTML; each distinct cell text is
+    translated once, as a numbered list with the book's full prompt, then
+    given the caption treatment (footnote markers dropped -- a cell has no
+    room for a note and the term is footnoted in the running text -- kept
+    terms, the book's case). Written to intermediate/tables.json as
+    {scan index: {"src": [table html], "en": [english html or null]}}; a
+    page whose tables are unchanged is skipped unless `force`. A table the
+    OCR read as headings only (no body cell has text, at most 3 rows --
+    Kirchhoffer's bout order) is stored as null: the PDFs keep the pointer
+    to the scan. Returns the number of pages translated."""
+    import json as _json
+    ex_path, path = f"{folder}/intermediate/extracted.txt", f"{folder}/intermediate/tables.json"
+    if not os.path.exists(ex_path):
+        return 0
+    pages = _pageio.split_pages(open(ex_path, encoding="utf-8").read())
+    done = _json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
+    n = 0
+    for i, page in enumerate(pages):
+        src = clean_vlm_extraction(page)
+        tables = re.findall(r"<table\b.*?</table\s*>", src, re.S | re.I)
+        tail = re.search(r"<table\b(?:(?!</table).)*\Z", src, re.S | re.I)   # a grid the page cut off
+        if tail:
+            tables.append(tail.group(0) + "</table>")
+        if not tables:
+            done.pop(str(i), None)
+            continue
+        if not force and done.get(str(i), {}).get("src") == tables:
+            continue
+        en = []
+        for tb in tables:
+            cells = re.findall(r"<t([hd])\b[^>]*>(.*?)</t[hd]>", tb, re.S | re.I)
+            if BOOK_LANG == "Italian":
+                tb = number_cells_or_and(tb)
+            body = [_cell_text(c) for kind, c in cells if kind.lower() == "d"]
+            rows = len(re.findall(r"<tr\b", tb, re.I))
+            if not any(re.search(r"\w", b) for b in body) and rows <= 3:
+                en.append(None)
+                continue
+            texts = list(dict.fromkeys(t for t in (_cell_text(c) for _, c in cells)
+                                       if re.search(r"[^\W\d_]{2,}", t)))
+            tr = {}
+            for k in range(0, len(texts), 60):
+                chunk = texts[k:k + 60]
+                listing = "\n".join(f"{j}. {t}" for j, t in enumerate(chunk, 1))
+                reply = translate_with_llama(
+                    f"{PROMPT_TEMPLATE}\n\nThe text below is the cells of a TABLE, one per numbered line. "
+                    f"Translate each line on its own, keeping its number; answer with exactly {len(chunk)} "
+                    f"numbered lines and nothing else.\n\nText to translate:\n{listing}")
+                got = dict(re.findall(r"(?m)^\s*(\d+)\.\s*(.*\S)", strip_model_preamble(reply or "")))
+                for j, t in enumerate(chunk, 1):
+                    cell = got.get(str(j), "")
+                    cell = re.sub(r"<fn>.*?</fn>|</?fn>", "", cell, flags=re.S | re.I)
+                    if not cell or contains_too_much_non_english(cell) and len(cell.split()) > 3:
+                        tr[t] = t                   # kept as printed: better than a wrong guess
+                        continue
+                    cell = enforce_kept_terms(apply_always_translate(cell), t)
+                    cell = fix_parry_names(cell, t)
+                    cell = enforce_footnoted_terms(cell, set(), footnote=False)
+                    tr[t] = caps_kept_terms(source_caps_lines(source_case_kept_terms(cell, t), t), t)
+
+            def _sub(m, tr=tr):
+                raw = _cell_text(m.group(3))
+                return f"<{m.group(1)}{m.group(2)}>{tr.get(raw, raw)}</{m.group(1)}>"
+            en.append(re.sub(r"\s+", " ", re.sub(r"<(t[hd])\b([^>]*)>(.*?)</t[hd]>", _sub, tb,
+                                                 flags=re.S | re.I)))
+        done[str(i)] = {"src": tables, "en": en}
+        n += 1
+        with open(path, "w", encoding="utf-8") as fh:
+            _json.dump(done, fh, ensure_ascii=False, indent=1)
+    if n:
+        print(f"  translated the tables of {n} page(s)")
+    return n
+
+
+def translate_headers(folder: str, force: bool = False) -> int:
+    """Translate each distinct running header from extracted.txt into a
+    headers.json { raw -> english } map, used by the PDF steps. Headers
+    are section/chapter titles ("LES PARADES", "SOCIÉTÉS") -- an English
+    reader needs to know what section they're in. Translated once per
+    distinct string, through the full prompt (rule 4: headings)."""
+    import json as _json
+    ex_path = f"{folder}/intermediate/extracted.txt"
+    if not os.path.exists(ex_path):
+        return 0
+    hp = f"{folder}/intermediate/headers.json"
+    hmap = {}
+    if os.path.exists(hp) and not force:
+        with open(hp, encoding="utf-8") as fh:
+            hmap = _json.load(fh)
+    raw = set()
+    for pg in _pageio.split_pages(open(ex_path, encoding="utf-8").read()):
+        m = re.search(r'(?im)^[ \t]*HEADER[ \t]*:[ \t]*(.+?)[ \t]*$', pg)
+        if m:
+            h = m.group(1).strip()
+            if h and h.lower() not in ("none", "n/a", "-"):
+                raw.add(h)
+    def _one(h):
+        # A header/caption gets translated in complete isolation -- no
+        # surrounding page for context -- and, unlike body text, a SINGLE
+        # model call with no quality check at all. A small quantized model
+        # occasionally garbles a short isolated phrase (ROMPRE -> ROMPRER,
+        # "PARADES ET RIPOSTES" -> "PARRIES AND RAPISES") -- a one-off
+        # sampling fluke that's very unlikely to repeat identically across
+        # independent temperature-varied samples. Take 3 and majority-vote
+        # instead of trusting the first.
+        candidates = []
+        for attempt in range(3):
+            en = translate_with_llama(f"{PROMPT_TEMPLATE}\n\nText to translate:\n{h}",
+                                       temperature=0.2 + 0.3 * attempt)
+            en = strip_model_preamble((en or "").strip()).strip()
+            en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
+            en = re.sub(r'</?i>', '', en)          # a header is plain text (rule 4)
+            en = enforce_kept_terms(apply_always_translate(en), h)   # snap "RAPIER RAPIER" -> riposte
+            en = enforce_footnoted_terms(en, set(), footnote=False)
+            en = re.sub(r'</?i>', '', en)          # drop the <i> enforce_kept_terms added
+            en = re.sub(r'\s*<fn>.*?</fn>|</?fn>|†\d*', '', en)   # a running head carries no note (Spinnewyn "BIND<fn>…")
+            en = en.splitlines()[0].strip() if en else ""
+            en = re.sub(r'\s*:\s*$', '', en)       # "CONTRES:" -> "CONTRES" (P8)
+            if en:
+                candidates.append(en)
+        if not candidates:
+            return h
+        counts = Counter(c.lower() for c in candidates)
+        best_norm, _ = counts.most_common(1)[0]
+        best = next(c for c in candidates if c.lower() == best_norm)
+        return match_case(h, best)
+
+    n = 0
+    for h in sorted(raw):
+        if h in hmap and not force:
+            continue
+        # "left\tright" == a two-part running head (F13); translate the
+        # halves separately so the model doesn't collapse the gap.
+        if "\t" in h:
+            l, r = h.split("\t", 1)
+            hmap[h] = _one(l) + "\t" + _one(r)
+        else:
+            hmap[h] = _one(h)
+        n += 1
+    with open(hp, "w", encoding="utf-8") as fh:
+        _json.dump(hmap, fh, ensure_ascii=False, indent=1)
+    if n:
+        print(f"  translated {n} running header(s)")
+    return n
+
+
+
+def _norm_title(s: str) -> str:
+    return re.sub(r"\s+", " ", _strip_accents(s).lower()).strip(" .-:")
+
+
+def _is_title_line(line: str, src_title: str) -> bool:
+    """Is a translation's first line the rendering of the source's title
+    (vs. the first prose sentence, when the title never got translated)?"""
+    t = re.sub(r"</?i>", "", line).strip()
+    return bool(t) and len(t) < 120 \
+        and len(t.split()) <= 2 * len(src_title.split()) + 4 \
+        and not re.search(r"[.!?;:]\s+\S", t)
+
+
+def harmonize_titles_with_headers(folder: str) -> int:
+    """When a page prints the same text as its running head AND as a body
+    title (Gomard/Prévost chapter openers), make the body title read
+    exactly like the header's translation. The two were translated
+    independently and diverge ("OF THE COUNTER-RIPOSTE" in the bar, "ON
+    THE COUNTER-RIPOSTE" in the body -- Prévost src 21 and others). If
+    the translation has no title line at all (the body title was restored
+    to extracted.txt after the page was translated), insert it. No model
+    call. Returns the number of pages changed."""
+    import json as _json
+    I = f"{folder}/intermediate"
+    ex_p, tr_p, hp = f"{I}/extracted.txt", f"{I}/translation.txt", f"{I}/headers.json"
+    if not all(os.path.exists(x) for x in (ex_p, tr_p, hp)):
+        return 0
+    ex = _pageio.split_pages(open(ex_p, encoding="utf-8").read())
+    tr = _pageio.split_pages(open(tr_p, encoding="utf-8").read())
+    hmap = _json.load(open(hp, encoding="utf-8"))
+    n = 0
+    for i in range(min(len(ex), len(tr))):
+        m = re.search(r"(?im)^[ \t]*HEADER[ \t]*:[ \t]*(.+?)[ \t]*$", ex[i])
+        h = m.group(1).strip() if m else ""
+        if not h or "\t" in h or h.lower() == "none" or not hmap.get(h):
+            continue
+        body = clean_vlm_extraction(ex[i])
+        src_title = next((l.strip() for l in body.split("\n")
+                          if l.strip() and not l.strip().startswith("⟦MARGIN:")), "")
+        if _norm_title(src_title) != _norm_title(h):
+            continue
+        t = tr[i]
+        if t.strip().startswith("[") or not t.strip():     # empty / flagged page
+            continue
+        en = enforce_kept_terms(hmap[h], h)
+        lines = t.split("\n")
+        k = next((j for j, l in enumerate(lines)
+                  if l.strip() and not l.strip().startswith("⟦MARGIN:")), None)
+        if k is None:
+            continue
+        if lines[k].strip() == en:
+            continue
+        if _is_title_line(lines[k], src_title):
+            lines[k] = en
+        else:
+            lines[k:k] = [en, ""]
+        tr[i] = "\n".join(lines)
+        n += 1
+    if n:
+        with open(tr_p, "w", encoding="utf-8") as fh:
+            fh.write(_pageio.join_pages(tr))
+        print(f"  harmonized {n} body title(s) with their running head")
+    return n
+
+
+def _house_fixes(ov: dict, french: bool) -> dict:
+    """ov with each [[fix]]'s text under the italics rules, so a fix written
+    before a rule changed still finds the text and leaves it rule-true."""
+    out = []
+    for f in ov["fix"]:
+        g = {k: (house_italics(v, french) if k in ("find", "replace", "prepend") else v)
+             for k, v in f.items()}
+        out.append(f if "find" in g and g["find"] in g["replace"] else g)
+    return dict(ov, fix=out)
+
+
+def apply_book_overrides(folder: str, fixes: bool = True) -> None:
+    """Re-apply the reviewer's decisions (books/<stem>.overrides.toml) to
+    headers.json and translation.txt. Runs after every translation pass,
+    so regenerating either file can never lose a decision. Called twice:
+    fixes=False (headers only) BEFORE harmonize_titles_with_headers, so body
+    titles are matched to the reviewer's header wording, not the model's
+    (Prévost scan 47: body "BREAK GROUND." under the decided "BREAKING
+    GROUND."); then in full after it."""
+    import json as _json
+    stem = Path(folder).name.replace("_translated", "")
+    ov = _overrides.load(stem)
+    I = f"{folder}/intermediate"
+    hp, tp = f"{I}/headers.json", f"{I}/translation.txt"
+    if ov["headers"] and os.path.exists(hp):
+        hmap = _json.load(open(hp, encoding="utf-8"))
+        if _overrides.apply_headers(hmap, ov):
+            with open(hp, "w", encoding="utf-8") as fh:
+                _json.dump(hmap, fh, ensure_ascii=False, indent=1)
+    french = book_language(stem) != "Italian"
+    if fixes and os.path.exists(tp):
+        # the italics rules first, so text written before a rule changed
+        # matches the [[fix]] finds, which follow the rules (and again after)
+        t = open(tp, encoding="utf-8").read()
+        if house_italics(t, french) != t:
+            with open(tp, "w", encoding="utf-8") as fh:
+                fh.write(house_italics(t, french))
+    if fixes and ov["fix"] and os.path.exists(tp):
+        tr = _pageio.split_pages(open(tp, encoding="utf-8").read())
+        applied, missing = _overrides.apply_fixes(tr, _house_fixes(ov, french))
+        tr2 = [house_italics(pg, french) for pg in tr]
+        if applied or tr2 != tr:
+            tr = tr2
+            with open(tp, "w", encoding="utf-8") as fh:
+                fh.write(_pageio.join_pages(tr))
+        missing = [m for m in missing if m not in _overrides.load_edits(stem)]   # page edited by hand
+        if missing:
+            print(f"  ⚠ overrides: [[fix]] text not found on scan page(s) {missing} "
+                  f"-- obsolete after a retranslation? Review {_overrides.path_for(stem)}")
+    # hand edits of whole pages (books/<stem>.edits/) win over everything above
+    edits = _overrides.load_edits(stem)
+    if fixes and edits and os.path.exists(tp):
+        tr = _pageio.split_pages(open(tp, encoding="utf-8").read())
+        if _overrides.apply_edits(tr, edits):
+            with open(tp, "w", encoding="utf-8") as fh:
+                fh.write(_pageio.join_pages(tr))
+    tbp = f"{I}/tables.json"
+    if fixes and ov["table_fix"] and os.path.exists(tbp):
+        tmap = _json.load(open(tbp, encoding="utf-8"))
+        applied, missing = _overrides.apply_table_fixes(tmap, ov)
+        if applied:
+            with open(tbp, "w", encoding="utf-8") as fh:
+                _json.dump(tmap, fh, ensure_ascii=False, indent=1)
+        if missing:
+            print(f"  ⚠ overrides: [[table_fix]] text not found on scan page(s) {missing} "
+                  f"-- obsolete after a retranslation? Review {_overrides.path_for(stem)}")
+    gp = f"{I}/figures.json"
+    if fixes and os.path.exists(gp):
+        fmap = _json.load(open(gp, encoding="utf-8"))
+        changed, need = _overrides.apply_captions(fmap, ov)
+        for figs in fmap.values():
+            for fg in figs:
+                if fg.get("caption_en"):
+                    fixed = match_dash_caps(fg.get("caption", ""), fg["caption_en"])
+                    fixed = house_italics(fixed, french)
+                    if fixed != fg["caption_en"]:
+                        fg["caption_en"] = fixed
+                        changed += 1
+        if changed:
+            with open(gp, "w", encoding="utf-8") as fh:
+                _json.dump(fmap, fh, ensure_ascii=False, indent=1)
+        if need:
+            print(f"  ⚠ overrides: caption(s) on scan page(s) {need} have no English yet -- "
+                  f"run 2_translate.py --pages {stem} {','.join(map(str, need))}")
+    if fixes and (ov["headers"] or ov["fix"]):
+        print(f"  overrides applied: {len(ov['headers'])} header(s), {len(ov['fix'])} fix(es)")
+
+# Per-page staleness. translated_from.json holds, for each page, a
+# fingerprint of the source text its translation was made from -- body
+# text only (headers and page numbers are translated separately). A run on
+# an already-translated book retranslates just the pages whose fingerprint
+# no longer matches, instead of the old "extracted.txt is newer than
+# translation.txt -> redo the whole book" rule, which cost a full GPU run
+# after any reprocess and needed a manual `touch` to avoid.
+def page_fingerprint(page_text: str) -> str:
+    import hashlib
+    body = re.sub(r"\s+", " ", clean_vlm_extraction(page_text) if page_text.strip() else "").strip()
+    return hashlib.sha1(body.encode("utf-8")).hexdigest()[:16]
+
+
+def load_fingerprints(folder: str):
+    import json as _json
+    p = f"{folder}/intermediate/translated_from.json"
+    return _json.load(open(p, encoding="utf-8"))["pages"] if os.path.exists(p) else None
+
+
+_RUN_STAMP = None
+
+
+def run_stamp() -> list:
+    """[pipeline revision, ISO date] for pages translated by this run --
+    taken once per run, so a run crossing midnight stamps one date."""
+    global _RUN_STAMP
+    if _RUN_STAMP is None:
+        import _version
+        from datetime import date
+        _RUN_STAMP = [_version.pipeline_version(), date.today().isoformat()]
+    return list(_RUN_STAMP)
+
+
+def save_fingerprints(folder: str, fps: list, translated: list = None,
+                      page_models: list = None, page_stamps: list = None) -> None:
+    """Also records which translation model produced each page (`models`:
+    the model file the server reported, else the name sent to it), and the
+    pipeline revision + date it was translated on (`stamps`: [rev, date]).
+    Pages listed in `translated` (1-based) get the current model and stamp;
+    the rest keep what was recorded before. `page_models` / `page_stamps`
+    (per page, from a resumed run) override both. The cover page
+    summarises them."""
+    import json as _json
+    p = f"{folder}/intermediate/translated_from.json"
+    old = _json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    # pages translated before the model was recorded: unknown ("") -- the
+    # cover shows them as the configured default model, never as whatever
+    # model happens to be running now. Same for the stamp (None): the cover
+    # says "not recorded".
+    models = old.get("models") or [""] * len(fps)
+    models = (models + [""] * len(fps))[:len(fps)]
+    stamps = old.get("stamps") or [None] * len(fps)
+    stamps = (stamps + [None] * len(fps))[:len(fps)]
+    for k in (translated if translated is not None else range(1, len(fps) + 1)):
+        models[k - 1] = LAST_MODEL or TRANSLATION_MODEL_NAME
+        stamps[k - 1] = run_stamp()
+    for k, m in enumerate(page_models or []):
+        models[k] = m or models[k]
+    for k, t in enumerate(page_stamps or []):
+        stamps[k] = t or stamps[k]
+    with open(p, "w", encoding="utf-8") as fh:
+        _json.dump({"version": 1, "pages": fps, "models": models, "stamps": stamps},
+                   fh, indent=0)
+
+
+def _partial_path(folder: str) -> str:
+    return f"{folder}/intermediate/translation.partial.json"
+
+
+def save_partial(folder: str, fps: list, done: list, models: list, st: dict,
+                 stamps: list = None) -> None:
+    """After each page of a whole-book run: the pages translated so far, the
+    source fingerprints they came from, the model and stamp per page, and the
+    book-wide footnote state at this point -- so a crashed or cancelled run
+    resumes where it stopped instead of starting over. Written to a temp
+    file and renamed, so a crash mid-write never leaves a broken file."""
+    import json as _json
+    p = _partial_path(folder)
+    with open(p + ".tmp", "w", encoding="utf-8") as fh:
+        _json.dump({"version": 1, "fingerprints": fps, "pages": done, "models": models,
+                    "stamps": stamps or [None] * len(done),
+                    "state": {"fn_seen": sorted(st["fn_seen"]),
+                              "footnoted_seen": sorted(st["footnoted_seen"]),
+                              "fn_state": st["fn_state"]}}, fh, ensure_ascii=False)
+    os.replace(p + ".tmp", p)
+
+
+def load_partial(folder: str, fps: list):
+    """(pages done, models, state, stamps) from an interrupted whole-book run, or
+    None. Used only if the book still has the same page count and the done
+    pages' source text is unchanged (the saved state is only valid for
+    exactly those pages); pages after them may have changed freely."""
+    import json as _json
+    p = _partial_path(folder)
+    try:
+        d = _json.load(open(p, encoding="utf-8"))
+        done, old_fps = d["pages"], d["fingerprints"]
+        if len(old_fps) != len(fps) or old_fps[:len(done)] != fps[:len(done)]:
+            return None
+        s = d["state"]
+        # "cat3_seen": the key's name before 2026-09-30 (saved runs still resume)
+        st = {"fn_seen": set(s["fn_seen"]),
+              "footnoted_seen": set(s.get("footnoted_seen", s.get("cat3_seen", []))),
+              "fn_state": dict(s["fn_state"])}
+        return (done, list(d.get("models") or [""] * len(done)), st,
+                list(d.get("stamps") or [None] * len(done)))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+# Page context (experimental, off unless PAGE_CONTEXT=1): a sentence split
+# across a page break is otherwise translated as two unrelated fragments
+# (Kirchhoffer scan 12-13 "se mé-" / "fier" -> "smell of"; Spinnewyn
+# 101-102 "Bien" / "fermer..." -> "Well / then close"). The model is shown
+# the end of the previous page and the start of the next, marked as
+# context it must not translate. Callers put them in st["context"].
+PAGE_CONTEXT = os.environ.get("PAGE_CONTEXT", "").lower() in ("1", "true", "yes", "on")
+_CONTEXT_WORDS = 40
+
+
+def neighbour_context(pages: list, k: int) -> dict:
+    """{"prev": last words of page k-1, "next": first words of page k+1}
+    (k is 0-based), from the pages' body text without footnotes or margin
+    notes; empty strings at the book's ends or on blank pages."""
+    def body(j):
+        if not 0 <= j < len(pages) or not pages[j].strip():
+            return ""
+        t = clean_vlm_extraction(pages[j])
+        t = re.sub(r"⟦MARGIN:[^⟧]*⟧", " ", t)
+        t = re.split(r"\n\s*\n\s*(?:\(\d+\)|\*)\s", t)[0]       # author's footnotes
+        return " ".join(t.split())
+    prev, nxt = body(k - 1).split(), body(k + 1).split()
+    return {"prev": " ".join(prev[-_CONTEXT_WORDS:]), "next": " ".join(nxt[:_CONTEXT_WORDS])}
+
+
+def page_context_block(st: dict) -> str:
+    c = st.get("context") if PAGE_CONTEXT else None
+    if not c or not (c.get("prev") or c.get("next")):
+        return ""
+    lines = ["CONTEXT ONLY -- do NOT translate or repeat this; it is here so a sentence "
+             "split across a page break reads correctly. Translate only the text after "
+             "\"Text to translate:\", starting and ending exactly where it does."]
+    if c.get("prev"):
+        lines.append(f"The previous page ends: \u00ab\u2026{c['prev']}\u00bb")
+    if c.get("next"):
+        lines.append(f"The next page begins: \u00ab{c['next']}\u2026\u00bb")
+    return "\n".join(lines) + "\n\n"
+
+
+def restore_table_markers(text: str, src: str) -> str:
+    """Put back each "[[TABLE]]" the translation dropped, after as many
+    paragraphs as precede it in the source (a table that opens the page goes
+    first, before its footnotes). Paragraphs are blank-line separated; the
+    model keeps them one for one closely enough for a table's place."""
+    paras = [p for p in re.split(r"\n\s*\n", src.strip()) if p.strip()]
+    want, before = [], 0
+    for p in paras:
+        if p.strip() == "[[TABLE]]":
+            want.append(before)
+        else:
+            before += 1
+    missing = len(want) - text.count("[[TABLE]]")
+    if missing <= 0:
+        return text
+    out = [p for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
+    # each marker the model kept answers the source marker nearest its place
+    left, n_text = list(want), 0
+    for p in out:
+        if p.strip() == "[[TABLE]]":
+            if left:
+                left.remove(min(left, key=lambda w: abs(w - n_text)))
+        else:
+            n_text += 1
+    for pos in sorted(left, reverse=True):
+        n_text = 0
+        at = len(out)
+        for k, p in enumerate(out):
+            if n_text == pos:
+                at = k
+                break
+            if p.strip() != "[[TABLE]]":
+                n_text += 1
+        out.insert(at, "[[TABLE]]")
+    return "\n\n".join(out)
+
+
+def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
+    """Translate one extracted.txt page record -> its translation.txt entry.
+    Never raises and never returns nothing: a failed page comes back as a
+    flagged fallback. `i` / `n` are 1-based position / page count (progress
+    output only). `st` is the book-wide state that has to persist across
+    pages: fn_seen (dedupe <fn> notes), footnoted_seen (footnoted terms already
+    footnoted), fn_state (the book's own footnote continuing onto the next
+    page). Used by the whole-book loop and by `--pages` retranslation."""
+    fn_seen, footnoted_seen, fn_state = st["fn_seen"], st["footnoted_seen"], st["fn_state"]
+    if not page_text.strip() or "VLM Error" in page_text:
+        print(f"  Page {i}/{n} — empty / OCR error, passed through")
+        return page_text
+
+    # Clean VLM structured output before translation
+    clean_text = clean_vlm_extraction(page_text)
+
+    if not clean_text.strip():
+        print(f"  Page {i}/{n} — no body text, skipped")
+        return "[Empty page]"
+
+    # A step-1 marker page ("[handwritten inscription — see original]")
+    # -- pass it through verbatim, never translate it.
+    if re.fullmatch(r"\[[^\[\]\n]+\]", clean_text.strip()):
+        print(f"  Page {i}/{n} — marker page, passthrough")
+        return clean_text.strip()
+
+    page_is_toc = is_toc_page(clean_text)
+
+    # A scoring / poule table: replace each <table>..</table> with a
+    # [[TABLE]] sentinel; steps 3 & 4 embed the scan for it. A page
+    # that is nothing but table(s) (+ maybe a heading) skips the
+    # model's attempt to linearise the grid.
+    page_had_table = bool(re.search(r"<table\b", clean_text, re.I))
+    if page_had_table:
+        clean_text = re.sub(r"<table\b.*?</table\s*>", "\n[[TABLE]]\n",
+                            clean_text, flags=re.I | re.S)
+        # a table the OCR truncated (page cut off mid-grid) has no
+        # closing tag -- collapse the dangling <table ...> to end.
+        clean_text = re.sub(r"<table\b.*\Z", "\n[[TABLE]]\n",
+                            clean_text, flags=re.I | re.S)
+        clean_text = re.sub(r"(?:\[\[TABLE\]\]\s*){2,}", "[[TABLE]]\n",
+                            clean_text)
+        clean_text = re.sub(r"\n{3,}", "\n\n", clean_text).strip()
+        residue = re.sub(r"\[\[TABLE\]\]", "", clean_text).strip()
+        res_paras = [p for p in re.split(r"\n\s*\n", residue) if p.strip()]
+        if not any(len(p.split()) > 12 for p in res_paras):
+            # table(s) + at most a short heading/caption: translate
+            # just the heading text, keep one sentinel, drop the grid.
+            cap = ""
+            if residue:
+                raw = translate_with_llama(
+                    f"{PROMPT_TEMPLATE}\n\nText to translate:\n{residue}")
+                cap = re.sub(r'(?m)^\s*#{1,6}\s+', '',
+                             strip_model_preamble((raw or residue).strip())).strip()
+                cap = apply_always_translate(cap)
+            out = f"{cap}\n\n[[TABLE]]" if cap else "[[TABLE]]"
+            print(f"  Page {i}/{n} — table page, grid skipped")
+            return out
+
+    # A near-blank page (stray mark, bare page number, single word)
+    # isn't worth a model call -- the model just replies "Please
+    # provide the text you would like to translate", which then
+    # leaks into translation.txt as the page's content.
+    if is_near_blank(clean_text):
+        print(f"  Page {i}/{n} — near-blank ({clean_text.split()[:4]}), skipped")
+        return "[Empty page]"
+
+    src_words = len(clean_text.split())
+
+    # A page whose OCR ran away (dot-leader / ornament repetition
+    # loop) overflows the translation model's context and burns 3
+    # dead API calls. Cap it: translate the first ~2500 words, keep
+    # the rest verbatim, flag it.
+    if src_words > 2500:
+        head = " ".join(clean_text.split()[:2500])
+        cand = translate_with_llama(
+            f"{PROMPT_TEMPLATE}\n\nText to translate:\n{head}")
+        cand = cand or "[translation unavailable]"
+        print(f"  Page {i}/{n} — oversized OCR ({src_words} w), "
+              f"translated head only")
+        return (f"[oversized OCR page — likely a repetition artifact; "
+                f"first part translated, remainder omitted]\n\n{cand}"[:6000])
+    best_candidate = None   # best rejected attempt, for the fallback
+    line_hint = ""          # set when a try swapped a line name (below)
+    para_hint = ""          # set when a try left a paragraph untranslated (below)
+    # the book's glossary / bibliography (_pagekind): the model is told what
+    # kind of page it has, and code completes what it still leaves out
+    kind = st.get("kind")
+    kind_note = f"{_pagekind.INSTRUCTION[kind]}\n\n" if kind else ""
+    for attempt in range(3):
+        print(f"  Page {i}/{n} (try {attempt + 1})", end="", flush=True)
+
+        # After a first failure, raise the temperature and add a
+        # blunt instruction -- the 7B sometimes gets stuck echoing
+        # the French source verbatim, and a hotter sample + the
+        # extra line breaks it out.
+        ctx = page_context_block(st) + kind_note
+        if attempt == 0:
+            full_prompt = f"{PROMPT_TEMPLATE}\n\n{ctx}Text to translate:\n{clean_text}"
+            temp = FIRST_TRY_TEMPERATURE
+        else:
+            full_prompt = (f"{PROMPT_TEMPLATE}\n\nTranslate the following into "
+                           f"fluent English. Do NOT repeat any of it in the "
+                           f"original language. Match the capitalisation of the "
+                           f"source; do NOT write the text in all capitals."
+                           f"{line_hint}{para_hint}"
+                           f"\n\n{ctx}Text to translate:\n{clean_text}")
+            temp = 0.3 + 0.25 * attempt
+        candidate = translate_with_llama(full_prompt, temperature=temp)
+
+        if not candidate:
+            print(" → failed")
+            continue
+
+        # The model sometimes emits Markdown despite the prompt. A
+        # lone "---" thematic break used to collide with the page
+        # separator used everywhere downstream (178 pages -> 179,
+        # every later page misaligned). Strip all of it; <i>...</i>
+        # is the only markup the pipeline expects. A decorative
+        # section-break ornament (dinkus / row of asterisks) is
+        # dropped to a blank line -- rendering it as "* * *" was
+        # hit-or-miss and looked wrong (Gomard p255).
+        candidate = re.sub(r'(?m)^[ \t]*(?:-{3,}|\*(?:[ \t]*\*)+|•(?:[ \t]*•)+)[ \t]*$',
+                           '', candidate)
+        # ... and the book's own divider goes back where the source has it
+        candidate = restore_dividers(candidate, clean_text)
+        candidate = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', candidate)
+        candidate = re.sub(r'\*\*([^*\n]+)\*\*', r'\1', candidate)   # **bold**
+        candidate = re.sub(r'(?m)^\s{0,3}#{1,6}\s+', '', candidate)  # # heading
+        # a whole body line that is a hallucinated figure
+        # description ("Image of a hand holding a sword ...")
+        candidate = re.sub(
+            r"(?im)^[ \t]*(?:an?\s+)?(?:image|photo(?:graph)?|drawing|"
+            r"illustration|picture|sketch|depiction)\s+(?:of|showing|"
+            r"depicting)\b[^\n]*$", "", candidate)
+        # normalise the table sentinel: the model turns "[[TABLE]]"
+        # into "[ TABLE ]", "[TABLE]" or a bare "TABLE" line.
+        if page_had_table:
+            candidate = re.sub(r"(?im)^[ \t]*\[*[ \t]*TABLE[ \t]*\]*[ \t]*$",
+                               "[[TABLE]]", candidate)
+            candidate = re.sub(r"(?:\[\[TABLE\]\][ \t]*\n?){2,}",
+                               "[[TABLE]]\n", candidate)
+        else:
+            candidate = re.sub(r"(?im)^\s*\[+\s*TABLE[^\]\n]*\]+\s*$",
+                               "[[TABLE]]", candidate)
+        # before the term passes: a headword kept in the original is guarded there
+        heads = []
+        if kind == "glossary":
+            candidate = _pagekind.complete_glossary(candidate, clean_text)
+            candidate, heads = _pagekind.mask_headwords(candidate)
+        elif kind == "bibliography":
+            candidate = _pagekind.complete_bibliography(candidate, clean_text)
+        candidate = apply_always_translate(candidate)
+        candidate = enforce_kept_terms(candidate, clean_text)
+        candidate = enforce_maestro(candidate, clean_text)
+        candidate = restore_rapier(candidate, clean_text)
+        candidate = restore_reprise(candidate, clean_text)
+        candidate = restore_blade_phrases(candidate, clean_text)
+        candidate = restore_straight_thrust(candidate, clean_text)
+        # on a ToC page: translate the Cat-3 terms but emit NO
+        # footnote marker (a contents line must not carry one, and
+        # it would burn the once-per-book note), and skip the
+        # heading re-translate pass (every entry looks like a
+        # heading) to keep the "entry … NN" structure intact.
+        candidate = enforce_footnoted_terms(
+            candidate, footnoted_seen, footnote=not page_is_toc)
+        candidate = _capitalize_definition_entries(candidate)
+        if not page_is_toc:
+            candidate = retranslate_stray_french_headings(candidate)
+            candidate = restore_dropped_part_title(candidate, clean_text)
+            candidate = fix_subheading_spacing(candidate)
+        candidate = _pagekind.unmask_headwords(candidate, heads)
+
+        # "This isn't fencing text" / "Please provide the text..." --
+        # the model had nothing real to translate. Not a fallback
+        # candidate; try again, then fall through to [Empty page].
+        if looks_like_refusal(candidate):
+            print(" → refusal / echo")
+            time.sleep(4)
+            continue
+
+        # "Here is the translation:" / "Sure:" / "Note: ..." preambles.
+        candidate = strip_model_preamble(candidate)
+        if not candidate:
+            print(" → preamble only")
+            time.sleep(4)
+            continue
+
+        if has_wrong_script(candidate):
+            # Never keep this one, even as a fallback -- CJK/Cyrillic
+            # in the output is the model breaking down.
+            print(" → garbled (non-Latin script)")
+            time.sleep(8)
+            continue
+
+        best_candidate = best_candidate or candidate
+
+        # the reply ran out of room and stops mid-sentence. Retried; if every
+        # try is cut, the best one is kept with the low-confidence banner.
+        if LAST_CUT:
+            print(" → cut off (out of room)")
+            continue
+
+        # every margin note (⟦MARGIN: …⟧, from _margins.py) must survive
+        if candidate.count("⟦MARGIN:") < clean_text.count("⟦MARGIN:"):
+            print(" → margin note lost")
+            time.sleep(2)
+            continue
+
+        # every table marker must survive: steps 3 & 4 put the scan of the
+        # table there (Masiello 1887 scans 376-377: the model left it out).
+        # A retry rarely helps (2026-10-13: 12 of 12 tries on four pages
+        # dropped it), so it is put back where the source has it.
+        if candidate.count("[[TABLE]]") < clean_text.count("[[TABLE]]"):
+            candidate = restore_table_markers(candidate, clean_text)
+            print(" (table marker put back)", end="")
+
+        if contains_too_much_non_english(candidate):
+            print(" → not English")
+            time.sleep(8)
+            continue
+
+        # a paragraph still in French / Italian / Latin: retried with the
+        # paragraph named; on the last try it is kept as it is (a list of
+        # names or titles can look the same, and the review report shows it)
+        left = untranslated_paragraph(candidate)
+        if left and attempt < 2:
+            start, lang = left
+            para_hint = (f" The paragraph beginning «{start}» is still in {lang}: translate it into English too"
+                         + ("." if lang == BOOK_LANG else
+                            f", and right after it write <fn>{lang} in the original</fn>."))
+            print(f" → paragraph still in {lang}")
+            time.sleep(2)
+            continue
+
+        # one of the author's footnotes dropped (Marchionni 1847 pdf 34: the
+        # retry for its Latin notes left all three out; Florio pdf 44 lost two).
+        # Retried; on the last try kept as it is (a table of "(2)" cells looks
+        # the same), and the review report flags the page.
+        if attempt < 2 and note_bodies(candidate) < note_bodies(clean_text):
+            print(" → footnote lost")
+            time.sleep(2)
+            continue
+
+        # a "not" lost turns the meaning round (Kirchhoffer pdf 87 «nous ne
+        # cesserons» -> "we shall cease"); two or more negations short ->
+        # retried, the last try kept and the review report lists the page
+        if attempt < 2 and lost_negations(clean_text, candidate, BOOK_LANG == "Italian") >= 2:
+            print(" → negation lost")
+            time.sleep(2)
+            continue
+
+        # a quotation noted "French in the original" but left in French
+        # (Masiello 1887 pdf 73: "Sans le bouter d'estocq ou hachier.")
+        if quotation_left_untranslated(candidate):
+            print(" → quotation not translated")
+            time.sleep(2)
+            continue
+
+        # Qwen rendered the whole page in capitals (source wasn't).
+        # Retry for a clean one; deshout() is the fallback repair.
+        if _shout_ratio(candidate) > 0.85 and _shout_ratio(clean_text) < 0.6:
+            print(" → all caps")
+            time.sleep(6)
+            continue
+
+        # Length sanity check -- but only for pages with enough source
+        # text for the ratio to mean anything. Plate captions, drill
+        # lists and dimension callouts are legitimately terse and were
+        # being rejected as "too short".
+        if src_words >= 25 and len(candidate.split()) < 0.5 * src_words:
+            print(" → too short")
+            time.sleep(8)
+            continue
+
+        # a line / parry named wrongly -- quarte became tierce (Kirchhoffer
+        # scan 52). Retried hotter; if every try has it, the best one is kept
+        # with the low-confidence banner for a person to check.
+        swap = line_names_swapped(candidate, clean_text)
+        if swap:
+            # a hotter try alone often repeats it (Prévost-Jollivet scan 57, all
+            # three tries) -- Kirchhoffer scan 52 was a
+            # near-tie, tierce 34% / quarte 33%, then self-consistent -- so the
+            # retry is told which lines the source names, and how often
+            named = {w: c for w, c in _line_name_counts(clean_text, source=True).items() if c}
+            line_hint = (" The source names these lines / parries, and no others: "
+                         + ", ".join(f"{w} ({c}x)" for w, c in named.items())
+                         + ". Write each one exactly where the source has it; never put one line in place of another.")
+            print(f" → line names changed ({swap})")
+            time.sleep(2)
+            continue
+
+        candidate = match_boundary_punctuation(candidate, clean_text)
+        candidate, n_fn = pull_footnotes(candidate, clean_text, fn_seen)
+        candidate = extract_source_footnotes(candidate, fn_state)
+        print(f" ✓{'  (%d fn)' % n_fn if n_fn else ''}")
+        return candidate
+
+    # Every attempt failed. Never drop a page: keep the best non-garbled
+    # attempt (flagged for review), or fall back to the original text so
+    # the page still appears in the output for a human to fix.
+    if best_candidate and _shout_ratio(best_candidate) > 0.85 \
+            and _shout_ratio(clean_text) < 0.6 \
+            and not contains_too_much_non_english(best_candidate) \
+            and not (src_words >= 25
+                     and len(best_candidate.split()) < 0.5 * src_words):
+        # The only thing wrong was the all-caps shout: repair the
+        # case and keep it as a normal page, no review banner.
+        fixed, n_fn = pull_footnotes(deshout(best_candidate, clean_text),
+                                     clean_text, fn_seen)
+        print(" ✓ (deshouted)")
+        return fixed
+    elif best_candidate:
+        print(" ⚠ kept (low confidence)")
+        body = deshout(best_candidate, clean_text) \
+            if _shout_ratio(best_candidate) > 0.85 else best_candidate
+        if body.count("[[TABLE]]") < clean_text.count("[[TABLE]]"):
+            body = restore_table_markers(body, clean_text)
+        return f"[low-confidence translation — review]\n{body}"
+    elif src_words < 15:
+        # Every attempt was a refusal/preamble and there was
+        # barely any source text -- it's an effectively blank
+        # page, not a translation failure worth surfacing.
+        print(" ✗ refusals only on a near-blank page — [Empty page]")
+        return "[Empty page]"
+    else:
+        print(" ✗ no usable output — kept original text")
+        return f"[translation unavailable — original text follows]\n{clean_text}"
+
+
+_USAGE = """usage: python3 /app/2_translate.py <stem> [<stem> ...] | --all
+         python3 /app/2_translate.py --pages <stem> <scan pages>   e.g. 12,40-42
+         python3 /app/2_translate.py --flagged <stem> <words> [--list]   e.g. risposta, or kind:split
+         python3 /app/2_translate.py --captions <stem> [<stem> ...] | --all
+         python3 /app/2_translate.py --tables <stem> [<stem> ...] | --all
+  translates new books, and the pages whose source changed since translation;
+  --flagged retranslates the pages whose review-report checks mention <words>
+  (or are of that kind) -- after a prompt or [terms] fix for that mistake"""
+
+
+def _flagged_pages(stem: str, words: str) -> str:
+    """Scan pages whose review-report CHECKs match: "kind:<kind>", or words
+    found in the item's text (case ignored) -- e.g. "risposta" for the
+    "'answer' against the glossary (risposta → riposte)" items."""
+    import json as _json
+    p = f"/data/processed/{stem}_translated/intermediate/quality_report.json"
+    if not os.path.exists(p):
+        sys.exit(f"✗ {stem}: no review report yet -- run quality_report.py {stem}")
+    items = [x for x in _json.load(open(p, encoding="utf-8")) if x.get("level") == "CHECK"]
+    if words.startswith("kind:"):
+        hit = [x for x in items if x["kind"] == words[5:]]
+    else:
+        hit = [x for x in items if words.lower() in (x["kind"] + " " + x["detail"]).lower()]
+    pages = sorted({x["scan"] for x in hit if x["scan"] > 0})
+    if not pages:
+        sys.exit(f"⊘ {stem}: no review-report check matches {words!r}")
+    print(f"{stem}: {len(pages)} page(s) flagged for {words!r}: {','.join(map(str, pages))}")
+    return ",".join(map(str, pages))
+
+
+def retranslate_pages(stem: str, spec: str = "") -> None:
+    """`2_translate.py --pages <stem> [12,40-42]`: retranslate just those
+    SCAN pages of an already-translated book, in place. With no page list,
+    takes the pages marked `retranslate = true` in the book's overrides
+    file -- each only once per version of its source text (a fingerprint
+    is kept in intermediate/retranslated.json), so rerunning costs nothing
+    until that page's extracted text changes. The rest of translation.txt
+    is untouched; header/title harmonization and the overrides file are
+    re-applied afterwards, as after a full run."""
+    import hashlib
+    import json as _json
+    global PROMPT_TEMPLATE
+    folder = f"/data/processed/{stem}_translated"
+    I = f"{folder}/intermediate"
+    ex = _pageio.split_pages(open(f"{I}/extracted.txt", encoding="utf-8").read())
+    tp = f"{I}/translation.txt"
+    tr = _pageio.split_pages(open(tp, encoding="utf-8").read())
+    if len(ex) != len(tr):
+        sys.exit(f"✗ {stem}: extracted.txt has {len(ex)} pages, translation.txt "
+                 f"{len(tr)} -- out of step; a full translation is needed")
+    ov = _overrides.load(stem)
+    PROMPT_TEMPLATE = prompt_for_book(stem)
+    done_p = f"{I}/retranslated.json"
+    done = _json.load(open(done_p)) if os.path.exists(done_p) else {}
+    fp = lambda t: hashlib.sha1(t.strip().encode("utf-8")).hexdigest()[:16]
+    if spec:
+        targets = _overrides.parse_page_spec(spec)
+    else:
+        targets = [s for s in _overrides.retranslate_pages(ov)
+                   if done.get(str(s)) != fp(ex[s - 1])]
+    bad = [s for s in targets if not 1 <= s <= len(ex)]
+    if bad:
+        sys.exit(f"✗ {stem}: scan page(s) {bad} outside 1..{len(ex)}")
+    if not targets:
+        print(f"⊘ {stem}: nothing to retranslate")
+        return
+    # book-wide footnote state from every page NOT being redone, so a
+    # redone page neither repeats a note nor loses its own first-use one
+    st = {"fn_seen": set(), "footnoted_seen": set(), "fn_state": {}}
+    for k, t in enumerate(tr, 1):
+        if k in targets:
+            continue
+        for ref in re.findall(r"(?m)^†\d+ French: (.+?)\s*$", t):
+            st["footnoted_seen"].add(ref.strip().lower())
+            st["fn_seen"].add(_strip_accents(ref.strip().lower()))
+    print(f"Retranslating {stem}: scan page(s) {targets}")
+    # Saved after every page, and resumable: an interrupted run of the same
+    # page list skips the pages it already finished (the progress record is
+    # dropped at the end). A long list (Gomard: 226 pages, ~3 h) must not be
+    # all-or-nothing.
+    prog_p = f"{I}/retranslate.partial.json"
+    try:
+        prog = _json.load(open(prog_p, encoding="utf-8"))
+        finished = set(prog["done"]) if prog.get("targets") == targets else set()
+    except (OSError, ValueError, KeyError):
+        finished = set()
+    if finished:
+        print(f"Resuming: {len(finished)} of {len(targets)} page(s) already done")
+    fps = load_fingerprints(folder) or [page_fingerprint(p) for p in ex]
+    kinds = _pagekind.book_page_kinds([clean_vlm_extraction(p) for p in ex])
+    _progress.start(stem, "translation", len([t for t in targets if t not in finished]))
+    for s_ in targets:
+        if s_ in finished:
+            continue
+        st["context"] = neighbour_context(ex, s_ - 1) if PAGE_CONTEXT else None
+        st["kind"] = kinds.get(s_ - 1)
+        tr[s_ - 1] = translate_page(ex[s_ - 1].strip(), s_, len(ex), st)
+        done[str(s_)] = fp(ex[s_ - 1])
+        fps[s_ - 1] = page_fingerprint(ex[s_ - 1])
+        finished.add(s_)
+        with open(tp, "w", encoding="utf-8") as fh:
+            fh.write(_pageio.join_pages(tr))
+        with open(done_p, "w", encoding="utf-8") as fh:
+            _json.dump(done, fh, indent=1, sort_keys=True)
+        save_fingerprints(folder, fps, translated=[s_])
+        with open(prog_p + ".tmp", "w", encoding="utf-8") as fh:
+            _json.dump({"targets": targets, "done": sorted(finished)}, fh)
+        os.replace(prog_p + ".tmp", prog_p)
+        _progress.page(s_)
+    _progress.finish()
+    if os.path.exists(prog_p):
+        os.remove(prog_p)
+    translate_figure_captions(folder)      # only captions not yet translated
+    translate_headers(folder)              # only header strings not yet translated
+    translate_tables(folder)               # only pages whose tables changed
+    apply_book_overrides(folder, fixes=False)
+    harmonize_titles_with_headers(folder)
+    apply_book_overrides(folder)
+    print(f"\n✓ {len(targets)} page(s) retranslated -- rebuild the PDFs:\n"
+          f"  python3 /app/4_side_by_side_pdf.py {stem}")
+
+
+
+def main():
+    """The `2_translate.py` command: argument handling, the translation
+    server, and the per-book run."""
+    global PROMPT_TEMPLATE
+    print("\n" + "="*60)
+    print("STEP 2: AI TRANSLATION")
+    print("="*60)
+
+    import _books
+
+    # which books, before any server starts (_books.py: names or --all; a
+    # book marked finished is left alone without --unlock)
+    if len(sys.argv) > 1 and sys.argv[1] == "--flagged":
+        if len(sys.argv) < 4:
+            sys.exit(_USAGE)
+        _fl = _flagged_pages(sys.argv[2], sys.argv[3])
+        if "--list" in sys.argv:              # show the pages only, translate nothing
+            sys.exit(0)
+        sys.argv = [sys.argv[0], "--pages", sys.argv[2], _fl] + sys.argv[4:]
+    if len(sys.argv) > 1 and sys.argv[1] == "--pages":
+        if len(sys.argv) < 3:
+            sys.exit(_USAGE)
+        _books.check_unlocked(sys.argv[2], sys.argv)
+        _BOOK_FOLDERS = []
+    elif len(sys.argv) > 1 and sys.argv[1] in ("--captions", "--tables"):
+        _BOOK_FOLDERS = [_books.folder_of(n) for n in _books.select(sys.argv[2:], _USAGE)]
+    else:
+        _BOOK_FOLDERS = [_books.folder_of(n) for n in _books.select(sys.argv[1:], _USAGE)]
+
+    translation_proc = start_translation_server()
+
+    if translation_proc is None:
+        print("✗ Cannot start translation server\n")
+        exit(1)
+
+    # `2_translate.py --captions` re-runs only the figure captions AND running
+    # headers of the named books, without touching the page bodies -- for iterating.
+    if len(sys.argv) > 1 and sys.argv[1] == "--captions":
+        try:
+            for folder in _BOOK_FOLDERS:
+                print(f"captions/headers: {Path(folder).name}")
+                PROMPT_TEMPLATE = prompt_for_book(Path(folder).name.replace("_translated", ""))
+                translate_figure_captions(folder, force=True)
+                translate_headers(folder, force=True)
+                apply_book_overrides(folder, fixes=False)
+                harmonize_titles_with_headers(folder)
+                apply_book_overrides(folder)
+        finally:
+            if translation_proc is not REMOTE_SERVER and translation_proc:
+                translation_proc.terminate()
+        print("\n✓ Caption pass complete\n")
+        sys.exit(0)
+
+
+    # `2_translate.py --tables` translates only the books' tables (tables.json),
+    # without touching the page bodies -- each run translates the pages whose
+    # tables changed, so a run that stops resumes where it was.
+    if len(sys.argv) > 1 and sys.argv[1] == "--tables":
+        try:
+            for folder in _BOOK_FOLDERS:
+                print(f"tables: {Path(folder).name}")
+                PROMPT_TEMPLATE = prompt_for_book(Path(folder).name.replace("_translated", ""))
+                translate_tables(folder)
+                apply_book_overrides(folder)    # [[table_fix]] decisions win over the new English
+        finally:
+            if translation_proc is not REMOTE_SERVER and translation_proc:
+                translation_proc.terminate()
+        print("\n✓ Table pass complete\n")
+        sys.exit(0)
+
+
+    if len(sys.argv) > 2 and sys.argv[1] == "--pages":
+        try:
+            retranslate_pages(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else "")
+        finally:
+            if translation_proc is not REMOTE_SERVER and translation_proc:
+                translation_proc.terminate()
+        sys.exit(0)
+
+    try:
+        for folder in _BOOK_FOLDERS:
+            src = f"{folder}/intermediate/extracted.txt"
+            dst = f"{folder}/intermediate/translation.txt"
+        
+            if not os.path.exists(src):
+                continue
+        
+            with open(src, "r", encoding="utf-8") as f:
+                pages = [p.strip() for p in _pageio.split_pages(f.read())]
+            cur_fp = [page_fingerprint(p) for p in pages]
+
+            if os.path.exists(dst):
+                n_tr = len(_pageio.split_pages(open(dst, encoding="utf-8").read()))
+                stored = load_fingerprints(folder)
+                if stored is None and n_tr == len(pages):
+                    # translated before fingerprints existed: take the current
+                    # source as the baseline (the translation is assumed to match it)
+                    save_fingerprints(folder, cur_fp, translated=[])
+                    print(f"⊘ {Path(folder).name}: recorded source fingerprints (baseline)\n")
+                    continue
+                if stored is not None and len(stored) == len(pages) == n_tr:
+                    changed = [k + 1 for k, (a, b) in enumerate(zip(stored, cur_fp)) if a != b]
+                    if not changed:
+                        print(f"⊘ Skip (up to date): {Path(folder).name}\n")
+                        continue
+                    print(f"{Path(folder).name}: {len(changed)} page(s) changed since translation")
+                    retranslate_pages(Path(folder).name[:-len("_translated")],
+                                      ",".join(map(str, changed)))
+                    continue
+                print(f"{Path(folder).name}: page count changed ({n_tr} translated, "
+                      f"{len(pages)} extracted) -- translating the whole book")
+            PROMPT_TEMPLATE = prompt_for_book(Path(folder).name.replace("_translated", ""))
+            print(f"Source language: {BOOK_LANG}")
+
+            print(f"Translating: {Path(folder).name}")
+            print(f"Pages: {len(pages)}\n")
+        
+            # book-wide state: fn_seen dedupes <fn> note text, footnoted_seen
+            # footnotes each footnoted term once, fn_state carries the book's
+            # own footnote across a page break
+            resumed = load_partial(folder, cur_fp)
+            if resumed:
+                translated_pages, page_models, _st, page_stamps = resumed
+                print(f"Resuming an interrupted run: {len(translated_pages)} page(s) already "
+                      f"done, continuing at page {len(translated_pages) + 1}\n"
+                      f"  (delete intermediate/translation.partial.json to start over)\n")
+            else:
+                if os.path.exists(_partial_path(folder)):
+                    print("  (saved partial run is for different source text -- starting over)\n")
+                translated_pages, page_models, page_stamps = [], [], []
+                _st = {"fn_seen": set(), "footnoted_seen": set(), "fn_state": {}}
+
+            kinds = _pagekind.book_page_kinds([clean_vlm_extraction(p) for p in pages])
+            _progress.start(Path(folder).name[:-len("_translated")], "translation",
+                            len(pages) - len(translated_pages))
+            for i in range(len(translated_pages) + 1, len(pages) + 1):
+                calls = MODEL_CALLS
+                _st["context"] = neighbour_context(pages, i - 1) if PAGE_CONTEXT else None
+                _st["kind"] = kinds.get(i - 1)
+                translated_pages.append(translate_page(pages[i - 1], i, len(pages), _st))
+                # "-": no model reply (blank / marker page) -- the cover skips it
+                page_models.append((LAST_MODEL or TRANSLATION_MODEL_NAME)
+                                   if MODEL_CALLS != calls else "-")
+                page_stamps.append(run_stamp())
+                save_partial(folder, cur_fp, translated_pages, page_models, _st, page_stamps)
+                _progress.page(i)
+            _progress.finish()
+
+            with open(dst, "w", encoding="utf-8") as f:
+                f.write(_pageio.join_pages(translated_pages))
+            save_fingerprints(folder, cur_fp, page_models=page_models,
+                              page_stamps=page_stamps)
+            os.remove(_partial_path(folder))
+
+            translate_figure_captions(folder)
+            translate_headers(folder)
+            translate_tables(folder)
+            apply_book_overrides(folder, fixes=False)
+            harmonize_titles_with_headers(folder)
+            apply_book_overrides(folder)
+
+            print(f"\n✓ Translation complete: {Path(folder).name}\n")
+
+    finally:
+        if translation_proc is REMOTE_SERVER:
+            print("[remote] leaving the remote translation server as-is\n")
+        else:
+            print("="*60)
+            print("UNLOADING TRANSLATION MODEL")
+            print("="*60 + "\n")
+            print("Shutting down translation server...")
+            translation_proc.terminate()
+            try:
+                translation_proc.wait(timeout=10)
+                print("✓ Translation server stopped (VRAM freed)\n")
+            except Exception:
+                translation_proc.kill()
+                print("✓ Translation server killed (VRAM freed)\n")
+
+    print("="*60)
+    print("✓ TRANSLATION COMPLETE")
+    print("="*60 + "\n")

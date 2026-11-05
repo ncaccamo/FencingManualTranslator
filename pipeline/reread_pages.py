@@ -40,12 +40,9 @@ import _books  # noqa: E402
 if not dry:
     _books.check_unlocked(stem, sys.argv)
 
-# step 1's definitions only (rendering, OCR call, server start) -- its main
-# code runs at module level, below the STEP 1 banner
-_src = open(os.path.join(HERE, "1_ocr_and_extract_vlm.py"), encoding="utf-8").read()
-_ns = {"__name__": "_reread"}
-exec(compile(_src.split('\nprint("\\n" + "="*60)\nprint("STEP 1')[0],
-             "1_ocr_and_extract_vlm.py", "exec"), _ns)
+# step 1's rendering, OCR call and server start (_ocr.py)
+import _ocr  # noqa: E402
+_ns = vars(_ocr)
 
 folder = f"/data/processed/{stem}_translated"
 I = f"{folder}/intermediate"

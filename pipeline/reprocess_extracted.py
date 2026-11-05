@@ -4,8 +4,8 @@
 """Rebuild extracted.txt + page_numbers.txt from a saved raw_ocr.txt.
 
 `raw_ocr.txt` holds olmOCR-2's untouched responses. The PAGE_NUMBER/HEADER/
-BODY_TEXT parsing and the page-number reconciliation in
-1_ocr_and_extract_vlm.py run on those. This lets you re-apply an improved
+BODY_TEXT parsing and the page-number reconciliation of step 1 (_ocr.py)
+run on those. This lets you re-apply an improved
 parse/reconcile to an already-OCR'd book without paying the OCR cost again.
 
 Usage:
@@ -24,33 +24,15 @@ import _layout
 import _margins
 import _overrides
 
-# reuse the real logic, without running that module's main block
-import importlib.util
-_spec = importlib.util.spec_from_file_location(
-    "_vlm_prefix", os.path.join(os.path.dirname(__file__), "1_ocr_and_extract_vlm.py"))
-_src = open(_spec.origin).read()
-_ns = {"__name__": "_vlm_prefix"}
-exec(compile(_src.split("def preprocess_for_ocr")[0], _spec.origin, "exec"), _ns)
-parse_vlm_response = _ns["parse_vlm_response"]
-reconcile_page_numbers = _ns["reconcile_page_numbers"]
-collapse_runs = _ns["collapse_runs"]
-strip_leaked_headmatter = _ns["strip_leaked_headmatter"]
-tail_catchwords = _ns["tail_catchwords"]
-text_layer_folio_bands = _ns["text_layer_folio_bands"]
-settle_disputed_heads = _ns["settle_disputed_heads"]
-join_split_sentences = _ns["join_split_sentences"]
-apply_folio_witness = _ns["apply_folio_witness"]
-has_page_number_field = _ns["has_page_number_field"]
-strip_fieldless_folio = _ns["strip_fieldless_folio"]
-apply_read_heads = _ns["apply_read_heads"]
-leaked_top_header = _ns["leaked_top_header"]
-is_plate_leaf = _ns["is_plate_leaf"]
-_norm_head = _ns["_norm_head"]
-_fold_caption_only_body = _ns["_fold_caption_only_body"]
-postprocess_parsed_pages = _ns["postprocess_parsed_pages"]
-fold_caption_header_into_figure = _ns["fold_caption_header_into_figure"]
-reconcile_headers = _ns["reconcile_headers"]
-known_headmatter = _ns["known_headmatter"]
+# step 1's parsing and reconciliation (_ocr.py), the same code it runs
+from _ocr import (
+    parse_vlm_response, reconcile_page_numbers, collapse_runs, strip_leaked_headmatter,
+    tail_catchwords, text_layer_folio_bands, settle_disputed_heads, join_split_sentences,
+    apply_folio_witness, has_page_number_field, strip_fieldless_folio, apply_read_heads,
+    leaked_top_header, is_plate_leaf, _norm_head, _fold_caption_only_body,
+    postprocess_parsed_pages, fold_caption_header_into_figure, reconcile_headers,
+    known_headmatter,
+)
 
 import _books
 targets = [_books.folder_of(n) for n in _books.select(
@@ -92,7 +74,7 @@ for folder in targets:
     reconcile_headers(parsed, _no_head)
     # margin notes as ⟦MARGIN: …⟧ lines, each before its paragraph (_margins.py)
     _m_placed, _m_lost = _margins.apply_to_book(folder, parsed)
-    # every sentence on one page, so it is translated whole (1_ocr_and_extract_vlm.py)
+    # every sentence on one page, so it is translated whole (_ocr.py)
     _joined = join_split_sentences(parsed)
     _is_plate = [any(f.get("kind") == "plate" for f in (p.get("figures") or []))
                  or is_plate_leaf(p.get("body"))

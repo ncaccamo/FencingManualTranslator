@@ -21,13 +21,11 @@ from pathlib import Path
 
 sys.path.insert(0, "/app")
 
-_STEP2 = Path("/app/2_translate.py")
 if "--model" in sys.argv:
     os.environ["TRANSLATION_MODEL_PATH"] = sys.argv[sys.argv.index("--model") + 1]
 
-_src = _STEP2.read_text()
-_ns = {"__name__": "_translate_gold"}
-exec(compile(_src.split('\nprint("\\n" + "="*60)')[0], str(_STEP2), "exec"), _ns)
+import _translate  # noqa: E402  (after TRANSLATION_MODEL_PATH is set: read at import)
+_ns = vars(_translate)
 
 start_server = _ns["start_translation_server"]
 translate = _ns["translate_with_llama"]

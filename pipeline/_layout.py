@@ -169,7 +169,7 @@ def no_head_pages(folder: str, own_headers: list) -> set:
 def disputed_heads(folder: str, own_headers: list) -> set:
     """Page indices where the OCR reported a running head but the detector
     sees none on the page (its "unsure" case: only the OCR's word says
-    printed). See settle_disputed_heads() in 1_ocr_and_extract_vlm.py."""
+    printed). See settle_disputed_heads() in _ocr.py."""
     pages = head_pages(folder, len(own_headers))
     if pages is None:
         return set()

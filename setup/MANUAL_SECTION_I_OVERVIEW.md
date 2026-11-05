@@ -98,6 +98,8 @@ the root stays uncluttered.
 
 ### Step 1 — `1_ocr_and_extract_vlm.py`  (vision model, port 11435)
 
+(The code is in `pipeline/_ocr.py`; the command only runs it.)
+
 Renders every page of the source PDF at 300 DPI, downscales to a fixed
 1288 px on the long edge, and sends each image to the vision model. Writes
 three files into `intermediate/`:
@@ -126,6 +128,8 @@ re-running step 1 resumes after the last saved page (and reads failed
 pages again). The file is deleted once `raw_ocr.txt` is written.
 
 ### Step 2 — `2_translate.py`  (translation model, port 11434)
+
+(The code is in `pipeline/_translate.py`; the command only runs it.)
 
 Reads `intermediate/extracted.txt`, strips the structural labels, and
 translates each page's body with `translation_prompt.txt`. Writes

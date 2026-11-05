@@ -12,7 +12,7 @@ Nothing here calls a model. It runs on the host with stock Python 3
 
 | path | what |
 |---|---|
-| `_rules.py` | loads the pipeline's *pure* helpers (`apply_always_translate`, `match_case`, `reconcile_page_numbers`, `parse_figures_block`, …) by exec-ing the definition slice of `pipeline/2_translate.py` and `pipeline/1_ocr_and_extract_vlm.py`. Breaks loudly if those files are restructured. |
+| `_rules.py` | loads the pipeline's *pure* helpers (`apply_always_translate`, `match_case`, `reconcile_page_numbers`, `parse_figures_block`, …) from `pipeline/_translate.py` and `pipeline/_ocr.py` (steps 2 and 1, importable without starting a server), with stubs for heavy libraries the tests don't need. |
 | `test_rules.py` | frozen input→output cases for those helpers, one per bug ever fixed. `python3 evals/test_rules.py` (or `pytest`). |
 | `metrics.py` | crude per-book health numbers (French-residue pages, all-caps pages, untrusted folios, figure rows, italic spans, …). |
 | `freeze.py` | snapshot a book's accepted artifacts into `baselines/<book>/`. |

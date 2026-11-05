@@ -125,7 +125,7 @@ rests on.
 ### 3.1 Where it is set
 
 The model is set by `TRANSLATION_MODEL_PATH` locally (default in
-`docker-compose.yml` and `2_translate.py`) or by the llama-swap key in
+`docker-compose.yml` and `pipeline/_translate.py`) or by the llama-swap key in
 remote mode (`fmt-translate`; `TRANSLATION_MODEL_NAME` to pick another
 key). OCR and translation run one after the other, so each has the whole
 GPU. Make a model or setting the default only by changing

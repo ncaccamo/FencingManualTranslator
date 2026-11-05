@@ -13,8 +13,8 @@ are told; this doc is *why*:
 - [`pipeline/translation_prompt.txt`](../pipeline/translation_prompt.txt)
 
 Mitigations live in three places: the prompt files, the Python guards in
-[`1_ocr_and_extract_vlm.py`](../pipeline/1_ocr_and_extract_vlm.py) /
-[`2_translate.py`](../pipeline/2_translate.py), and a couple of
+[`_ocr.py`](../pipeline/_ocr.py) (step 1) /
+[`_translate.py`](../pipeline/_translate.py) (step 2), and a couple of
 architectural choices. Each entry says which.
 
 ---
@@ -42,7 +42,7 @@ the fix) the raw garbage also shifted later pages.
 |---|---|
 | VLM request, `1_…py` ~L413 | `"repeat_penalty": 1.12` on the completion — makes the loop less likely to start |
 | `collapse_runs()`, `1_…py` L135 | clips a pathological run *after* the response comes back, before parsing: `x x x x …` (≥8 reps → keep 4), one char ×12+ → keep 6, a whole line ×4+ → keep 2. Also applied by [`reprocess_extracted.py`](../pipeline/reprocess_extracted.py) so an already-OCR'd book can be fixed without paying for OCR again |
-| `2_translate.py` L390 | oversized-input guard: `src_words > 2500` → translate the first 2500 words, keep the rest verbatim, flag the page. Stops one bad page burning 3 dead API calls |
+| `_translate.py` `translate_page()` | oversized-input guard: `src_words > 2500` → translate the first 2500 words, keep the rest verbatim, flag the page. Stops one bad page burning 3 dead API calls |
 | `vlm_ocr_prompt.txt` | "Render a decorative separator … as a line containing only: `* * *`" and "Do NOT paraphrase, summarize, or silently skip words or lines, even if they look repetitive" |
 
 ### 1.2 Fabricated / normalised page numbers
@@ -62,7 +62,7 @@ legible, so the model guesses.
   appears inside an illustration or engraving plate, a library stamp, or a
   catalogue/accession annotation. … if it is set as a roman numeral (e.g.
   VIII), give the roman numeral, not an arabic conversion."
-- `reconcile_page_numbers()` ([`1_…py`](../pipeline/1_ocr_and_extract_vlm.py)):
+- `reconcile_page_numbers()` ([`_ocr.py`](../pipeline/_ocr.py)):
   a folio is trusted when **a neighbouring sheet's folio continues the
   printed sequence** (`i-1 → v-1` or `i+1 → v+1`, also across a short run
   of *unread* pages). Non-trusted pages are interpolated from the nearest
@@ -274,7 +274,7 @@ text.
 and dumped at the bottom of the column by the alignment pass — reading as
 a body non-sequitur.
 
-**Mitigation:** `label_margin_notes()` ([`2_…py`](../pipeline/2_translate.py))
+**Mitigation:** `label_margin_notes()` ([`_translate.py`](../pipeline/_translate.py))
 — a trailing single-line paragraph of ≤ 20 words that isn't a heading /
 footnote / list item is moved to the note strip as `[margin note] …`, so
 it's clearly not body. Non-destructive (never deleted).
@@ -990,8 +990,8 @@ dead; the page-wait loop had no liveness check and ran out a generic 120 s
 timeout per page.
 
 **Mitigation:** the wait loop now checks `proc.poll()` and prints the exit
-code + log tail on a dead server ([`1_…py`](../pipeline/1_ocr_and_extract_vlm.py) L326),
-matching what `2_translate.py` already did.
+code + log tail on a dead server ([`_ocr.py`](../pipeline/_ocr.py) `start_vlm_server()`),
+matching what step 2 already did.
 
 ### 1.9 Operational notes (not failures, but non-obvious)
 
@@ -1132,7 +1132,7 @@ side-by-side PDF.
 | Where | What |
 |---|---|
 | `pipeline/_pageio.py` | the separator is now `PAGE_SEP = "\n\x1e\n"` — U+001E, a non-printing control char that **cannot** occur in OCR text or model output. `split_pages()` still reads legacy `\n---\n` files so old `processed/` folders don't need a re-run. This is the real fix. |
-| `2_translate.py` (after each candidate) | strips `![alt](url)`, `**bold**`, `^#{1,6} `, a hallucinated `Image of a hand …` body line, and a decorative-ornament line (`---`, `* * *`, `• • •`) — the ornament is dropped to a blank line, not rendered as `* * *` (that was hit-or-miss and looked wrong on Gomard p255) |
+| `_translate.py` (after each candidate) | strips `![alt](url)`, `**bold**`, `^#{1,6} `, a hallucinated `Image of a hand …` body line, and a decorative-ornament line (`---`, `* * *`, `• • •`) — the ornament is dropped to a blank line, not rendered as `* * *` (that was hit-or-miss and looked wrong on Gomard p255) |
 | `translation_prompt.txt` rule 6 | "Output plain text, NOT Markdown: no `#` headings, no `---` rules, no `![image](...)`, no `**bold**`. The single exception is `<i>...</i>`." |
 
 ### 2.2 Model meta-responses leak in as page content
@@ -1151,7 +1151,7 @@ Two distinct shapes:
    politeness-prefixed variants (`Certainly. Here is the translation:`,
    `Sure, please provide the text…`).
 
-**Mitigations — three guards in [`2_translate.py`](../pipeline/2_translate.py):**
+**Mitigations — three guards in [`_translate.py`](../pipeline/_translate.py):**
 
 | Guard | L | Behaviour |
 |---|---|---|
@@ -1569,7 +1569,7 @@ A page can carry the **author's** own `(1) (2) (3)` footnotes *and*
 ruled block (`_render.footnote_lines`, no label since 2026-09-01), so a
 reader can always tell body from note:
 
-- `extract_source_footnotes()` ([`2_…py`](../pipeline/2_translate.py)) —
+- `extract_source_footnotes()` ([`_translate.py`](../pipeline/_translate.py)) —
   a body paragraph starting `(N) …` is moved to the note block. Prévost
   sets its notes as a bare `1. … 2. …` run at the page foot instead: a
   **trailing** run of paragraphs numbered sequentially from 1 is treated

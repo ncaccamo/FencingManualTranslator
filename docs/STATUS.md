@@ -294,7 +294,7 @@ the operator's business and is not tracked here.)
   non-printing control char that cannot occur in OCR text or model
   output). `split_pages()` still reads a legacy `\n---\n` file so existing
   `processed/` folders keep working without a re-run; a file is one format
-  or the other, never mixed. The `2_translate.py` `^---+$` → `* * *`
+  or the other, never mixed. Step 2's (`_translate.py`) `^---+$` → `* * *`
   sanitiser and the `translation_prompt.txt` Markdown ban stay as
   defence-in-depth.
 
@@ -322,7 +322,7 @@ the operator's business and is not tracked here.)
   checks models and `exec tail -f /dev/null`.
 - **`docker exec` shells don't inherit the entrypoint's
   `LD_LIBRARY_PATH`.** Any new `Popen` starting a llama-server needs the
-  `_llama_server_env()` handling already in `1_`/`2_` (restores
+  `_llama_server_env()` handling already in `_ocr.py` / `_translate.py` (restores
   `/usr/local/lib/llama-<backend>/`).
 - **Raw intermediates are always kept** (`intermediate/raw_ocr.txt`,
   `intermediate/extracted.txt`, `intermediate/translation.txt`) so you
@@ -344,7 +344,7 @@ the operator's business and is not tracked here.)
   pattern, which then overflows the translation model's context. Mitigated
   three ways: `repeat_penalty: 1.12` on the VLM request, `collapse_runs()`
   clips pathological runs before parsing (also in `reprocess_extracted.py`),
-  and `2_translate.py` caps oversized input at ~2500 words.
+  and step 2 (`_translate.py`) caps oversized input at ~2500 words.
 - **Switching between local backends is `docker compose up -d`, never a
   rebuild** — both binaries are baked into the image. Only `rocm714`
   (not built) or a Dockerfile change needs a rebuild.

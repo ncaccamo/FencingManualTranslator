@@ -78,9 +78,8 @@ def sample():
 def run(label):
     import _progress
     sys.argv = [sys.argv[0]]
-    src = open("/app/2_translate.py", encoding="utf-8").read()
-    ns = {"__name__": "_gold_passages"}
-    exec(compile(src.split('\nprint("\\n" + "="*60)\nprint("STEP 2')[0], "2_translate.py", "exec"), ns)
+    import _translate
+    ns = vars(_translate)
     import _prompt_variants
     variant = _prompt_variants.apply(ns)
     passages = json.load(open(f"{OUT}/passages.json", encoding="utf-8"))

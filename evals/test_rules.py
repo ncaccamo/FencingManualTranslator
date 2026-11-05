@@ -2882,7 +2882,7 @@ def test_first_try_at_temperature_zero():
     assert TX["FIRST_TRY_TEMPERATURE"] == 0.0
     assert inspect.signature(TX["translate_with_llama"]).parameters["temperature"].default == 0.0
     import os
-    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline", "2_translate.py"),
+    src = open(str(_PIPELINE / "_translate.py"),
                encoding="utf-8").read()
     page = src[src.index("def translate_page("):]
     assert "temp = FIRST_TRY_TEMPERATURE" in page and "temp = 0.3 + 0.25 * attempt" in page
@@ -2930,7 +2930,7 @@ def test_line_name_swap_rejected():
     finally:
         TX["BOOK_LANG"] = "French"
     import os
-    page = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline", "2_translate.py"),
+    page = open(str(_PIPELINE / "_translate.py"),
                 encoding="utf-8").read()
     page = page[page.index("def translate_page("):]
     assert "line_names_swapped(candidate, clean_text)" in page
@@ -3052,7 +3052,7 @@ def test_reprise_not_re_attack():
 def test_line_swap_retry_names_the_lines():
     # the retry after a swapped line is told which lines the source names
     import os
-    page = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline", "2_translate.py"),
+    page = open(str(_PIPELINE / "_translate.py"),
                 encoding="utf-8").read()
     page = page[page.index("def translate_page("):]
     assert '{line_hint}' in page and "line_hint = (" in page
@@ -3133,7 +3133,7 @@ def test_cut_off_reply_is_rejected():
         assert TX["LAST_CUT"] is False
     finally:
         TX.update(saved)
-    page = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline", "2_translate.py"),
+    page = open(str(_PIPELINE / "_translate.py"),
                 encoding="utf-8").read()
     page = page[page.index("def translate_page("):]
     assert page.index("if LAST_CUT:") < page.index("→ too short")
@@ -3223,7 +3223,7 @@ def test_table_marker_never_sent_as_heading():
             assert f(t) == t
     finally:
         TX["translate_with_llama"] = saved
-    page = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline", "2_translate.py"),
+    page = open(str(_PIPELINE / "_translate.py"),
                 encoding="utf-8").read()
     page = page[page.index("def translate_page("):]
     assert 'candidate.count("[[TABLE]]") < clean_text.count("[[TABLE]]")' in page
