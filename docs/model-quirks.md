@@ -14,7 +14,7 @@ are told; this doc is *why*:
 
 Mitigations live in three places: the prompt files, the Python guards in
 [`_ocr.py`](../pipeline/_ocr.py) (step 1) /
-[`_translate.py`](../pipeline/_translate.py) (step 2), and a couple of
+[`_translate.py`](../pipeline/_translate.py) with its rule modules `_tx_*.py` (step 2), and a couple of
 architectural choices. Each entry says which.
 
 ---
@@ -1569,7 +1569,7 @@ A page can carry the **author's** own `(1) (2) (3)` footnotes *and*
 ruled block (`_render.footnote_lines`, no label since 2026-09-01), so a
 reader can always tell body from note:
 
-- `extract_source_footnotes()` ([`_translate.py`](../pipeline/_translate.py)) —
+- `extract_source_footnotes()` ([`_tx_notes.py`](../pipeline/_tx_notes.py)) —
   a body paragraph starting `(N) …` is moved to the note block. Prévost
   sets its notes as a bare `1. … 2. …` run at the page foot instead: a
   **trailing** run of paragraphs numbered sequentially from 1 is treated

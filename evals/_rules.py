@@ -2,8 +2,9 @@
 # Copyright (C) 2026 Nicholas A. Caccamo
 """The pipeline's step 1 / step 2 code (_ocr.py, _translate.py) for the
 regression tests, with stubs for heavy dependencies the tests never touch.
-`TX` / `OCR` are the modules' namespaces: a test that sets TX["BOOK_LANG"]
-changes the module itself, so it puts the value back afterwards.
+`TX` / `OCR` look names up in those modules (and the rule modules they are
+built from); a test that sets a TX value changes the module itself, so it
+puts the value back afterwards.
 """
 from pathlib import Path
 import importlib
@@ -35,10 +36,17 @@ def _stub_missing(*names: str) -> None:
 _stub_missing("fitz", "PIL", "PIL.Image", "PIL.ImageOps", "numpy")
 
 
+import collections  # noqa: E402
+
 import _ocr  # noqa: E402
 import _translate  # noqa: E402
+import _tx_case, _tx_checks, _tx_common, _tx_notes, _tx_structure, _tx_terms  # noqa: E402,E401
 
-TX = vars(_translate)
+# Reads look in _translate first, then the rule modules it is built from;
+# writes (TX["PAGE_CONTEXT"] = ...) go to _translate, which owns step 2's
+# settings.
+TX = collections.ChainMap(vars(_translate), vars(_tx_terms), vars(_tx_case), vars(_tx_notes),
+                          vars(_tx_checks), vars(_tx_structure), vars(_tx_common))
 OCR = vars(_ocr)
 
 # --- translation-side pure helpers ---

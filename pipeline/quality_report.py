@@ -26,7 +26,12 @@ import _layout
 import _overrides
 import _pageio
 import _translate as _tx
-from _translate import FN_HEADER, clean_vlm_extraction, contains_too_much_non_english
+from _translate import clean_vlm_extraction
+# negations: the rule is step 2's (_tx_checks.py: a try that loses one is retried);
+# the report lists the pages where every try lost it
+from _tx_checks import _NEG_EN, _NEG_FR, _NEG_IT, contains_too_much_non_english, lost_negations
+from _tx_common import FN_HEADER
+from _tx_terms import house_italics
 
 CHECK, NOTE = "CHECK", "NOTE"
 ACCEPTED = "ACCEPTED"      # marked "fine as is" on the review page (books/<stem>.review)
@@ -564,7 +569,7 @@ def fix_status(tr: list, ov: dict, french: bool, edited=()) -> list:
         if missing:
             out.append((s, what(f), "not found"))
         touched.add(s)
-    hi = _tx.house_italics
+    hi = house_italics
     for s in sorted(touched):
         if hi(pages[s - 1], french) != tr[s - 1]:
             out.append((s, "on this page", "pending"))
@@ -758,12 +763,6 @@ def false_friends(src: str, en: str) -> list:
             out.append(f"«{f.group(0)}» rendered as its look-alike {e.group(0)!r} -- usually means "
                        f"\"{sense}\"")
     return out
-
-
-# Negations: the rule lives in _translate.py (a try that loses one is
-# retried there); the report lists the pages where every try lost it.
-lost_negations = _tx.lost_negations
-_NEG_FR, _NEG_IT, _NEG_EN = _tx._NEG_FR, _tx._NEG_IT, _tx._NEG_EN
 
 
 def check_book(folder: str) -> list:

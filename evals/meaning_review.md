@@ -68,7 +68,7 @@ book (a list of known items, so they aren't reported twice).
 > **Read first, fully:** REPO/pipeline/PROMPTFILE (kept terms, glossary,
 > footnoted terms, quotation marks: a rendering these rules require is not
 > an error); `_KEEP_TERMS_*`, `_ALWAYS_TRANSLATE`, `_FOOTNOTED_*` in
-> REPO/pipeline/_translate.py; REPO/books/STEM.overrides.toml (`[terms]`
+> REPO/pipeline/_tx_terms.py; REPO/books/STEM.overrides.toml (`[terms]`
 > are the book's decisions; `[[fix]]` entries are already made). The owner's
 > rules: literal over paraphrase, but never a word-for-word rendering that
 > loses the meaning; letter case as printed; English “quotes”. Two things
