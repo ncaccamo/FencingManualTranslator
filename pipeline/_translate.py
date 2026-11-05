@@ -8,6 +8,7 @@ _tx_notes (footnotes), _tx_checks (checks on a try) and _tx_structure (page
 structure). Importable without starting a server; the command is main()."""
 
 import glob
+import json
 import os
 import time
 import re
@@ -112,19 +113,18 @@ def book_language(stem: str) -> str:
     """The book's source language: books/<stem>.meta.json "language" (an
     evaluation copy's meta file sits next to it in evals/gold/), else a
     guess from the extracted text's function words."""
-    import json as _json
     for base in (os.environ.get("BOOKS_DIR", "/data/books"), "/data/books", "/data/books/_skip"):
         mp = os.path.join(base, f"{stem}.meta.json")
         if os.path.exists(mp):
             try:
-                lang = _json.load(open(mp, encoding="utf-8")).get("language", "")
+                lang = json.load(open(mp, encoding="utf-8")).get("language", "")
                 if lang:
                     return lang
             except (OSError, ValueError):
                 pass
     for mp in glob.glob(f"/data/evals/gold/*/{stem}.meta.json"):
         try:
-            return _json.load(open(mp, encoding="utf-8")).get("language", "French") or "French"
+            return json.load(open(mp, encoding="utf-8")).get("language", "French") or "French"
         except (OSError, ValueError):
             pass
     ep = f"/data/processed/{stem}_translated/intermediate/extracted.txt"
@@ -461,12 +461,11 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
     -- plate captions are headings ("PARADE DE SIXTE" etc.) and need the
     same term policy as body text. Skips captions already done unless
     `force`. Returns the number translated."""
-    import json as _json
     fig_path = f"{folder}/intermediate/figures.json"
     if not os.path.exists(fig_path):
         return 0
     with open(fig_path, encoding="utf-8") as fh:
-        fig_map = _json.load(fh)
+        fig_map = json.load(fh)
     # the reviewer's caption decisions first, so a corrected caption is
     # translated in this same pass
     _overrides.apply_captions(fig_map, _overrides.load(Path(folder).name.replace("_translated", "")))
@@ -527,7 +526,7 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
                 fig["caption_en"] = cap
             n += 1
     with open(fig_path, "w", encoding="utf-8") as fh:
-        _json.dump(fig_map, fh, ensure_ascii=False, indent=1)
+        json.dump(fig_map, fh, ensure_ascii=False, indent=1)
     if n:
         print(f"  translated {n} figure caption(s)")
     return n
@@ -560,12 +559,11 @@ def translate_tables(folder: str, force: bool = False) -> int:
     OCR read as headings only (no body cell has text, at most 3 rows --
     Kirchhoffer's bout order) is stored as null: the PDFs keep the pointer
     to the scan. Returns the number of pages translated."""
-    import json as _json
     ex_path, path = f"{folder}/intermediate/extracted.txt", f"{folder}/intermediate/tables.json"
     if not os.path.exists(ex_path):
         return 0
     pages = _pageio.split_pages(open(ex_path, encoding="utf-8").read())
-    done = _json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
+    done = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
     n = 0
     for i, page in enumerate(pages):
         src = clean_vlm_extraction(page)
@@ -618,7 +616,7 @@ def translate_tables(folder: str, force: bool = False) -> int:
         done[str(i)] = {"src": tables, "en": en}
         n += 1
         with open(path, "w", encoding="utf-8") as fh:
-            _json.dump(done, fh, ensure_ascii=False, indent=1)
+            json.dump(done, fh, ensure_ascii=False, indent=1)
     if n:
         print(f"  translated the tables of {n} page(s)")
     return n
@@ -630,7 +628,6 @@ def translate_headers(folder: str, force: bool = False) -> int:
     are section/chapter titles ("LES PARADES", "SOCIÉTÉS") -- an English
     reader needs to know what section they're in. Translated once per
     distinct string, through the full prompt (rule 4: headings)."""
-    import json as _json
     ex_path = f"{folder}/intermediate/extracted.txt"
     if not os.path.exists(ex_path):
         return 0
@@ -638,7 +635,7 @@ def translate_headers(folder: str, force: bool = False) -> int:
     hmap = {}
     if os.path.exists(hp) and not force:
         with open(hp, encoding="utf-8") as fh:
-            hmap = _json.load(fh)
+            hmap = json.load(fh)
     raw = set()
     for pg in _pageio.split_pages(open(ex_path, encoding="utf-8").read()):
         m = re.search(r'(?im)^[ \t]*HEADER[ \t]*:[ \t]*(.+?)[ \t]*$', pg)
@@ -690,7 +687,7 @@ def translate_headers(folder: str, force: bool = False) -> int:
             hmap[h] = _one(h)
         n += 1
     with open(hp, "w", encoding="utf-8") as fh:
-        _json.dump(hmap, fh, ensure_ascii=False, indent=1)
+        json.dump(hmap, fh, ensure_ascii=False, indent=1)
     if n:
         print(f"  translated {n} running header(s)")
     return n
@@ -718,14 +715,13 @@ def harmonize_titles_with_headers(folder: str) -> int:
     the translation has no title line at all (the body title was restored
     to extracted.txt after the page was translated), insert it. No model
     call. Returns the number of pages changed."""
-    import json as _json
     I = f"{folder}/intermediate"
     ex_p, tr_p, hp = f"{I}/extracted.txt", f"{I}/translation.txt", f"{I}/headers.json"
     if not all(os.path.exists(x) for x in (ex_p, tr_p, hp)):
         return 0
     ex = _pageio.split_pages(open(ex_p, encoding="utf-8").read())
     tr = _pageio.split_pages(open(tr_p, encoding="utf-8").read())
-    hmap = _json.load(open(hp, encoding="utf-8"))
+    hmap = json.load(open(hp, encoding="utf-8"))
     n = 0
     for i in range(min(len(ex), len(tr))):
         m = re.search(r"(?im)^[ \t]*HEADER[ \t]*:[ \t]*(.+?)[ \t]*$", ex[i])
@@ -780,16 +776,15 @@ def apply_book_overrides(folder: str, fixes: bool = True) -> None:
     titles are matched to the reviewer's header wording, not the model's
     (Prévost scan 47: body "BREAK GROUND." under the decided "BREAKING
     GROUND."); then in full after it."""
-    import json as _json
     stem = Path(folder).name.replace("_translated", "")
     ov = _overrides.load(stem)
     I = f"{folder}/intermediate"
     hp, tp = f"{I}/headers.json", f"{I}/translation.txt"
     if ov["headers"] and os.path.exists(hp):
-        hmap = _json.load(open(hp, encoding="utf-8"))
+        hmap = json.load(open(hp, encoding="utf-8"))
         if _overrides.apply_headers(hmap, ov):
             with open(hp, "w", encoding="utf-8") as fh:
-                _json.dump(hmap, fh, ensure_ascii=False, indent=1)
+                json.dump(hmap, fh, ensure_ascii=False, indent=1)
     french = book_language(stem) != "Italian"
     if fixes and os.path.exists(tp):
         # the italics rules first, so text written before a rule changed
@@ -819,17 +814,17 @@ def apply_book_overrides(folder: str, fixes: bool = True) -> None:
                 fh.write(_pageio.join_pages(tr))
     tbp = f"{I}/tables.json"
     if fixes and ov["table_fix"] and os.path.exists(tbp):
-        tmap = _json.load(open(tbp, encoding="utf-8"))
+        tmap = json.load(open(tbp, encoding="utf-8"))
         applied, missing = _overrides.apply_table_fixes(tmap, ov)
         if applied:
             with open(tbp, "w", encoding="utf-8") as fh:
-                _json.dump(tmap, fh, ensure_ascii=False, indent=1)
+                json.dump(tmap, fh, ensure_ascii=False, indent=1)
         if missing:
             print(f"  ⚠ overrides: [[table_fix]] text not found on scan page(s) {missing} "
                   f"-- obsolete after a retranslation? Review {_overrides.path_for(stem)}")
     gp = f"{I}/figures.json"
     if fixes and os.path.exists(gp):
-        fmap = _json.load(open(gp, encoding="utf-8"))
+        fmap = json.load(open(gp, encoding="utf-8"))
         changed, need = _overrides.apply_captions(fmap, ov)
         for figs in fmap.values():
             for fg in figs:
@@ -841,7 +836,7 @@ def apply_book_overrides(folder: str, fixes: bool = True) -> None:
                         changed += 1
         if changed:
             with open(gp, "w", encoding="utf-8") as fh:
-                _json.dump(fmap, fh, ensure_ascii=False, indent=1)
+                json.dump(fmap, fh, ensure_ascii=False, indent=1)
         if need:
             print(f"  ⚠ overrides: caption(s) on scan page(s) {need} have no English yet -- "
                   f"run 2_translate.py --pages {stem} {','.join(map(str, need))}")
@@ -862,9 +857,8 @@ def page_fingerprint(page_text: str) -> str:
 
 
 def load_fingerprints(folder: str):
-    import json as _json
     p = f"{folder}/intermediate/translated_from.json"
-    return _json.load(open(p, encoding="utf-8"))["pages"] if os.path.exists(p) else None
+    return json.load(open(p, encoding="utf-8"))["pages"] if os.path.exists(p) else None
 
 
 _RUN_STAMP = None
@@ -890,9 +884,8 @@ def save_fingerprints(folder: str, fps: list, translated: list = None,
     the rest keep what was recorded before. `page_models` / `page_stamps`
     (per page, from a resumed run) override both. The cover page
     summarises them."""
-    import json as _json
     p = f"{folder}/intermediate/translated_from.json"
-    old = _json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    old = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
     # pages translated before the model was recorded: unknown ("") -- the
     # cover shows them as the configured default model, never as whatever
     # model happens to be running now. Same for the stamp (None): the cover
@@ -909,7 +902,7 @@ def save_fingerprints(folder: str, fps: list, translated: list = None,
     for k, t in enumerate(page_stamps or []):
         stamps[k] = t or stamps[k]
     with open(p, "w", encoding="utf-8") as fh:
-        _json.dump({"version": 1, "pages": fps, "models": models, "stamps": stamps},
+        json.dump({"version": 1, "pages": fps, "models": models, "stamps": stamps},
                    fh, indent=0)
 
 
@@ -924,10 +917,9 @@ def save_partial(folder: str, fps: list, done: list, models: list, st: dict,
     book-wide footnote state at this point -- so a crashed or cancelled run
     resumes where it stopped instead of starting over. Written to a temp
     file and renamed, so a crash mid-write never leaves a broken file."""
-    import json as _json
     p = _partial_path(folder)
     with open(p + ".tmp", "w", encoding="utf-8") as fh:
-        _json.dump({"version": 1, "fingerprints": fps, "pages": done, "models": models,
+        json.dump({"version": 1, "fingerprints": fps, "pages": done, "models": models,
                     "stamps": stamps or [None] * len(done),
                     "state": {"fn_seen": sorted(st["fn_seen"]),
                               "footnoted_seen": sorted(st["footnoted_seen"]),
@@ -940,10 +932,9 @@ def load_partial(folder: str, fps: list):
     None. Used only if the book still has the same page count and the done
     pages' source text is unchanged (the saved state is only valid for
     exactly those pages); pages after them may have changed freely."""
-    import json as _json
     p = _partial_path(folder)
     try:
-        d = _json.load(open(p, encoding="utf-8"))
+        d = json.load(open(p, encoding="utf-8"))
         done, old_fps = d["pages"], d["fingerprints"]
         if len(old_fps) != len(fps) or old_fps[:len(done)] != fps[:len(done)]:
             return None
@@ -1341,11 +1332,10 @@ def _flagged_pages(stem: str, words: str) -> str:
     """Scan pages whose review-report CHECKs match: "kind:<kind>", or words
     found in the item's text (case ignored) -- e.g. "risposta" for the
     "'answer' against the glossary (risposta → riposte)" items."""
-    import json as _json
     p = f"/data/processed/{stem}_translated/intermediate/quality_report.json"
     if not os.path.exists(p):
         sys.exit(f"✗ {stem}: no review report yet -- run quality_report.py {stem}")
-    items = [x for x in _json.load(open(p, encoding="utf-8")) if x.get("level") == "CHECK"]
+    items = [x for x in json.load(open(p, encoding="utf-8")) if x.get("level") == "CHECK"]
     if words.startswith("kind:"):
         hit = [x for x in items if x["kind"] == words[5:]]
     else:
@@ -1355,6 +1345,19 @@ def _flagged_pages(stem: str, words: str) -> str:
         sys.exit(f"⊘ {stem}: no review-report check matches {words!r}")
     print(f"{stem}: {len(pages)} page(s) flagged for {words!r}: {','.join(map(str, pages))}")
     return ",".join(map(str, pages))
+
+
+def finish_book(folder: str) -> None:
+    """After a book's pages are translated (all, or some): the captions,
+    running heads and tables not yet translated (only those, or the pages
+    whose tables changed), then the overrides file -- its header wording
+    first, so body titles are harmonised with the heads, then its fixes."""
+    translate_figure_captions(folder)
+    translate_headers(folder)
+    translate_tables(folder)
+    apply_book_overrides(folder, fixes=False)
+    harmonize_titles_with_headers(folder)
+    apply_book_overrides(folder)
 
 
 def retranslate_pages(stem: str, spec: str = "") -> None:
@@ -1367,7 +1370,6 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
     is untouched; header/title harmonization and the overrides file are
     re-applied afterwards, as after a full run."""
     import hashlib
-    import json as _json
     global PROMPT_TEMPLATE
     folder = f"/data/processed/{stem}_translated"
     I = f"{folder}/intermediate"
@@ -1380,7 +1382,7 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
     ov = _overrides.load(stem)
     PROMPT_TEMPLATE = prompt_for_book(stem)
     done_p = f"{I}/retranslated.json"
-    done = _json.load(open(done_p)) if os.path.exists(done_p) else {}
+    done = json.load(open(done_p)) if os.path.exists(done_p) else {}
     fp = lambda t: hashlib.sha1(t.strip().encode("utf-8")).hexdigest()[:16]
     if spec:
         targets = _overrides.parse_page_spec(spec)
@@ -1409,7 +1411,7 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
     # all-or-nothing.
     prog_p = f"{I}/retranslate.partial.json"
     try:
-        prog = _json.load(open(prog_p, encoding="utf-8"))
+        prog = json.load(open(prog_p, encoding="utf-8"))
         finished = set(prog["done"]) if prog.get("targets") == targets else set()
     except (OSError, ValueError, KeyError):
         finished = set()
@@ -1430,21 +1432,16 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
         with open(tp, "w", encoding="utf-8") as fh:
             fh.write(_pageio.join_pages(tr))
         with open(done_p, "w", encoding="utf-8") as fh:
-            _json.dump(done, fh, indent=1, sort_keys=True)
+            json.dump(done, fh, indent=1, sort_keys=True)
         save_fingerprints(folder, fps, translated=[s_])
         with open(prog_p + ".tmp", "w", encoding="utf-8") as fh:
-            _json.dump({"targets": targets, "done": sorted(finished)}, fh)
+            json.dump({"targets": targets, "done": sorted(finished)}, fh)
         os.replace(prog_p + ".tmp", prog_p)
         _progress.page(s_)
     _progress.finish()
     if os.path.exists(prog_p):
         os.remove(prog_p)
-    translate_figure_captions(folder)      # only captions not yet translated
-    translate_headers(folder)              # only header strings not yet translated
-    translate_tables(folder)               # only pages whose tables changed
-    apply_book_overrides(folder, fixes=False)
-    harmonize_titles_with_headers(folder)
-    apply_book_overrides(folder)
+    finish_book(folder)
     print(f"\n✓ {len(targets)} page(s) retranslated -- rebuild the PDFs:\n"
           f"  python3 /app/4_side_by_side_pdf.py {stem}")
 
@@ -1603,12 +1600,7 @@ def main():
                               page_stamps=page_stamps)
             os.remove(_partial_path(folder))
 
-            translate_figure_captions(folder)
-            translate_headers(folder)
-            translate_tables(folder)
-            apply_book_overrides(folder, fixes=False)
-            harmonize_titles_with_headers(folder)
-            apply_book_overrides(folder)
+            finish_book(folder)
 
             print(f"\n✓ Translation complete: {Path(folder).name}\n")
 

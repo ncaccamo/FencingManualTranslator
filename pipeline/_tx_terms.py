@@ -8,7 +8,7 @@ take it as `lang`."""
 
 import re
 
-from _tx_case import _match_term_case, caps_kept_terms, source_caps_lines, source_case_kept_terms
+from _tx_case import match_word_case, caps_kept_terms, source_caps_lines, source_case_kept_terms
 from _tx_common import _LANG_REF
 
 
@@ -139,8 +139,7 @@ def enforce_footnoted_terms(text: str, seen: set, footnote: bool = True, lang: s
 
         def _sub(m, en=en, note_fr=note_fr, first=first):
             g = m.group(0)
-            r = (en.upper() if g.isupper()
-                 else en.capitalize() if g[:1].isupper() else en)
+            r = match_word_case(en, g)
             if footnote and first[0] and note_fr not in seen:
                 # mask the tag we add too, so a later footnoted-term pass can't
                 # match the French term sitting inside it
@@ -232,7 +231,7 @@ def apply_always_translate(text: str) -> str:
             if m.string[max(0, m.start() - 3):m.start()] == "<i>" \
                     and re.match(r"\s*</i>\s*\(", m.string[m.end():m.end() + 8]):
                 return g
-            return r.upper() if g.isupper() else r.capitalize() if g[:1].isupper() else r
+            return match_word_case(r, g)
         text = re.sub(r"\b" + pat + r"\b", _sub, text, flags=re.IGNORECASE)
     return _phrase_repairs(text)
 
@@ -491,7 +490,7 @@ def fix_known_garbles(text: str, src: str = "") -> str:
         g = m.group(0)
         plural = g.lower().endswith("s")
         w = word + ("s" if plural else "")
-        return w.upper() if g.isupper() else w.capitalize() if g[:1].isupper() else w
+        return match_word_case(w, g)
     text = re.sub(r"\bthusts?\b", lambda m: _case(m, "thrust"), text, flags=re.I)
     text = re.sub(r"\bthroughs\b", lambda m: _case(m, "thrust"), text, flags=re.I)
     # "RIPONSES" for riposte(s) -- an Italian heading "DELLE RISPOSTE"
@@ -606,13 +605,13 @@ def enforce_kept_terms(text: str, src: str = "", lang: str = "French") -> str:
                 plural = (g.rstrip().lower().endswith("s") and not term.endswith("s")
                           and not term.split()[0].endswith("s"))   # "pointes d'arrêt" is already plural
                 disp = term + ("s" if plural else "")
-                return f"<i>{_match_term_case(disp, g)}</i>"
+                return f"<i>{match_word_case(disp, g)}</i>"
             text = re.sub(r"(?<!<i>)\b" + w + r"\b(?!</i>)",
                           _sub_term, text, flags=re.IGNORECASE)
         # wrap a bare occurrence not already tagged
         text = re.sub(
             r"(?<![\w>])" + term.replace(" ", r"\s+") + r"(?![\w<])",
-            lambda m: f"<i>{_match_term_case(term, m.group(0))}</i>",
+            lambda m: f"<i>{match_word_case(term, m.group(0))}</i>",
             text, flags=re.IGNORECASE)
         # collapse any accidental double-wrap, keeping whichever case is
         # already inside it rather than reinserting the lower-cased term

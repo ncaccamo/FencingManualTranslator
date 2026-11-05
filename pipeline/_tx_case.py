@@ -9,16 +9,11 @@ import re
 from _tx_common import FN_HEADER
 
 
-def _match_term_case(term: str, sample: str) -> str:
-    # Same convention as apply_always_translate's own case-preserving
-    # substitution: match the case of whatever text prompted this
-    # insertion, rather than always forcing one fixed case. A technical
-    # term of art normally sits lowercase-italic mid-sentence, but when
-    # it lands inside an all-caps body-level title line (Prévost "DE LA
-    # RIPOSTE" opening Part Four) it should read as part of that title,
-    # not switch to lowercase against the rest of the caps -- there was
-    # never an intent to force lowercase in EVERY context, only to fix
-    # the garbled-word substitution this originally guarded.
+def match_word_case(term: str, sample: str) -> str:
+    """`term` in the case of the text it replaces: all capitals in a capitals
+    line (a kept term in Prévost's "DE LA RIPOSTE" title), a capital first
+    letter where the replaced text starts with one, else as given.
+    capitalize() lowers the rest of `term`."""
     return term.upper() if sample.isupper() \
         else term.capitalize() if sample[:1].isupper() else term
 
@@ -50,7 +45,7 @@ def caps_kept_terms(text: str, src: str = "") -> str:
                 same = [l.strip(" .") for l in (src or "").split("\n")
                         if l.strip(" .").lower() == m.group(1).lower()]
                 if same:
-                    parts[k] = f"<i>{_match_term_case(m.group(1), same[0])}</i>"
+                    parts[k] = f"<i>{match_word_case(m.group(1), same[0])}</i>"
                 continue
             if all(_is_caps(w) for w in (prev, nxt) if w is not None):
                 parts[k] = f"<i>{m.group(1).upper()}</i>"
