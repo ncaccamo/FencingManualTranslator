@@ -4,8 +4,8 @@
 """Rebuild extracted.txt + page_numbers.txt from a saved raw_ocr.txt.
 
 `raw_ocr.txt` holds olmOCR-2's untouched responses. The PAGE_NUMBER/HEADER/
-BODY_TEXT parsing and the page-number reconciliation of step 1 (_ocr.py)
-run on those. This lets you re-apply an improved
+BODY_TEXT parsing and the page-number reconciliation of step 1 (_ocr_parse.py,
+_ocr_folios.py ...) run on those. This lets you re-apply an improved
 parse/reconcile to an already-OCR'd book without paying the OCR cost again.
 
 Usage:
@@ -24,15 +24,18 @@ import _layout
 import _margins
 import _overrides
 
-# step 1's parsing and reconciliation (_ocr.py), the same code it runs
-from _ocr import (
-    parse_vlm_response, reconcile_page_numbers, collapse_runs, strip_leaked_headmatter,
-    tail_catchwords, text_layer_folio_bands, settle_disputed_heads, join_split_sentences,
-    apply_folio_witness, has_page_number_field, strip_fieldless_folio, apply_read_heads,
-    leaked_top_header, is_plate_leaf, _norm_head, _fold_caption_only_body,
-    postprocess_parsed_pages, fold_caption_header_into_figure, reconcile_headers,
-    known_headmatter,
+# step 1's parsing and reconciliation, the same code it runs
+from _ocr import postprocess_parsed_pages
+from _ocr_cleanup import _fold_caption_only_body, fold_caption_header_into_figure, is_plate_leaf
+from _ocr_folios import (
+    apply_folio_witness, reconcile_page_numbers, strip_fieldless_folio, text_layer_folio_bands,
 )
+from _ocr_heads import (
+    apply_read_heads, known_headmatter, leaked_top_header, reconcile_headers, settle_disputed_heads,
+    strip_leaked_headmatter, tail_catchwords,
+)
+from _ocr_parse import _norm_head, collapse_runs, has_page_number_field, parse_vlm_response
+from _ocr_text import join_split_sentences
 
 import _books
 targets = [_books.folder_of(n) for n in _books.select(
@@ -74,7 +77,7 @@ for folder in targets:
     reconcile_headers(parsed, _no_head)
     # margin notes as ⟦MARGIN: …⟧ lines, each before its paragraph (_margins.py)
     _m_placed, _m_lost = _margins.apply_to_book(folder, parsed)
-    # every sentence on one page, so it is translated whole (_ocr.py)
+    # every sentence on one page, so it is translated whole (_ocr_text.py)
     _joined = join_split_sentences(parsed)
     _is_plate = [any(f.get("kind") == "plate" for f in (p.get("figures") or []))
                  or is_plate_leaf(p.get("body"))

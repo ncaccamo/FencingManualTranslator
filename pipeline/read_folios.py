@@ -91,14 +91,13 @@ def main():
     import _books
     args = [_books.stem_of(n) for n in _books.select(
         args + [a for a in sys.argv[1:] if a.startswith("--")], __doc__)]
-    import _ocr
-    ns = vars(_ocr)
+    import _ocr as ns
     if "--apply" in sys.argv:
         for stem in args:
             apply(stem, ns)
         return
-    fitz, Image = ns["fitz"], ns["Image"]
-    if ns["start_vlm_server"]() is None:
+    fitz, Image = ns.fitz, ns.Image
+    if ns.start_vlm_server() is None:
         sys.exit("✗ cannot reach / start the OCR server")
     for stem in args:
         I = f"/data/processed/{stem}_translated/intermediate"
@@ -127,12 +126,12 @@ def main():
 
 def ask(ns, img):
     """The OCR model's answer for one margin, or None (no answer)."""
-    requests, bc = ns["requests"], ns["bc"]
-    b64, _ = ns["prepare_image_for_vlm"](img)
+    requests, bc = ns.requests, ns.bc
+    b64, _ = ns.prepare_image_for_vlm(img)
     try:
         r = requests.post(f"{bc.ocr_base_url()}/v1/chat/completions",
                           headers={"Content-Type": "application/json", **bc.auth_headers()},
-                          json={"model": ns["VLM_MODEL_NAME"], "temperature": 0, "max_tokens": 12,
+                          json={"model": ns.VLM_MODEL_NAME, "temperature": 0, "max_tokens": 12,
                                 "messages": [{"role": "user", "content": [
                                     {"type": "text", "text": PROMPT},
                                     {"type": "image_url",
@@ -153,7 +152,7 @@ def apply(stem, ns):
         print(f"{stem}: no folio_strips.json -- read first")
         return
     nums = open(f"{I}/page_numbers.txt", encoding="utf-8").read().split("\n")
-    new = ns["apply_folio_witness"](nums, json.load(open(fs, encoding="utf-8")))
+    new = ns.apply_folio_witness(nums, json.load(open(fs, encoding="utf-8")))
     decided = {s for s, v in _overrides.load(stem)["pages"].items() if "page_number" in v}
     ex = _pageio.split_pages(open(f"{I}/extracted.txt", encoding="utf-8").read())
     changed = []

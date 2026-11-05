@@ -120,12 +120,12 @@ def regions(page_layout: dict, has_record: bool) -> list:
 
 
 def _ask(ns, img):
-    b64, _ = ns["prepare_image_for_vlm"](img)
-    bc, requests = ns["bc"], ns["requests"]
+    b64, _ = ns.prepare_image_for_vlm(img)
+    bc, requests = ns.bc, ns.requests
     try:
         r = requests.post(f"{bc.ocr_base_url()}/v1/chat/completions",
                           headers={"Content-Type": "application/json", **bc.auth_headers()},
-                          json={"model": ns["VLM_MODEL_NAME"], "temperature": 0, "max_tokens": 200,
+                          json={"model": ns.VLM_MODEL_NAME, "temperature": 0, "max_tokens": 200,
                                 "messages": [{"role": "user", "content": [
                                     {"type": "text", "text": PROMPT},
                                     {"type": "image_url",
@@ -179,10 +179,9 @@ def main():
         for stem in stems:
             summary(stem)
         return
-    import _ocr
-    ns = vars(_ocr)
-    fitz, Image = ns["fitz"], ns["Image"]
-    if ns["start_vlm_server"]() is None:
+    import _ocr as ns
+    fitz, Image = ns.fitz, ns.Image
+    if ns.start_vlm_server() is None:
         sys.exit("✗ cannot reach / start the OCR server")
     import _progress
     import _pageio
@@ -216,7 +215,7 @@ def main():
         _progress.start(f"{stem} (caption reading)", "OCR", len(todo))
         for s in todo:
             pix = doc[s - 1].get_pixmap(matrix=fitz.Matrix(300 / 72, 300 / 72))
-            img = ns["preprocess_for_ocr"](Image.frombytes("RGB", [pix.width, pix.height], pix.samples))
+            img = ns.preprocess_for_ocr(Image.frombytes("RGB", [pix.width, pix.height], pix.samples))
             crops, failed = [], False
             for kind, box in todo_all[s]:
                 ans = read_region(ns, img, box)

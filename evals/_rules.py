@@ -47,7 +47,9 @@ import _tx_case, _tx_checks, _tx_common, _tx_notes, _tx_structure, _tx_terms  # 
 # settings.
 TX = collections.ChainMap(vars(_translate), vars(_tx_terms), vars(_tx_case), vars(_tx_notes),
                           vars(_tx_checks), vars(_tx_structure), vars(_tx_common))
-OCR = vars(_ocr)
+import _ocr_cleanup, _ocr_folios, _ocr_heads, _ocr_parse, _ocr_text  # noqa: E402,E401
+OCR = collections.ChainMap(vars(_ocr), vars(_ocr_parse), vars(_ocr_cleanup), vars(_ocr_heads),
+                           vars(_ocr_folios), vars(_ocr_text))
 
 # --- translation-side pure helpers ---
 apply_always_translate = TX["apply_always_translate"]

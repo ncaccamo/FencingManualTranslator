@@ -95,7 +95,7 @@ def predicted(nums, i):
 def load_ns():
     sys.path.insert(0, PIPE)
     import _ocr
-    return vars(_ocr)
+    return _ocr
 
 
 def page_image(fitz, Image, stem, scan):
@@ -190,7 +190,7 @@ def draw_sheets(ns, pages, per_sheet=4):
     asked about, before the thirds cut), with id / book / scan / the
     sequence's value. Old sheets are removed first."""
     from PIL import ImageDraw
-    Image = ns["Image"]
+    Image = ns.Image
     os.makedirs(f"{OUT}/sheets", exist_ok=True)
     for f in os.listdir(f"{OUT}/sheets"):
         os.remove(f"{OUT}/sheets/{f}")
@@ -198,7 +198,7 @@ def draw_sheets(ns, pages, per_sheet=4):
     for s0 in range(0, len(pages), per_sheet):
         rows = []
         for p in pages[s0:s0 + per_sheet]:
-            img = page_image(ns["fitz"], Image, p["stem"], p["scan"])
+            img = page_image(ns.fitz, Image, p["stem"], p["scan"])
             for tag, b in zip(("top", "bottom"), bands(img, p["stem"], p["scan"])):
                 b = b.resize((W, max(1, int(b.height * W / b.width))))
                 lab = Image.new("RGB", (W, 34), (255, 236, 160))
@@ -286,12 +286,12 @@ CHOICE = ("This image shows one margin of a page of an old printed book, cut int
 
 def ask(ns, img, prompt):
     import requests
-    bc = ns["bc"]
-    b64, _ = ns["prepare_image_for_vlm"](img)
+    bc = ns.bc
+    b64, _ = ns.prepare_image_for_vlm(img)
     try:
         r = requests.post(f"{bc.ocr_base_url()}/v1/chat/completions",
                           headers={"Content-Type": "application/json", **bc.auth_headers()},
-                          json={"model": ns["VLM_MODEL_NAME"], "temperature": 0, "max_tokens": 12,
+                          json={"model": ns.VLM_MODEL_NAME, "temperature": 0, "max_tokens": 12,
                                 "messages": [{"role": "user", "content": [
                                     {"type": "text", "text": prompt},
                                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}]}]},
@@ -306,17 +306,17 @@ def run():
     pick = [p for p in json.load(open(f"{OUT}/sample.json", encoding="utf-8"))
             if labels.get(f"{p['stem']}:{p['scan']}", "?") != "?"]
     ns = load_ns()
-    if ns["start_vlm_server"]() is None:
+    if ns.start_vlm_server() is None:
         sys.exit("✗ cannot reach / start the OCR server")
     res_p = f"{OUT}/results.json"
     res = json.load(open(res_p, encoding="utf-8")) if os.path.exists(res_p) else {}
     todo = [p for p in pick if f"{p['stem']}:{p['scan']}" not in res]
     print(f"{len(todo)} page(s) to ask ({len(pick) - len(todo)} done), 6 questions each")
     for p in todo:
-        img = page_image(ns["fitz"], ns["Image"], p["stem"], p["scan"])
+        img = page_image(ns.fitz, ns.Image, p["stem"], p["scan"])
         r = {}
         for tag, b in zip(("top", "bottom"), bands(img, p["stem"], p["scan"])):
-            t = thirds(ns["Image"], b)
+            t = thirds(ns.Image, b)
             r[f"open_{tag}"] = ask(ns, t, OPEN)
             r[f"choice_{tag}"] = ask(ns, t, CHOICE.format(opts=", ".join(offer(p["pred"], 0))))
             r[f"control_{tag}"] = ask(ns, t, CHOICE.format(opts=", ".join(offer(p["pred"], 4))))

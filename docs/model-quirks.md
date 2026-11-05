@@ -13,7 +13,7 @@ are told; this doc is *why*:
 - [`pipeline/translation_prompt.txt`](../pipeline/translation_prompt.txt)
 
 Mitigations live in three places: the prompt files, the Python guards in
-[`_ocr.py`](../pipeline/_ocr.py) (step 1) /
+[`_ocr.py`](../pipeline/_ocr.py) with `_ocr_*.py` (step 1) /
 [`_translate.py`](../pipeline/_translate.py) with its rule modules `_tx_*.py` (step 2), and a couple of
 architectural choices. Each entry says which.
 
@@ -62,7 +62,7 @@ legible, so the model guesses.
   appears inside an illustration or engraving plate, a library stamp, or a
   catalogue/accession annotation. … if it is set as a roman numeral (e.g.
   VIII), give the roman numeral, not an arabic conversion."
-- `reconcile_page_numbers()` ([`_ocr.py`](../pipeline/_ocr.py)):
+- `reconcile_page_numbers()` ([`_ocr_folios.py`](../pipeline/_ocr_folios.py)):
   a folio is trusted when **a neighbouring sheet's folio continues the
   printed sequence** (`i-1 → v-1` or `i+1 → v+1`, also across a short run
   of *unread* pages). Non-trusted pages are interpolated from the nearest

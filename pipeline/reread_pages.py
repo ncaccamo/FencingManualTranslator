@@ -41,8 +41,7 @@ if not dry:
     _books.check_unlocked(stem, sys.argv)
 
 # step 1's rendering, OCR call and server start (_ocr.py)
-import _ocr  # noqa: E402
-_ns = vars(_ocr)
+import _ocr as _ns  # noqa: E402
 
 folder = f"/data/processed/{stem}_translated"
 I = f"{folder}/intermediate"
@@ -55,11 +54,11 @@ bad = [s for s in targets if not 1 <= s <= len(raw)]
 if bad:
     sys.exit(f"✗ {stem}: page(s) {bad} out of range (1..{len(raw)})")
 
-fitz, Image = _ns["fitz"], _ns["Image"]
+fitz, Image = _ns.fitz, _ns.Image
 src_pdf = f"/data/books/{stem}.pdf"
-crop = _ns["resolve_crop"](src_pdf if os.path.exists(src_pdf) else pdf)
+crop = _ns.resolve_crop(src_pdf if os.path.exists(src_pdf) else pdf)
 doc = fitz.open(pdf)
-proc = None if dry else _ns["start_vlm_server"]()
+proc = None if dry else _ns.start_vlm_server()
 if not dry and proc is None:
     sys.exit("✗ cannot reach / start the OCR server")
 done, failed = [], []
@@ -68,21 +67,21 @@ try:
         page = doc[s - 1]
         pix = page.get_pixmap(matrix=fitz.Matrix(300 / 72, 300 / 72))
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-        img = _ns["preprocess_for_ocr"](img)
+        img = _ns.preprocess_for_ocr(img)
         if any(crop):
-            img = _ns["apply_crop_to_image"](img, crop)
-        b64, kb = _ns["prepare_image_for_vlm"](img)
+            img = _ns.apply_crop_to_image(img, crop)
+        b64, kb = _ns.prepare_image_for_vlm(img)
         if dry:
             print(f"  page {s}: rendered ({kb:.0f} KB) -- dry run, not sent")
             continue
-        r = _ns["extract_page_with_vlm"](b64, kb, s - 1, len(raw))
+        r = _ns.extract_page_with_vlm(b64, kb, s - 1, len(raw))
         if r.get("success"):
             raw[s - 1] = r["content"]
             done.append(s)
         else:
             failed.append(s)
 finally:
-    if proc and proc is not _ns["REMOTE_SERVER"]:
+    if proc and proc is not _ns.REMOTE_SERVER:
         proc.terminate()
 
 if dry:

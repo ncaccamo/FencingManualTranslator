@@ -27,14 +27,13 @@ from PIL import Image
 sys.path.insert(0, "/app")   # backend_config, _pageio live here
 
 # --- step 1's helpers (_ocr.py), without its corpus loop -----------------
-import _ocr  # noqa: E402
-_ns = vars(_ocr)
+import _ocr as _ns  # noqa: E402
 
-start_vlm_server = _ns["start_vlm_server"]
-preprocess_for_ocr = _ns["preprocess_for_ocr"]
-prepare_image_for_vlm = _ns["prepare_image_for_vlm"]
-bc = _ns["bc"]
-requests = _ns["requests"]
+start_vlm_server = _ns.start_vlm_server
+preprocess_for_ocr = _ns.preprocess_for_ocr
+prepare_image_for_vlm = _ns.prepare_image_for_vlm
+bc = _ns.bc
+requests = _ns.requests
 
 GOLD = Path("/data/evals/gold")
 PROMPT = ("Transcribe every word of printed text on this page, exactly as "
@@ -52,7 +51,7 @@ def _ocr_page(img_b64: str) -> str:
                 headers={"Content-Type": "application/json", **bc.auth_headers()},
                 # the same model name step 1 sends (VLM_MODEL_NAME, e.g. the
                 # llama-swap key "fmt-ocr"); a hard-coded "olmocr2" 404s there
-                json={"model": _ns["VLM_MODEL_NAME"], "temperature": 0.1, "max_tokens": 4096,
+                json={"model": _ns.VLM_MODEL_NAME, "temperature": 0.1, "max_tokens": 4096,
                       "repeat_penalty": 1.12,
                       "messages": [{"role": "user", "content": [
                           {"type": "text", "text": PROMPT},
@@ -118,7 +117,7 @@ def main() -> None:
         for s in sides:
             ocr_side(stem, s, rng, force)
     finally:
-        _ns["subprocess"].run(["pkill", "-f", "llama-server.*11435"])
+        _ns.subprocess.run(["pkill", "-f", "llama-server.*11435"])
 
 
 if __name__ == "__main__":
