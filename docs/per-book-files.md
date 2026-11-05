@@ -30,6 +30,7 @@ was added.
 | `<stem>.split` | corrections for cutting two-page spreads apart |
 | `<stem>.rotate` | which plates to turn upright in the PDFs |
 | `<stem>.pictures` | decorative pictures left out of the English-only PDF |
+| `<stem>.review` | your answers on the review page (`review_page.py`): fix / fine as is / later, per report item |
 | `_alt/<stem>_original.pdf` | the untouched scan, kept when a scan is split or patched |
 
 ---
@@ -204,6 +205,7 @@ step 1 for the whole book.
 | `<stem>.split` | `140: 0.512` (cut at that share of the width) or `66-95: whole`, one per line | Corrections for `split_spreads.py`, which cuts a scan of two-page spreads into single pages. |
 | `<stem>.rotate` | `cw` / `ccw` / `180` (every plate), or page lists: `cw: 35, 39, 55-229` and `ccw: 241` | Turns sideways plates upright in both PDFs (read by steps 3 and 4 only, so it can be changed any time; rebuild the PDFs). |
 | `<stem>.pictures` | `decoration: none` (the book has no decorations, only stamps: Jacob-André), `drop: 17, 103` (every decoration on those scan pages), `drop: 103.2` (the second picture down the page), `kept: 55.1, 85.1` (reviewed and kept) | Pictures the English-only PDF leaves out. `decoration: none` touches only decorations (no caption, no figure record); a page listed under `drop:` loses the listed pictures whatever they are. `kept:` changes nothing in the PDF: it tells the review sheet which pictures were already decided, so only new ones are marked New. Written by the decoration review sheet (`decoration_sheet.py`, manual III.5d); read by step 3 only, rebuild the PDFs. |
+| `<stem>.review` | `[[card]]` entries: `id`, `scan`, `pdf`, `kind`, `issue`, `answer` = `"fix"` / `"fine"` / `"later"`, and optionally `note`, `find`, `replace` | Written by the review page (`review_page.py`, manual III.5a). The review report stops listing an item answered *fine*, and lists a *fix* with a find / replace until `pipeline/apply_review.py` (host) has written it into the overrides file as a `[[fix]]`. Changes nothing in the PDFs by itself. |
 
 A page missing, scanned twice, or a folded plate is fixed by patching the
 scan with pages from another digitised copy: `patch_scan.py` (manual

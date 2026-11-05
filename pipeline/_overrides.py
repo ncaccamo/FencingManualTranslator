@@ -402,3 +402,32 @@ def hand_corrected_pages(stem: str, books_dir: str = "/data/books") -> list:
     except OverridesError:
         return []
     return sorted({f["scan"] for f in ov["fix"]} | set(edits))
+
+
+def load_review(stem: str, books_dir: str = "/data/books") -> dict:
+    """books/<stem>.review (the review page's answers) -> {card id: answer
+    dict}. Missing file -> {}. A malformed file raises OverridesError."""
+    p = _here_or_skip(books_dir, f"{stem}.review")
+    if not os.path.exists(p):
+        return {}
+    try:
+        with open(p, "rb") as fh:
+            raw = tomllib.load(fh)
+    except tomllib.TOMLDecodeError as e:
+        raise OverridesError(f"{p}: {e}") from None
+    out = {}
+    for n, c in enumerate(raw.get("card") or [], 1):
+        if not isinstance(c.get("id"), str) or c.get("answer") not in ("fix", "fine", "later"):
+            raise OverridesError(f"{p}: [[card]] #{n} needs id and answer = "
+                                 "\"fix\", \"fine\" or \"later\"")
+        out[c["id"]] = c
+    return out
+
+
+def review_fixes_missing(answers: dict, ov: dict) -> list:
+    """Answers "fix" with a find/replace that has no [[fix]] in the overrides
+    file yet: [(scan, card id, find)] -- run apply_review.py."""
+    have = {(f["scan"], f.get("find"), f.get("replace")) for f in ov["fix"]}
+    return [(c.get("scan"), k, c["find"]) for k, c in answers.items()
+            if c["answer"] == "fix" and c.get("find") and isinstance(c.get("scan"), int)
+            and (c["scan"], c["find"], c.get("replace", "")) not in have]

@@ -210,6 +210,29 @@ side-by-side PDF. What it checks:
 - **Negation:** a page whose source has two or more negations more than its
   English: a "not" lost (the sentence now says the opposite), or a passage
   left out.
+- **Override:** your own `[[fix]]` and `[[table_fix]]` decisions, checked
+  against the text. A fix whose text is no longer on the page (the page
+  was retranslated after you wrote it, or the find has a typo) is listed:
+  your decision is not in the PDFs. Rewrite the fix for the new text, or
+  remove it. A fix not yet in the text means `apply_overrides.py` hasn't
+  run since you added it. A fix that a later fix on the same page undoes
+  is a note: remove the pair, or the earlier one.
+- **Marks left in the text:** a paragraph printed twice in a row that the
+  source prints once; a translator's note (†N) with no mark in the text, or
+  a mark with no note; a line opening with ", ", "; ", ": " or a stray
+  ". " (a sentence not joined across the page break, or a mark the book
+  doesn't print); "•" inside a line (guillemets read as bullets); the OCR's
+  "(!)" or "(i)" for a note mark (1); a word still split at a line end
+  ("supple- ness"). A line that is only "»" is a note: a ditto mark the
+  book prints, or a stray.
+- **Name:** a word one letter off the author's name in `meta.json`
+  (author, title_full), or the same letters in odd case: "Mosiello" for
+  Masiello, "JOLIVET" for Jollivet, "LeCuyer" for Lecuyer. Two letters off is
+  a note. Accents don't count. Check the scan: the book may print it that way.
+- **English-only PDF:** a figure number out of sequence ("Fig. 41" between
+  10 and 12: a misread); a table with no English, which that PDF shows as
+  the scan's untranslated table; and, as a note, a caption that is also a
+  line of the text, which that PDF may print twice.
 - **Notes:** things worth a glance but often fine. For example, a paragraph
   moved to the notes as a margin note, which is a heuristic and is sometimes wrong.
 
@@ -230,6 +253,54 @@ the checks above catch the recurring ones only.
 The review loop: read the report → look at those pages → record decisions
 in the overrides file (III.5b) → `apply_overrides.py` and/or
 `2_translate.py --pages` → rebuild the PDFs → rerun the report.
+
+### The review page: deciding the report's items in a browser
+
+For a page that shows every report item as a card, with its side-by-side
+PDF page (the words it is about outlined in red; the English-only page too
+where only that PDF is affected) and the page's English text:
+
+```bash
+docker exec fmt-translator python3 /app/review_page.py <stem>
+```
+
+Open `processed/<stem>_translated/<stem> — Review.html` (the pictures are in
+the `— Review files` folder beside it; rebuild the PDFs first). Answer each
+card:
+
+- **Fix**, with a find / replace on the page's English (copy the words from
+  the page text shown on the card; the page warns when they don't match), or
+  with a note saying what to change.
+- **Fine as is**: the report stops listing it as a page to check.
+- **Later**: undecided.
+
+Press *Save .review file* and put `<stem>.review` in `books/`, replacing
+the old one. Then, on the host, from the repository:
+
+```bash
+python3 pipeline/apply_review.py <stem>     # find / replace answers -> [[fix]]
+```
+
+That writes each new find / replace answer as a `[[fix]]` in the overrides
+file, with a comment naming its card. A find that isn't on the page now is
+skipped and listed. Then run `apply_overrides.py <stem>` in the container and
+rebuild the PDFs. Your answers fill in the page the next time it is made, and
+cards you haven't answered are marked New. Until `apply_review.py` has run,
+the report lists each Fix answer not yet in the overrides file. A Fix with
+only a note stays listed until the item itself is resolved.
+
+Using another review tool instead: `review_page.py` also writes the same
+cards as `<stem> — Review cards.json`. Answers from such a tool come back as
+a JSON list of `{"stem", "id", "answer", "find", "replace", "note", "scan",
+"pdf", "kind", "issue"}` (`id` = the card's `id`, `answer` = `fix` / `fine` /
+`later`):
+
+```bash
+python3 pipeline/apply_review.py --answers answers.json <stem>
+```
+
+merges them into `books/<stem>.review` (the same card's new answer wins;
+the file's other cards stay), then writes the fixes as above.
 
 ### Margin notes
 

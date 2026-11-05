@@ -35,6 +35,7 @@ contains_too_much_non_english = _ns["contains_too_much_non_english"]
 FN_HEADER = _ns["FN_HEADER"]
 
 CHECK, NOTE = "CHECK", "NOTE"
+ACCEPTED = "ACCEPTED"      # marked "fine as is" on the review page (books/<stem>.review)
 
 # "Still French?" for the report: French function words must clearly
 # outnumber English ones. (step 2's contains_too_much_non_english() is a
@@ -388,6 +389,208 @@ def translation_issues(src: str, t: str) -> list:
     return out
 
 
+def _plainp(p: str) -> str:
+    return re.sub(r"\W+", " ", re.sub(r"<[^>]+>", "", p)).strip().lower()
+
+
+def text_marks(src: str, t: str) -> list:
+    """Marks left in the English text: [(level, kind, detail)]. Each was
+    found in a book's English by the reviewer and missed by every other
+    check (decision-page review, 2026-11-05). Report only -- not part of
+    translation_issues(), so the translation model test's scores stay put.
+    `src` is the page's source body, `t` its translation.txt entry."""
+    out = []
+    body, _, block = t.partition(FN_HEADER)
+    # a paragraph printed twice in a row that the source prints once: a
+    # [[fix]] that added text again on every run (Kirchhoffer scan 80,
+    # LaMarche scan 4) or a model loop. The source can repeat a row on
+    # purpose (Masiello 1887's saber tables), so only the excess counts.
+    def twice(x):
+        ps = [_plainp(p) for p in re.split(r"\n\s*\n", x) if p.strip()]
+        return [a for a, b in zip(ps, ps[1:]) if len(a) >= 40 and a == b]
+    rep = twice(body)
+    if len(rep) > len(twice(src)):
+        out.append((CHECK, "repeated", f"a paragraph printed twice in a row, once in the "
+                    f"source: {rep[-1][:60]!r}"))
+    # a translator's note (†N) whose mark is nowhere on the page, and the
+    # reverse
+    notes = re.findall(r"(?m)^†(\d+)\b", block)
+    marks = set(re.findall(r"†(\d+)(?!\d)", body)) | set(re.findall(r"(?m)(?<=\S)†(\d+)(?!\d)", block))
+    for n in sorted(set(notes) - marks, key=int):
+        out.append((CHECK, "note", f"translator's note †{n} has no †{n} mark in the text"))
+    for n in sorted(marks - set(notes), key=int):
+        out.append((CHECK, "note", f"mark †{n} in the text, but no note †{n}"))
+    for line in t.split("\n"):
+        s = line.strip()
+        if "|" in s or "}" in s:                   # a table or brace row
+            continue
+        if re.fullmatch(r"[«»“”\"„]+", s):
+            # a lone ditto mark is printed in lists (layout rule); here it
+            # stands on a line of its own -- usually a stray from the OCR
+            out.append((NOTE, "punctuation", f"a line that is only {s!r} -- a ditto mark "
+                        "the book prints, or a stray? Check the scan"))
+        elif re.match(r"[:;,]\s|\.\s(?!\.)", s):
+            # a page opening "; he has the choice" (Edom scan 217), a stray
+            # ". " from the OCR (Prévost-Jollivet scan 140): a sentence not
+            # joined across the break, or a mark the book doesn't print
+            out.append((CHECK, "punctuation", f"a line starts with {s[0]!r}: {s[:50]!r} -- "
+                        "a stray mark, or a sentence split from the page before"))
+    # the OCR's reading of a note mark (1): "(!)", "(i)", "(l)" -- only
+    # where the page has note (1) and no (1) in the text, since an author's
+    # "(!)" is real (Edom scan 273)
+    if re.search(r"(?m)^\(1\)", block) and "(1)" not in body:
+        m = re.search(r"\((?:!|i|l|I)\)", body)
+        if m:
+            out.append((CHECK, "note", f"{m.group(0)!r} in the text where note (1) has no mark "
+                        "-- the OCR's reading of (1)?"))
+    # guillemets read as bullets: "formula alone: • At your service, sir. •"
+    # (Prévost-Jollivet scans 26, 217, 292); a bullet opening a line is a list
+    m = re.search(r"[^\s•][ \t]*•", t)
+    if m:
+        out.append((CHECK, "punctuation", f"'•' inside a line: "
+                    f"{t[max(0, m.start() - 25):m.end() + 15]!r} -- guillemets read as bullets?"))
+    # a word still split at a line end of the scan: "supple- ness", "per- form"
+    m = re.search(r"\b([A-Za-z]{2,})- (?!(?:and|or|nor|to|as|through)\b)([a-z]{2,})\b",
+                  re.sub(r"<[^>]+>", "", body))
+    if m:
+        out.append((CHECK, "wording", f"a word split by a hyphen: {m.group(0)!r} -- join it"))
+    return out
+
+
+def _edit_distance(a: str, b: str) -> int:
+    if abs(len(a) - len(b)) > 2:
+        return 9
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def name_variants(meta: dict, tr: list) -> list:
+    """The author's name misspelt by the OCR: [(scan, level, detail)]. The
+    names come from meta.json (author, title_full); a word one or two
+    letters off one of them, or the same letters in odd case, is listed
+    (Kirchhoffer "LeCuyer", Masiello 1887 "Mosiello", Prévost-Jollivet
+    "JOLIVET", Barbasetti "BARBASETTE" -- all found by eye, 2026-11-05).
+    Accents don't count (meta.json's "Lécuyer" is printed "Lecuyer"). Kept
+    quiet: only a capitalised word, at most twice in the book, never
+    written in lower case there (March, Parts, prevent), and rarer than
+    the name itself (meta.json misspelt: Vauresmont)."""
+    import unicodedata
+    deacc = lambda s: "".join(c for c in unicodedata.normalize("NFKD", s)
+                              if not unicodedata.combining(c)).lower()
+    names = {w for w in re.findall(r"[^\W\d_]{5,}", f"{meta.get('author') or ''} "
+                                   f"{meta.get('title_full') or ''}") if w[0].isupper()}
+    seen = defaultdict(list)
+    for i, t in enumerate(tr):
+        for w in re.findall(r"[^\W\d_]+", re.sub(r"<[^>]+>", "", t or "")):
+            seen[w].append(i + 1)
+    lower = {deacc(w) for w in seen if w.islower()}
+    out = []
+    for n in sorted(names):
+        nl = deacc(n)
+        count = sum(len(v) for w, v in seen.items() if deacc(w) == nl)
+        for w, v in seen.items():
+            wl = deacc(w)
+            if len(w) < 5 or not w[0].isupper() or wl[0] != nl[0] or len(v) > 2 \
+                    or len(v) >= count or wl in lower:
+                continue
+            d = _edit_distance(wl, nl)
+            odd_case = d == 0 and not (w.isupper() or w[1:] == w[1:].lower())
+            if odd_case or 0 < d <= (2 if len(nl) >= 7 else 1):
+                out.append((v[0], CHECK if d <= 1 else NOTE,
+                            f"{w!r} -- the name {n!r} misread? ({count} time(s) as {n!r} in the "
+                            "book) Check the scan"))
+    return out
+
+
+def english_only_issues(tr: list, figs: dict, tables: dict) -> list:
+    """What the English-only PDF shows that the side-by-side doesn't:
+    [(scan, level, kind, detail)]. 2026-11-05 decision-page review: a
+    caption printed again as a line of text (Kirchhoffer pdf 52 "Diagram
+    A"), a figure number misread ("Fig. 41" between 10 and 12, André scan
+    53), a table with no English (step 3 shows the scan's table instead)."""
+    import _render
+    out, seq = [], []
+    for k in sorted(figs, key=int):
+        i = int(k)
+        body = _body(tr[i]) if i < len(tr) else ""
+        # a plate page whose text is only its caption is printed once: step
+        # 3 uses the text as the caption (caption_only_page, <= 20 words)
+        lines = {_plainp(l) for l in body.split("\n") if l.strip()} \
+            if len(re.sub(r"<[^>]+>", "", body).split()) > 20 else set()
+        for f in figs[k]:
+            c = (f.get("caption_en") or "").strip()
+            if not c or _render.describes_picture(f.get("caption") or ""):
+                continue
+            if len(_plainp(c)) >= 6 and _plainp(c) in lines:
+                # the book can print a heading in the same words as the
+                # plate's caption (Masiello 1887 "Sword in line"): a note
+                out.append((i + 1, NOTE, "caption", f"caption {c[:50]!r} is also a line of the "
+                            "text: the English-only PDF may print it twice -- check that page, and the scan"))
+            m = re.match(r"\s*(?:<i>)?fig(?:ure|\.)?\s*(\d+)\b(?!\s*(?:bis|ter)\b)", c, re.I)
+            if m:
+                seq.append((i + 1, int(m.group(1)), c))
+    for (s0, a, _), (s1, b, c), (s2, d, _) in zip(seq, seq[1:], seq[2:]):
+        if a < d and d - a <= 4 and not a < b < d:
+            out.append((s1, CHECK, "caption", f"{c[:40]!r}: figure {b} between {a} and {d} -- "
+                        "a misread number? Check the scan; correct it with [pages.N] caption"))
+    for i, t in enumerate(tr):
+        n = (t or "").count("[[TABLE]]")
+        if n:
+            good = sum(1 for h in ((tables.get(str(i)) or {}).get("en") or []) if h)
+            if good < n:
+                out.append((i + 1, CHECK, "table", f"{n - good} of the page's {n} table(s) have no "
+                            "English: the English-only PDF shows the scan's table, untranslated"))
+    return out
+
+
+def fix_status(tr: list, ov: dict, french: bool, edited=()) -> list:
+    """Each [[fix]] / [[table_fix]] against the text now: [(scan, what,
+    status)]. "pending" = apply_overrides.py has not run since it was added;
+    "not found" = neither its find nor its result is on the page (the page
+    was retranslated, or the fix was written wrong) -- the decision is not
+    in the PDFs. 21 approved answers were found missing this way only by
+    hand (2026-11-05); the warning step 2 prints was ignored for weeks."""
+    out = []
+    what = lambda f: (f"prepend {f['prepend'][:50]!r}" if "prepend" in f
+                      else f"{f['find'][:50]!r} → {f['replace'][:50]!r}")
+    # in file order, on one copy, as step 2 applies them: a later fix may
+    # take back an earlier one (Jacob-André scan 141: "halfway" -> "with a
+    # half-lunge", then the decision changed back)
+    pages, touched = list(tr), set()
+    for f in _ns["_house_fixes"](ov, french)["fix"]:
+        s = f["scan"]
+        if s > len(tr) or s in edited:            # a hand edit replaces the page
+            continue
+        applied, missing = _overrides.apply_fixes(pages, dict(ov, fix=[f], pages={}, table_fix=[]))
+        if missing:
+            out.append((s, what(f), "not found"))
+        touched.add(s)
+    hi = _ns["house_italics"]
+    for s in sorted(touched):
+        if hi(pages[s - 1], french) != tr[s - 1]:
+            out.append((s, "on this page", "pending"))
+    # a fix undone by a later one: the earlier one is clutter
+    fx = [f for f in ov["fix"] if "find" in f]
+    for k, a in enumerate(fx):
+        for b in fx[k + 1:]:
+            if a["scan"] == b["scan"] and a["replace"] == b["find"] and b["replace"] == a["find"]:
+                out.append((a["scan"], what(a), "taken back"))
+    return out
+
+
+def card_id(x: dict) -> str:
+    """A report item's id on the review page (review_page.py) and in
+    books/<stem>.review: the same item keeps its id from run to run."""
+    import hashlib
+    d = x["detail"] if isinstance(x["detail"], str) else json.dumps(x["detail"], sort_keys=True)
+    return hashlib.sha1(f"{x['scan']}|{x['kind']}|{d}".encode()).hexdigest()[:10]
+
+
 def page_map(folder: str, n: int) -> dict:
     """scan page -> side-by-side pdf page, read off the built PDF (a page
     that overflows adds a '(cont.)' sheet, shifting everything after it)."""
@@ -605,7 +808,7 @@ def check_book(folder: str) -> list:
         if lost >= 2:
             add(s, CHECK, "negation", f"the source has {lost} more negations than the English "
                 "-- a \"not\" lost, or a passage left out")
-        for level, kind, detail in translation_issues(src, t):
+        for level, kind, detail in translation_issues(src, t) + text_marks(src, t):
             add(s, level, kind, detail)
         if raw and i < len(raw):
             rb = raw[i].split("BODY_TEXT:", 1)[1] if "BODY_TEXT:" in raw[i] else ""
@@ -884,6 +1087,38 @@ def check_book(folder: str) -> list:
     except _overrides.OverridesError as e:
         add(0, "BOOK", "hand edits", str(e))
         edits = {}
+
+    for s, level, kind, detail in english_only_issues(tr, figs, tables):
+        add(s, level, kind, detail)
+
+    import _cover
+    for s, level, detail in name_variants(_cover._meta(os.path.basename(folder)[:-len("_translated")]), tr):
+        add(s, level, "name", detail)
+
+    # the reviewer's [[fix]] decisions: each one in the text, or listed
+    try:
+        _ov = _overrides.load(os.path.basename(folder)[:-len("_translated")])
+    except _overrides.OverridesError:
+        _ov = None
+    if _ov:
+        for s, what, status in fix_status(tr, _ov, _rules is not TERM_RULES_IT, edits):
+            if status == "taken back":
+                add(s, NOTE, "override", f"[[fix]] {what} is taken back by a later fix on the "
+                    "same page -- remove both, or the earlier one")
+                continue
+            add(s, CHECK, "override", f"[[fix]] {what}: " + (
+                "not in the text yet -- run apply_overrides.py" if status == "pending" else
+                "its text is not on the page, so the decision is not in the PDFs -- the page was "
+                "retranslated, or the find is wrong: rewrite the fix or remove it"))
+        for f in _ov["table_fix"]:
+            en = (tables.get(str(f["scan"] - 1)) or {}).get("en") or []
+            if not any(h and (f["find"] in h or f["replace"] in h) for h in en):
+                add(f["scan"], CHECK, "override", f"[[table_fix]] {f['find'][:50]!r} → "
+                    f"{f['replace'][:50]!r}: its text is in none of the page's tables -- "
+                    "rewrite the fix or remove it")
+            elif any(h and f["find"] in h and f["find"] not in f["replace"] for h in en):
+                add(f["scan"], CHECK, "override", f"[[table_fix]] {f['find'][:50]!r}: not in "
+                    "the table yet -- run apply_overrides.py")
     if edits:
         fp = _ns["page_fingerprint"]
         stale = {s for s, e in edits.items()
@@ -893,6 +1128,24 @@ def check_book(folder: str) -> list:
             add(s, CHECK, "hand edit", f"the page's source text changed after it was edited "
                 f"by hand -- compare books/{os.path.basename(folder)[:-len('_translated')]}"
                 f".edits/scan-{s:04d}.txt with the page")
+
+    # the review page's answers (books/<stem>.review, review_page.py): an
+    # item marked "fine as is" is decided -- kept in the JSON as ACCEPTED,
+    # left out of the pages to check; a "fix" not yet in the overrides
+    # file is listed until apply_review.py has written it
+    stem = os.path.basename(folder)[:-len("_translated")]
+    try:
+        answers = _overrides.load_review(stem)
+    except _overrides.OverridesError as e:
+        add(0, "BOOK", "review answers", str(e))
+        answers = {}
+    for x in issues:
+        if answers.get(card_id(x), {}).get("answer") == "fine" and x["level"] in (CHECK, NOTE):
+            x["level"] = ACCEPTED
+    if answers and _ov:
+        for s, k, find in _overrides.review_fixes_missing(answers, _ov):
+            add(s, CHECK, "review", f"answered Fix on the review page (card {k}), not in the "
+                f"overrides file yet: {find[:50]!r} -- run pipeline/apply_review.py on the host")
     return issues
 
 
@@ -907,7 +1160,9 @@ def write_report(folder: str, stem: str, issues: list) -> str:
     book = [x for x in issues if x["level"] == "BOOK"]
     issues = [x for x in issues if x["level"] not in ("TERMS", "BOOK")]
     for x in issues:
-        by_page[x["scan"]].append(x)
+        if x["level"] != ACCEPTED:
+            by_page[x["scan"]].append(x)
+    n_ok = sum(1 for x in issues if x["level"] == ACCEPTED)
     n_check = sum(1 for x in issues if x["level"] == CHECK)
     pages_check = sorted({x["scan"] for x in issues if x["level"] == CHECK})
     kinds = Counter(x["kind"] for x in issues if x["level"] == CHECK)
@@ -920,7 +1175,8 @@ def write_report(folder: str, stem: str, issues: list) -> str:
 
     L = [f"# Review report — {stem}", "",
          f"{ex_n} pages. **{len(pages_check)} page(s) to check** "
-         f"({n_check} issue(s)); {sum(1 for x in issues if x['level'] == NOTE)} note(s).",
+         f"({n_check} issue(s)); {sum(1 for x in issues if x['level'] == NOTE)} note(s)."
+         + (f" {n_ok} more marked fine as is on the review page (`books/{stem}.review`)." if n_ok else ""),
          "", "Record decisions in `books/" + stem + ".overrides.toml` (manual III.5b); "
          "retranslate with `2_translate.py --pages " + stem + " <scan pages>`.", ""]
     if not pmap:

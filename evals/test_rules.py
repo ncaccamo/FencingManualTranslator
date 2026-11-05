@@ -2578,6 +2578,172 @@ def test_report_point_cut_and_cutting_blow():
     assert not hits(Q.TERM_RULES, "tendre le bras", "extend the arm")
 
 
+def test_report_text_marks():
+    # 2026-11-05, from the decision-page review: marks in the English that
+    # no check saw. Real shapes; the false alarms each guard is a real page.
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        Q = importlib.import_module("quality_report")
+    except (OSError, ImportError, SystemExit):   # reads /app paths: runs in the image
+        return
+    kinds = lambda src, t: [(lv, k) for lv, k, d in Q.text_marks(src, t)]
+    row = "cavazione, cut to the head, to the inside face, to the chest, to the belly"
+    src_row = "cavazione, sciabolata alla testa, alla figura interna, al petto, alla pancia"
+    # a paragraph doubled by a [[fix]] that ran twice; Masiello 1887 scan 683
+    # repeats a table row in the source too -- not flagged
+    assert (Q.CHECK, "repeated") in kinds("Una riga sola qui.", f"{row}\n\n{row}\n")
+    assert not kinds(f"{src_row}\n\n{src_row}", f"{row}\n\n{row}")
+    # translator's notes: a mark in the author's own footnote counts (Masiello scan 56)
+    ok = "the army.(1) And\n___FOOTNOTES___\n†1 Latin in the original\n(1) “He himself” (Aurel. Victor. c. 33).†1"
+    assert not kinds("", ok)
+    assert (Q.CHECK, "note") in kinds("", "the army. And\n___FOOTNOTES___\n†1 Latin in the original")
+    assert (Q.CHECK, "note") in kinds("", "the army†2. And")
+    # Prévost-Jollivet scan 140 (". If one remains"), Edom scan 217 ("; he has");
+    # an ellipsis and a brace table row are fine (Blengini 84, Lambertini 105)
+    assert (Q.CHECK, "punctuation") in kinds("", "parry quarte.\n. If one remains in the lunge")
+    assert (Q.CHECK, "punctuation") in kinds("", "; he has the choice among an infinity")
+    assert not kinds("", ". . . His valor\n, from below — , or <i>montante</i> }")
+    assert (Q.NOTE, "punctuation") in kinds("", "the end.\n»\nNext")   # Gomard scan 41
+    # guillemets read as bullets (Prévost-Jollivet scan 217); a bulleted list is fine
+    assert (Q.CHECK, "punctuation") in kinds("", "formula alone: • At your service, sir. •")
+    assert not kinds("", "   • Across the plain of\n   • Between two unequal")
+    # the OCR's "(!)" for note (1); an author's "(!)" with no note is real (Edom scan 273)
+    assert (Q.CHECK, "note") in kinds("", "the guard (!) is\n___FOOTNOTES___\n(1) See page 3.")
+    assert not kinds("", "and... practical fencing (!) counts")
+    # line-end hyphen kept (Baudry scan 170); "pre- and post-" is fine
+    assert (Q.CHECK, "wording") in kinds("", "the supple- ness of the wrist")
+    assert not kinds("", "first- and second-intention attacks")
+
+
+def test_report_name_variants():
+    # the author's name misread by the OCR (2026-11-05: Masiello 1887
+    # "Mosiello" scan 9, Prévost-Jollivet "JOLIVET" scan 9, Kirchhoffer
+    # "LeCuyer"); common words near a name stay quiet (prevent, March)
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        Q = importlib.import_module("quality_report")
+    except (OSError, ImportError, SystemExit):   # reads /app paths: runs in the image
+        return
+    tr = ["by Ferdinando MASIELLO", "Masiello says", "as Mosiello writes", "Masiello again",
+          "Camille Prévost and G. JOLIVET", "Jollivet, Jollivet", "to prevent it. March",
+          "march on", "Léon LeCuyer", "Lecuyer, Lecuyer"]
+    got = {(s, d.split("'")[1]) for s, lv, d in Q.name_variants(
+        {"author": "Ferdinando Masiello / Camille Prévost & G. Jollivet / Lécuyer"}, tr)}
+    assert got == {(3, "Mosiello"), (5, "JOLIVET"), (9, "LeCuyer")}, got
+    # meta.json misspelt, the book right (Vauresmont): not flagged
+    assert not Q.name_variants({"author": "Vauremont"}, ["VAURESMONT", "Vauresmont"])
+
+
+def test_report_english_only_issues():
+    # Kirchhoffer pdf 52 "Diagram A" printed as caption and as text; André
+    # scan 53 "Fig. 41" between 10 and 12; "Fig. 56bis" is not a misread. A
+    # plate page whose text is only the caption prints it once (Masiello 1887
+    # scan 201): not flagged
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        Q = importlib.import_module("quality_report")
+    except (OSError, ImportError, SystemExit):   # reads /app paths: runs in the image
+        return
+    long = "The diagram below shows the eight parries and the lines they close. " * 2
+    tr = [f"{long}\nDiagram A\n{long}", "", "", "", "", "", "[[TABLE]]\nprose"]
+    figs = {"0": [{"kind": "inset", "caption": "Schéma A", "caption_en": "Diagram A"}],
+            "1": [{"caption": "Fig. 10.", "caption_en": "Fig. 10. — Quarte."}],
+            "2": [{"caption": "Fig. 41.", "caption_en": "Fig. 41. — Parry of quarte."}],
+            "3": [{"caption": "Fig. 12.", "caption_en": "Fig. 12. — Tierce."}],
+            "4": [{"caption": "Fig. 12 bis", "caption_en": "Fig. 12 bis (top)"}],
+            "5": [{"caption": "Fig. 13.", "caption_en": "Fig. 13. — Sixte."}],
+            "7": [{"kind": "plate", "caption": "Spada in linea", "caption_en": "Sword in line"}]}
+    tr += ["Sword in line."]
+    got = {(s, lv, k) for s, lv, k, d in Q.english_only_issues(tr, figs, {"6": {"en": [None]}})}
+    assert got == {(1, Q.NOTE, "caption"), (3, Q.CHECK, "caption"), (7, Q.CHECK, "table")}, got
+
+
+def test_review_page_answers_to_fixes():
+    # The local review page (review_page.py) saves books/<stem>.review;
+    # apply_review.py writes its find / replace answers as [[fix]] entries,
+    # once, and skips a find that isn't on the page (the way approved
+    # answers went missing before, 2026-11-05).
+    import importlib, os, tempfile
+    sys.path.insert(0, str(_PIPELINE))
+    A = importlib.import_module("apply_review")
+    O = _load_overrides_module()
+    try:
+        Q = importlib.import_module("quality_report")
+        x = {"scan": 3, "kind": "punctuation", "detail": "a line starts with '.'"}
+        assert Q.card_id(x) == Q.card_id(dict(x)) and Q.card_id(x) != Q.card_id(dict(x, scan=4))
+    except (OSError, ImportError, SystemExit):   # reads /app paths: runs in the image
+        pass
+    with tempfile.TemporaryDirectory() as d:
+        books, proc = f"{d}/books", f"{d}/processed"
+        os.makedirs(books)
+        os.makedirs(f"{proc}/x_1900_y_translated/intermediate")
+        with open(f"{proc}/x_1900_y_translated/intermediate/translation.txt", "w") as fh:
+            fh.write("\x1e".join(["one", "two", "parry quarte.\n. If one remains", "four"]))
+        with open(f"{books}/x_1900_y.overrides.toml", "w") as fh:
+            fh.write('[terms]\n"coup" = "attack"\n')
+        with open(f"{books}/x_1900_y.review", "w") as fh:
+            fh.write('[[card]]\nid = "aaaaaaaaaa"\nscan = 3\npdf = 4\nkind = "punctuation"\n'
+                     'issue = "a line starts with \'.\'"\nanswer = "fix"\n'
+                     'find = "quarte.\\n. If"\nreplace = "quarte.\\nIf"\n\n'
+                     '[[card]]\nid = "bbbbbbbbbb"\nscan = 2\nkind = "name"\nissue = "x"\n'
+                     'answer = "fix"\nfind = "not there"\nreplace = "y"\n\n'
+                     '[[card]]\nid = "cccccccccc"\nscan = 1\nkind = "note"\nissue = "x"\nanswer = "fine"\n')
+        got = O.load_review("x_1900_y", books)
+        assert set(got) == {"aaaaaaaaaa", "bbbbbbbbbb", "cccccccccc"}
+        todo, skipped = A.plan("x_1900_y", books, proc)
+        assert [k for k, a in todo] == ["aaaaaaaaaa"] and [k for k, s, w in skipped] == ["bbbbbbbbbb"]
+        A.write("x_1900_y", todo, books)
+        ov = O.load("x_1900_y", books)
+        assert ov["terms"] == {"coup": "attack"}
+        assert [(f["scan"], f["find"], f["replace"]) for f in ov["fix"]] == [(3, "quarte.\n. If", "quarte.\nIf")]
+        assert A.plan("x_1900_y", books, proc)[0] == []             # written once
+        assert O.review_fixes_missing(got, ov) == [(2, "bbbbbbbbbb", "not there")]
+        # answers from another review tool (--answers) merge into the same
+        # file: a new card is added, the same card id takes the new answer,
+        # the other cards stay, and the file still loads
+        n = A.merge_answers("x_1900_y", [
+            {"stem": "x_1900_y", "id": "bbbbbbbbbb", "scan": 2, "kind": "name", "issue": "x",
+             "answer": "fine", "find": "", "note": 'said "fine"\nfrom the page'},
+            {"stem": "x_1900_y", "id": "dddddddddd", "scan": 4, "pdf": 5, "kind": "override",
+             "issue": "x", "answer": "fix", "find": "four", "replace": "4"}], books)
+        got = O.load_review("x_1900_y", books)
+        assert n == 2 and set(got) == {"aaaaaaaaaa", "bbbbbbbbbb", "cccccccccc", "dddddddddd"}
+        assert got["bbbbbbbbbb"]["answer"] == "fine" and "find" not in got["bbbbbbbbbb"]
+        assert got["bbbbbbbbbb"]["note"] == 'said "fine"\nfrom the page'
+        assert got["aaaaaaaaaa"]["find"] == "quarte.\n. If" and got["dddddddddd"]["pdf"] == 5
+        assert A.merge_answers("x_1900_y", [{"id": "dddddddddd", "scan": 4, "pdf": 5, "kind": "override",
+                                             "issue": "x", "answer": "fix", "find": "four", "replace": "4"}], books) == 0
+        assert [k for k, a in A.plan("x_1900_y", books, proc)[0]] == ["dddddddddd"]
+
+
+def test_report_fix_status():
+    # 2026-11-05: 21 approved answers were missing from the text and step 2's
+    # "[[fix]] not found" warning had been ignored for weeks. The report
+    # lists each fix whose text is gone; a fix taken back by a later one
+    # (Jacob-André scan 141) is not "pending".
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        Q = importlib.import_module("quality_report")
+    except (OSError, ImportError, SystemExit):   # reads /app paths: runs in the image
+        return
+    ov = {"headers": {}, "terms": {}, "pages": {}, "table_fix": [], "fix": [
+        {"scan": 1, "find": "deliver a cut directly", "replace": "deliver a hit directly"},
+        {"scan": 2, "find": "halfway,", "replace": "with a half-lunge,"},
+        {"scan": 2, "find": "with a half-lunge,", "replace": "halfway,"},
+        {"scan": 3, "find": "old words", "replace": "new words"},
+        {"scan": 4, "find": "gone", "replace": "here"}]}
+    tr = ["deliver an attack directly", "disengage to the hand halfway, I",
+          "the old words", "already here", "x"]
+    got = {(s, st) for s, w, st in Q.fix_status(tr, ov, True)}
+    assert got == {(1, "not found"), (3, "pending"), (2, "taken back")}, got
+    assert not Q.fix_status(tr, ov, True, edited={1, 2, 3}) or \
+        {st for s, w, st in Q.fix_status(tr, ov, True, edited={1, 2, 3})} == {"taken back"}
+
+
 def test_report_meaning_check_rules():
     # 2026-11-02, from the Masiello 1887 / Barbasetti meaning checks: glossary
     # rules the model broke, words kept in Italian, false friends, Latin left

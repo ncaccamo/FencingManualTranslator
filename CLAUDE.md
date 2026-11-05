@@ -89,7 +89,11 @@ no ROCm/Vulkan). `scripts/setup.sh --remote` + `docker-compose.override.yml`
   step-1 code change would do to every book — run it before reprocessing),
   `pipeline/review_sheet.py` (checklist section / caption entries),
   `pipeline/decoration_sheet.py` (offline Keep/Drop page for a book's
-  decorative pictures → `books/<stem>.pictures`).
+  decorative pictures → `books/<stem>.pictures`), `pipeline/review_page.py`
+  (offline decision page for every review report item → `books/<stem>.review`;
+  `pipeline/apply_review.py`, host, writes its find / replace answers as
+  `[[fix]]`). The local review page is required: the pipeline must not
+  depend on Claude for review.
 
 ## Workflow notes
 - Ask for my input on decisions you think need it.
