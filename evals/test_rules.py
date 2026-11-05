@@ -1634,6 +1634,27 @@ def test_overrides_fix_prepend_is_idempotent_and_case_insensitive():
     assert ov.apply_fixes(tr2, o) == (0, []) and tr2[0].startswith("PLATE V\n")
 
 
+def test_overrides_fix_addition_is_idempotent_and_heals_copies():
+    # A replace that contains its own find grew one copy per run
+    # (Kirchhoffer scan 80 "from back to back to back to", LaMarche scan 4
+    # "THE THE ... ÉPÉE", Jacob-André scan 45 "words::", 2026-11-05).
+    ov = _load_overrides_module()
+    o = {"headers": {}, "terms": {}, "pages": {},
+         "fix": [{"scan": 1, "find": "deliver the cut from", "replace": "deliver the cut from back to"},
+                 {"scan": 2, "find": "ÉPÉE\nBY", "replace": "THE ÉPÉE\nBY"},
+                 {"scan": 3, "find": "fateful words", "replace": "fateful words:"}]}
+    tr = ["One can also deliver the cut from\n", "ÉPÉE\nBY\nLA MARCHE", "these fateful words\n"]
+    assert ov.apply_fixes(tr, o) == (3, [])
+    once = list(tr)
+    assert once == ["One can also deliver the cut from back to\n", "THE ÉPÉE\nBY\nLA MARCHE",
+                    "these fateful words:\n"], once
+    assert ov.apply_fixes(tr, o) == (0, []) and tr == once     # second run: no change
+    stacked = ["One can also deliver the cut from back to back to back to\n",
+               "THE THE THE THE ÉPÉE\nBY\nLA MARCHE", "these fateful words::\n"]
+    ov.apply_fixes(stacked, o)
+    assert stacked == once, stacked                             # copies collapse to one
+
+
 def test_overrides_fix_find_reports_obsolete():
     ov = _load_overrides_module()
     o = {"headers": {}, "terms": {}, "pages": {},

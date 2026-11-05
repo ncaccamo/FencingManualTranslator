@@ -269,6 +269,21 @@ def apply_fixes(tr_pages: list, ov: dict) -> tuple:
             tr_pages[i] = f"{lead}{first if copies else f['prepend']}\n\n{body}"
             applied += 1
         else:
+            if f["find"] in f["replace"] and f["find"] != f["replace"]:
+                # a replace that contains its own find (an addition: "words"
+                # -> "words:") matched again on every run and grew one more
+                # copy each time (Kirchhoffer scan 80 "from back to back to
+                # back to", LaMarche scan 4 "THE THE ... ÉPÉE", 2026-11-05).
+                # Stacked copies collapse to one; applied once = nothing to do.
+                pre, post = f["replace"].split(f["find"], 1)
+                pat = ((f"(?:{re.escape(pre)})+" if pre else "") + re.escape(f["find"])
+                       + (f"(?:{re.escape(post)})+" if post else ""))
+                healed = re.sub(pat, lambda m: f["replace"], t)
+                if f["replace"] in healed:
+                    if healed != t:
+                        tr_pages[i] = healed
+                        applied += 1
+                    continue
             if f["find"] not in t:
                 if f["replace"] not in t:
                     missing.append(f["scan"])
