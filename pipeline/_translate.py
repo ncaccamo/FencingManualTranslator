@@ -270,19 +270,20 @@ _FOOTNOTE_REF_FR = {
     "attaque d'emblée": "d'emblée", "coups amenés": "coup amené",
 }
 
-# The book's source language (set per book with its prompt, see
-# prompt_for_book): picks the footnoted-term list, the "Fr."/"It." reference
-# and the kept-term backstop.
+# The book being translated's source language (set per book with its prompt,
+# see prompt_for_book). The language rules take it as their `lang` argument
+# (footnoted-term list, "Fr."/"It." reference, kept-term backstop ...); only
+# step 2's own passes read it here.
 BOOK_LANG = "French"
 _LANG_REF = {"French": ("fr", "French"), "Italian": ("it", "Italian")}
 
 
-def _footnoted():
-    return _FOOTNOTED_IT if BOOK_LANG == "Italian" else _FOOTNOTED_FR
+def _footnoted(lang: str):
+    return _FOOTNOTED_IT if lang == "Italian" else _FOOTNOTED_FR
 
 
-def _footnote_ref():
-    return _FOOTNOTE_REF_IT if BOOK_LANG == "Italian" else _FOOTNOTE_REF_FR
+def _footnote_ref(lang: str):
+    return _FOOTNOTE_REF_IT if lang == "Italian" else _FOOTNOTE_REF_FR
 
 
 
@@ -292,7 +293,7 @@ _FOOTNOTED_NOT_BEFORE = {"froissement": r"(?!\s+d['’]\s*amour)",
                          "froissements": r"(?!\s+d['’]\s*amour)"}
 
 
-def enforce_footnoted_terms(text: str, seen: set, footnote: bool = True) -> str:
+def enforce_footnoted_terms(text: str, seen: set, footnote: bool = True, lang: str = "French") -> str:
     """Backstop for footnoted terms. Translate EVERY occurrence the model
     left in French (bare or italicised) to its English rendering, and on
     the FIRST one in a book append "<fn>Fr. <term></fn>". Case of the
@@ -309,13 +310,13 @@ def enforce_footnoted_terms(text: str, seen: set, footnote: bool = True) -> str:
 
     text = re.sub(r"<fn>.*?</fn>", _mask, text, flags=re.DOTALL | re.IGNORECASE)
 
-    label = _LANG_REF.get(BOOK_LANG, _LANG_REF["French"])[1]
-    for fr, en in _footnoted():
+    label = _LANG_REF.get(lang, _LANG_REF["French"])[1]
+    for fr, en in _footnoted(lang=lang):
         pat = re.compile(r"(?:<i>\s*)?(?<![\w-])" + re.escape(fr)
                          + r"(?![\w-])" + _FOOTNOTED_NOT_BEFORE.get(fr, "")
                          + r"(?:\s*</i>)?(?!\s*(?:</i>\s*)?\()", re.I)   # not a glossary headword: "<i>Caver</i> (to angle)"
         first = [True]
-        note_fr = _footnote_ref().get(fr, fr)
+        note_fr = _footnote_ref(lang=lang).get(fr, fr)
 
         def _sub(m, en=en, note_fr=note_fr, first=first):
             g = m.group(0)
@@ -336,7 +337,7 @@ def enforce_footnoted_terms(text: str, seen: set, footnote: bool = True) -> str:
     return text
 
 
-def pull_footnotes(text: str, source_text: str = "", seen: set = None):
+def pull_footnotes(text: str, source_text: str = "", seen: set = None, lang: str = "French"):
     """Turn the model's inline `phrase<fn>note</fn>` tags into `†N` markers
     plus a trailing ___FOOTNOTES___ block (the header can't collide with
     the page separator). A note whose text was already used earlier in the
@@ -348,8 +349,8 @@ def pull_footnotes(text: str, source_text: str = "", seen: set = None):
         seen = set()
     numbered = []
 
-    _footnoted_refs = {t for t, _ in _footnoted()} | (_FOOTNOTED_IT_REFS if BOOK_LANG == "Italian" else _FOOTNOTED_FR_REFS)
-    ab, label = _LANG_REF.get(BOOK_LANG, _LANG_REF["French"])
+    _footnoted_refs = {t for t, _ in _footnoted(lang=lang)} | (_FOOTNOTED_IT_REFS if lang == "Italian" else _FOOTNOTED_FR_REFS)
+    ab, label = _LANG_REF.get(lang, _LANG_REF["French"])
 
     def take(m):
         note = re.sub(r"</?fn>", "", re.sub(r"\s+", " ", m.group(1))).strip()
@@ -361,7 +362,7 @@ def pull_footnotes(text: str, source_text: str = "", seen: set = None):
         q = re.fullmatch(r"(French|Italian|Latin|Spanish|German|Greek|English) in the original\.?", note, re.I)
         # never the book's own language: a French quotation in a French book
         # is just the text (LaMarche scan 56 got three such notes)
-        if q and q.group(1).lower() == BOOK_LANG.lower():
+        if q and q.group(1).lower() == lang.lower():
             return ""
         if q:
             if len(numbered) >= FN_MAX_PER_PAGE:
@@ -369,7 +370,7 @@ def pull_footnotes(text: str, source_text: str = "", seen: set = None):
             numbered.append(f"{q.group(1).capitalize()} in the original")
             return f"{FN_MARK}{len(numbered)}"
         ref = re.sub(rf"^(?:{ab}\.|{label.lower()}:)\s*", "", note, flags=re.I).lower().rstrip(".").replace("\u2019", "'")
-        ref = _footnote_ref().get(ref, ref)  # "vous loger" -> "se loger"
+        ref = _footnote_ref(lang=lang).get(ref, ref)  # "vous loger" -> "se loger"
         if not note or ref not in _footnoted_refs:
             return ""                       # drop the tag, keep the phrase
         note = f"{label}: {ref}"            # canonical rendered form
@@ -593,8 +594,8 @@ _BLADE_PHRASES = [
 ]
 
 
-def restore_blade_phrases(text: str, src: str) -> str:
-    if not text or not src or BOOK_LANG == "Italian":
+def restore_blade_phrases(text: str, src: str, lang: str = "French") -> str:
+    if not text or not src or lang == "Italian":
         return text
     for fr, en, repl in _BLADE_PHRASES:
         if re.search(fr, src, re.I):
@@ -638,8 +639,8 @@ _STRAIGHT_SRC = re.compile(r"(?i)\bcolp[oi]\s+(?:di?ritt[oi]|dritt[oi]|dirett[oi
 _STRAIGHT_EN = re.compile(r"\b(straight|Straight|STRAIGHT)\s+(hit|attack|HIT|ATTACK)(s|S)?\b")
 
 
-def restore_straight_thrust(text: str, src: str) -> str:
-    if BOOK_LANG != "Italian":
+def restore_straight_thrust(text: str, src: str, lang: str = "French") -> str:
+    if lang != "Italian":
         return text
     budget = [len(_STRAIGHT_SRC.findall(src or ""))]
     if not text or not budget[0]:
@@ -654,8 +655,8 @@ def restore_straight_thrust(text: str, src: str) -> str:
     return _STRAIGHT_EN.sub(sub, text)
 
 
-def enforce_maestro(text: str, src: str) -> str:
-    if BOOK_LANG != "Italian" or not text:
+def enforce_maestro(text: str, src: str, lang: str = "French") -> str:
+    if lang != "Italian" or not text:
         return text
     budget = [len(_MAESTRO_SRC.findall(src or ""))]
     if not budget[0]:
@@ -681,8 +682,8 @@ def enforce_maestro(text: str, src: str) -> str:
     return source_case_kept_terms("".join(out), src)
 
 
-def _keep_terms():
-    return _KEEP_TERMS_IT if BOOK_LANG == "Italian" else _KEEP_TERMS_FR
+def _keep_terms(lang: str):
+    return _KEEP_TERMS_IT if lang == "Italian" else _KEEP_TERMS_FR
 
 
 # A source-language token the 7B reliably garbles. rassemblant is now a
@@ -1048,7 +1049,7 @@ def house_italics(text: str, french: bool = True) -> str:
     return _BARE_KEPT_FORM.sub(lambda m: f"<i>{m.group(0)}</i>", text)
 
 
-def enforce_kept_terms(text: str, src: str = "") -> str:
+def enforce_kept_terms(text: str, src: str = "", lang: str = "French") -> str:
     """Make sure a kept term is present and italicised: repair a
     known mistranslation, then wrap any bare occurrence in <i>...</i>
     (skipping what is already inside a tag), matching the case of
@@ -1057,7 +1058,7 @@ def enforce_kept_terms(text: str, src: str = "") -> str:
         return text
     text = repair_mangled_terms(text, src)
     text = fix_known_garbles(text, src)
-    for term, wrongs in _keep_terms():
+    for term, wrongs in _keep_terms(lang=lang):
         for w in wrongs:
             def _sub_term(m, term=term):
                 # preserve plurality of the garbled match ("RAPISES" ->
@@ -1079,7 +1080,7 @@ def enforce_kept_terms(text: str, src: str = "") -> str:
         text = re.sub(
             rf"<i>\s*<i>({re.escape(term)})</i>\s*</i>",
             lambda m: f"<i>{m.group(1)}</i>", text, flags=re.IGNORECASE)
-    return house_italics(text, BOOK_LANG != "Italian")
+    return house_italics(text, lang != "Italian")
 
 
 _TITLE_STOPWORDS = {
@@ -1671,8 +1672,8 @@ _LINE_SPELLINGS_IT = [(rf"(?<![\w.]){n}\s?(?:\.?\s?[aª])(?!\w)", w)
                      (r"(?<!\w)di(?=(?:prima|seconda|terza|quarta|quinta|sesta|settima|ottava)(?!\w))", "di ")]
 
 
-def _line_name_counts(text: str, source: bool = False, ordinals: bool = False) -> dict:
-    italian = BOOK_LANG == "Italian"
+def _line_name_counts(text: str, source: bool = False, ordinals: bool = False, lang: str = "French") -> dict:
+    italian = lang == "Italian"
     names = _LINE_NAMES_IT if italian else _LINE_NAMES_FR
     text = re.sub(r"</?i>", "", text).lower()
     if source:
@@ -1685,18 +1686,18 @@ def _line_name_counts(text: str, source: bool = False, ordinals: bool = False) -
     return out
 
 
-def line_names_swapped(text: str, src: str) -> str:
+def line_names_swapped(text: str, src: str, lang: str = "French") -> str:
     """'' if the English names the same lines as the source; otherwise what
     went wrong: a line the source never names (twice or more, so one stray
     word can't trip it), or a line the source names that is gone -- not even
     as an English ordinal -- while another line's count went up: the swap.
     "prime" / "prima" never count as extra ("prime importance")."""
-    s = _line_name_counts(src, source=True)
-    t = _line_name_counts(text)
+    s = _line_name_counts(src, source=True, lang=lang)
+    t = _line_name_counts(text, lang=lang)
     extra = [w for w in t if t[w] >= 2 and s[w] == 0 and w not in ("prime", "prima")]
     if extra:
         return "names " + ", ".join(extra) + " (not in the source)"
-    t_ord = _line_name_counts(text, ordinals=True)
+    t_ord = _line_name_counts(text, ordinals=True, lang=lang)
     gone = [w for w in s if s[w] >= 1 and t_ord[w] == 0]
     grew = [w for w in t if t[w] > s[w]]
     if gone and grew:
@@ -2198,14 +2199,14 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
                     fallback = fallback or cand
                     continue
                 cand = _clean_caption(cand)
-                cand = enforce_kept_terms(apply_always_translate(cand), cap)
+                cand = enforce_kept_terms(apply_always_translate(cand), cap, lang=BOOK_LANG)
                 cand = fix_parry_names(cand, cap)
                 # captions don't render a footnote block: translate the
                 # footnoted terms but drop any <fn> marker (backstop's and
                 # a stray one from the model).
                 cand = re.sub(r"<fn>.*?</fn>|</?fn>", "", cand,
                               flags=re.DOTALL | re.IGNORECASE)
-                cand = enforce_footnoted_terms(cand, set(), footnote=False)
+                cand = enforce_footnoted_terms(cand, set(), footnote=False, lang=BOOK_LANG)
                 if cand:
                     candidates.append(cand)
             if candidates:
@@ -2297,9 +2298,9 @@ def translate_tables(folder: str, force: bool = False) -> int:
                     if not cell or contains_too_much_non_english(cell) and len(cell.split()) > 3:
                         tr[t] = t                   # kept as printed: better than a wrong guess
                         continue
-                    cell = enforce_kept_terms(apply_always_translate(cell), t)
+                    cell = enforce_kept_terms(apply_always_translate(cell), t, lang=BOOK_LANG)
                     cell = fix_parry_names(cell, t)
-                    cell = enforce_footnoted_terms(cell, set(), footnote=False)
+                    cell = enforce_footnoted_terms(cell, set(), footnote=False, lang=BOOK_LANG)
                     tr[t] = caps_kept_terms(source_caps_lines(source_case_kept_terms(cell, t), t), t)
 
             def _sub(m, tr=tr):
@@ -2354,8 +2355,8 @@ def translate_headers(folder: str, force: bool = False) -> int:
             en = strip_model_preamble((en or "").strip()).strip()
             en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
             en = re.sub(r'</?i>', '', en)          # a header is plain text (rule 4)
-            en = enforce_kept_terms(apply_always_translate(en), h)   # snap "RAPIER RAPIER" -> riposte
-            en = enforce_footnoted_terms(en, set(), footnote=False)
+            en = enforce_kept_terms(apply_always_translate(en), h, lang=BOOK_LANG)   # snap "RAPIER RAPIER" -> riposte
+            en = enforce_footnoted_terms(en, set(), footnote=False, lang=BOOK_LANG)
             en = re.sub(r'</?i>', '', en)          # drop the <i> enforce_kept_terms added
             en = re.sub(r'\s*<fn>.*?</fn>|</?fn>|†\d*', '', en)   # a running head carries no note (Spinnewyn "BIND<fn>…")
             en = en.splitlines()[0].strip() if en else ""
@@ -2433,7 +2434,7 @@ def harmonize_titles_with_headers(folder: str) -> int:
         t = tr[i]
         if t.strip().startswith("[") or not t.strip():     # empty / flagged page
             continue
-        en = enforce_kept_terms(hmap[h], h)
+        en = enforce_kept_terms(hmap[h], h, lang=BOOK_LANG)
         lines = t.split("\n")
         k = next((j for j, l in enumerate(lines)
                   if l.strip() and not l.strip().startswith("⟦MARGIN:")), None)
@@ -2880,19 +2881,19 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         elif kind == "bibliography":
             candidate = _pagekind.complete_bibliography(candidate, clean_text)
         candidate = apply_always_translate(candidate)
-        candidate = enforce_kept_terms(candidate, clean_text)
-        candidate = enforce_maestro(candidate, clean_text)
+        candidate = enforce_kept_terms(candidate, clean_text, lang=BOOK_LANG)
+        candidate = enforce_maestro(candidate, clean_text, lang=BOOK_LANG)
         candidate = restore_rapier(candidate, clean_text)
         candidate = restore_reprise(candidate, clean_text)
-        candidate = restore_blade_phrases(candidate, clean_text)
-        candidate = restore_straight_thrust(candidate, clean_text)
+        candidate = restore_blade_phrases(candidate, clean_text, lang=BOOK_LANG)
+        candidate = restore_straight_thrust(candidate, clean_text, lang=BOOK_LANG)
         # on a ToC page: translate the Cat-3 terms but emit NO
         # footnote marker (a contents line must not carry one, and
         # it would burn the once-per-book note), and skip the
         # heading re-translate pass (every entry looks like a
         # heading) to keep the "entry … NN" structure intact.
         candidate = enforce_footnoted_terms(
-            candidate, footnoted_seen, footnote=not page_is_toc)
+            candidate, footnoted_seen, footnote=not page_is_toc, lang=BOOK_LANG)
         candidate = _capitalize_definition_entries(candidate)
         if not page_is_toc:
             candidate = retranslate_stray_french_headings(candidate)
@@ -3005,13 +3006,13 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         # a line / parry named wrongly -- quarte became tierce (Kirchhoffer
         # scan 52). Retried hotter; if every try has it, the best one is kept
         # with the low-confidence banner for a person to check.
-        swap = line_names_swapped(candidate, clean_text)
+        swap = line_names_swapped(candidate, clean_text, lang=BOOK_LANG)
         if swap:
             # a hotter try alone often repeats it (Prévost-Jollivet scan 57, all
             # three tries) -- Kirchhoffer scan 52 was a
             # near-tie, tierce 34% / quarte 33%, then self-consistent -- so the
             # retry is told which lines the source names, and how often
-            named = {w: c for w, c in _line_name_counts(clean_text, source=True).items() if c}
+            named = {w: c for w, c in _line_name_counts(clean_text, source=True, lang=BOOK_LANG).items() if c}
             line_hint = (" The source names these lines / parries, and no others: "
                          + ", ".join(f"{w} ({c}x)" for w, c in named.items())
                          + ". Write each one exactly where the source has it; never put one line in place of another.")
@@ -3020,7 +3021,7 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
             continue
 
         candidate = match_boundary_punctuation(candidate, clean_text)
-        candidate, n_fn = pull_footnotes(candidate, clean_text, fn_seen)
+        candidate, n_fn = pull_footnotes(candidate, clean_text, fn_seen, lang=BOOK_LANG)
         candidate = extract_source_footnotes(candidate, fn_state)
         print(f" ✓{'  (%d fn)' % n_fn if n_fn else ''}")
         return candidate
@@ -3036,7 +3037,7 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         # The only thing wrong was the all-caps shout: repair the
         # case and keep it as a normal page, no review banner.
         fixed, n_fn = pull_footnotes(deshout(best_candidate, clean_text),
-                                     clean_text, fn_seen)
+                                     clean_text, fn_seen, lang=BOOK_LANG)
         print(" ✓ (deshouted)")
         return fixed
     elif best_candidate:

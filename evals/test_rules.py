@@ -2231,18 +2231,14 @@ def test_italian_cat2_new_terms_translated_and_noted_once():
     # English becomes its rendering, with one "Italian: <singular>" note
     # per book; "di striscio" wins over bare "striscio"
     from _rules import TX
-    TX["BOOK_LANG"] = "Italian"
-    try:
-        seen = set()
-        out = TX["enforce_footnoted_terms"]("A feint volante, then two feints volanti.", seen)
-        assert "volant" not in out.replace("Italian: volante", ""), out
-        assert out.count("off the blade") == 2 and out.count("<fn>Italian: volante</fn>") == 1, out
-        out = TX["enforce_footnoted_terms"]("He hits di striscio.", seen)
-        assert out == "He hits grazing<fn>Italian: striscio</fn>.", out
-        out = TX["enforce_footnoted_terms"]("The controazioni of seconda.", seen)
-        assert out == "The counter-actions<fn>Italian: controazione</fn> of seconda.", out
-    finally:
-        TX["BOOK_LANG"] = "French"
+    seen = set()
+    out = TX["enforce_footnoted_terms"]("A feint volante, then two feints volanti.", seen, lang="Italian")
+    assert "volant" not in out.replace("Italian: volante", ""), out
+    assert out.count("off the blade") == 2 and out.count("<fn>Italian: volante</fn>") == 1, out
+    out = TX["enforce_footnoted_terms"]("He hits di striscio.", seen, lang="Italian")
+    assert out == "He hits grazing<fn>Italian: striscio</fn>.", out
+    out = TX["enforce_footnoted_terms"]("The controazioni of seconda.", seen, lang="Italian")
+    assert out == "The counter-actions<fn>Italian: controazione</fn> of seconda.", out
 
 
 def test_italian_prompt_carries_survey_terms():
@@ -2259,14 +2255,10 @@ def test_italian_kept_terms_backstop():
     # Italian sample 2026-09-30: Bruno "An sforzo is called..." left bare,
     # Masiello 1902 heading "OF THE RIPONSES" (DELLE RISPOSTE)
     from _rules import TX
-    TX["BOOK_LANG"] = "Italian"
-    try:
-        out = TX["enforce_kept_terms"]("The sforzo and the simple sforzi.")
-        assert out == "The <i>sforzo</i> and the simple <i>sforzi</i>.", out
-        out = TX["enforce_kept_terms"]("OF THE <i>RIPONSES</i> FROM THE FINAL PARRY")
-        assert "RIPOSTES" in out and "RIPONSES" not in out, out
-    finally:
-        TX["BOOK_LANG"] = "French"
+    out = TX["enforce_kept_terms"]("The sforzo and the simple sforzi.", lang="Italian")
+    assert out == "The <i>sforzo</i> and the simple <i>sforzi</i>.", out
+    out = TX["enforce_kept_terms"]("OF THE <i>RIPONSES</i> FROM THE FINAL PARRY", lang="Italian")
+    assert "RIPOSTES" in out and "RIPONSES" not in out, out
 
 
 def test_multiline_prepend_idempotent_and_heals_copies():
@@ -2918,46 +2910,40 @@ def test_line_name_swap_rejected():
              "la ligne de quarté et la ligne de tierce; main de tierce, main de quarté") == ""  # Gomard 87
     assert f("The name of septime given for the first time. <i>septime</i> or demi-cercle",
              "Le nom de septième donné pour la première fois. septième ou demi-cercle") == ""  # Gomard 82
-    TX["BOOK_LANG"] = "Italian"
-    try:
-        f = TX["line_names_swapped"]
-        assert f("in the attack of <i>terza</i>; a glide in <i>terza</i>",
-                 "nell'attacco di 3.ª; un filo di spada in 3.ª") == ""                # Enrichetti 111
-        assert f("ON THE FIRST EXIT; counter-action of <i>terza</i>, transport in <i>terza</i>",
-                 "SULLA PRIMA USCITA; controazione diterza, trasporto in terza") == ""  # Masiello 381
-        assert f("parry of <i>terza</i>, then <i>terza</i>", "parata di quarta, poi quarta") \
-            == "names terza (not in the source)"
-    finally:
-        TX["BOOK_LANG"] = "French"
+    from functools import partial
+    f = partial(TX["line_names_swapped"], lang="Italian")
+    assert f("in the attack of <i>terza</i>; a glide in <i>terza</i>",
+             "nell'attacco di 3.ª; un filo di spada in 3.ª") == ""                # Enrichetti 111
+    assert f("ON THE FIRST EXIT; counter-action of <i>terza</i>, transport in <i>terza</i>",
+             "SULLA PRIMA USCITA; controazione diterza, trasporto in terza") == ""  # Masiello 381
+    assert f("parry of <i>terza</i>, then <i>terza</i>", "parata di quarta, poi quarta") \
+        == "names terza (not in the source)"
     import os
     page = open(str(_PIPELINE / "_translate.py"),
                 encoding="utf-8").read()
     page = page[page.index("def translate_page("):]
-    assert "line_names_swapped(candidate, clean_text)" in page
+    assert "line_names_swapped(candidate, clean_text, lang=BOOK_LANG)" in page
 
 
 def test_maestro_kept_everywhere_in_italian():
     # 2026-10-11 (reviewer): Maestro every time in an Italian book -- the literal
     # prompt wrote "master" in prose (Masiello scan 434). Capped at the source's
     # count; the verb and French books are untouched.
+    from functools import partial
     from _rules import TX
-    TX["BOOK_LANG"] = "Italian"
-    try:
-        f = TX["enforce_maestro"]
-        src = "Sarà bene che il maestro faccia eseguire... fra allievo e maestro. I maestri italiani."
-        out = f("It will be well that the master have them executed... between student and master. "
-                "The Italian masters.", src)
-        # in the book's case (reviewer, 2026-10-18)
-        assert out == ("It will be well that the <i>maestro</i> have them executed... between student and "
-                       "<i>maestro</i>. The Italian <i>maestri</i>."), out
-        assert f("the <i>Maestro</i> and the master, to master it", "il maestro e il maestro") == \
-            "the <i>maestro</i> and the <i>maestro</i>, to master it"
-        assert f("the master and the master", "il maestro e il padrone") == "the <i>maestro</i> and the master"
-        assert f("the master Parise", "il Maestro Parise") == "the <i>Maestro</i> Parise"
-        assert f("MASTER PARISE", "MAESTRO PARISE") == "<i>MAESTRO</i> PARISE"
-        assert f("the master", "nessuno") == "the master"
-    finally:
-        TX["BOOK_LANG"] = "French"
+    f = partial(TX["enforce_maestro"], lang="Italian")
+    src = "Sarà bene che il maestro faccia eseguire... fra allievo e maestro. I maestri italiani."
+    out = f("It will be well that the master have them executed... between student and master. "
+            "The Italian masters.", src)
+    # in the book's case (reviewer, 2026-10-18)
+    assert out == ("It will be well that the <i>maestro</i> have them executed... between student and "
+                   "<i>maestro</i>. The Italian <i>maestri</i>."), out
+    assert f("the <i>Maestro</i> and the master, to master it", "il maestro e il maestro") == \
+        "the <i>maestro</i> and the <i>maestro</i>, to master it"
+    assert f("the master and the master", "il maestro e il padrone") == "the <i>maestro</i> and the master"
+    assert f("the master Parise", "il Maestro Parise") == "the <i>Maestro</i> Parise"
+    assert f("MASTER PARISE", "MAESTRO PARISE") == "<i>MAESTRO</i> PARISE"
+    assert f("the master", "nessuno") == "the master"
     assert TX["enforce_maestro"]("the fencing master", "le maestro") == "the fencing master"
 
 
@@ -2969,13 +2955,10 @@ def test_third_language_quotation_note():
     out, n = TX["pull_footnotes"]('He wrote: "fencing is the trade of cowards!"<fn>French in the original</fn> '
                                   'And: "a mediocre skill"<fn>French in the original</fn>.', "", set())
     assert n == 0 and "French in the original" not in out and "<fn>" not in out, out  # French book
-    TX["BOOK_LANG"] = "Italian"
-    try:
-        out, n = TX["pull_footnotes"]('He wrote: "fencing is the trade of cowards!"<fn>French in the original</fn> '
-                                      'And: "a mediocre skill"<fn>French in the original</fn>.', "", set())
-        assert n == 2 and out.count("French in the original") == 2 and "<fn>" not in out, out
-    finally:
-        TX["BOOK_LANG"] = "French"
+    out, n = TX["pull_footnotes"]('He wrote: "fencing is the trade of cowards!"<fn>French in the original</fn> '
+                                  'And: "a mediocre skill"<fn>French in the original</fn>.', "", set(),
+                                  lang="Italian")
+    assert n == 2 and out.count("French in the original") == 2 and "<fn>" not in out, out
     p = TX["prompt_for_language"]("Italian")
     assert "a quotation in a third language" in p and "<i>manrovesci</i> is not \"reversals\"" in p
     assert "Maestro, every time" in p and "manrovescio (manrovesci)" in p
@@ -3678,21 +3661,16 @@ def test_colpo_diritto_is_a_straight_thrust():
     # Marchionni 1847: «colpo diritto» -> "straight hit" 120 of 142 times,
     # rule line or not (2026-10-14)
     from _rules import TX
-    f = TX["restore_straight_thrust"]
-    saved = TX["BOOK_LANG"]
-    try:
-        TX["BOOK_LANG"] = "Italian"
-        src = "§ 1. Colpo diritto nella linea alta di dentro. Si tira il colpo diritto."
-        assert f("§ 1. Straight hit in the inside high line. One delivers the straight hit.", src) == \
-            "§ 1. Straight thrust in the inside high line. One delivers the straight thrust."
-        assert f("STRAIGHT HITS", "COLPI DIRITTI") == "STRAIGHT THRUSTS"
-        # only as many as the source has; none without it
-        assert f("a straight hit, then a straight hit", "un colpo dritto") == "a straight thrust, then a straight hit"
-        assert f("a straight hit", "una botta") == "a straight hit"
-        TX["BOOK_LANG"] = "French"
-        assert f("a straight hit", "un colpo diritto") == "a straight hit"
-    finally:
-        TX["BOOK_LANG"] = saved
+    from functools import partial
+    f = partial(TX["restore_straight_thrust"], lang="Italian")
+    src = "§ 1. Colpo diritto nella linea alta di dentro. Si tira il colpo diritto."
+    assert f("§ 1. Straight hit in the inside high line. One delivers the straight hit.", src) == \
+        "§ 1. Straight thrust in the inside high line. One delivers the straight thrust."
+    assert f("STRAIGHT HITS", "COLPI DIRITTI") == "STRAIGHT THRUSTS"
+    # only as many as the source has; none without it
+    assert f("a straight hit, then a straight hit", "un colpo dritto") == "a straight thrust, then a straight hit"
+    assert f("a straight hit", "una botta") == "a straight hit"
+    assert TX["restore_straight_thrust"]("a straight hit", "un colpo diritto", lang="French") == "a straight hit"
 
 
 def test_kept_term_takes_the_books_case():
@@ -4352,13 +4330,10 @@ def test_footnoted_terms_questionnaire():
                              "a <i>lodging</i><fn>Fr. loger</fn>; a hint<fn>Fr. indice</fn>", "", set())
     assert n == 2 and body.endswith("___FOOTNOTES___\n†1 French: se loger\n†2 French: s'enferrer"), body
     assert "a hint;" not in body and "a hint" in body
-    TX["BOOK_LANG"] = "Italian"
-    try:
-        body, n = pull_footnotes("straight thrust advancing<fn>It. camminando</fn>", "", set())
-        assert n == 1 and body.endswith("†1 Italian: camminando"), body
-        assert TX["enforce_footnoted_terms"]("un forconatore", set()) == "un pitchforker<fn>Italian: forconatore</fn>"
-    finally:
-        TX["BOOK_LANG"] = "French"
+    body, n = pull_footnotes("straight thrust advancing<fn>It. camminando</fn>", "", set(), lang="Italian")
+    assert n == 1 and body.endswith("†1 Italian: camminando"), body
+    assert TX["enforce_footnoted_terms"]("un forconatore", set(), lang="Italian") == \
+        "un pitchforker<fn>Italian: forconatore</fn>"
 
 
 def test_place_tables_hand_written_table():
