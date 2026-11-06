@@ -3,7 +3,7 @@
 # Copyright (C) 2026 Nicholas A. Caccamo
 """English-only PDF: the translated text as a continuous flowing document.
 
-Rewritten (see chat log): the old version laid every page into a fixed
+Rewritten: the old version laid every page into a fixed
 356 pt slot, 2 per sheet, after `translation_text.replace('\n', ' ')` --
 which silently dropped anything that overflowed the slot and destroyed all
 drill / command-table structure. Now:

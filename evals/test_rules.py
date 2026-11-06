@@ -2793,7 +2793,7 @@ def test_italian_low_high_at_render():
     # 2026-10-12: "quarta bassa" -> "low quarta" (reviewer); Masiello 1887 had
     # it three ways. Applied when the PDF is drawn.
     import os, re
-    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline", "_render.py"),
+    src = open(str(_PIPELINE / "_render.py"),
                encoding="utf-8").read()
     ns = {"re": re}
     exec(src[src.index("_IT_LINE_LOW_HIGH = "):src.index("def markdown_italics")], ns)
@@ -2813,7 +2813,7 @@ def test_italian_line_numerals_at_render():
     # "2nd-in-3rd", Bruno's "4ª bassa" left as numerals (prompt: line names).
     # French drill positions and equation references are left alone.
     import os, re
-    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline", "_render.py"),
+    src = open(str(_PIPELINE / "_render.py"),
                encoding="utf-8").read()
     ns = {"re": re}
     exec(src[src.index("_IT_N = "):src.index("def markdown_italics")], ns)
@@ -2834,7 +2834,7 @@ def test_line_names_italic_at_render():
     # PDF is drawn (_render.line_name_italics) -- the model left ~95% roman. "prime"
     # only as the fencing term, "octave" not as verse; already-italic text untouched.
     import os, re
-    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline", "_render.py"),
+    src = open(str(_PIPELINE / "_render.py"),
                encoding="utf-8").read()
     ns = {"re": re}
     exec(src[src.index("_LINE_NAMES = "):src.index("def markdown_italics")], ns)
@@ -2858,7 +2858,7 @@ def test_prompt_translates_closely():
     # 2026-10-11: rule 0 (closeness to the author's words, with its three guards) is in
     # the prompt shared by French and Italian -- the reviewer prefers literal to paraphrase.
     import os
-    p = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline", "translation_prompt.txt"),
+    p = open(str(_PIPELINE / "translation_prompt.txt"),
              encoding="utf-8").read()
     assert "0. Translate closely" in p and "avvertenza → note" in p and "thrust by <i>cavazione</i>" in p
     assert "rule 0 never overrides rules 2-3" in p and "into clear, modern English" not in p

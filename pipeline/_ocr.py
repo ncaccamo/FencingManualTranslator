@@ -314,9 +314,7 @@ def start_vlm_server(restart=False):
 
 def prepare_image_for_vlm(img: Image.Image, max_dimension: int = VLM_MAX_DIMENSION, quality: int = 92) -> tuple:
     """Resize to olmOCR-2's documented longest-dimension spec and encode.
-    Quality can stay high since the image itself is intentionally small --
-    this isn't a size/speed compromise the way Qwen2-VL's escalating
-    compression was."""
+    Quality can stay high: the image itself is small, so it costs little."""
     if img.width > max_dimension or img.height > max_dimension:
         ratio = min(max_dimension / img.width, max_dimension / img.height)
         new_size = (int(img.width * ratio), int(img.height * ratio))

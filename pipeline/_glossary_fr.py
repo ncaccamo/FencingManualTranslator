@@ -74,7 +74,7 @@ _FOOTNOTE_REF_FR = {
 _FOOTNOTED_NOT_BEFORE = {"froissement": r"(?!\s+d['’]\s*amour)",
                          "froissements": r"(?!\s+d['’]\s*amour)"}
 
-# Rule-3 "always translate" terms the model drops inconsistently (leaves
+# Rule-3 "always translate" terms the old 7B model dropped inconsistently (leaves
 # "an arm called a fleuret" in the body, "ENTRAINEMENT" as a header).
 # Only unambiguous ones -- these have no other meaning in this corpus.
 # Longest first so "fleurettiste" wins before "fleuret".
@@ -103,7 +103,7 @@ _ALWAYS_TRANSLATE = [
     (r"divers", "miscellaneous"),
     (r"demi-fentes", "half-lunges"), (r"demi-fente", "half-lunge"),
     (r"fentes", "lunges"), (r"fente", "lunge"),
-    # "leçon d'assaut" = a free-play lesson; the 7B collapses it to just
+    # "leçon d'assaut" = a free-play lesson; the old 7B model collapses it to just
     # "the bout" (drops "leçon"). Bare "assaut" -> "bout" is left to the
     # prompt (rule 3) -- "assaut" alone is sometimes "assault" in a duel.
     (r"leçons d['’]assaut", "bout lessons"), (r"leçon d['’]assaut", "bout lesson"),
@@ -113,22 +113,22 @@ _ALWAYS_TRANSLATE = [
     (r"attaques au fer", "attacks on the blade"), (r"attaque au fer", "attack on the blade"),
     (r"sur le fer", "on the blade"), (r"au fer", "on the blade"),
     (r"le fer", "the blade"),
-    # "l'escrime au fleuret" -> "foil fencing"; the 7B renders it
+    # "l'escrime au fleuret" -> "foil fencing"; the old 7B model renders it
     # "épée fencing with the fleuret" / "épée fencing with the foil".
     (r"escrime au fleuret", "foil fencing"), (r"au fleuret", "with the foil"),
     (r"escrime à l['’]épée", "épée fencing"), (r"à l['’]épée", "with the épée"),
     # "au bout d'épée" -- idiom for a bout fenced with the épée, not a
-    # literal "at the point of the sword"; the 7B renders it word-for-word.
+    # literal "at the point of the sword"; the old 7B model renders it word-for-word.
     (r"au bout d['’]épée", "an épée bout"),
     # "un assaut d'épée" is just an épée bout -- there is no "leçon" in it,
-    # but the 7B pulls "lesson" in from the leçon-d'assaut rule and writes
+    # but the old 7B model pulls "lesson" in from the leçon-d'assaut rule and writes
     # "a bout lesson with the épée". Repair the output.
     (r"a bout lesson with the épée", "an épée bout"),
     (r"bout lesson with the épée", "épée bout"),
 ]
 
-# Kept terms: "keep in the source language, italic" that the model
-# drops the <i>...</i> off or mistranslates -- plate captions especially.
+# Kept terms: "keep in the source language, italic" that the model (the old
+# 7B model first) drops the <i>...</i> off or mistranslates -- plate captions especially.
 # Only the tight retained set; riposte / remise / reprise / the parry
 # numbers the model handles on its own. Each entry: term -> English
 # mistranslations to snap back to it.

@@ -49,10 +49,9 @@ PROMPT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "translat
 TRANSLATION_MODEL = os.environ.get("TRANSLATION_MODEL_PATH", "/models/Qwen3.8-27B.i1-Q4_K_S.gguf")
 # Qwen3.8-27B 4-bit is ~15.8 GB: it doesn't fit whole in 16 GB of VRAM, so a
 # fixed number of its 64 layers go on the GPU and the rest on the CPU. 46
-# fits a dedicated 16 GB card (local mode); the Windows GPU system uses 42
-# in its llama-swap entry, where the driver allows one program ~11.8 GB and
-# other programs share the card (docs/remote-gpu.md). A smaller model can
-# take 999 (= all).
+# fits a dedicated 16 GB card (local mode); in remote mode the GPU system's
+# llama-swap entry sets its own (fewer: other programs share that card;
+# docs/remote-gpu.md). A smaller model can take 999 (= all).
 TRANSLATION_GPU_LAYERS = os.environ.get("TRANSLATION_GPU_LAYERS", "46")
 # Request "model" label. Ignored by a single-model llama-server (local /
 # simple remote); the routing key under llama-swap. Kept in sync with the
@@ -1081,7 +1080,7 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         print(f"  Page {i}/{n} (try {attempt + 1})", end="", flush=True)
 
         # After a first failure, raise the temperature and add a
-        # blunt instruction -- the 7B sometimes gets stuck echoing
+        # blunt instruction -- the old 7B model sometimes gets stuck echoing
         # the French source verbatim, and a hotter sample + the
         # extra line breaks it out.
         ctx = page_context_block(st) + kind_note

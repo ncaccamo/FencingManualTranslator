@@ -94,7 +94,7 @@ def apply_always_translate(text: str) -> str:
     return _phrase_repairs(text)
 
 
-# Free-standing repairs for known 7B phrasings that _ALWAYS_TRANSLATE's
+# Free-standing repairs for known phrasings of the old 7B model that _ALWAYS_TRANSLATE's
 # \b-anchored substitution can't reach (e.g. a phrase split by an <i> tag).
 def _phrase_repairs(text: str) -> str:
     if not text:
@@ -261,14 +261,14 @@ def _keep_terms(lang: str):
     return _KEEP_TERMS_IT if lang == "Italian" else _KEEP_TERMS_FR
 
 
-# A source-language token the 7B reliably garbles. rassemblant is now a
+# A source-language token the old 7B model reliably garbles. rassemblant is now a
 # footnoted (translated) term, so snap the garble back to the BARE French
 # word -- enforce_footnoted_terms() then translates it and adds the note.
 _MANGLE_PRONE = [(r"rassembl", "rassemblant")]
 
 
 def repair_mangled_terms(dst: str, src: str) -> str:
-    """When the SOURCE has a term the 7B is known to mangle and the output
+    """When the SOURCE has a term the old 7B model is known to mangle and the output
     has lost it, swap the first quoted non-English token back to the term."""
     if not dst or not src:
         return dst

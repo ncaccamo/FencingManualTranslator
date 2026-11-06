@@ -3,7 +3,7 @@
 # Copyright (C) 2026 Nicholas A. Caccamo
 """Side-by-side PDF: original scan (left) beside its English translation (right).
 
-Rewritten (see chat log): the old right column ran
+Rewritten: the old right column ran
 `translation_text.replace('\n', ' ')` then a single `insert_textbox`, so it
 lost all drill / command-table structure and silently truncated any page
 whose translation didn't fit. Now the right column flows through _render
