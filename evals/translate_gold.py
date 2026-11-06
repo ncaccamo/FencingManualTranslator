@@ -38,6 +38,7 @@ boundary = _ns["match_boundary_punctuation"]
 deshout = _ns["deshout"]
 
 _FOOTNOTED_SEEN: set = set()
+LANG = "French"                  # the gold book's language, set in main()
 _FN_SEEN: set = set()
 shout = _ns["_shout_ratio"]
 too_french = _ns["contains_too_much_non_english"]
@@ -58,13 +59,14 @@ def translate_page(fr: str) -> str:
         if not out:
             continue
         out = re.sub(r"(?m)^\s*-{3,}\s*$", "* * *", out)
-        out = enforce_footnoted(enforce_terms(apply_always(out), fr), _FOOTNOTED_SEEN)
+        out = enforce_footnoted(enforce_terms(apply_always(out), fr, lang=LANG),
+                                _FOOTNOTED_SEEN, lang=LANG)
         best = best or out
         if too_french(out) or (shout(out) > 0.85 and shout(fr) < 0.6):
             time.sleep(3); continue
-        out, _ = pull_footnotes(boundary(out, fr), fr, _FN_SEEN)
+        out, _ = pull_footnotes(boundary(out, fr), fr, _FN_SEEN, lang=LANG)
         return out
-    fixed, _ = pull_footnotes(deshout(boundary(best, fr), fr), fr, _FN_SEEN)
+    fixed, _ = pull_footnotes(deshout(boundary(best, fr), fr), fr, _FN_SEEN, lang=LANG)
     return fixed if best else "[untranslated]"
 
 
@@ -76,11 +78,11 @@ def main():
     # the book's own prompt, as step 2 would use it: the language comes
     # from the gold pair's meta.json (src.lang), the prompt and the
     # footnoted / kept-term lists follow it
-    global PROMPT
+    global PROMPT, LANG
     import json
     lang = {"it": "Italian", "fr": "French"}.get(
         json.loads((d / "meta.json").read_text(encoding="utf-8"))["src"].get("lang", "fr"), "French")
-    _ns["BOOK_LANG"] = lang
+    _ns["BOOK_LANG"] = LANG = lang
     PROMPT = _ns["prompt_for_language"](lang)
     print(f"source language: {lang}")
     # only the pages the reference covers (meta.json "src_pages"), as

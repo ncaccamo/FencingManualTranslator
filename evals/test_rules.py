@@ -4372,5 +4372,19 @@ def test_pictures_file_kept_line_ignored():
     assert not off and drop == {(2, 1), (16, 0), (19, 0), (20, 0)}, drop
 
 
+def test_translate_gold_passes_book_language():
+    # evals/translate_gold.py calls the term / note rules itself; without
+    # lang= they default to French, so an Italian gold book got the French
+    # term lists and "French:" note labels (2026-11-06, after the rules
+    # stopped reading BOOK_LANG)
+    import ast
+    src = (Path(__file__).resolve().parent / "translate_gold.py").read_text(encoding="utf-8")
+    calls = [c for c in ast.walk(ast.parse(src)) if isinstance(c, ast.Call)
+             and isinstance(c.func, ast.Name)
+             and c.func.id in ("enforce_terms", "enforce_footnoted", "pull_footnotes")]
+    assert len(calls) == 4, len(calls)
+    missing = [c.lineno for c in calls if "lang" not in {k.arg for k in c.keywords}]
+    assert not missing, f"no lang= on lines {missing}"
+
 if __name__ == "__main__":
     sys.exit(_run_plain())
