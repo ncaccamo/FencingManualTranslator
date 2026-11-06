@@ -4386,5 +4386,21 @@ def test_translate_gold_passes_book_language():
     missing = [c.lineno for c in calls if "lang" not in {k.arg for k in c.keywords}]
     assert not missing, f"no lang= on lines {missing}"
 
+def test_retranslate_reads_notes_in_book_language():
+    # retranslate_pages() rebuilt the notes already given from "French:"
+    # lines only, so a redone page of an Italian book repeated an
+    # "Italian: legamento" note given on another page (Masiello fioretto /
+    # sciabola carry such repeats, 2026-11-06)
+    from _rules import TX
+    notes_already_given = TX["notes_already_given"]
+    tr = ["a bind†1\n\n___FOOTNOTES___\n†1 Italian: legamento",
+          "redone page",
+          "a glide†1\n\n___FOOTNOTES___\n†1 Italian: filo"]
+    st = notes_already_given(tr, [2, 3], "Italian")
+    assert st["fn_seen"] == {"legamento"} and st["footnoted_seen"] == {"legamento"}, st
+    assert notes_already_given(tr, [], "French")["fn_seen"] == set()
+    fr = ["une liement†1\n\n___FOOTNOTES___\n†1 French: liement"]
+    assert notes_already_given(fr, [], "French")["fn_seen"] == {"liement"}
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

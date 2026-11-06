@@ -32,7 +32,7 @@ from _tx_checks import (
     is_near_blank, is_toc_page, line_names_swapped, looks_like_refusal, lost_negations,
     note_bodies, quotation_left_untranslated, strip_model_preamble, untranslated_paragraph,
 )
-from _tx_common import _strip_accents
+from _tx_common import _LANG_REF, _strip_accents
 from _tx_notes import extract_source_footnotes, pull_footnotes
 from _tx_structure import (
     _capitalize_definition_entries, _clean_caption, fix_subheading_spacing,
@@ -1359,6 +1359,22 @@ def finish_book(folder: str) -> None:
     apply_book_overrides(folder)
 
 
+def notes_already_given(tr: list, targets: list, lang: str) -> dict:
+    """Book-wide footnote state from every translated page NOT being redone,
+    so a redone page neither repeats a note nor loses its own first-use one.
+    Notes are read in the book's language ("†1 Italian: legamento"); reading
+    only "French:" let an Italian book repeat a note on a redone page."""
+    st = {"fn_seen": set(), "footnoted_seen": set(), "fn_state": {}}
+    label = _LANG_REF.get(lang, _LANG_REF["French"])[1]
+    for k, t in enumerate(tr, 1):
+        if k in targets:
+            continue
+        for ref in re.findall(rf"(?m)^†\d+ {label}: (.+?)\s*$", t):
+            st["footnoted_seen"].add(ref.strip().lower())
+            st["fn_seen"].add(_strip_accents(ref.strip().lower()))
+    return st
+
+
 def retranslate_pages(stem: str, spec: str = "") -> None:
     """`2_translate.py --pages <stem> [12,40-42]`: retranslate just those
     SCAN pages of an already-translated book, in place. With no page list,
@@ -1394,15 +1410,7 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
     if not targets:
         print(f"⊘ {stem}: nothing to retranslate")
         return
-    # book-wide footnote state from every page NOT being redone, so a
-    # redone page neither repeats a note nor loses its own first-use one
-    st = {"fn_seen": set(), "footnoted_seen": set(), "fn_state": {}}
-    for k, t in enumerate(tr, 1):
-        if k in targets:
-            continue
-        for ref in re.findall(r"(?m)^†\d+ French: (.+?)\s*$", t):
-            st["footnoted_seen"].add(ref.strip().lower())
-            st["fn_seen"].add(_strip_accents(ref.strip().lower()))
+    st = notes_already_given(tr, targets, BOOK_LANG)
     print(f"Retranslating {stem}: scan page(s) {targets}")
     # Saved after every page, and resumable: an interrupted run of the same
     # page list skips the pages it already finished (the progress record is
