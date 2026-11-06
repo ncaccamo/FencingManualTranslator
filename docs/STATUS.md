@@ -176,7 +176,7 @@ the operator's business and is not tracked here.)
   pricker, «s'enferrer» → run oneself onto the point, «camminando» →
   advancing, «forconatore» → pitchforker, and others in the prompts. Terms
   that are ordinary words elsewhere are in `_FOOTNOTED_FR_REFS` /
-  `_FOOTNOTED_IT_REFS` (the model's note is accepted, no backstop rewrite).
+  `_FOOTNOTED_IT_REFS` (`pipeline/_glossary_fr.py` / `_glossary_it.py`; the model's note is accepted, no backstop rewrite).
   «legatura» (the wrist strap) is "strapping", never "binding", which reads
   as the blade action.
 

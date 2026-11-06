@@ -8,19 +8,13 @@ import re
 
 from _tx_common import FN_HEADER, _LANG_REF, _strip_accents
 from _tx_terms import _footnote_ref, _footnoted
+from _glossary_fr import _FOOTNOTED_FR_REFS
+from _glossary_it import _FOOTNOTED_IT_REFS
 
 
 FN_MARK = "†"          # dagger, used as the footnote reference mark
 
 FN_MAX_PER_PAGE = 4
-
-# footnoted terms left to the model (accepted as source references in its
-# <fn> notes) -- ordinary words elsewhere, so the backstop must not rewrite them
-_FOOTNOTED_FR_REFS = {"se loger", "au pied levé", "tension à outrance", "se désunir", "s'enferrer",
-                      "filer", "fléchard", "d'emblée", "coup amené", "temps moral"}
-
-# accepted as source references in the model's <fn> notes, beyond _FOOTNOTED_IT
-_FOOTNOTED_IT_REFS = {"filo", "camminando", "forconare", "lezione muta"}
 
 
 def pull_footnotes(text: str, source_text: str = "", seen: set = None, lang: str = "French"):

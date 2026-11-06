@@ -38,7 +38,7 @@ a handful of questions. `docs/model-quirks.md` 2.21 has what kinds they were.
    "unsure" verdicts, and the term choices the glossary leaves open, go
    here; a rendering the glossary prescribes doesn't.
 6. **Run the review report** afterwards. If a kind of error turned up on
-   several pages, add a check for it (TERM_RULES, FALSE_FRIENDS) and run it
+   several pages, add a check for it (TERM_RULES in `_glossary_fr.py` / `_glossary_it.py`, FALSE_FRIENDS in `quality_report.py`) and run it
    over every book: it usually finds the same mistake elsewhere.
 
 Findings and verdicts contain book text: keep them out of the repository
@@ -68,7 +68,7 @@ book (a list of known items, so they aren't reported twice).
 > **Read first, fully:** REPO/pipeline/PROMPTFILE (kept terms, glossary,
 > footnoted terms, quotation marks: a rendering these rules require is not
 > an error); `_KEEP_TERMS_*`, `_ALWAYS_TRANSLATE`, `_FOOTNOTED_*` in
-> REPO/pipeline/_tx_terms.py; REPO/books/STEM.overrides.toml (`[terms]`
+> REPO/pipeline/_glossary_fr.py and _glossary_it.py; REPO/books/STEM.overrides.toml (`[terms]`
 > are the book's decisions; `[[fix]]` entries are already made). The owner's
 > rules: literal over paraphrase, but never a word-for-word rendering that
 > loses the meaning; letter case as printed; English “quotes”. Two things

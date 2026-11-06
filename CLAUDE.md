@@ -76,6 +76,13 @@ no ROCm/Vulkan). `scripts/setup.sh --remote` + `docker-compose.override.yml`
   tool, not tied to a specific corpus.
 - `docker/ROCM714_NOTES.md` — why the ROCm 7.14 backend is parked.
 - Session history: `git log` (HANDOFF.md / MANIFEST.md retired 2026-08-27).
+- Pipeline code layout: the step commands `1_ocr_and_extract_vlm.py` /
+  `2_translate.py` only call `main()` in `_ocr.py` / `_translate.py`, which
+  hold the parts that talk to the models. The rules are in `_ocr_parse`,
+  `_ocr_cleanup`, `_ocr_heads`, `_ocr_folios`, `_ocr_text` (step 1) and
+  `_tx_terms`, `_tx_case`, `_tx_notes`, `_tx_checks`, `_tx_structure`
+  (step 2). A term decision is a prompt line plus `_glossary_fr.py` /
+  `_glossary_it.py` (code backstops and review-report checks).
 
 - Every script takes the books to work on by name, or `--all`
   (`pipeline/_books.py`); none runs on the whole folder by default. A book

@@ -10,91 +10,10 @@ import re
 
 from _tx_case import match_word_case, caps_kept_terms, source_caps_lines, source_case_kept_terms
 from _tx_common import _LANG_REF
-
-
-# Footnoted terms (see translation_prompt.txt): translate to the English
-# rendering, and on the FIRST occurrence in a book mark it as
-# "English<fn>Fr. <term></fn>" -- a bare source reference, never an
-# explanatory gloss. The model does this from the prompt;
-# enforce_footnoted_terms() is the backstop for when it leaves the term in
-# French or forgets the note. Plural before singular so the longer pattern
-# wins.
-_FOOTNOTED_FR = [
-    ("prise de fer",   "taking the blade"),
-    ("rassemblements", "gatherings of the feet"), ("rassemblement", "gathering of the feet"),
-    ("rassemblant",    "gathering the feet"),     ("rassembler",   "to gather the feet"),
-    ("dérobements",    "evasions of the blade"),   ("dérobement",   "evasion of the blade"),
-    ("dégagements",    "disengagements"),          ("dégagement",   "disengagement"),
-    ("liements",       "binds"),                   ("liement",      "bind"),
-    ("froissements",   "grazes"),                  ("froissement",  "graze"),
-    ("coup de temps",  "time-hit"),
-    ("coupés",         "cut-overs"),               ("coupé",        "cut-over"),
-    ("coulés",         "glides"), ("coulé", "glide"), ("déroulé", "glide"),
-    ("à-propos",       "timing"),
-    # caver was "to drop the point" until 2026-10-11 -- wrong: the books define it
-    # as the opposite of opposition, an angled thrust (Kirchhoffer, Joseph-Renaud
-    # scan 144). barré: Robaglia's "croisé de seconde ... chasse vigoureusement le
-    # fer"; coup fourré = coup double (Kirchhoffer's glossary). Reviewer's choices.
-    ("en cavant",      "by angling"),             ("cavant",       "angling"),
-    ("caver",          "angle"),
-    ("barrés",         "bars"),                    ("barré",        "bar"),
-    ("coups fourrés",  "double hits"),             ("coup fourré",  "double hit"),
-    ("tendre la perche", "stick the arm out stiffly"), ("tendre la broche", "stick the arm out stiffly"),
-    ("la perche tendue", "the arm stuck out stiffly"),
-    # bourrer: drawing the arm back and driving the point in hard (Joseph-Renaud
-    # pdf 290, Kirchhoffer pdf 61, Cordelois); larder: in-and-out jabs.
-    # Reviewer's choices, 2026-10-31 (were shove / pressing / larding).
-    ("bourrades",      "ramming thrusts"),         ("bourrade",     "ramming thrust"),
-    ("bourreurs",      "rammers"),                 ("bourreur",     "rammer"),
-    ("en bourrant",    "by ramming"),              ("bourrant",     "ramming"),
-    ("bourrer",        "ram"),
-    ("en lardant",     "jabbing"),                 ("larder",       "jab"),
-    # fencer types and slang, reviewer's choices 2026-10-31 (terms questionnaire)
-    ("picoteurs",      "prickers"),                ("picoteur",     "pricker"),
-    ("tendeurs à outrance", "extenders to excess"), ("tendeur à outrance", "extender to excess"),
-    ("bricoleurs",     "tinkerers"),               ("bricoleur",    "tinkerer"),
-]
-
-# Italian footnoted terms (translated, first use footnoted "It. <term>"),
-# 2026-09-30. "filo" (glide) is left to the model -- as a bare word it also
-# means the blade's edge, so the backstop must not rewrite it.
-_FOOTNOTED_IT = [
-    ("legamenti",       "engagements"),     ("legamento",   "engagement"),
-    ("filo sottomesso", "forced glide"),
-    ("trasporti",       "transports"),      ("trasporto",   "transport"),
-    ("uscita in tempo", "action in tempo"),
-    ("deviamenti",      "deviations"),      ("deviamento",  "deviation"),
-    ("parata di picco", "beat parry"),
-    ("controtempo",     "countertime"),
-    ("controazioni",    "counter-actions"), ("controazione", "counter-action"),
-    ("circolazioni",    "circlings"),       ("circolazione", "circling"),
-    ("di striscio",     "grazing"),         ("striscio",    "graze"),
-    ("volanti",         "off the blade"),   ("volante",     "off the blade"),
-    ("spratico",        "practice bout"),
-    ("parate di tasto", "opposition parries"), ("parata di tasto", "opposition parry"),
-    ("forconatori",     "pitchforkers"),    ("forconatore", "pitchforker"),
-]
-
-# canonical singular French for the "Fr. <term>" note, so a plural form
-# ("appels") doesn't produce a second note distinct from "Fr. appel".
-_FOOTNOTE_REF_IT = {"parate di tasto": "parata di tasto", "legamenti": "legamento", "trasporti": "trasporto",
-                 "deviamenti": "deviamento", "controazioni": "controazione",
-                 "circolazioni": "circolazione", "di striscio": "striscio",
-                 "volanti": "volante", "forconatori": "forconatore"}
-_FOOTNOTE_REF_FR = {
-    "en cavant": "caver", "cavant": "caver", "barrés": "barré", "coups fourrés": "coup fourré",
-    "rassemblements": "rassemblement", "rassemblant": "rassemblement",
-    "rassembler": "rassemblement", "dérobements": "dérobement",
-    "dégagements": "dégagement", "liements": "liement",
-    "froissements": "froissement", "coupés": "coupé",
-    "coulés": "coulé", "déroulé": "coulé", "appels": "appel",
-    "bourrades": "bourrade", "bourreurs": "bourreur", "en bourrant": "bourrer", "bourrant": "bourrer",
-    "en lardant": "larder", "picoteurs": "picoteur", "tendeurs à outrance": "tendeur à outrance",
-    "bricoleurs": "bricoleur", "vous loger": "se loger", "se logeant": "se loger", "loger": "se loger",
-    "désuni": "se désunir", "se désunit": "se désunir", "s'enferre": "s'enferrer",
-    "en filant": "filer", "filer au corps": "filer", "fléchards": "fléchard",
-    "attaque d'emblée": "d'emblée", "coups amenés": "coup amené",
-}
+from _glossary_fr import (
+    _ALWAYS_TRANSLATE, _FOOTNOTED_FR, _FOOTNOTED_NOT_BEFORE, _FOOTNOTE_REF_FR, _KEEP_TERMS_FR,
+)
+from _glossary_it import _FOOTNOTED_IT, _FOOTNOTE_REF_IT, _KEEP_TERMS_IT
 
 
 def _footnoted(lang: str):
@@ -103,13 +22,6 @@ def _footnoted(lang: str):
 
 def _footnote_ref(lang: str):
     return _FOOTNOTE_REF_IT if lang == "Italian" else _FOOTNOTE_REF_FR
-
-
-
-# a footnoted term inside an ordinary phrase is not the fencing action:
-# "froissement d'amour-propre" is hurt pride, not a graze (Jacob 1887, 2026-10-13)
-_FOOTNOTED_NOT_BEFORE = {"froissement": r"(?!\s+d['’]\s*amour)",
-                         "froissements": r"(?!\s+d['’]\s*amour)"}
 
 
 def enforce_footnoted_terms(text: str, seen: set, footnote: bool = True, lang: str = "French") -> str:
@@ -153,60 +65,6 @@ def enforce_footnoted_terms(text: str, seen: set, footnote: bool = True, lang: s
 
     text = re.sub(r"\x00(\d+)\x00", lambda m: masked[int(m.group(1))], text)
     return text
-
-
-# Rule-3 "always translate" terms the 7B drops inconsistently (leaves
-# "an arm called a fleuret" in the body, "ENTRAINEMENT" as a header).
-# Only unambiguous ones -- these have no other meaning in this corpus.
-# Longest first so "fleurettiste" wins before "fleuret".
-_ALWAYS_TRANSLATE = [
-    # "LISTE DES OUVRAGES" -> "LISTE OF WORKS" (Gomard bibliography section
-    # header): "DES OUVRAGES" translates fine but bare "LISTE" survives
-    # untranslated on this specific isolated header string, even though
-    # the SAME word translates correctly as part of the two-part header
-    # "LISTE DES OUVRAGES\tCONSULTÉS." -- a one-off model quirk on the
-    # shorter isolated string, consistent enough across sampling that
-    # majority-vote alone doesn't catch it.
-    (r"listes", "lists"), (r"liste", "list"),
-    (r"fleurettistes", "foil fencers"), (r"fleurettiste", "foil fencer"),
-    (r"fleurets", "foils"), (r"fleuret", "foil"),
-    # "contre-" as a compound prefix = "counter-", not "against-"
-    (r"contre-dégagements", "counter-disengagements"),
-    (r"contre-dégagement", "counter-disengagement"),
-    (r"contre-dégagez", "counter-disengage"), (r"contre-dégager", "counter-disengage"),
-    # equipment / material vocab the model hedges on and leaves in French
-    (r"crispins", "cuffs"), (r"crispin", "cuff"),
-    (r"cuissards", "thigh guards"), (r"cuissard", "thigh guard"),
-    (r"schémas", "diagrams"), (r"schéma", "diagram"),
-    (r"entra[iî]nements", "training sessions"), (r"entra[iî]nement", "training"),
-    (r"escrimes", "fencing"), (r"escrime", "fencing"),
-    (r"sociétés", "societies"), (r"société", "society"),
-    (r"divers", "miscellaneous"),
-    (r"demi-fentes", "half-lunges"), (r"demi-fente", "half-lunge"),
-    (r"fentes", "lunges"), (r"fente", "lunge"),
-    # "leçon d'assaut" = a free-play lesson; the 7B collapses it to just
-    # "the bout" (drops "leçon"). Bare "assaut" -> "bout" is left to the
-    # prompt (rule 3) -- "assaut" alone is sometimes "assault" in a duel.
-    (r"leçons d['’]assaut", "bout lessons"), (r"leçon d['’]assaut", "bout lesson"),
-    # "fer" (the opponent's steel) -> "the blade" (Category 1). NOT bare
-    # "fer": leave "prise de fer" / "sentiment du fer" for their own
-    # handlers (Cat 3 / Cat 2).
-    (r"attaques au fer", "attacks on the blade"), (r"attaque au fer", "attack on the blade"),
-    (r"sur le fer", "on the blade"), (r"au fer", "on the blade"),
-    (r"le fer", "the blade"),
-    # "l'escrime au fleuret" -> "foil fencing"; the 7B renders it
-    # "épée fencing with the fleuret" / "épée fencing with the foil".
-    (r"escrime au fleuret", "foil fencing"), (r"au fleuret", "with the foil"),
-    (r"escrime à l['’]épée", "épée fencing"), (r"à l['’]épée", "with the épée"),
-    # "au bout d'épée" -- idiom for a bout fenced with the épée, not a
-    # literal "at the point of the sword"; the 7B renders it word-for-word.
-    (r"au bout d['’]épée", "an épée bout"),
-    # "un assaut d'épée" is just an épée bout -- there is no "leçon" in it,
-    # but the 7B pulls "lesson" in from the leçon-d'assaut rule and writes
-    # "a bout lesson with the épée". Repair the output.
-    (r"a bout lesson with the épée", "an épée bout"),
-    (r"bout lesson with the épée", "épée bout"),
-]
 
 
 # French around the word: it is inside a French title or quotation kept as
@@ -261,54 +119,6 @@ def _phrase_repairs(text: str) -> str:
         r"(?m)^([ \t]*)Translated by(?=[ \t]+[\"“'’A-ZÀ-Þ][^\n]{0,60}$)",
         r"\1By", text)
     return text
-
-
-# Kept terms: "keep in the source language, italic" that the 7B
-# drops the <i>...</i> off or mistranslates -- plate captions especially.
-# Only the tight retained set; riposte / remise / reprise / the parry
-# numbers the model handles on its own. Each entry: term -> English
-# mistranslations to snap back to it.
-_KEEP_TERMS_FR = [
-    ("corps à corps", [r"body[- ]to[- ]body", r"body contact"]),
-    ("sentiment du fer", [r"feeling of (?:the )?(?:blade|iron|steel)"]),
-    ("croisé", []),
-    ("volte", []),
-    # riposte / remise / reprise: normally kept by the model, but a bare
-    # heading ("DE LA RIPOSTE.") gets mangled -- "OF THE RAPIER RAPIER".
-    # Isolated-heading translation (no body context, no retry ladder) is
-    # where this shows up -- "PARADES ET RIPOSTES" -> "PARRIES AND
-    # RAPISES" is the same failure with a different garbled spelling.
-    ("riposte", [r"rapier(?:[- ]?(?:rapier|response|riposte|reply))?",
-                 r"riposte response", r"rapises?"]),
-    # kept, never "stop-point(s)" (Joseph-Renaud pdf 46, Kirchhoffer pdf 39)
-    ("pointes d'arrêt", [r"stop[- ]points"]), ("pointe d'arrêt", [r"stop[- ]point"]), ("pointe d’arrêt", []),
-    ("flanconnade", []),
-    ("appels", []), ("appel", []),
-    ("remise", []),
-    ("reprise", []),
-    # doublé / dédoublé kept in French (reviewer, 2026-10-13: the books explain
-    # them; Prévost-Jollivet had seven renderings). Plurals first.
-    ("dédoublés", []), ("dédoublé", []), ("doublés", []), ("doublé", []),
-    # "du tac au tac": parry and riposte in one instant -- kept in French in
-    # English fencing writing. Qwen3.8 rendered it word for word ("FROM THE
-    # TAC TO THE TAC", Gomard scan 239); older output left it bare/unitalic.
-    ("tac-au-tac", [r"(?:(?:from|of)\s+the\s+|du\s+)?tac[- ]to[- ]the[- ]tac",
-                    r"(?:(?:from|of)\s+the\s+|du\s+)?tac[- ]au[- ]tac"]),
-]
-
-# Italian kept terms (translation_prompt_it.txt rule 2), 2026-09-30. Only
-# words that never occur as ordinary English -- the hand positions and
-# Maestro are left to the model.
-_KEEP_TERMS_IT = [(t, []) for t in (
-    "controcavazione", "cavazione", "cartoccio", "fianconata", "inquartata",
-    "intrecciata", "appuntata", "passata sotto", "intagliata", "molinello",
-    "molinelli", "fendente", "traversone", "raddoppio", "ripigliata",
-    "copertino", "balestrata", "scandaglio", "traccheggio", "ricasso",
-    "imbroccata", "mandritto", "coupé", "sforzi", "sforzo", "rimessa", "ripresa")] + [
-    # riposte: kept in the body, but an isolated heading can garble it
-    # (the French "RAPISES"; "RIPONSES" is fixed in fix_known_garbles)
-    ("riposte", [r"rapier(?:[- ]?(?:rapier|response|riposte|reply))?",
-                 r"riposte response", r"rapises?"])]
 
 
 # Maestro is kept every time in an Italian book (reviewer, 2026-10-11), in the
