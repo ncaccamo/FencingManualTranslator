@@ -987,49 +987,25 @@ def page_context_block(st: dict) -> str:
     return "\n".join(lines) + "\n\n"
 
 
-def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
-    """Translate one extracted.txt page record -> its translation.txt entry.
-    Never raises and never returns nothing: a failed page comes back as a
-    flagged fallback. `i` / `n` are 1-based position / page count (progress
-    output only). `st` is the book-wide state that has to persist across
-    pages: fn_seen (dedupe <fn> notes), footnoted_seen (footnoted terms already
-    footnoted), fn_state (the book's own footnote continuing onto the next
-    page). Used by the whole-book loop and by `--pages` retranslation."""
-    fn_seen, footnoted_seen, fn_state = st["fn_seen"], st["footnoted_seen"], st["fn_state"]
-    if not page_text.strip() or "VLM Error" in page_text:
-        print(f"  Page {i}/{n} — empty / OCR error, passed through")
-        return page_text
+def _mark_tables(clean_text: str) -> str:
+    """A scoring / poule table: replace each <table>..</table> with a
+    [[TABLE]] sentinel; steps 3 & 4 embed the scan for it."""
+    clean_text = re.sub(r"<table\b.*?</table\s*>", "\n[[TABLE]]\n",
+                        clean_text, flags=re.I | re.S)
+    # a table the OCR truncated (page cut off mid-grid) has no
+    # closing tag -- collapse the dangling <table ...> to end.
+    clean_text = re.sub(r"<table\b.*\Z", "\n[[TABLE]]\n",
+                        clean_text, flags=re.I | re.S)
+    clean_text = re.sub(r"(?:\[\[TABLE\]\]\s*){2,}", "[[TABLE]]\n",
+                        clean_text)
+    return re.sub(r"\n{3,}", "\n\n", clean_text).strip()
 
-    # Clean VLM structured output before translation
-    clean_text = clean_vlm_extraction(page_text)
 
-    if not clean_text.strip():
-        print(f"  Page {i}/{n} — no body text, skipped")
-        return "[Empty page]"
-
-    # A step-1 marker page ("[handwritten inscription — see original]")
-    # -- pass it through verbatim, never translate it.
-    if re.fullmatch(r"\[[^\[\]\n]+\]", clean_text.strip()):
-        print(f"  Page {i}/{n} — marker page, passthrough")
-        return clean_text.strip()
-
-    page_is_toc = is_toc_page(clean_text)
-
-    # A scoring / poule table: replace each <table>..</table> with a
-    # [[TABLE]] sentinel; steps 3 & 4 embed the scan for it. A page
-    # that is nothing but table(s) (+ maybe a heading) skips the
-    # model's attempt to linearise the grid.
-    page_had_table = bool(re.search(r"<table\b", clean_text, re.I))
+def _translate_without_retries(clean_text: str, i: int, n: int, page_had_table: bool):
+    """The pages that skip translate_page()'s retry loop: a page that is
+    nothing but table(s), a near-blank page, a runaway-OCR page. Returns
+    the page's entry, or None for a normal page."""
     if page_had_table:
-        clean_text = re.sub(r"<table\b.*?</table\s*>", "\n[[TABLE]]\n",
-                            clean_text, flags=re.I | re.S)
-        # a table the OCR truncated (page cut off mid-grid) has no
-        # closing tag -- collapse the dangling <table ...> to end.
-        clean_text = re.sub(r"<table\b.*\Z", "\n[[TABLE]]\n",
-                            clean_text, flags=re.I | re.S)
-        clean_text = re.sub(r"(?:\[\[TABLE\]\]\s*){2,}", "[[TABLE]]\n",
-                            clean_text)
-        clean_text = re.sub(r"\n{3,}", "\n\n", clean_text).strip()
         residue = re.sub(r"\[\[TABLE\]\]", "", clean_text).strip()
         res_paras = [p for p in re.split(r"\n\s*\n", residue) if p.strip()]
         if not any(len(p.split()) > 12 for p in res_paras):
@@ -1069,9 +1045,233 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
               f"translated head only")
         return (f"[oversized OCR page — likely a repetition artifact; "
                 f"first part translated, remainder omitted]\n\n{cand}"[:6000])
+    return None
+
+
+def _apply_page_rules(candidate: str, clean_text: str, kind, page_had_table: bool,
+                      page_is_toc: bool, footnoted_seen: set) -> str:
+    """The code rules every model reply goes through, before it is checked."""
+    # The model sometimes emits Markdown despite the prompt. A
+    # lone "---" thematic break used to collide with the page
+    # separator used everywhere downstream (178 pages -> 179,
+    # every later page misaligned). Strip all of it; <i>...</i>
+    # is the only markup the pipeline expects. A decorative
+    # section-break ornament (dinkus / row of asterisks) is
+    # dropped to a blank line -- rendering it as "* * *" was
+    # hit-or-miss and looked wrong (Gomard p255).
+    candidate = re.sub(r'(?m)^[ \t]*(?:-{3,}|\*(?:[ \t]*\*)+|•(?:[ \t]*•)+)[ \t]*$',
+                       '', candidate)
+    # ... and the book's own divider goes back where the source has it
+    candidate = restore_dividers(candidate, clean_text)
+    candidate = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', candidate)
+    candidate = re.sub(r'\*\*([^*\n]+)\*\*', r'\1', candidate)   # **bold**
+    candidate = re.sub(r'(?m)^\s{0,3}#{1,6}\s+', '', candidate)  # # heading
+    # a whole body line that is a hallucinated figure
+    # description ("Image of a hand holding a sword ...")
+    candidate = re.sub(
+        r"(?im)^[ \t]*(?:an?\s+)?(?:image|photo(?:graph)?|drawing|"
+        r"illustration|picture|sketch|depiction)\s+(?:of|showing|"
+        r"depicting)\b[^\n]*$", "", candidate)
+    # normalise the table sentinel: the model turns "[[TABLE]]"
+    # into "[ TABLE ]", "[TABLE]" or a bare "TABLE" line.
+    if page_had_table:
+        candidate = re.sub(r"(?im)^[ \t]*\[*[ \t]*TABLE[ \t]*\]*[ \t]*$",
+                           "[[TABLE]]", candidate)
+        candidate = re.sub(r"(?:\[\[TABLE\]\][ \t]*\n?){2,}",
+                           "[[TABLE]]\n", candidate)
+    else:
+        candidate = re.sub(r"(?im)^\s*\[+\s*TABLE[^\]\n]*\]+\s*$",
+                           "[[TABLE]]", candidate)
+    # before the term passes: a headword kept in the original is guarded there
+    heads = []
+    if kind == "glossary":
+        candidate = _pagekind.complete_glossary(candidate, clean_text)
+        candidate, heads = _pagekind.mask_headwords(candidate)
+    elif kind == "bibliography":
+        candidate = _pagekind.complete_bibliography(candidate, clean_text)
+    candidate = apply_always_translate(candidate)
+    candidate = enforce_kept_terms(candidate, clean_text, lang=BOOK_LANG)
+    candidate = enforce_maestro(candidate, clean_text, lang=BOOK_LANG)
+    candidate = restore_rapier(candidate, clean_text)
+    candidate = restore_reprise(candidate, clean_text)
+    candidate = restore_blade_phrases(candidate, clean_text, lang=BOOK_LANG)
+    candidate = restore_straight_thrust(candidate, clean_text, lang=BOOK_LANG)
+    # on a ToC page: translate the Cat-3 terms but emit NO
+    # footnote marker (a contents line must not carry one, and
+    # it would burn the once-per-book note), and skip the
+    # heading re-translate pass (every entry looks like a
+    # heading) to keep the "entry … NN" structure intact.
+    candidate = enforce_footnoted_terms(
+        candidate, footnoted_seen, footnote=not page_is_toc, lang=BOOK_LANG)
+    candidate = _capitalize_definition_entries(candidate)
+    if not page_is_toc:
+        candidate = retranslate_stray_french_headings(candidate)
+        candidate = restore_dropped_part_title(candidate, clean_text)
+        candidate = fix_subheading_spacing(candidate)
+    return _pagekind.unmask_headwords(candidate, heads)
+
+
+def _check_reply(candidate: str, clean_text: str, attempt: int, src_words: int):
+    """The checks a usable reply must pass. Returns (candidate, problem):
+    problem is None when the reply is accepted, else (message, pause in
+    seconds, hint) -- hint is None or ("para" | "line", text for the
+    retry prompt). A missing table marker is put back, not retried."""
+    # the reply ran out of room and stops mid-sentence. Retried; if every
+    # try is cut, the best one is kept with the low-confidence banner.
+    if LAST_CUT:
+        return candidate, ("cut off (out of room)", 0, None)
+
+    # every margin note (⟦MARGIN: …⟧, from _margins.py) must survive
+    if candidate.count("⟦MARGIN:") < clean_text.count("⟦MARGIN:"):
+        return candidate, ("margin note lost", 2, None)
+
+    # every table marker must survive: steps 3 & 4 put the scan of the
+    # table there (Masiello 1887 scans 376-377: the model left it out).
+    # A retry rarely helps (2026-10-13: 12 of 12 tries on four pages
+    # dropped it), so it is put back where the source has it.
+    if candidate.count("[[TABLE]]") < clean_text.count("[[TABLE]]"):
+        candidate = restore_table_markers(candidate, clean_text)
+        print(" (table marker put back)", end="")
+
+    if contains_too_much_non_english(candidate):
+        return candidate, ("not English", 8, None)
+
+    # a paragraph still in French / Italian / Latin: retried with the
+    # paragraph named; on the last try it is kept as it is (a list of
+    # names or titles can look the same, and the review report shows it)
+    left = untranslated_paragraph(candidate)
+    if left and attempt < 2:
+        start, lang = left
+        para_hint = (f" The paragraph beginning «{start}» is still in {lang}: translate it into English too"
+                     + ("." if lang == BOOK_LANG else
+                        f", and right after it write <fn>{lang} in the original</fn>."))
+        return candidate, (f"paragraph still in {lang}", 2, ("para", para_hint))
+
+    # one of the author's footnotes dropped (Marchionni 1847 pdf 34: the
+    # retry for its Latin notes left all three out; Florio pdf 44 lost two).
+    # Retried; on the last try kept as it is (a table of "(2)" cells looks
+    # the same), and the review report flags the page.
+    if attempt < 2 and note_bodies(candidate) < note_bodies(clean_text):
+        return candidate, ("footnote lost", 2, None)
+
+    # a "not" lost turns the meaning round (Kirchhoffer pdf 87 «nous ne
+    # cesserons» -> "we shall cease"); two or more negations short ->
+    # retried, the last try kept and the review report lists the page
+    if attempt < 2 and lost_negations(clean_text, candidate, BOOK_LANG == "Italian") >= 2:
+        return candidate, ("negation lost", 2, None)
+
+    # a quotation noted "French in the original" but left in French
+    # (Masiello 1887 pdf 73: "Sans le bouter d'estocq ou hachier.")
+    if quotation_left_untranslated(candidate):
+        return candidate, ("quotation not translated", 2, None)
+
+    # Qwen rendered the whole page in capitals (source wasn't).
+    # Retry for a clean one; deshout() is the fallback repair.
+    if _shout_ratio(candidate) > 0.85 and _shout_ratio(clean_text) < 0.6:
+        return candidate, ("all caps", 6, None)
+
+    # Length sanity check -- but only for pages with enough source
+    # text for the ratio to mean anything. Plate captions, drill
+    # lists and dimension callouts are legitimately terse and were
+    # being rejected as "too short".
+    if src_words >= 25 and len(candidate.split()) < 0.5 * src_words:
+        return candidate, ("too short", 8, None)
+
+    # a line / parry named wrongly -- quarte became tierce (Kirchhoffer
+    # scan 52). Retried hotter; if every try has it, the best one is kept
+    # with the low-confidence banner for a person to check.
+    swap = line_names_swapped(candidate, clean_text, lang=BOOK_LANG)
+    if swap:
+        # a hotter try alone often repeats it (Prévost-Jollivet scan 57, all
+        # three tries) -- Kirchhoffer scan 52 was a
+        # near-tie, tierce 34% / quarte 33%, then self-consistent -- so the
+        # retry is told which lines the source names, and how often
+        named = {w: c for w, c in _line_name_counts(clean_text, source=True, lang=BOOK_LANG).items() if c}
+        line_hint = (" The source names these lines / parries, and no others: "
+                     + ", ".join(f"{w} ({c}x)" for w, c in named.items())
+                     + ". Write each one exactly where the source has it; never put one line in place of another.")
+        return candidate, (f"line names changed ({swap})", 2, ("line", line_hint))
+    return candidate, None
+
+
+def _fallback(best_candidate, clean_text: str, src_words: int, fn_seen: set) -> str:
+    """Every attempt failed. Never drop a page: keep the best non-garbled
+    attempt (flagged for review), or fall back to the original text so
+    the page still appears in the output for a human to fix."""
+    if best_candidate and _shout_ratio(best_candidate) > 0.85 \
+            and _shout_ratio(clean_text) < 0.6 \
+            and not contains_too_much_non_english(best_candidate) \
+            and not (src_words >= 25
+                     and len(best_candidate.split()) < 0.5 * src_words):
+        # The only thing wrong was the all-caps shout: repair the
+        # case and keep it as a normal page, no review banner.
+        fixed, n_fn = pull_footnotes(deshout(best_candidate, clean_text),
+                                     clean_text, fn_seen, lang=BOOK_LANG)
+        print(" ✓ (deshouted)")
+        return fixed
+    elif best_candidate:
+        print(" ⚠ kept (low confidence)")
+        body = deshout(best_candidate, clean_text) \
+            if _shout_ratio(best_candidate) > 0.85 else best_candidate
+        if body.count("[[TABLE]]") < clean_text.count("[[TABLE]]"):
+            body = restore_table_markers(body, clean_text)
+        return f"[low-confidence translation — review]\n{body}"
+    elif src_words < 15:
+        # Every attempt was a refusal/preamble and there was
+        # barely any source text -- it's an effectively blank
+        # page, not a translation failure worth surfacing.
+        print(" ✗ refusals only on a near-blank page — [Empty page]")
+        return "[Empty page]"
+    else:
+        print(" ✗ no usable output — kept original text")
+        return f"[translation unavailable — original text follows]\n{clean_text}"
+
+
+def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
+    """Translate one extracted.txt page record -> its translation.txt entry.
+    Never raises and never returns nothing: a failed page comes back as a
+    flagged fallback. `i` / `n` are 1-based position / page count (progress
+    output only). `st` is the book-wide state that has to persist across
+    pages: fn_seen (dedupe <fn> notes), footnoted_seen (footnoted terms already
+    footnoted), fn_state (the book's own footnote continuing onto the next
+    page). Used by the whole-book loop and by `--pages` retranslation.
+
+    Up to three tries: each reply goes through _apply_page_rules(), then
+    _check_reply(); a failed check retries hotter (with a hint for some),
+    and when every try fails _fallback() picks what to keep."""
+    fn_seen, footnoted_seen, fn_state = st["fn_seen"], st["footnoted_seen"], st["fn_state"]
+    if not page_text.strip() or "VLM Error" in page_text:
+        print(f"  Page {i}/{n} — empty / OCR error, passed through")
+        return page_text
+
+    # Clean VLM structured output before translation
+    clean_text = clean_vlm_extraction(page_text)
+
+    if not clean_text.strip():
+        print(f"  Page {i}/{n} — no body text, skipped")
+        return "[Empty page]"
+
+    # A step-1 marker page ("[handwritten inscription — see original]")
+    # -- pass it through verbatim, never translate it.
+    if re.fullmatch(r"\[[^\[\]\n]+\]", clean_text.strip()):
+        print(f"  Page {i}/{n} — marker page, passthrough")
+        return clean_text.strip()
+
+    page_is_toc = is_toc_page(clean_text)
+
+    # A page that is nothing but table(s) (+ maybe a heading) skips the
+    # model's attempt to linearise the grid.
+    page_had_table = bool(re.search(r"<table\b", clean_text, re.I))
+    if page_had_table:
+        clean_text = _mark_tables(clean_text)
+    done = _translate_without_retries(clean_text, i, n, page_had_table)
+    if done is not None:
+        return done
+
+    src_words = len(clean_text.split())
     best_candidate = None   # best rejected attempt, for the fallback
-    line_hint = ""          # set when a try swapped a line name (below)
-    para_hint = ""          # set when a try left a paragraph untranslated (below)
+    line_hint = ""          # set when a try swapped a line name (_check_reply)
+    para_hint = ""          # set when a try left a paragraph untranslated (_check_reply)
     # the book's glossary / bibliography (_pagekind): the model is told what
     # kind of page it has, and code completes what it still leaves out
     kind = st.get("kind")
@@ -1101,64 +1301,8 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
             print(" → failed")
             continue
 
-        # The model sometimes emits Markdown despite the prompt. A
-        # lone "---" thematic break used to collide with the page
-        # separator used everywhere downstream (178 pages -> 179,
-        # every later page misaligned). Strip all of it; <i>...</i>
-        # is the only markup the pipeline expects. A decorative
-        # section-break ornament (dinkus / row of asterisks) is
-        # dropped to a blank line -- rendering it as "* * *" was
-        # hit-or-miss and looked wrong (Gomard p255).
-        candidate = re.sub(r'(?m)^[ \t]*(?:-{3,}|\*(?:[ \t]*\*)+|•(?:[ \t]*•)+)[ \t]*$',
-                           '', candidate)
-        # ... and the book's own divider goes back where the source has it
-        candidate = restore_dividers(candidate, clean_text)
-        candidate = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', candidate)
-        candidate = re.sub(r'\*\*([^*\n]+)\*\*', r'\1', candidate)   # **bold**
-        candidate = re.sub(r'(?m)^\s{0,3}#{1,6}\s+', '', candidate)  # # heading
-        # a whole body line that is a hallucinated figure
-        # description ("Image of a hand holding a sword ...")
-        candidate = re.sub(
-            r"(?im)^[ \t]*(?:an?\s+)?(?:image|photo(?:graph)?|drawing|"
-            r"illustration|picture|sketch|depiction)\s+(?:of|showing|"
-            r"depicting)\b[^\n]*$", "", candidate)
-        # normalise the table sentinel: the model turns "[[TABLE]]"
-        # into "[ TABLE ]", "[TABLE]" or a bare "TABLE" line.
-        if page_had_table:
-            candidate = re.sub(r"(?im)^[ \t]*\[*[ \t]*TABLE[ \t]*\]*[ \t]*$",
-                               "[[TABLE]]", candidate)
-            candidate = re.sub(r"(?:\[\[TABLE\]\][ \t]*\n?){2,}",
-                               "[[TABLE]]\n", candidate)
-        else:
-            candidate = re.sub(r"(?im)^\s*\[+\s*TABLE[^\]\n]*\]+\s*$",
-                               "[[TABLE]]", candidate)
-        # before the term passes: a headword kept in the original is guarded there
-        heads = []
-        if kind == "glossary":
-            candidate = _pagekind.complete_glossary(candidate, clean_text)
-            candidate, heads = _pagekind.mask_headwords(candidate)
-        elif kind == "bibliography":
-            candidate = _pagekind.complete_bibliography(candidate, clean_text)
-        candidate = apply_always_translate(candidate)
-        candidate = enforce_kept_terms(candidate, clean_text, lang=BOOK_LANG)
-        candidate = enforce_maestro(candidate, clean_text, lang=BOOK_LANG)
-        candidate = restore_rapier(candidate, clean_text)
-        candidate = restore_reprise(candidate, clean_text)
-        candidate = restore_blade_phrases(candidate, clean_text, lang=BOOK_LANG)
-        candidate = restore_straight_thrust(candidate, clean_text, lang=BOOK_LANG)
-        # on a ToC page: translate the Cat-3 terms but emit NO
-        # footnote marker (a contents line must not carry one, and
-        # it would burn the once-per-book note), and skip the
-        # heading re-translate pass (every entry looks like a
-        # heading) to keep the "entry … NN" structure intact.
-        candidate = enforce_footnoted_terms(
-            candidate, footnoted_seen, footnote=not page_is_toc, lang=BOOK_LANG)
-        candidate = _capitalize_definition_entries(candidate)
-        if not page_is_toc:
-            candidate = retranslate_stray_french_headings(candidate)
-            candidate = restore_dropped_part_title(candidate, clean_text)
-            candidate = fix_subheading_spacing(candidate)
-        candidate = _pagekind.unmask_headwords(candidate, heads)
+        candidate = _apply_page_rules(candidate, clean_text, kind, page_had_table,
+                                      page_is_toc, footnoted_seen)
 
         # "This isn't fencing text" / "Please provide the text..." --
         # the model had nothing real to translate. Not a fallback
@@ -1184,99 +1328,16 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
 
         best_candidate = best_candidate or candidate
 
-        # the reply ran out of room and stops mid-sentence. Retried; if every
-        # try is cut, the best one is kept with the low-confidence banner.
-        if LAST_CUT:
-            print(" → cut off (out of room)")
-            continue
-
-        # every margin note (⟦MARGIN: …⟧, from _margins.py) must survive
-        if candidate.count("⟦MARGIN:") < clean_text.count("⟦MARGIN:"):
-            print(" → margin note lost")
-            time.sleep(2)
-            continue
-
-        # every table marker must survive: steps 3 & 4 put the scan of the
-        # table there (Masiello 1887 scans 376-377: the model left it out).
-        # A retry rarely helps (2026-10-13: 12 of 12 tries on four pages
-        # dropped it), so it is put back where the source has it.
-        if candidate.count("[[TABLE]]") < clean_text.count("[[TABLE]]"):
-            candidate = restore_table_markers(candidate, clean_text)
-            print(" (table marker put back)", end="")
-
-        if contains_too_much_non_english(candidate):
-            print(" → not English")
-            time.sleep(8)
-            continue
-
-        # a paragraph still in French / Italian / Latin: retried with the
-        # paragraph named; on the last try it is kept as it is (a list of
-        # names or titles can look the same, and the review report shows it)
-        left = untranslated_paragraph(candidate)
-        if left and attempt < 2:
-            start, lang = left
-            para_hint = (f" The paragraph beginning «{start}» is still in {lang}: translate it into English too"
-                         + ("." if lang == BOOK_LANG else
-                            f", and right after it write <fn>{lang} in the original</fn>."))
-            print(f" → paragraph still in {lang}")
-            time.sleep(2)
-            continue
-
-        # one of the author's footnotes dropped (Marchionni 1847 pdf 34: the
-        # retry for its Latin notes left all three out; Florio pdf 44 lost two).
-        # Retried; on the last try kept as it is (a table of "(2)" cells looks
-        # the same), and the review report flags the page.
-        if attempt < 2 and note_bodies(candidate) < note_bodies(clean_text):
-            print(" → footnote lost")
-            time.sleep(2)
-            continue
-
-        # a "not" lost turns the meaning round (Kirchhoffer pdf 87 «nous ne
-        # cesserons» -> "we shall cease"); two or more negations short ->
-        # retried, the last try kept and the review report lists the page
-        if attempt < 2 and lost_negations(clean_text, candidate, BOOK_LANG == "Italian") >= 2:
-            print(" → negation lost")
-            time.sleep(2)
-            continue
-
-        # a quotation noted "French in the original" but left in French
-        # (Masiello 1887 pdf 73: "Sans le bouter d'estocq ou hachier.")
-        if quotation_left_untranslated(candidate):
-            print(" → quotation not translated")
-            time.sleep(2)
-            continue
-
-        # Qwen rendered the whole page in capitals (source wasn't).
-        # Retry for a clean one; deshout() is the fallback repair.
-        if _shout_ratio(candidate) > 0.85 and _shout_ratio(clean_text) < 0.6:
-            print(" → all caps")
-            time.sleep(6)
-            continue
-
-        # Length sanity check -- but only for pages with enough source
-        # text for the ratio to mean anything. Plate captions, drill
-        # lists and dimension callouts are legitimately terse and were
-        # being rejected as "too short".
-        if src_words >= 25 and len(candidate.split()) < 0.5 * src_words:
-            print(" → too short")
-            time.sleep(8)
-            continue
-
-        # a line / parry named wrongly -- quarte became tierce (Kirchhoffer
-        # scan 52). Retried hotter; if every try has it, the best one is kept
-        # with the low-confidence banner for a person to check.
-        swap = line_names_swapped(candidate, clean_text, lang=BOOK_LANG)
-        if swap:
-            # a hotter try alone often repeats it (Prévost-Jollivet scan 57, all
-            # three tries) -- Kirchhoffer scan 52 was a
-            # near-tie, tierce 34% / quarte 33%, then self-consistent -- so the
-            # retry is told which lines the source names, and how often
-            named = {w: c for w, c in _line_name_counts(clean_text, source=True, lang=BOOK_LANG).items() if c}
-            line_hint = (" The source names these lines / parries, and no others: "
-                         + ", ".join(f"{w} ({c}x)" for w, c in named.items())
-                         + ". Write each one exactly where the source has it; never put one line in place of another.")
-            print(f" → line names changed ({swap})")
-            time.sleep(2)
+        candidate, problem = _check_reply(candidate, clean_text, attempt, src_words)
+        if problem:
+            message, pause, hint = problem
+            print(f" → {message}")
+            if pause:
+                time.sleep(pause)
+            if hint and hint[0] == "para":
+                para_hint = hint[1]
+            elif hint:
+                line_hint = hint[1]
             continue
 
         candidate = match_boundary_punctuation(candidate, clean_text)
@@ -1285,36 +1346,7 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         print(f" ✓{'  (%d fn)' % n_fn if n_fn else ''}")
         return candidate
 
-    # Every attempt failed. Never drop a page: keep the best non-garbled
-    # attempt (flagged for review), or fall back to the original text so
-    # the page still appears in the output for a human to fix.
-    if best_candidate and _shout_ratio(best_candidate) > 0.85 \
-            and _shout_ratio(clean_text) < 0.6 \
-            and not contains_too_much_non_english(best_candidate) \
-            and not (src_words >= 25
-                     and len(best_candidate.split()) < 0.5 * src_words):
-        # The only thing wrong was the all-caps shout: repair the
-        # case and keep it as a normal page, no review banner.
-        fixed, n_fn = pull_footnotes(deshout(best_candidate, clean_text),
-                                     clean_text, fn_seen, lang=BOOK_LANG)
-        print(" ✓ (deshouted)")
-        return fixed
-    elif best_candidate:
-        print(" ⚠ kept (low confidence)")
-        body = deshout(best_candidate, clean_text) \
-            if _shout_ratio(best_candidate) > 0.85 else best_candidate
-        if body.count("[[TABLE]]") < clean_text.count("[[TABLE]]"):
-            body = restore_table_markers(body, clean_text)
-        return f"[low-confidence translation — review]\n{body}"
-    elif src_words < 15:
-        # Every attempt was a refusal/preamble and there was
-        # barely any source text -- it's an effectively blank
-        # page, not a translation failure worth surfacing.
-        print(" ✗ refusals only on a near-blank page — [Empty page]")
-        return "[Empty page]"
-    else:
-        print(" ✗ no usable output — kept original text")
-        return f"[translation unavailable — original text follows]\n{clean_text}"
+    return _fallback(best_candidate, clean_text, src_words, fn_seen)
 
 
 _USAGE = """usage: python3 /app/2_translate.py <stem> [<stem> ...] | --all

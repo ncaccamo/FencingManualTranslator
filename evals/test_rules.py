@@ -2921,7 +2921,7 @@ def test_line_name_swap_rejected():
     import os
     page = open(str(_PIPELINE / "_translate.py"),
                 encoding="utf-8").read()
-    page = page[page.index("def translate_page("):]
+    page = page[page.index("def _mark_tables("):]   # translate_page and its helpers
     assert "line_names_swapped(candidate, clean_text, lang=BOOK_LANG)" in page
 
 
@@ -3037,7 +3037,7 @@ def test_line_swap_retry_names_the_lines():
     import os
     page = open(str(_PIPELINE / "_translate.py"),
                 encoding="utf-8").read()
-    page = page[page.index("def translate_page("):]
+    page = page[page.index("def _mark_tables("):]   # translate_page and its helpers
     assert '{line_hint}' in page and "line_hint = (" in page
     assert page.index("line_hint = \"\"") < page.index("for attempt in range(3):")
 
@@ -3118,8 +3118,17 @@ def test_cut_off_reply_is_rejected():
         TX.update(saved)
     page = open(str(_PIPELINE / "_translate.py"),
                 encoding="utf-8").read()
-    page = page[page.index("def translate_page("):]
-    assert page.index("if LAST_CUT:") < page.index("→ too short")
+    page = page[page.index("def _mark_tables("):]   # translate_page and its helpers
+    assert page.index("if LAST_CUT:") < page.index('("too short"')
+    # a cut reply is rejected before any other check
+    saved = TX["LAST_CUT"]
+    try:
+        TX["LAST_CUT"] = True
+        assert TX["_check_reply"]("The thrust of", "La botte de", 0, 3)[1][0] == "cut off (out of room)"
+        TX["LAST_CUT"] = False
+        assert TX["_check_reply"]("The thrust of", "La botte de", 0, 3)[1] is None
+    finally:
+        TX["LAST_CUT"] = saved
 
 
 def test_progress_speed_is_the_whole_run():
@@ -3208,7 +3217,7 @@ def test_table_marker_never_sent_as_heading():
         TX["translate_with_llama"] = saved
     page = open(str(_PIPELINE / "_translate.py"),
                 encoding="utf-8").read()
-    page = page[page.index("def translate_page("):]
+    page = page[page.index("def _mark_tables("):]   # translate_page and its helpers
     assert 'candidate.count("[[TABLE]]") < clean_text.count("[[TABLE]]")' in page
 
     # 2026-10-13: a dropped marker goes back where the source has it
