@@ -4411,5 +4411,28 @@ def test_retranslate_reads_notes_in_book_language():
     fr = ["une liement†1\n\n___FOOTNOTES___\n†1 French: liement"]
     assert notes_already_given(fr, [], "French")["fn_seen"] == {"liement"}
 
+
+def test_report_lists_repeated_term_notes():
+    # a footnoted term's note is given once per book; the review report lists
+    # a later page that repeats it (Masiello 1902 fioretto had 14 such notes on
+    # 10 pages, sciabola 3, from retranslated pages, 2026-11-06). Accents and
+    # case don't make a different note; "Latin in the original" is not a
+    # term note and repeats freely.
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        Q = importlib.import_module("quality_report")
+    except (OSError, ImportError, SystemExit):   # reads /app paths: runs in the image
+        return
+    tr = ["a bind†1\n\n___FOOTNOTES___\n†1 Italian: legamento",
+          "Latin†1\n\n___FOOTNOTES___\n†1 Latin in the original",
+          "a glide†1, a bind†2\n\n___FOOTNOTES___\n†1 Italian: filo\n†2 Italian: Legamento",
+          "Latin†1\n\n___FOOTNOTES___\n†1 Latin in the original",
+          "no notes"]
+    assert Q.repeated_notes(tr) == [(3, "2", "Italian", "Legamento", 1)], Q.repeated_notes(tr)
+    assert Q.repeated_notes(["dérobement†1\n\n___FOOTNOTES___\n†1 French: dérobement",
+                             "†1 French: derobement"]) == [(2, "1", "French", "derobement", 1)]
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

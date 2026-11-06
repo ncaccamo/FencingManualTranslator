@@ -30,7 +30,7 @@ from _translate import clean_vlm_extraction
 # negations: the rule is step 2's (_tx_checks.py: a try that loses one is retried);
 # the report lists the pages where every try lost it
 from _tx_checks import _NEG_EN, _NEG_FR, _NEG_IT, contains_too_much_non_english, lost_negations
-from _tx_common import FN_HEADER
+from _tx_common import FN_HEADER, _strip_accents
 from _tx_terms import house_italics
 from _glossary_fr import TERM_RULES
 from _glossary_it import ITALIC_RULES_IT, TERM_RULES_IT
@@ -671,6 +671,23 @@ def false_friends(src: str, en: str) -> list:
     return out
 
 
+def repeated_notes(tr: list) -> list:
+    """A footnoted term's note ("†1 Italian: legamento") is given once per
+    book. Returns (scan, note number, label, term, scan of the first one)
+    for each later page that repeats it -- retranslated pages of an Italian
+    book did, before notes_already_given() read the book's label (Masiello
+    1902 fioretto / sciabola, 2026-11-06)."""
+    first, out = {}, []
+    for i, t in enumerate(tr):
+        for m in re.finditer(r"(?m)^†(\d+) (French|Italian): (.+?)\s*$", t or ""):
+            key = _strip_accents(m.group(3).lower())
+            if key in first:
+                out.append((i + 1, m.group(1), m.group(2), m.group(3), first[key]))
+            else:
+                first[key] = i + 1
+    return out
+
+
 def check_book(folder: str) -> list:
     global _rules
     _rules = TERM_RULES_IT if _tx.book_language(
@@ -784,6 +801,10 @@ def check_book(folder: str) -> list:
         m = re.search(r"\\[(\[].{0,40}", _body(t or ""))
         if m:
             add(i + 1, CHECK, "ocr", f"formula left in LaTeX notation: {m.group(0)!r}")
+
+    for s_, num, label, term, first in repeated_notes(tr):
+        add(s_, CHECK, "note", f"note †{num} \"{label}: {term}\" repeats the one on scan "
+            f"{first} -- remove it and its mark")
 
     # a sentence still split across a page break in the English: the page
     # ends mid-sentence and the next page with text continues in lowercase.
