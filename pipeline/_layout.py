@@ -92,6 +92,134 @@ def load(folder: str):
     return json.load(open(path, encoding="utf-8")) if os.path.exists(path) else None
 
 
+# ---- plates printed sideways ---------------------------------------------
+# A plate printed sideways on a portrait page (Masiello 1887, Prévost-
+# Jollivet, Baudry, André) was embedded as it lies. Two signals, from data
+# the pipeline already has:
+#   the layout boxes  a level caption just under or over a picture: upright;
+#                     one tall, narrow caption beside a large picture,
+#                     centred on its height: sideways, its foot on that side
+#                     (the caption is printed under the plate);
+#   the text layer    (Google / Gallica scans) real words on the page running
+#                     up (cw) or down (ccw), none across.
+# A page is turned when the signals agree, or one says so and the other has
+# nothing to say. Checked against the hand-made lists (Prévost-Jollivet 24 of
+# 24, Baudry 12 of 13) and by eye on every book's turned plates (2026-11-07).
+_TEXT_BOXES = ("caption", "text", "title", "page_header", "section_header", "list_item", "footnote")
+_PIC_BOXES = ("picture", "figure", "image")
+_WORD = re.compile(r"^[A-ZÀ-Ý]?[a-zà-ÿ]{3,}[.,;:]?$|^[A-ZÀ-Ý]{4,}[.,;:]?$")
+
+
+def plate_boxes_say(entry):
+    """One page's layout entry -> "none" (no large picture), "upright",
+    "cw" / "ccw" (sideways, turn this way), "sideways" (but which way the
+    boxes can't tell) or "unknown"."""
+    W, H = entry["w"], entry["h"]
+    area = lambda b: (b[2] - b[0]) * (b[3] - b[1])
+    pics = [b[2] for b in entry["boxes"] if b[0] in _PIC_BOXES and b[1] >= 0.5
+            and b[2][3] < 0.95 and area(b[2]) >= 0.04]       # not a digitiser's footer mark
+    big = [p for p in pics if area(p) >= 0.15]
+    if not big:
+        return "none"
+    for lab, sc, (x0, y0, x1, y1) in entry["boxes"]:
+        if lab in _TEXT_BOXES and sc >= 0.3 and (x1 - x0) * W > 2 * (y1 - y0) * H and (y0 + y1) / 2 < 0.94:
+            for px0, py0, px1, py1 in pics:
+                if x0 < px1 and x1 > px0 and (-0.01 <= y0 - py1 < 0.06 or -0.01 <= py0 - y1 < 0.06):
+                    return "upright"
+                # the picture box takes in its captions (Robaglia scan 85): a
+                # wide one level in its top or bottom quarter
+                ph = py1 - py0
+                if (x1 - x0 >= 0.25 and px0 <= x0 and x1 <= px1 + 0.01 and py0 <= y0 and y1 <= py1 + 0.01
+                        and (y0 - py0 > 0.75 * ph or py1 - y1 > 0.75 * ph)):
+                    return "upright"
+    px0, py0, px1, py1 = max(big, key=area)
+    pw, ph = px1 - px0, py1 - py0
+    votes = set()
+    for lab, sc, (x0, y0, x1, y1) in entry["boxes"]:
+        if lab not in _TEXT_BOXES or sc < 0.3:
+            continue
+        w, h = (x1 - x0) * W, (y1 - y0) * H
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        # a corner label or page number is not the caption (Florio scan 243)
+        if h > 3 * w and h > 0.06 * H and abs(cy - (py0 + py1) / 2) < 0.2 * ph:
+            if px1 - 0.25 * pw <= cx <= px1 + 0.1 and x1 < 0.985:
+                votes.add("cw")
+            elif px0 - 0.1 <= cx <= px0 + 0.25 * pw and x0 > 0.015:
+                votes.add("ccw")
+    # captions on both sides (a plate's title over it and its caption under
+    # it, Gomard): sideways, but the boxes can't tell which side is the foot
+    return votes.pop() if len(votes) == 1 else "sideways" if votes else "unknown"
+
+
+def plate_text_says(page):
+    """A source page's text layer -> "none", "across" (upright text),
+    "cw" / "ccw" / "180" or "unknown". Only real words count: the text layer
+    reads an engraving's hatching as junk (Danet scan 215, Gomard)."""
+    import collections
+    c = collections.Counter()
+    foot = page.rect.height * 0.94
+    for b in page.get_text("dict")["blocks"]:
+        for l in b.get("lines", []):
+            if (l["bbox"][1] + l["bbox"][3]) / 2 > foot:
+                continue                # the digitiser's mark ("Google", Gomard)
+            words = [w for w in "".join(s["text"] for s in l["spans"]).split() if _WORD.match(w)]
+            n = sum(map(len, words))
+            if not n:
+                continue
+            dx, dy = l["dir"]
+            k = "h" if dx > 0.9 else "cw" if dy < -0.9 else "ccw" if dy > 0.9 else "180" if dx < -0.9 else None
+            # a line's run far shorter than its letters: not where the
+            # words lie (Gomard's sideways captions: each word a level line,
+            # all stacked in one small box)
+            x0, y0, x1, y1 = l["bbox"]
+            size = max((sp["size"] for sp in l["spans"]), default=0)
+            if k and (abs(x1 - x0) if k in ("h", "180") else abs(y1 - y0)) >= 0.35 * size * n:
+                # one word a level line is a sideways caption read word by
+                # word (André scan 47 «Parade» / «prime»), not level text
+                if k == "h" and len(words) < 2:
+                    continue
+                c[k] += n
+    side = {k: v for k, v in c.items() if k != "h"}
+    if not side:
+        return "across" if c.get("h", 0) >= 10 else "none"
+    k = max(side, key=side.get)
+    if side[k] >= 10 and side[k] > 3 * c.get("h", 0) and side[k] > 3 * (sum(side.values()) - side[k]):
+        return k
+    return "unknown"
+
+
+def sideways_plates(folder: str, books_dir: str = "/data/books") -> dict:
+    """{0-based scan page: "cw" | "ccw" | "180" | "sideways"}: the plates
+    printed sideways, found from the layout boxes and the source scan's text
+    layer (see above); "sideways": which way is not known (a book rule
+    gives it). {} without a layout.json."""
+    lay = load(folder)
+    if not lay:
+        return {}
+    stem = os.path.basename(folder.rstrip("/")).replace("_translated", "")
+    src = None
+    try:
+        import fitz
+        if os.path.exists(f"{books_dir}/{stem}.pdf"):
+            src = fitz.open(f"{books_dir}/{stem}.pdf")
+    except ImportError:
+        pass
+    out = {}
+    for k, entry in lay.get("pages", {}).items():
+        n = int(k)
+        b = plate_boxes_say(entry)
+        if b in ("none", "upright"):
+            continue
+        t = plate_text_says(src[n]) if src is not None and n < len(src) else "none"
+        if t in ("cw", "ccw", "180") and b in (t, "unknown", "sideways"):
+            out[n] = t
+        elif b in ("cw", "ccw") and t in ("none", b):
+            out[n] = b
+        elif b == "sideways" and t in ("none", "unknown"):
+            out[n] = "sideways"
+    return out
+
+
 def no_running_heads(folder: str, books_dir: str = "/data/books") -> bool:
     """The reviewer's [book] running_heads = false (_overrides.py): the
     book prints none, and the detector's page_header box on its pages is

@@ -1795,6 +1795,74 @@ def test_rotation_plan_book_rule_and_page_lists():
         assert r.rotation_plan(folder) == (("plates", 270), {9: 90})
 
 
+def test_sideways_plates_found_from_boxes_and_text_layer():
+    # plates printed sideways were embedded as they lie unless the book had
+    # a hand-made .rotate list (Masiello 1887's 46 plates, André's); found
+    # from the layout boxes and the text layer, a listed page and none:
+    # winning, a book rule's direction kept (Gomard's Plate IX)
+    import importlib, json, os, tempfile
+    sys.path.insert(0, str(_PIPELINE))
+    L = importlib.import_module("_layout")
+    r = importlib.import_module("_render")
+    pic = ["picture", 0.9, [0.13, 0.3, 0.9, 0.76]]
+    # Masiello scan 197: the caption a tall box at the picture's right edge
+    masiello = {"w": 864, "h": 1398, "boxes": [pic, ["caption", 0.32, [0.87, 0.45, 0.9, 0.59]]]}
+    assert L.plate_boxes_say(masiello) == "cw"
+    left = {"w": 864, "h": 1398, "boxes": [pic, ["caption", 0.5, [0.1, 0.45, 0.14, 0.59]]]}
+    assert L.plate_boxes_say(left) == "ccw"
+    # a caption under it: upright (Saint-Martin's bookplate); a corner label
+    # is not a caption (Florio scan 243); a title over it and a caption under
+    # it, both sideways: can't tell (Gomard)
+    assert L.plate_boxes_say({"w": 864, "h": 1398, "boxes": [pic, ["caption", 0.5, [0.4, 0.77, 0.6, 0.79]]]}) == "upright"
+    assert L.plate_boxes_say({"w": 864, "h": 1398, "boxes": [pic, ["text", 0.5, [0.87, 0.31, 0.9, 0.4]]]}) == "unknown"
+    # the caption inside the picture's box, level at its foot (Robaglia scan 85)
+    robaglia = {"w": 900, "h": 1400, "boxes": [["picture", 0.88, [0.05, 0.04, 0.94, 0.9]], ["text", 0.53, [0.43, 0.85, 0.89, 0.89]],
+                                               ["text", 0.39, [0.06, 0.57, 0.08, 0.66]]]}
+    assert L.plate_boxes_say(robaglia) == "upright"
+    both = {"w": 864, "h": 1398, "boxes": [pic, ["caption", 0.5, [0.1, 0.45, 0.14, 0.59]],
+                                           ["caption", 0.5, [0.87, 0.45, 0.9, 0.59]]]}
+    assert L.plate_boxes_say(both) == "sideways"
+    assert L.plate_boxes_say({"w": 864, "h": 1398, "boxes": [["text", 0.9, [0.1, 0.1, 0.9, 0.9]]]}) == "none"
+    try:
+        import pymupdf
+    except ImportError:
+        return
+    def page(rot, words):
+        pg = pymupdf.open().new_page(width=400, height=600)
+        pg.insert_text((200, 400), words, fontsize=10, rotate=rot)
+        return pg
+    assert L.plate_text_says(page(90, "DEUXIEME POSITION la garde")) == "cw"      # runs up
+    assert L.plate_text_says(page(270, "Parata di seconda")) == "ccw"
+    assert L.plate_text_says(page(0, "Parata di seconda")) == "across"
+    assert L.plate_text_says(page(270, ".êEË à \\IÎ ïaïni-&lſ")) == "none"         # hatching read as junk
+    # a sideways caption read word by word as level lines (André scan 47)
+    pg = pymupdf.open().new_page(width=400, height=600)
+    pg.insert_text((300, 200), "Parade", fontsize=10)
+    pg.insert_text((300, 300), "prime", fontsize=10)
+    assert L.plate_text_says(pg) == "none"
+    pg.insert_text((50, 500), "Parade de prime haute", fontsize=10)
+    assert L.plate_text_says(pg) == "across"
+    with tempfile.TemporaryDirectory() as t:
+        books, folder = f"{t}/books", f"{t}/demo_1900_x_translated"
+        os.makedirs(f"{folder}/intermediate"); os.makedirs(books)
+        json.dump({"pages": {"4": masiello, "6": left, "8": both}},
+                  open(f"{folder}/intermediate/layout.json", "w"))
+        assert L.sideways_plates(folder, books) == {4: "cw", 6: "ccw", 8: "sideways"}
+        orig = L.sideways_plates
+        L.sideways_plates = lambda f_, b_="/data/books": orig(f_, books)
+        try:
+            assert r.rotation_plan(folder) == (None, {4: 270, 6: 90})
+            f = f"{folder}/demo_1900_x.rotate"
+            open(f, "w").write("cw\n")                      # the book's direction wins
+            assert r.rotation_plan(folder) == (("plates", 270), {4: 270, 6: 270, 8: 270})
+            open(f, "w").write("ccw: 5\nnone: 7\n")         # a listed page, a page kept as scanned
+            assert r.rotation_plan(folder) == (None, {4: 90, 6: 0})
+            open(f, "w").write("auto: off\n")
+            assert r.rotation_plan(folder) == (None, {})
+        finally:
+            L.sideways_plates = orig
+
+
 def _load_overrides_module():
     import importlib
     sys.path.insert(0, str(_PIPELINE))

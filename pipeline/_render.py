@@ -156,31 +156,55 @@ def rotation_plan(folder):
       all:cw                    every page
       cw: 35, 39, 55-229        these scan pages (1-based), whatever they hold --
       ccw: 241                  for books whose plates face different ways
+      none: 31                  these pages stay as scanned
+      auto: off                 no plates found sideways (below)
     book = (scope, degrees) or None; pages = {0-based index: degrees}. A
-    page rule wins over the book rule."""
+    page rule wins over the book rule.
+
+    Without a file too, the plates the layout boxes and the text layer show
+    printed sideways (_layout.sideways_plates) are turned: listed pages
+    as given, then the book rule's direction where it has one (its figure
+    list missed Gomard's Plate IX), else the direction found."""
     path = _rotate_file(folder)
-    book, pages = None, {}
-    if not path:
-        return book, pages
+    book, pages, keep, auto = None, {}, set(), True
+    if path:
+        book, pages, keep, auto = _read_rotate(path)
+    if auto:
+        import _layout
+        for n, d in _layout.sideways_plates(folder).items():
+            if n not in pages and n not in keep and (book or d != "sideways"):
+                pages[n] = book[1] if book else _DEG[d]
+    for n in keep:              # as scanned: 0, so the book rule doesn't turn it either
+        pages[n] = 0
+    return book, pages
+
+
+def _read_rotate(path):
+    book, pages, keep, auto = None, {}, set(), True
     for line in open(path, encoding="utf-8"):
         line = line.split("#")[0].strip().lower()
         if not line:
             continue
-        m = re.match(r"^(cw|ccw|180|-?90)\s*:\s*([\d,\s-]+)$", line)
+        if re.match(r"^auto\s*:\s*off$", line):
+            auto = False
+            continue
+        m = re.match(r"^(cw|ccw|180|-?90|none)\s*:\s*([\d,\s-]+)$", line)
         if m:
-            deg = _DEG[m.group(1)]
             for part in re.split(r"[,\s]+", m.group(2).strip()):
                 if not part:
                     continue
                 a, _, b = part.partition("-")
                 for n in range(int(a), int(b or a) + 1):
-                    pages[n - 1] = deg
+                    if m.group(1) == "none":
+                        keep.add(n - 1)
+                    else:
+                        pages[n - 1] = _DEG[m.group(1)]
             continue
         scope = "all" if line.startswith("all:") else "plates"
         deg = _DEG.get(line.split(":")[-1].strip())
         if deg:
             book = (scope, deg)
-    return book, pages
+    return book, pages, keep, auto
 
 
 def load_rotate(folder):

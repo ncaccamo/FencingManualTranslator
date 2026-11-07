@@ -136,8 +136,9 @@ the operator's business and is not tracked here.)
 - The local-mode launch of the 46-layer Qwen3.8 split under Linux (all
   Qwen3.8 runs so far were remote).
 - NVIDIA GPUs (`docs/remote-gpu.md` §5 outlines both routes).
-- How many mid-book plates the OCR model under-reports; sideways fold-out
-  engravings on books without a `.rotate` file.
+- How many mid-book plates the OCR model under-reports. Sideways plates are
+  found without a `.rotate` file now (`_layout.sideways_plates`), but a few
+  are missed (Edom, Descalzi 109, Tiboldi 41: list them in `.rotate`).
 - Paragraph alignment on a patchy scan text layer: below `ALIGN_MIN_RATE`
   the side-by-side falls back to plain flow for the whole book.
 
@@ -155,6 +156,16 @@ the operator's business and is not tracked here.)
   The book's `.rotate` turns figures only (it turned stamps and endpapers
   before), and the sideways-caption trim runs only on pages `.rotate`
   turns: without that gate it touched 74 pages in 11 books.
+
+- **Sideways plates found from data already there (2026-11-07).** The
+  layout boxes (a tall caption beside the plate) and the scan's text layer
+  (words running up or down) decide; a page turns only when they agree or
+  one is silent. No OCR / vision-model call: olmOCR's own rotation output
+  is not in our prompt's format, and the two signals matched the
+  hand-made lists (Prévost-Jollivet 24/24, Baudry 13/13). The text layer
+  is noisy -- hatching read as words, the "Google" footer mark, sideways
+  captions stored as one-word level lines -- each filtered; don't loosen
+  those filters without rechecking every book's turned plates by eye.
 
 - **Literal translation (2026-10-11).** The reviewer prefers the author's
   words to paraphrase even where both read fine. Rule 0 of the prompt asks
