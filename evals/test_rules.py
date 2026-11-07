@@ -1579,6 +1579,31 @@ def test_two_column_lesson_without_text_layer_from_the_boxes():
     assert C.column_tables(en, "\n".join((h, i, l1, l2, r1, r2, "Un'altra riga.")), pg, boxes) == en
 
 
+def test_table_at_the_foot_of_a_sheet_goes_to_the_next():
+    # a table that did not fit in the space left on a sheet was skipped --
+    # the text after it went on without it (Barbasetti pdf 119: the II and
+    # III «Esercizi» lost). With the column's top given, it comes back for
+    # the next sheet; one too big for any sheet is still skipped
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        import pymupdf as fitz
+    except ImportError:
+        return
+    R = importlib.import_module("_render")
+    rows = "".join(f"<tr><td>Parries quarta {k}</td><td>Threatens a straight thrust {k}</td></tr>" for k in range(12))
+    tab = R.Line(table=f"<table>{rows}</table>")
+    after = R.layout("III. EXERCISE.", 400, 10)
+    pg = fitz.open().new_page(width=612, height=792)
+    left, _ = R.draw(pg, (50, 700, 450, 760), [tab] + after, 10, fresh_top=50)
+    assert left and left[0].table, "the table must come back for the next sheet"
+    left, _ = R.draw(pg, (50, 700, 450, 760), [tab] + after, 10)
+    assert not left or not left[0].table          # step 4's behaviour, unchanged
+    huge = R.Line(table="<table>" + rows * 40 + "</table>")
+    left, _ = R.draw(pg, (50, 700, 450, 760), [huge], 10, fresh_top=50)
+    assert not left                               # too big for any sheet: skipped as before
+
+
 def test_two_column_table_keeps_the_printed_widths():
     # a lesson table (_columns) keeps the columns' widths as the book prints
     # them; the master's short commands are not squeezed by the pupil's

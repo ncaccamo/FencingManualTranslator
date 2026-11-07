@@ -125,8 +125,15 @@ def render_aligned(page, y_top, tr, size, fracs, src_page, bottom=RIGHT.y1, toc=
     span0, span1 = displayed_scan_span(src_page)
     span_h = span1 - span0
     laid = [_render.layout(p, RIGHT.width, size, paras=PARAS, centre=CENTRE, toc=toc) for p in paras]
-    line_h = [sum(size * LEADING if not ln.gap else size * LEADING * 0.55
-                  for ln in L) for L in laid]
+    def h_of(ln):
+        # a table at its drawn height, not a line's (as _render.draw sets it):
+        # counted as one line, it was placed where it did not fit and skipped
+        # (two of Masiello sabre's synoptic tables)
+        if ln.table:
+            th = _render.draw_table(page, (RIGHT.x0, 0, RIGHT.x1, 10000), ln.table, size=min(size, 8.5), dry=True)
+            return (th if th is not None else 10000) + size * LEADING * 0.4
+        return size * LEADING if not ln.gap else size * LEADING * 0.55
+    line_h = [sum(h_of(ln) for ln in L) for L in laid]
 
     cur = y_top
     gaps = []
@@ -504,7 +511,11 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         if lines is None:
             lines = _render.layout(body_txt, RIGHT.width, SIZES[-1], paras=PARAS, centre=CENTRE, toc=TOC)
 
-        leftover, _ = _render.draw(page, (RIGHT.x0, y, RIGHT.x1, body_bottom), lines, chosen)
+        # a table that does not fit below the text goes to the continuation
+        # sheet, not skipped (two of Masiello sabre's synoptic tables); on a continuation
+        # sheet the column is fresh already
+        leftover, _ = _render.draw(page, (RIGHT.x0, y, RIGHT.x1, body_bottom), lines, chosen,
+                                   fresh_top=RIGHT.y0)
         _footer(page)
         while leftover:
             cont_pages += 1

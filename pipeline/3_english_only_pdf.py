@@ -440,7 +440,8 @@ class Flow:
                 self._newpage()
             before = len(lines)
             lines, self.y = _render.draw(
-                self.page, (COL.x0, self.y, COL.x1, COL.y1), lines, size, color=color)
+                self.page, (COL.x0, self.y, COL.x1, COL.y1), lines, size, color=color,
+                fresh_top=COL.y0)
             self.on_sheet.add(self.cur)
             if lines and len(lines) == before:
                 self._newpage()  # guard against a zero-progress loop

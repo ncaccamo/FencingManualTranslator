@@ -217,6 +217,13 @@ centred, level with it, above the text (`_layout.picture_caption`).
     measured, so the split follows that page's print. Tables from other
     sources (no `data-split`) are sized by their content as before.
 
+- **A table at the foot of a sheet goes to the next one**
+  (`_render.draw(fresh_top=)`): one that did not fit in the space left was
+  skipped and the text went on without it. In the side-by-side, the
+  paragraph alignment measures a table at its drawn height (it counted it
+  as one line). A table too big for a whole column is still skipped (Bruno's
+  synoptic tables in the side-by-side's right column).
+
 Captions, notes and the old callers use `paras=None` -- the previous
 rules, unchanged.
 

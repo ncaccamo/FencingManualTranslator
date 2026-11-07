@@ -980,13 +980,15 @@ def fit_on_sheet(y, w, h, below, bottom):
     return None
 
 
-def draw(page, rect, lines, size, *, leading=1.28, gap_frac=0.55,
+def draw(page, rect, lines, size, *, leading=1.28, gap_frac=0.55, fresh_top=None,
          color=(0, 0, 0), dry=False):
     """Draw as many `lines` as fit in `rect` (x0, y0, x1, y1).
 
     Returns (leftover_lines, y_end). `leftover_lines` is empty when everything
     fit. With dry=True nothing is drawn -- use it to test whether a given
-    size fits before committing.
+    size fits before committing. `fresh_top`: the column's top on a new
+    sheet -- a table that does not fit here but would there comes back in
+    the leftover (without it, such a table is skipped).
     """
     x0, y0, x1, y1 = rect
     lh = size * leading
@@ -1012,6 +1014,15 @@ def draw(page, rect, lines, size, *, leading=1.28, gap_frac=0.55,
         if ln.table:
             h = draw_table(page, (x0, y, x1, y1), ln.table, size=min(size, 8.5), dry=True)
             if h is None:
+                # the table is first and does not fit here: on a sheet of its
+                # own it would (`fresh_top`, the column's top) -- hand it back
+                # for the next sheet. It used to be skipped, and the rest of
+                # the page went on below without it (Barbasetti pdf 119: the
+                # II and III «Esercizi» lost at the foot of a sheet)
+                if idx == 0 and fresh_top is not None and fresh_top < y and draw_table(
+                        page, (x0, fresh_top, x1, y1), ln.table, size=min(size, 8.5), dry=True) is not None:
+                    leftover = lines[idx:]
+                    break
                 if idx == 0:            # can't fit even on a fresh page: skip it
                     continue
                 leftover = lines[idx:]
