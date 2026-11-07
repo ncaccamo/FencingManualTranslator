@@ -1488,6 +1488,54 @@ def test_harmonize_body_title_with_header():
         assert harmonize_titles_with_headers(d) == 0             # idempotent
 
 
+def test_two_column_lesson_drawn_as_a_table():
+    # Barbasetti's «Esempi» (A | B), Masiello's master | pupil: the OCR reads
+    # one column after the other, so the English gave each fencer's lines in
+    # turn. Rebuilt from the scan's positions as a table, rows as printed
+    import importlib, re
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        import pymupdf as fitz           # the real library: runs in the image
+    except ImportError:
+        return
+    C = importlib.import_module("_columns")
+    doc = fitz.open()
+    pg = doc.new_page(width=500, height=800)
+    put = lambda x, y, t: pg.insert_text((x, y), t, fontsize=9)
+    put(210, 100, "IX. ESEMPIO")
+    put(60, 130, "Sta in una posizione qualunque"); put(290, 130, "Sta in linea")
+    put(290, 150, "Cerca indovinare la parata che va ad eseguire")
+    put(60, 175, "Interrompe le azioni di finta cambiando le parate")
+    put(210, 210, "X. ESEMPIO")
+    put(60, 240, "Sta in una posizione qualunque"); put(290, 240, "Sta in atteggiamento d'attacco")
+    put(290, 260, "Lancia la botta con proposito deliberato di parare")
+    put(60, 285, "Para e risponde con la massima velocità sulla linea")
+    boxes = [["text", 0.9, [0.11, 0.15, 0.48, 0.23]], ["text", 0.9, [0.57, 0.15, 0.95, 0.2]],
+             ["text", 0.9, [0.11, 0.29, 0.48, 0.37]], ["text", 0.9, [0.57, 0.29, 0.95, 0.34]],
+             ["section_header", 0.8, [0.41, 0.11, 0.56, 0.13]], ["section_header", 0.8, [0.41, 0.25, 0.56, 0.27]]]
+    src = ("Sta in una posizione qualunque\nInterrompe le azioni di finta cambiando le parate\n"
+           "Sta in una posizione qualunque\nPara e risponde con la massima velocità sulla linea\n"
+           "IX. ESEMPIO\nSta in linea\nCerca indovinare la parata che va ad eseguire\n"
+           "X. ESEMPIO\nSta in atteggiamento d'attacco\nLancia la botta con proposito deliberato di parare")
+    en = ("Stands in any position\nInterrupts the feint actions by changing the parries\n"
+          "Stands in any position\nParries and ripostes with the greatest speed on the line\n"
+          "IX. EXAMPLE\nStands in line\nSeeks to guess the parry that the opponent is going to execute\n"
+          "X. EXAMPLE\nStands in attitude of attack\nLaunches the thrust with the deliberate purpose of parrying")
+    out = C.column_tables(en, src, pg, boxes)
+    assert out.count("\x00TABLE<table>") == 2, (C.SKIP, out)
+    assert out.count("IX. EXAMPLE") == 1 and out.index("IX. EXAMPLE") < out.index("X. EXAMPLE")
+    first = re.search(r"<table>(.*?)</table>", out).group(1)
+    assert first.startswith("<tr><td>Stands in any position</td><td>Stands in line</td></tr>"), first
+    assert "<tr><td></td><td>Seeks to guess" in first             # B's next line before A's, as printed
+    assert first.index("Seeks to guess") < first.index("Interrupts the feint")
+    # a list of names in two columns (Blengini pdf 134): left as it is
+    names = en.replace("Stands in any position", "ALBERTO MARCHIONNI").replace("Stands in line", "LICURGO CAVALLI")
+    names = re.sub(r"(?m)^(?!IX|X\.).{20,}$", "GAETANO SIMONETTA", names)
+    assert C.column_tables(names, src, pg, boxes) == names
+    # line counts that differ: left as it is
+    assert C.column_tables(en + "\nOne more line.", src, pg, boxes) == en + "\nOne more line."
+
+
 def test_contents_page_column_label_set_over_the_numbers():
     # Kirchhoffer pdf 105, Gomard pdf 330, Lafaugère, Saint-Martin: the
     # «Pages.» heading over the page numbers was a stray flush-left line, or

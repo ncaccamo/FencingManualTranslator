@@ -34,6 +34,7 @@ import re
 
 import _render
 import _textlayer
+import _columns
 import _pageio
 import _cover
 
@@ -376,6 +377,12 @@ class Flow:
         2026-11-04)."""
         body_txt, notes = _render.split_footnotes(text)
         if not _render.toc_page(body_txt):
+            # a passage set in two columns (master | pupil): a table, rows as printed
+            lay = _layout._lay(folder)
+            body_txt = _columns.column_tables(body_txt, src_body, src_page,
+                                              ((lay or {}).get("pages", {}).get(str(self.cur)) or {}).get("boxes", []),
+                                              notes=bool(notes),
+                                              stored=_render.split_footnotes(translations[self.cur])[0])
             # paragraph starts as printed, where the scan has a text layer
             body_txt = _textlayer.apply(_render.english_quotes(body_txt), src_body, src_page, prev_page, ornaments)
             body_txt = _render.lesson_glue(_render.drop_margin_echoes(body_txt))   # a lesson's halves, one block

@@ -180,6 +180,22 @@ centred, level with it, above the text (`_layout.picture_caption`).
   the master has as many lines as the pupil has steps they are paired back
   into a two-column grid (`_pair_lesson`), so the actions alternate as
   printed.
+- **Passages set in two parallel columns** -- master | pupil (Masiello),
+  A | B (Barbasetti's «Esempi»), hits | parries (Enrichetti) -- the OCR
+  reads one column after the other, so the English gives each fencer's
+  lines in turn. Before the text-layer step, both PDFs rebuild such a
+  passage from the scan (`_columns.column_tables`): the layout boxes give
+  the two columns and the gutter, the scan's words each printed line's
+  side and height, and each source line is found there by its first
+  words; the English line with the same index takes its place (the
+  translation keeps the source's lines one for one). Headings across the
+  page stay between the tables, once (the OCR repeats them per column);
+  in a table a line level with one in the other column shares its row,
+  one set lower starts a new row. Drawing only: `translation.txt` is
+  unchanged. Left as it is when anything is uncertain: no text layer
+  (Masiello 1902 foil), the line counts differ, a line in or after the
+  passage not found on the scan, a list of names or titles (Blengini,
+  Joseph-Renaud), or any English line that would be lost.
 
 Captions, notes and the old callers use `paras=None` -- the previous
 rules, unchanged.

@@ -31,6 +31,7 @@ import re
 
 import _render
 import _textlayer
+import _columns
 import _layout
 import _pageio
 import _cover
@@ -399,6 +400,12 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         body_txt, notes = _render.split_footnotes(tr)
         TOC = _render.toc_page(body_txt)     # decided once for the page
         if not TOC:
+            # a passage set in two columns (master | pupil): a table, rows as printed
+            lay = _layout._lay(folder)
+            body_txt = _columns.column_tables(body_txt, extractions[i].split("BODY_TEXT:", 1)[-1]
+                                              if i < len(extractions) else "", src[i],
+                                              ((lay or {}).get("pages", {}).get(str(i)) or {}).get("boxes", []),
+                                              notes=bool(notes), stored=_render.split_footnotes(translations[i])[0])
             # paragraph starts as printed, where the scan has a text layer
             body_txt = _textlayer.apply(_render.english_quotes(body_txt), extractions[i].split("BODY_TEXT:", 1)[-1]
                                         if i < len(extractions) else "", src[i], src[i - 1] if i else None,
