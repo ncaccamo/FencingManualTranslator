@@ -72,7 +72,7 @@ import os
 import re
 import tomllib
 
-_PAGE_KEYS = {"page_number", "header", "retranslate", "note", "caption", "caption_en", "figure"}
+_PAGE_KEYS = {"page_number", "header", "retranslate", "note", "caption", "caption_en", "figure", "leave_out"}
 _TOP_KEYS = {"book", "headers", "terms", "pages", "fix", "table_fix"}
 _BOOK_KEYS = {"running_heads": bool, "final": bool, "paragraphs": str, "page_numbers": str}
 _PARAGRAPHS = ("indented", "spaced")
@@ -118,6 +118,8 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
         if not isinstance(v, dict) or set(v) - _PAGE_KEYS:
             raise OverridesError(f"{p}: [pages.{k}] unknown key(s) "
                                  f"{sorted(set(v) - _PAGE_KEYS) if isinstance(v, dict) else v}")
+        if "leave_out" in v and not isinstance(v["leave_out"], bool):
+            raise OverridesError(f"{p}: [pages.{k}] leave_out must be true or false")
         pages[int(k)] = v
     fixes = raw.get("fix") or []
     for n, f in enumerate(fixes, 1):
@@ -323,6 +325,13 @@ def parse_page_spec(spec: str) -> list:
             raise OverridesError(f"bad page list {spec!r} -- use e.g. 12,40-42")
         out += list(range(int(a), int(b or a) + 1))
     return sorted(set(out))
+
+
+def left_out_pages(ov: dict) -> list:
+    """Scan pages marked leave_out = true, ascending: library or digitiser
+    text (a bookplate, a date-due slip, Google's notice) whose English is
+    left out of both PDFs; the side-by-side still shows the scan."""
+    return sorted(s for s, v in ov["pages"].items() if v.get("leave_out"))
 
 
 def retranslate_pages(ov: dict) -> list:

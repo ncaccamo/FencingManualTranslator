@@ -461,6 +461,42 @@ def centres_headings(folder):
     return total >= 20 and centred >= 0.5 * total
 
 
+# a page whose English the reviewer left out ([pages.N] leave_out = true):
+# the side-by-side says so beside the scan, the English-only skips the page
+LEFT_OUT = "[library / digitiser notice, not translated]"
+
+
+def apply_left_out(translations, stem, books_dir="/data/books"):
+    """The translations with each left-out page's English replaced by
+    LEFT_OUT. translation.txt is not changed, so taking the setting out
+    brings the English back."""
+    import _overrides
+    try:
+        pages = _overrides.left_out_pages(_overrides.load(stem, books_dir))
+    except _overrides.OverridesError:
+        return translations
+    out = list(translations)
+    for s in pages:
+        if 1 <= s <= len(out):
+            out[s - 1] = LEFT_OUT
+    return out
+
+
+def page_left_open(tail, runs_on=False, centred=False):
+    """The page's text stops mid-sentence, so the next page's notes and
+    pictures wait for its first paragraph (English-only PDF). `tail` is the
+    page's English as drawn, `runs_on` the source test (runs_on() in step
+    3), `centred` a title page. Open: the English ends in a letter, a comma,
+    a hyphen or dash, or "(fig."; or its last line has an unclosed "("
+    ("(see fig." with the number on the next page: Barbasetti pdf 92 drew
+    Fig. 44 inside the reference). Never a contents page, and never a title
+    page, whose last line is an imprint ("Paris. - 13-17, rue Montparnasse":
+    Kirchhoffer pdf 12's picture waited behind its caption)."""
+    last = tail.splitlines()[-1] if tail else ""
+    return (runs_on or bool(re.search(r"(?:[a-zà-ÿ,\-–—]|\([Ff]ig\.)$", tail))
+            or bool(re.search(r"\([^()]*$", last))) and not toc_page(tail) and not centred
+
+
 def book_paragraphs(stem, books_dir="/data/books"):
     """The book's paragraph style ([book] paragraphs; "indented" unless set)."""
     import _overrides
@@ -614,6 +650,13 @@ def _layout_toc(rows, width, size, centre):
             flush()
             lines.append(r)
     flush()
+    # the contents' own title in ordinary case: «Table of Contents.», centred
+    # as the book prints it (Kirchhoffer pdf 104; in capitals it is a heading
+    # already). Only the title: other short lines of a contents are set as
+    # the book sets them (Jacob-André's lesson summaries, Gomard's «Page.»)
+    title = next((k for k, l in enumerate(lines)
+                  if re.fullmatch(r"(?:Table of )?Contents|Index|List of Plates",
+                                  re.sub(r"<[^>]+>", "", l).strip().rstrip("."), re.I)), None)
     # the OCR doesn't always keep a two-column contents in pairs ("11. Lunge"
     # alone on a row, Barbasetti pdf 7): its entries are numbered, so each run
     # of numbered entries goes in number order
@@ -627,7 +670,7 @@ def _layout_toc(rows, width, size, centre):
             if j - k > 1:
                 lines[k:j] = sorted(lines[k:j], key=lambda l: int(num(l).group(1)))
             k = max(j, k + 1)
-    for raw in lines:
+    for k_row, raw in enumerate(lines):
         # OCR debris in the leaders: "parry...... /...... 78" (Prévost-Jollivet)
         raw = re.sub(r"(\.{2,})\s*[/|\\]\s*(\.{2,})", r"\1\2", raw)
         if not raw.strip():
@@ -649,7 +692,7 @@ def _layout_toc(rows, width, size, centre):
                 out.append(Line(n * _SPACE_PT if k == 0 else n * _SPACE_PT + 12, v,
                                 tail=tail if k == len(vl) - 1 else ""))
             continue
-        if centre and (_heading_line(plain) or re.fullmatch(r"(?:CHAPTER|CAPITOLO|CHAPITRE|PART|PARTE)\b.*", plain, re.I)):
+        if centre and (k_row == title or _heading_line(plain) or re.fullmatch(r"(?:CHAPTER|CAPITOLO|CHAPITRE|PART|PARTE)\b.*", plain, re.I)):
             for v in _wrap(_spans(body), width, size):
                 out.append(Line(max(0.0, (width - sum(_w(t, i, size) for t, i in v)) / 2), v))
             continue
@@ -906,6 +949,19 @@ def centre_lines(lines, width, size):
             w = sum(_w(t, i, size) for t, i in ln.spans if t)
             ln.indent = max(0.0, (width - w) / 2)
     return lines
+
+
+def fit_on_sheet(y, w, h, below, bottom):
+    """A picture (w x h, plus `below` under it) set at y: the size it is
+    drawn at on this sheet, or None when it goes to the next one. One that
+    misses the foot by up to a tenth of its height is drawn that much
+    smaller, on the page the book prints it on (Danet pdf 127 ornament)."""
+    short = y + h + below - bottom
+    if short <= 0:
+        return w, h
+    if short <= 0.1 * h:
+        return w * (h - short) / h, h - short
+    return None
 
 
 def draw(page, rect, lines, size, *, leading=1.28, gap_frac=0.55,

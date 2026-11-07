@@ -697,6 +697,9 @@ def check_book(folder: str) -> list:
     tr = _pageio.split_pages(open(f"{I}/translation.txt", encoding="utf-8").read())
     pn = open(f"{I}/page_numbers.txt", encoding="utf-8").read().split("\n")
     import _render
+    # a page the reviewer left out (library / digitiser text) is not in the PDFs
+    tr = ["[Empty page]" if t == _render.LEFT_OUT else t
+          for t in _render.apply_left_out(tr, os.path.basename(folder)[:-len("_translated")])]
     hmap = _render.header_map(I)          # with two-part heads either way round
     figs = json.load(open(f"{I}/figures.json", encoding="utf-8")) \
         if os.path.exists(f"{I}/figures.json") else {}

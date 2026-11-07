@@ -1488,6 +1488,39 @@ def test_harmonize_body_title_with_header():
         assert harmonize_titles_with_headers(d) == 0             # idempotent
 
 
+def test_contents_title_in_ordinary_case_centred():
+    # Kirchhoffer pdf 104: «Table of Contents.» (the book's «Table des
+    # Matières.», centred) was set flush left -- only capitals counted as a
+    # heading. Other short lines of a contents keep the book's place
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    rows = ["Table of Contents.", "", "FOIL, by Kirchhoffer...... 5", "Practice...... 8", "Hygiene...... 7"]
+    try:
+        R = importlib.import_module("_render")
+        out = [l for l in R._layout_toc(rows, 400, 10, True) if not l.gap]
+    except (TypeError, AttributeError, ImportError):   # needs real PyMuPDF (in the image)
+        return
+    assert out[0].indent > 100 and out[1].indent == 0
+    assert R._layout_toc(rows, 400, 10, False)[0].indent == 0          # a book that does not centre
+    rows[0] = "Direct counter-ripostes."                               # Jacob-André's lesson summary
+    assert R._layout_toc(rows, 400, 10, True)[0].indent == 0
+
+
+def test_picture_just_short_of_the_foot_drawn_smaller():
+    # Danet pdf 127: the ornament the book prints at the page's foot missed
+    # the sheet by 5 pt and went alone onto the next one
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        R = importlib.import_module("_render")
+    except ImportError:
+        return
+    assert R.fit_on_sheet(500, 300, 188, 16, 736) == (300, 188)       # fits
+    w, h = R.fit_on_sheet(537, 300, 188, 16, 736)                   # 5 pt short
+    assert abs(h - 183) < 0.01 and abs(w - 300 * 183 / 188) < 0.01
+    assert R.fit_on_sheet(560, 300, 188, 16, 736) is None             # 28 pt short: next sheet
+
+
 def test_rotation_plan_book_rule_and_page_lists():
     # Gomard's one-word file keeps meaning "every figure page, clockwise";
     # books whose plates face different ways (Prévost, Baudry) list pages,
@@ -4432,6 +4465,173 @@ def test_report_lists_repeated_term_notes():
     assert Q.repeated_notes(tr) == [(3, "2", "Italian", "Legamento", 1)], Q.repeated_notes(tr)
     assert Q.repeated_notes(["dérobement†1\n\n___FOOTNOTES___\n†1 French: dérobement",
                              "†1 French: derobement"]) == [(2, "1", "French", "derobement", 1)]
+
+
+def test_title_page_and_open_reference_leave_sentence_open():
+    # English-only PDF: a title page's imprint line never runs on (Kirchhoffer
+    # pdf 12: the next page's picture waited behind its caption), and a last
+    # line with an unclosed "(" does (Barbasetti pdf 92: "(see fig." / "47);",
+    # Fig. 44 was drawn inside the reference), 2026-11-06
+    sys.path.insert(0, str(_PIPELINE))
+    import _render
+    imprint = "Larousse Library\nParis. - 13-17, rue Montparnasse"
+    assert _render.page_left_open(imprint) and not _render.page_left_open(imprint, centred=True)
+    assert _render.page_left_open("the necessary opposition (see fig.")
+    assert _render.page_left_open("(vedi fig.")
+    assert not _render.page_left_open("the parry (fig. 30). Then the riposte.")
+    assert not _render.page_left_open("Of the parries (see fig. 3).")
+    assert _render.page_left_open("and the arm", runs_on=False)
+    assert not _render.page_left_open("It ends here.", runs_on=False)
+
+
+def test_leave_out_setting():
+    # general rule 3 (2026-11-06): [pages.N] leave_out = true keeps a page's
+    # library / digitiser text (bookplate, Google's notice) out of both PDFs;
+    # translation.txt is untouched, so taking the setting out brings it back
+    import tempfile
+    sys.path.insert(0, str(_PIPELINE))
+    import _overrides, _render
+    with tempfile.TemporaryDirectory() as d:
+        open(f"{d}/b.overrides.toml", "w").write('[pages.2]\nleave_out = true\n[pages.3]\nnote = "x"\n')
+        ov = _overrides.load("b", d)
+        assert _overrides.left_out_pages(ov) == [2]
+        tr = ["title", "BOSTON PUBLIC LIBRARY", "text"]
+        assert _render.apply_left_out(tr, "b", d) == ["title", _render.LEFT_OUT, "text"]
+        assert tr[1] == "BOSTON PUBLIC LIBRARY"
+        open(f"{d}/c.overrides.toml", "w").write('[pages.2]\nleave_out = "yes"\n')
+        try:
+            _overrides.load("c", d)
+            assert False, "a non-boolean leave_out must be refused"
+        except _overrides.OverridesError:
+            pass
+
+
+def test_caption_line_in_text_found_by_its_place():
+    # general rule 2 (2026-11-06): a picture's printed caption the OCR also set
+    # in the text («Schéma A.», Kirchhoffer pdf 52) is found where the scan's
+    # text layer prints it -- inside the caption box under the picture -- and
+    # matched to the English paragraph at the same place. A heading elsewhere
+    # with the same words (Barbasetti «Parata di Seconda») is not a caption.
+    import json, tempfile, os
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        import pymupdf as fitz           # the real library: runs in the image
+    except ImportError:
+        return
+    import _layout
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(f"{d}/intermediate")
+        boxes = [["picture", 0.98, [0.2, 0.3, 0.7, 0.55]], ["caption", 0.82, [0.4, 0.57, 0.5, 0.59]],
+                 ["section_header", 0.8, [0.35, 0.70, 0.6, 0.72]]]
+        json.dump({"pages": {"0": {"boxes": boxes}}}, open(f"{d}/intermediate/layout.json", "w"))
+        doc = fitz.open()
+        pg = doc.new_page(width=400, height=1000)
+        pg.insert_text((60, 100), "Une phrase qui continue la page.", fontsize=9)
+        pg.insert_text((165, 583), "Schéma A.", fontsize=9)
+        pg.insert_text((150, 713), "Parata di Seconda", fontsize=9)
+        src = "Une phrase qui continue la page.\n\n![Schéma A.](x.png)\n\nSchéma A.\n\nParata di Seconda\n\nLa suite du texte."
+        en = "A sentence that continues the page.\n\nDiagram A.\n\nParry of seconda\n\nThe rest of the text."
+        assert _layout.caption_paras(en, src, pg, d, 0, [boxes[0][2]]) == {0: (1,)}
+        # the paragraph counts differ: no match, nothing moved
+        assert _layout.caption_paras(en + "\n\nMore.", src, pg, d, 0, [boxes[0][2]]) == {}
+    # a two-line caption (Blengini pdf 56): the credit in the caption box, the
+    # description under it inside the detector's larger caption box, its layer
+    # garbled («{Posizione … N. i6)») -- both paragraphs are the caption
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(f"{d}/intermediate")
+        boxes = [["picture", 0.95, [0.27, 0.25, 0.77, 0.83]], ["caption", 0.77, [0.42, 0.834, 0.64, 0.853]],
+                 ["caption", 0.45, [0.217, 0.834, 0.867, 0.891]]]
+        json.dump({"pages": {"0": {"boxes": boxes}}}, open(f"{d}/intermediate/layout.json", "w"))
+        doc = fitz.open()
+        pg = doc.new_page(width=400, height=1000)
+        pg.insert_text((90, 150), "Questa parata serve altresi. (Vedi la presente fig. N. 16).", fontsize=9)
+        pg.insert_text((170, 848), "Scuola C. A. Blengini", fontsize=9)
+        pg.insert_text((90, 885), "{Posizione della Parata di Fianco destro N. i6).", fontsize=9)
+        src = ("Questa parata serve altresi. (Vedi la presente fig. N. 16).\n\nScuola C. A. Blengini"
+               "\n\n(Posizione della Parata di Fianco destro fig. N. 16).")
+        en = ("This parry also serves. (See the present fig. N. 16).\n\nScuola C. A. Blengini"
+              "\n\n(Position of the parry of the right flank fig. N. 16).")
+        assert _layout.caption_paras(en, src, pg, d, 0, [boxes[0][2]]) == {0: (1, 2)}
+        # no larger caption box: the credit alone
+        json.dump({"pages": {"0": {"boxes": boxes[:2]}}}, open(f"{d}/intermediate/layout.json", "w"))
+        _layout._LAY_CACHE.pop(d, None)
+        assert _layout.caption_paras(en, src, pg, d, 0, [boxes[0][2]]) == {0: (1,)}
+        # the description in a caption box of its own right under the credit (pdf 58)
+        json.dump({"pages": {"0": {"boxes": boxes[:2] + [["caption", 0.66, [0.21, 0.859, 0.854, 0.889]]]}}},
+                  open(f"{d}/intermediate/layout.json", "w"))
+        _layout._LAY_CACHE.pop(d, None)
+        assert _layout.caption_paras(en, src, pg, d, 0, [boxes[0][2]]) == {0: (1, 2)}
+        # the next paragraph the rest of a sentence (a small letter): not the
+        # caption's (Prévost-Jollivet pdf 218 «puts the adversary at his mercy»)
+        low = lambda t: t.replace("(Posizione", "posizione").replace("(Position", "position")
+        assert _layout.caption_paras(low(en), low(src), pg, d, 0, [boxes[0][2]]) == {0: (1,)}
+        # both lines one paragraph in the OCR, the credit misread («Blengiui»)
+        pg.add_redact_annot(fitz.Rect(0, 830, 400, 860)); pg.apply_redactions()
+        pg.insert_text((170, 848), "Scuola C. A. Blengiui", fontsize=9)
+        one = lambda t: t.replace("Blengini\n\n(", "Blengini\n(")
+        assert _layout.caption_paras(one(en), one(src), pg, d, 0, [boxes[0][2]]) == {0: (1,)}
+
+def test_note_paragraphs_set_in_note_type_join_the_note():
+    # general rule 1 (2026-11-06): a book's note runs over more than one
+    # paragraph, or on to the next page; the parts with no "(N)" of their own
+    # stayed in the English as text (Masiello pdf 210: «Questa è fra le
+    # guardie» mid-sentence; pdf 212: eight paragraphs under three lines).
+    # The scan's smaller note type finds them. A section heading ends a note
+    # (Florio pdf 199), the printer's signature is no note (Masiello 1902
+    # sciabola pdf 13), and a page whose type sizes overlap is left alone
+    # (Barbasetti's text layer).
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        import pymupdf as fitz           # the real library: runs in the image
+    except ImportError:
+        return
+    import _note_continuations as N
+
+    def page(rows):
+        doc = fitz.open()
+        pg = doc.new_page(width=400, height=800)
+        for y, size, text in rows:
+            pg.insert_text((40, y), text, fontsize=size)
+        return pg
+    body = [(100, 11, "La prima riga del testo della pagina"), (115, 11, "la seconda riga del testo stesso"),
+            (130, 11, "la terza riga del testo che continua")]
+    # a note's second paragraph, after its "(1)"
+    pg = page(body + [(500, 7, "(1) Il centro di gravita dee giacere"), (510, 7, "tra le due ossa dette femori"),
+                      (540, 7, "Questa fra le guardie la migliore")])
+    src = ("La prima riga del testo della pagina la seconda riga del testo stesso la terza riga del testo che continua"
+           "\n\n(1) Il centro di gravita dee giacere tra le due ossa dette femori.\n\nQuesta fra le guardie la migliore.")
+    en = "The first line of the page's text, the second, the third\n\nThis is among the guards the best.\n\n___FOOTNOTES___\n(1) The center of gravity must lie between the femurs.\n"
+    out = N.move_into_notes(en, src, pg)
+    assert out and "(1) The center of gravity must lie between the femurs. This is among the guards the best." in out, out
+    assert out.partition("___FOOTNOTES___")[0].strip() == "The first line of the page's text, the second, the third"
+    # a heading after the note is the text again
+    src_h = src + "\n\n§ 341. Differenza tra la lezione e l'assalto."
+    en_h = en.replace("\n\n___FOOTNOTES___", "\n\n§ 341. Difference between the lesson and the bout.\n\n___FOOTNOTES___")
+    pg_h = page(body + [(500, 7, "(1) Il centro di gravita dee giacere"), (510, 7, "tra le due ossa dette femori"),
+                        (540, 7, "Questa fra le guardie la migliore"), (560, 7, "341 Differenza tra la lezione")])
+    out = N.move_into_notes(en_h, src_h, pg_h)
+    assert out and "§ 341. Difference" in out.partition("___FOOTNOTES___")[0], out
+    # the printer's signature at the foot stays where it is
+    src_s = src + "\n\nMASIELLO, La scherma di sciabola."
+    en_s = en.replace("\n\n___FOOTNOTES___", "\n\nMASIELLO, Saber Fencing.\n\n___FOOTNOTES___")
+    pg_s = page(body + [(500, 7, "(1) Il centro di gravita dee giacere"), (510, 7, "tra le due ossa dette femori"),
+                        (540, 7, "Questa fra le guardie la migliore"), (580, 7, "MASIELLO La scherma di sciabola")])
+    out = N.move_into_notes(en_s, src_s, pg_s)
+    assert out and "MASIELLO, Saber Fencing." in out.partition("___FOOTNOTES___")[0], out
+    # carried over from the last page, whose note breaks off mid-sentence
+    pg_c = page(body + [(300, 7, "per la lunghezza di due piedi con due"), (310, 7, "battute comprendendo in ogni battuta")])
+    src_c = ("La prima riga del testo della pagina la seconda riga del testo stesso la terza riga del testo che continua"
+             "\n\nper la lunghezza di due piedi con due battute.")
+    en_c = "The first line of the page's text, the second, the third\n\nfor the length of two feet, with two stamps."
+    prev_open = "text\n\n___FOOTNOTES___\n(1) Parise establishes: B) the right foot brought forward on the line,\n"
+    out = N.move_into_notes(en_c, src_c, pg_c, prev_open)
+    assert out and "___FOOTNOTES___\n… for the length of two feet, with two stamps." in out, out
+    assert N.move_into_notes(en_c, src_c, pg_c, prev_open.replace("line,", "line.")) is None   # it did not break off
+    # overlapping sizes (text 8-10 pt, notes 6-8 pt): nothing moves
+    pg_n = page([(100, 10, "La prima riga del testo della pagina"), (115, 8, "la seconda riga del testo stesso"),
+                 (130, 10, "la terza riga del testo che continua"), (145, 9, "una riga ancora del testo"),
+                 (300, 8, "per la lunghezza di due piedi con due"), (310, 7, "battute comprendendo in ogni battuta")])
+    assert N.move_into_notes(en_c, src_c, pg_n, prev_open) is None
 
 
 if __name__ == "__main__":

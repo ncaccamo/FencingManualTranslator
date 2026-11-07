@@ -1594,6 +1594,25 @@ reader can always tell body from note:
   tests (plain-text fixtures) and still silently failed on the real
   translated data because of (b) — worth remembering when writing a test
   fixture for a passage with kept terms in it.
+
+  *2026-11-06, general rule 1 (`_note_continuations.py`, run by
+  `apply_book_overrides()`):* a note's further paragraphs, and the part of a
+  note carried over to the next page when it is more than its first
+  paragraph or not where the checks above look, still came out as text —
+  Masiello pdf 210 (between "almost without the cooperation" and the next
+  page's "active of muscles"), pdf 212 (eight paragraphs of note under three
+  lines of text), Florio, Descalzi, Dubois, Grisier, Blengini. The book's
+  smaller note type tells them apart: the scan's text layer gives each
+  line's height. After a `(N)` note whose lines down to the foot are all
+  smaller than the text, the paragraphs up to the next `(N)` join it; before
+  any `(N)`, the run at the foot of a page whose every line is smaller than
+  every line above it (and at most 0.8 of the text size) is the last page's
+  note carried over, prefixed `… `, only when that note breaks off. A titled
+  `§ N. …` heading ends the note (Florio pdf 199); the printer's signature
+  line (`MASIELLO, La scherma di sciabola.`) is never one. Barbasetti's
+  text layer mixes 8–10 pt text with 6–8 pt notes, so nothing moves there:
+  its pdf 24 is a hand edit. Paragraphs are matched by place, so only when
+  the source and the English have as many.
 - `pull_footnotes()` — our `†N` footnoted-term markers, deduped once per book.
 
 ### 2.12 Italian sample, and two cache/heading traps (2026-09-30)

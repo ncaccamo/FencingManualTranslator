@@ -538,6 +538,131 @@ def picture_captioned(folder: str, i: int, box) -> bool:
     return False
 
 
+def caption_box(folder: str, i: int, box):
+    """The caption box set right under (or just over) the picture, as
+    picture_captioned() finds it: (x0, y0, x1, y1), 0-1 of the scan, or
+    None."""
+    lay = _lay(folder)
+    page = lay and lay["pages"].get(str(i))
+    caps = [b[2] for b in (page or {}).get("boxes", []) if b[0] == "caption" and b[1] >= 0.5
+            and min(b[2][2], box[2]) - max(b[2][0], box[0]) > 0]
+    # under the picture first: a caption just over it is often the one under
+    # the picture above (André pdf 371: «Fig. 43.» between two pictures)
+    under = [c for c in caps if -0.01 <= c[1] - box[3] <= 0.07]
+    over = [c for c in caps if -0.01 <= box[1] - c[3] <= 0.05]
+    return tuple(under[0]) if under else tuple(over[0]) if over else None
+
+
+_BARE_LABEL = re.compile(r"\(?\s*(fig(?:ura|ure)?\.?)\s*(\d+)\s*(bis)?\s*\.?\s*\)?", re.I)
+
+
+def printed_label(folder: str, i: int, box, page):
+    """The picture's printed caption when it is a bare figure label: the
+    scan's text layer, inside the width and height of the caption box under
+    (or over) the picture, reads «Fig. 5» and nothing else -> "Fig. 5"
+    (Barbasetti: the OCR recorded a heading or a description of the picture
+    as its caption, or nothing, pdf 44-164). "Fig." when the label's number
+    did not come through. None for anything else -- a fuller printed caption
+    («FIG. 1. — LA GARDE …») keeps the recorded one."""
+    cb = caption_box(folder, i, box)
+    if cb is None or page is None:
+        return None
+    import _textlayer
+    try:
+        pieces = _textlayer.page_pieces(page)
+    except Exception:
+        return None
+    W, H = page.rect.width, page.rect.height
+    text = " ".join(t for x0, y, t, x1 in pieces
+                    if cb[1] - 0.012 <= y / H <= cb[3] + 0.012
+                    and x0 / W >= cb[0] - 0.03 and x1 / W <= cb[2] + 0.03).strip()
+    if re.fullmatch(r"(?i)\(?\s*fig(?:ura|ure)?\.?\s*\)?", text):
+        return "Fig."                     # the number too faint for the layer (Barbasetti pdf 60)
+    if not _BARE_LABEL.fullmatch(text):
+        return None
+    return re.sub(r"\s+", " ", text.strip("() "))     # as printed: «Fig. 82.», «FIG. 5»
+
+
+def paras(text):
+    """Paragraphs: blocks between blank lines, stripped."""
+    return [p.strip() for p in re.split(r"\n\s*\n", text or "") if p.strip()]
+
+
+def caption_paras(tr_body, src_body, src_page, folder, i, boxes):
+    """Paragraphs of the English that are a picture's printed caption, set
+    in the text by the OCR as well (general rule 2, 2026-11-06: Kirchhoffer
+    pdf 52 «Schéma A.», Prévost-Jollivet pdf 282-305 «Le corps-à-corps.»,
+    «En joue.»): {picture index: English paragraph index}. A source
+    paragraph is the caption when the scan's text layer prints it inside
+    the detector's caption box under (or over) that picture; its English is
+    the paragraph at the same place, so only when the source and the
+    English have as many paragraphs and both are short. The next paragraph
+    is the caption's too when the detector's larger caption box around both
+    (or the one right under it) holds its printed line (Blengini pdf 56: «Scuola C. A. Blengini» over
+    «(Posizione della Parata di Fianco destro fig. N. 16).», the layer's
+    «{Posizione … N. i6)» close enough): {picture index: (paragraph
+    indices)}. Needs a text layer; without one, nothing."""
+    if src_page is None:
+        return {}
+    sp = paras("\n".join(l for l in (src_body or "").splitlines()
+                          if not re.match(r"\s*!\[.*\]\(.*\)\s*$", l)))     # the OCR's image links
+    ep = paras(tr_body)
+    if not sp or len(sp) != len(ep):
+        return {}
+    try:
+        import _textlayer
+        lines = _textlayer.page_lines(src_page)
+    except Exception:
+        return {}
+    if not lines:
+        return {}
+    H = src_page.rect.height
+    from difflib import SequenceMatcher
+    lay = _lay(folder)
+    all_caps = [c[2] for c in ((lay and lay["pages"].get(str(i))) or {}).get("boxes", []) if c[0] == "caption"]
+    short = lambda j: len(sp[j].split()) <= 25 and len(ep[j].split()) <= 30
+    out, used = {}, set()
+    for k, b in enumerate(boxes):
+        cb = caption_box(folder, i, b)
+        if cb is None:
+            continue
+        band = lambda y0, y1: _textlayer.norm(" ".join(t for x0, y, t, x1 in lines if y0 <= y / H <= y1))
+        # the lines that start inside the box: the next line of text can
+        # start just under it (Spinnewyn pdf 72, «un seul instant» under Fig. 53)
+        printed = band(cb[1] - 0.012, cb[3])
+        if len(printed) < 4:
+            continue
+        # a caption's second line, in a larger caption box around both or a
+        # caption box right under it (Blengini pdf 56, 58)
+        big = [c for c in all_caps if (cb[1] - 0.02 <= c[1] <= cb[1] + 0.01 or -0.01 <= c[1] - cb[3] <= 0.03)
+               and c[3] >= cb[3] + 0.015]
+        below = band(cb[3] + 0.0001, max(c[3] for c in big) + 0.005) if big else ""
+        whole = band(cb[1] - 0.012, max(c[3] for c in big) + 0.005) if big else ""
+        for j, q in enumerate(sp):
+            nq = _textlayer.norm(q)
+            if len(nq) < 4 or not short(j) or j in used:
+                continue
+            # exact, or a letter or two misread in a longer one («Blengiui»,
+            # Blengini pdf 57)
+            if nq == printed or len(nq) >= 10 and SequenceMatcher(None, nq, printed).ratio() >= 0.9:
+                js = [j]
+                if below and j + 1 < len(sp) and short(j + 1) and j + 1 not in used:
+                    nxt = _textlayer.norm(sp[j + 1])
+                    # not the rest of a sentence the picture broke (a small letter:
+                    # «puts the adversary at his mercy», Prévost-Jollivet pdf 218)
+                    if len(nxt) >= 8 and not re.match(r"\s*[a-zà-ÿ]", sp[j + 1]) \
+                            and SequenceMatcher(None, nxt, below).ratio() >= 0.8:
+                        js.append(j + 1)
+            elif whole and len(nq) >= 12 and SequenceMatcher(None, nq, whole).ratio() >= 0.85:
+                js = [j]                  # both lines one paragraph (pdf 49, 50, 57)
+            else:
+                continue
+            out[k] = tuple(js)
+            used.update(js)
+            break
+    return out
+
+
 def text_after(folder: str, i: int, box) -> bool:
     """More of the page's text sits above the picture than below it: the
     picture is printed after the page's text in the English (a tailpiece,

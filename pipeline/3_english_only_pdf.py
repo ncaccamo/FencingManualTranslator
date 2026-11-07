@@ -47,7 +47,7 @@ COL = fitz.Rect(MARGIN, MARGIN, PAGE_W - MARGIN, PAGE_H - MARGIN)
 FS = 10
 FIGURE_MAX_H = COL.height * 0.82
 
-SKIP_MARKERS = ("[Empty page]", "[Empty page after cleaning]")
+SKIP_MARKERS = ("[Empty page]", "[Empty page after cleaning]", _render.LEFT_OUT)
 
 
 def find_figure_band(page):
@@ -286,10 +286,13 @@ class Flow:
         self.y = COL.y1  # forces a new page on first write
         self.open = False                  # the last page's text stopped mid-sentence
         self.held = []                     # its notes, drawn once the sentence ends
+        self.cur = None                    # the book page being set
+        self.on_sheet = set()              # the book pages whose text / pictures this sheet holds
 
     def _newpage(self):
         self.page = self.doc.new_page(width=PAGE_W, height=PAGE_H)
         self.y = COL.y0
+        self.on_sheet = set()
 
     LABEL_H = FS * 2.4
 
@@ -365,7 +368,7 @@ class Flow:
             self._notes(held)
 
     def body(self, text, src_body="", src_page=None, prev_page=None, ornaments=(), title="", centred=False,
-             interject=None, after=None, runs_on=False):
+             interject=None, after=None, runs_on=False, after_para=None):
         """`interject` (figures) and notes held from the page before are drawn
         after this page's first paragraph when the last page's sentence ran
         on to this one -- not in the middle of it (Barbasetti pdf 63:
@@ -384,6 +387,17 @@ class Flow:
             return _render.centre_lines(ls, COL.width, FS) if centred else ls  # a title page: every line centred
         waiting = bool(self.held) or interject is not None
         head, sep, rest = body_txt.partition("\n\n") if (waiting and self.open) else ("", "", "")
+        if interject is not None and after_para:
+            # the picture's place is after a given paragraph (its caption
+            # line's place in the text): split at the end of that paragraph
+            words = re.findall(r"\w+", re.sub(r"<[^>]+>", "", after_para))[-8:]
+            m = re.search(r"(?:\W|<[^>]+>)+".join(map(re.escape, words)), body_txt) if words else None
+            if m:
+                end = body_txt.find("\n\n", m.end())
+                head, sep, rest = (body_txt[:end], "\n\n", body_txt[end + 2:]) if end >= 0 else (body_txt, "", "")
+            elif not self.open:          # not found: the picture first, as before
+                interject()
+                interject, waiting = None, bool(self.held)
         if sep and rest.strip():         # the run-on sentence's paragraph first
             self._flow(lay(head), FS)
             if interject:
@@ -401,7 +415,7 @@ class Flow:
         if after:                        # pictures printed below the page's text
             after()
         tail = re.sub(r"</?i>|\s+$", "", body_txt or head or "")
-        self.open = (runs_on or bool(re.search(r"(?:[a-zà-ÿ,\-–—]|\([Ff]ig\.)$", tail))) and not _render.toc_page(tail)
+        self.open = _render.page_left_open(tail, runs_on, centred)
         if notes:
             # end-of-section glossary block, smaller type; held while the
             # page's last sentence runs on to the next page
@@ -420,6 +434,7 @@ class Flow:
             before = len(lines)
             lines, self.y = _render.draw(
                 self.page, (COL.x0, self.y, COL.x1, COL.y1), lines, size, color=color)
+            self.on_sheet.add(self.cur)
             if lines and len(lines) == before:
                 self._newpage()  # guard against a zero-progress loop
 
@@ -458,8 +473,23 @@ class Flow:
             clip = r
         rotate = self.rotate if rotate is None else rotate
         w, h = self._fig_size(src_page, band, rotate, frac or 1.0)
-        need = h + FS * 1.6
-        if self.page is None or self.y + need > COL.y1:
+        cl = []
+        if caption.strip():
+            # English quotation marks, as in the text: a caption can be a
+            # paragraph of it (general rule 2; André pdf 166 "Weapons")
+            cl = _render.layout(_render.english_quotes(caption), COL.width, FS - 1)
+            if centred or frac is not None:  # a title page's lines, or a picture placed from its detector box
+                cl = _render.centre_lines(cl, COL.width, FS - 1)
+        # room under the picture for its whole caption, not one line (a long
+        # caption ran off the sheet's foot: Danet pdf 226, Vauresmont's cover)
+        below = max(FS * 1.6, 4 + _render.measure(cl, FS - 1))
+        # drawn smaller only beside its own page's text or pictures, not under
+        # an earlier page's (Vauresmont's cover, alone on its page)
+        fit = self.page is not None and (self.y + h + below <= COL.y1 or self.cur in self.on_sheet) \
+            and _render.fit_on_sheet(self.y, w, h, below, COL.y1)
+        if fit:
+            w, h = fit
+        else:
             self._newpage()
         pix = src_page.get_pixmap(matrix=fitz.Matrix(150 / 72, 150 / 72), clip=clip)
         x0 = COL.x0 + (COL.width - w) / 2
@@ -467,13 +497,14 @@ class Flow:
                                stream=pix.tobytes("jpeg", jpg_quality=72),
                                rotate=rotate)
         self.y += h + 4
-        if caption.strip():
-            cl = _render.layout(caption, COL.width, FS - 1)
-            if centred or frac is not None:  # a title page's lines, or a picture placed from its detector box
-                cl = _render.centre_lines(cl, COL.width, FS - 1)
+        self.on_sheet.add(self.cur)
+        if cl:
             for vl in cl:
-                _, self.y = _render.draw(self.page,
-                                         (COL.x0, self.y, COL.x1, COL.y1), [vl], FS - 1)
+                left, self.y = _render.draw(self.page,
+                                            (COL.x0, self.y, COL.x1, COL.y1), [vl], FS - 1)
+                if left:     # longer than a whole sheet holds: the rest on the next
+                    self._newpage()
+                    _, self.y = _render.draw(self.page, (COL.x0, self.y, COL.x1, COL.y1), [vl], FS - 1)
             self.y += FS * 0.6
 
 
@@ -494,7 +525,7 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         continue
 
     with open(f"{int_dir}/translation.txt", "r", encoding="utf-8") as f:
-        translations = [p.strip() for p in _pageio.split_pages(f.read())]
+        translations = _render.apply_left_out([p.strip() for p in _pageio.split_pages(f.read())], book)
     with open(f"{int_dir}/extracted.txt", "r", encoding="utf-8") as f:
         extractions = [p.strip() for p in _pageio.split_pages(f.read())]
 
@@ -541,6 +572,8 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
               if len(re.sub(r"<[^>]+>|___FOOTNOTES___.*", "", t or "", flags=re.S).split()) >= 30]
     FIRST_TEXT, LAST_TEXT = (_texty[0], _texty[-1]) if _texty else (0, len(translations) - 1)
     for i, tr in enumerate(translations):
+        flow.cur = i
+        mid_after = None                 # the picture goes after this paragraph (its caption line's place)
         st = parse_vlm_output(extractions[i]) if i < len(extractions) else {}
         src_page = src_doc[i] if (src_doc is not None and i < len(src_doc)) else None
 
@@ -720,6 +753,73 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
                     body, sepn, notes_ = (tr or "").partition("___FOOTNOTES___")
                     body = FIG_LABEL.sub("", body)
                     tr = re.sub(r"\n{3,}", "\n\n", body).strip() + (("\n\n" + sepn + notes_) if sepn else "")
+                elif keep and not caption_only_page and not is_empty:
+                    # a picture's printed caption the OCR also set in the text:
+                    # drawn once, under its picture, and the picture where the
+                    # line was (general rule 2; Kirchhoffer pdf 52 «Diagram A.»)
+                    body, sepn, notes_ = (tr or "").partition("___FOOTNOTES___")
+                    src_b = extractions[i].split("BODY_TEXT:", 1)[-1] if i < len(extractions) else ""
+                    found = _layout.caption_paras(body, src_b, src_page, folder, i, [b for b, _ in keep])
+                    if found:
+                        ep = _layout.paras(body)
+                        for k, js in found.items():
+                            placements[k] = (placements[k][0], "\n".join(ep[j] for j in js))
+                        if len(found) == 1 and len(keep) == 1:
+                            (k, js), = found.items()
+                            below[k] = js[-1] == len(ep) - 1 and js[0] > 0
+                            if 0 < js[0] and js[-1] < len(ep) - 1:
+                                mid_after = ep[js[0] - 1]
+                        gone = {j for js in found.values() for j in js}
+                        # a caption line set mid-sentence («against the | horseman»,
+                        # André pdf 387; Vauresmont pdf 62; «com- | bat», Prévost-
+                        # Jollivet pdf 305): the sentence's two halves join, the
+                        # picture after it
+                        joined = {js[-1] + 1 for js in found.values()
+                                  if 0 < js[0] and js[-1] + 1 < len(ep) and js[0] - 1 not in gone
+                                  and _render.page_left_open(ep[js[0] - 1].strip())}
+                        kept = []
+                        for j, q in enumerate(ep):
+                            if j in gone:
+                                continue
+                            if j in joined and kept:
+                                if re.search(r"[a-zà-ÿ]-$", kept[-1].rstrip()) and re.match(r"[a-zà-ÿ]", q.lstrip()):
+                                    kept[-1] = kept[-1].rstrip()[:-1] + q.lstrip()    # a word broken over the caption
+                                else:
+                                    kept[-1] = kept[-1].rstrip() + " " + q.lstrip()
+                            else:
+                                kept.append(q)
+                        if mid_after and joined:
+                            mid_after = next((q for q in kept if q.endswith(ep[max(joined)][-40:])), mid_after)
+                        tr = "\n\n".join(kept) + (("\n\n" + sepn + notes_) if sepn else "")
+                # a picture whose printed caption is a bare figure label («Fig. 5»):
+                # that label, whatever the OCR recorded (a heading, a description
+                # of the picture, nothing: Barbasetti pdf 44-164) -- not over a
+                # caption the reviewer decided
+                decided = any(f.get("decided") for f in (figs_here if use_vlm_figs else []))
+                if placements and not decided and not caption_only_page:
+                    printed = [_layout.printed_label(folder, i, b, src_page) for b, _ in keep]
+                    body_, sepn_, notes_ = (tr or "").partition("___FOOTNOTES___")
+                    lines_ = {re.sub(r"\s+", " ", m_.strip()).rstrip(".").lower() for m_ in FIG_LABEL.findall(body_)}
+                    for k, lab in enumerate(printed):
+                        if lab and re.fullmatch(r"(?i)fig(?:ura|ure)?\.?", lab):
+                            # its number lost: one below the next picture's, when the
+                            # page's text has that label line
+                            nxt_ = re.match(r"(?i)fig\S* (\d+)", printed[k + 1] or "") if k + 1 < len(printed) else None
+                            lab = f"Fig. {int(nxt_.group(1)) - 1}" if nxt_ and f"fig. {int(nxt_.group(1)) - 1}" in lines_ else None
+                        if lab and lab.lower() in {(l or "").lower() for l in printed[:k]}:
+                            lab = None           # one label, one picture
+                        num = re.search(r"\d+", lab or "")
+                        before = [int(m_.group()) for m_ in (re.search(r"\d+", l or "") for l in printed[:k]) if m_]
+                        if num and before and int(num.group()) <= max(before):
+                            lab = None           # out of order: the layer misread it («Fig. 44» as 41, André pdf 371)
+                        printed[k] = lab
+                        if lab and k < len(placements):
+                            placements[k] = (placements[k][0], lab)
+                    used = {re.sub(r"\s+", " ", l).rstrip(".").lower() for l in printed if l}
+                    if used:
+                        body_ = re.sub(r"(?im)^[ \t]*(?:<i>)?(fig(?:ure|\.)?\s*\d+[a-z]?)\.?(?:</i>)?[ \t]*$",
+                                       lambda m_: "" if re.sub(r"\s+", " ", m_.group(1)).lower() in used else m_.group(0), body_)
+                        tr = re.sub(r"\n{3,}", "\n\n", body_).strip() + (("\n\n" + sepn_ + notes_) if sepn_ else "")
                 if is_empty and not placements:
                     continue  # a blank leaf, a cover or an endpaper
 
@@ -763,7 +863,7 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
             for _, c in placements)
 
         has_body = not is_empty and not body_is_caption
-        late = has_body and placements and flow.open and not (caption_only_page or display)
+        late = has_body and placements and ((flow.open and not (caption_only_page or display)) or bool(mid_after))
         split = has_body and any(below[:len(placements)])
         if placements and not late:
             title_hdr = draw_figures(False if split else None)
@@ -774,7 +874,7 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
                       _layout.ornaments(folder, i), title=title_hdr, centred=display,
                       interject=(lambda: draw_figures(False if split else None)) if late else None,
                       after=(lambda: draw_figures(True)) if split else None,
-                      runs_on=runs_on(src_body, nxt))
+                      runs_on=runs_on(src_body, nxt), after_para=mid_after)
             rendered += 1
         figures += len(placements)
 

@@ -767,6 +767,39 @@ def _house_fixes(ov: dict, french: bool) -> dict:
     return dict(ov, fix=out)
 
 
+def move_note_continuations(folder: str) -> int:
+    """A book's footnote paragraph the English has as text -- a note's
+    second paragraph, or its part carried over to the next page -- moved
+    into the page's notes (general rule 1, _note_continuations.py: the
+    scan's smaller note type tells them apart). No model call; the scan's
+    text layer is read from the OCR copy. Returns the pages changed."""
+    I = f"{folder}/intermediate"
+    tp, ep = f"{I}/translation.txt", f"{I}/extracted.txt"
+    pdf = next((os.path.join(I, f) for f in os.listdir(I) if f.endswith("OCR.pdf")), None) \
+        if os.path.isdir(I) else None
+    if not (pdf and os.path.exists(tp) and os.path.exists(ep)):
+        return 0
+    import fitz
+    import _note_continuations
+    tr = _pageio.split_pages(open(tp, encoding="utf-8").read())
+    ex = _pageio.split_pages(open(ep, encoding="utf-8").read())
+    if len(tr) != len(ex):
+        return 0
+    doc, changed = fitz.open(pdf), []
+    for i in range(min(len(tr), len(doc))):
+        new = _note_continuations.move_into_notes(
+            tr[i], ex[i].split("BODY_TEXT:", 1)[-1], doc[i], tr[i - 1] if i else "")
+        if new is not None and new != tr[i]:
+            tr[i] = new
+            changed.append(i + 1)
+    doc.close()
+    if changed:
+        with open(tp, "w", encoding="utf-8") as fh:
+            fh.write(_pageio.join_pages(tr))
+        print(f"  note paragraphs moved out of the text on scan page(s) {changed}")
+    return len(changed)
+
+
 def apply_book_overrides(folder: str, fixes: bool = True) -> None:
     """Re-apply the reviewer's decisions (books/<stem>.overrides.toml) to
     headers.json and translation.txt. Runs after every translation pass,
@@ -792,6 +825,8 @@ def apply_book_overrides(folder: str, fixes: bool = True) -> None:
         if house_italics(t, french) != t:
             with open(tp, "w", encoding="utf-8") as fh:
                 fh.write(house_italics(t, french))
+    if fixes and os.path.exists(tp):
+        move_note_continuations(folder)
     if fixes and ov["fix"] and os.path.exists(tp):
         tr = _pageio.split_pages(open(tp, encoding="utf-8").read())
         applied, missing = _overrides.apply_fixes(tr, _house_fixes(ov, french))

@@ -45,7 +45,7 @@ DIVIDER_X = 396
 RIGHT = fitz.Rect(406, 40, PAGE_W - 16, PAGE_H - 20)
 SIZES = (9, 8, 7)
 
-SKIP_MARKERS = ("[Empty page]", "[Empty page after cleaning]")
+SKIP_MARKERS = ("[Empty page]", "[Empty page after cleaning]", _render.LEFT_OUT)
 
 
 LEADING = 1.28
@@ -286,7 +286,7 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         continue
 
     with open(f"{int_dir}/translation.txt", "r", encoding="utf-8") as f:
-        translations = [p.strip() for p in _pageio.split_pages(f.read())]
+        translations = _render.apply_left_out([p.strip() for p in _pageio.split_pages(f.read())], book)
     with open(f"{int_dir}/extracted.txt", "r", encoding="utf-8") as f:
         extractions = [p.strip() for p in _pageio.split_pages(f.read())]
     fig_map = {}
@@ -374,7 +374,9 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
             # say whether the original page is blank.
             # cleaned; a description of the picture is not a caption (_render)
             caps = [c for c in (_render.figure_caption(f) for f in fig_map.get(str(i), [])) if c]
-            if caps:
+            if tr == _render.LEFT_OUT:       # the reviewer left this page's English out
+                page.insert_text((RIGHT.x0, y + 4), _render.LEFT_OUT, fontsize=9, fontname=_render.ITALIC)
+            elif caps:
                 # level with the caption on the scan when the detector found
                 # it (Kirchhoffer pdf 92), else at the top
                 where = _layout.caption_places(folder, i, len(caps))

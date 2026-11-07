@@ -68,10 +68,11 @@ the header back into the text), then the PDFs.
 | `caption_en = "…"` | your own English for that caption (wins over the model's) | |
 | `figure = "inset"` | only if the OCR missed the figure entirely: `"plate"` (default) or `"inset"` (a small picture on a text page) | |
 | `retranslate = true` | retranslate this page with `2_translate.py --pages <stem>` (once per version of its source text, so the flag can stay) | |
+| `leave_out = true` | the page is library or digitiser text, not the book's: its English is left out of both PDFs (the side-by-side shows the scan with "[library / digitiser notice, not translated]"); `translation.txt` is untouched, so removing the setting brings it back | Masiello scan 2 (the library bookplate); Prévost-Jollivet scan 1 (Google's notice). A page that mixes such text with the book's own: `[[fix]]` the lines out instead. |
 | `note = "…"` | free text, ignored by the pipeline: why you decided it | `"prints 7 between ornaments; the OCR read 1"` |
 
 **Rerun:** `page_number` and `header`: `apply_overrides.py <stem>`, then the
-PDFs. `caption`: also `2_translate.py --pages <stem> N`. `retranslate`:
+PDFs. `leave_out`: the PDFs only. `caption`: also `2_translate.py --pages <stem> N`. `retranslate`:
 `2_translate.py --pages <stem>`, then the PDFs.
 
 ### `[headers]`: a running head's English
@@ -228,6 +229,7 @@ III.5a). The original is kept in `books/_alt/`.
 | A paragraph or page needs rewriting, or a line is missing | `edit_page.py` (`<stem>.edits/`) |
 | A page's translation is poor and a retranslation may fix it | `2_translate.py --pages <stem> N` or `[pages.N] retranslate` |
 | A plate caption is misread | `[pages.N] caption` (+ `caption_en`) |
+| A page is a bookplate, a library label or a digitiser's notice | `[pages.N] leave_out = true` |
 | Plates are sideways | `<stem>.rotate` |
 | A border or shadow is transcribed as text | `<stem>.crop` (before the first run) |
 | A page is missing or damaged in this copy | `patch_scan.py` |

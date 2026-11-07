@@ -215,6 +215,12 @@ the rest of the code never thinks about page breaks:
 - `figure(src_page, band, caption)` — rasterise the scan page (or the
   `band` sub-rectangle) at 150 dpi, embed as JPEG scaled to the column
   width (capped at 82 % of column height), translated caption beneath.
+  A picture that misses the sheet's foot by up to a tenth of its height
+  is drawn that much smaller instead of going alone onto the next sheet
+  (`_render.fit_on_sheet`; Danet pdf 127, an ornament the book prints at
+  the page's foot). The room kept under a picture is its whole caption's
+  height, so a long caption is never cut off at the foot (Danet pdf 226,
+  Vauresmont's cover); one longer than a sheet goes on over the next.
 
 **Per source page**, the loop:
 
@@ -273,12 +279,34 @@ the rest of the code never thinks about page breaks:
      line engravings and second / third figures (Barbasetti pdf 42, 63;
      Masiello's plates; Gomard's Planches) and drew covers and stamps
      (Jacob-André).
+   - general rule 2 (2026-11-06): a picture's printed caption that the
+     OCR also set as a paragraph of the text («Schéma A.», Kirchhoffer
+     pdf 52; Prévost-Jollivet pdf 282-305) is found by its place — the
+     scan's text layer prints it inside the detector's caption box under
+     that picture (`_layout.caption_paras`) — and drawn once, as that
+     picture's caption; a page's one such picture goes where the line was
+     (before the text, after it, or after the paragraph before it). The
+     side-by-side keeps the line: it is that PDF's only copy of the caption.
+     Only when the source and the English have as many paragraphs. A
+     two-line printed caption (a credit over a description, Blengini pdf
+     49-58) is matched whole: the next paragraph joins when the detector's
+     larger caption box, or the one right under, holds its line; a letter
+     or two misread in the layer still matches — but not a paragraph
+     opening on a small letter (the rest of a sentence, Prévost-Jollivet
+     pdf 218). A caption line the OCR set mid-sentence («against the |
+     horseman», André pdf 387; «com- | bat», Prévost-Jollivet pdf 305):
+     the sentence's halves join and the picture follows it. Captions take
+     English quotation marks, as the text does.
 3. `section_label`, then draw each figure, then `body(tr)` — **unless**
    the body is just the figure's caption again (≤ 20 words, matches a
    caption), in which case the body is skipped. When the page before
    stopped mid-sentence, its notes and this page's figures wait until
    this page's first paragraph is drawn, so neither lands inside the
-   sentence.
+   sentence (`_render.page_left_open`: also when its last line has an
+   unclosed "(" — "(see fig." with the number on the next page, Barbasetti
+   pdf 92 — but never after a title page, whose last line is an imprint:
+   Kirchhoffer pdf 12). A page set `[pages.N] leave_out = true` (library
+   or digitiser text) is left out.
 
 Text flows continuously — consecutive source pages pack onto a sheet;
 a page's text can resume mid-sentence after an inserted run of plates,
@@ -337,6 +365,10 @@ for free (this is why figures were easy here and hard in step 3).
   leaders, "Page N" or "» N"): each entry's page number is set flush
   right with dot leaders, as printed; a two-column row joined by "|"
   (Barbasetti) is split in two; no paragraph indent (`_layout_toc`).
+  In a book that centres its headings, headings in capitals are centred,
+  and so is the contents' own title in ordinary case ("Table of
+  Contents.", Kirchhoffer pdf 104); other short lines keep the book's
+  place (Jacob-André's lesson summaries, Gomard's "Page." label).
 - Body: try font size **9, then 8, then 7 pt** — the largest that fits
   the column (`draw(dry=True)`). If even 7 pt overflows, draw what fits
   and spill the rest onto a `(cont.)` continuation spread (same scan
