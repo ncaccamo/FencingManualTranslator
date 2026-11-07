@@ -592,6 +592,9 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         # table without one still gets the scan image.
         tr, _all = _render.place_tables(tr or "", TABLES.get(str(i)))
         body_is_table = "[[TABLE]]" in (tr or "")
+        # the paragraph just above the first table with no English: its
+        # scan picture goes there (the order of bouts under its heading)
+        table_after = [p for p in (tr or "").split("[[TABLE]]")[0].strip().split("\n\n") if p.strip()][-1:] if body_is_table else []
         if body_is_table:
             tr = re.sub(r"(?m)^\s*\[\[TABLE\]\]\s*$", "", tr or "").strip()
 
@@ -658,6 +661,18 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
             elif is_empty and interior_ink_fraction(src_page) > 0.04:
                 placements.append((None, ""))
 
+        if body_is_table and src_page is not None and LAYOUT:
+            # a table with no English (the OCR could not read it: Kirchhoffer
+            # pdf 75's order of bouts): the scan's own table, cropped to the
+            # layout detector's box -- the tables above it that do have
+            # English are drawn in the text, so not the whole page
+            crops = _render.untranslated_table_crops(
+                (((_layout._lay(folder) or {}).get("pages", {}).get(str(i)) or {}).get("boxes") or []),
+                (TABLES.get(str(i)) or {}).get("en") or [])
+            if crops:
+                placements = [(c, "") for c in crops]
+                if table_after:
+                    mid_after = table_after[0]
         if body_is_table and src_page is not None and not placements:
             placements.append((None, "[table — reproduced from the original]"))
 

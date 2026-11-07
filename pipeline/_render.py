@@ -1371,6 +1371,18 @@ def load_tables(int_dir):
         return {}
 
 
+def untranslated_table_crops(boxes, en):
+    """The scan crops, (y0, y1, x0, x1) fractions, of a page's tables that
+    have no English: the layout detector's table boxes top to bottom, past
+    the ones translated (`en`, the page's tables.json English, top to
+    bottom) -- Kirchhoffer pdf 75: the scoring table has English, the order
+    of bouts the OCR could not read is drawn from the scan."""
+    done = sum(1 for t in en or [] if t)
+    tb = sorted({tuple(round(v, 3) for v in b[2]) for b in boxes or []
+                 if b[0] == "table" and b[1] >= 0.5}, key=lambda b: b[1])
+    return [(y0, y1, x0, x1) for x0, y0, x1, y1 in tb[done:]]
+
+
 def place_tables(text, entry):
     """Put a page's translated tables where its [[TABLE]] markers are, each
     as one layout row ("\x00TABLE<html>"); more tables than markers -> the

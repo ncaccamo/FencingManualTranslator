@@ -217,6 +217,11 @@ centred, level with it, above the text (`_layout.picture_caption`).
     measured, so the split follows that page's print. Tables from other
     sources (no `data-split`) are sized by their content as before.
 
+- **A table with no English is drawn from the scan** (`untranslated_table_crops`):
+  one the OCR could not read (Kirchhoffer's order of bouts) is cropped to
+  the layout detector's table box and set where its `[[TABLE]]` marker was,
+  in the English-only PDF; the page's tables that have English are drawn in
+  the text as before.
 - **A table at the foot of a sheet goes to the next one**
   (`_render.draw(fresh_top=)`): one that did not fit in the space left was
   skipped and the text went on without it. In the side-by-side, the

@@ -1604,6 +1604,24 @@ def test_table_at_the_foot_of_a_sheet_goes_to_the_next():
     assert not left                               # too big for any sheet: skipped as before
 
 
+def test_untranslated_table_drawn_from_its_scan_box():
+    # Kirchhoffer pdf 75: the order of bouts the OCR could not read was left
+    # out of the English-only PDF altogether; it is drawn from the scan,
+    # cropped to its own box (the scoring table above has English)
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        import pymupdf  # noqa: F401
+    except ImportError:
+        return
+    R = importlib.import_module("_render")
+    boxes = [["table", 0.66, [0.21, 0.446, 0.878, 0.816]], ["picture", 0.75, [0.21, 0.446, 0.878, 0.816]],
+             ["table", 0.52, [0.198, 0.115, 0.863, 0.409]], ["table", 0.3, [0.1, 0.9, 0.2, 0.95]]]
+    assert R.untranslated_table_crops(boxes, ["<table>…</table>", None]) == [(0.446, 0.816, 0.21, 0.878)]
+    assert R.untranslated_table_crops(boxes, ["<table>…</table>", "<table>…</table>"]) == []
+    assert len(R.untranslated_table_crops(boxes, [])) == 2
+
+
 def test_two_column_table_keeps_the_printed_widths():
     # a lesson table (_columns) keeps the columns' widths as the book prints
     # them; the master's short commands are not squeezed by the pupil's
