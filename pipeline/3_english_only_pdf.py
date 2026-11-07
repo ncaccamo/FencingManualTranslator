@@ -552,6 +552,7 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
     TABLES = _render.load_tables(int_dir)
 
     PARAS = _render.book_paragraphs(book)
+    _render.BOLD_SECTIONS = _render.book_bold_headings(book)
     CENTRE = _render.centres_headings(folder)
     import _layout
     TWO_PART = _layout.two_part_heads(folder, [parse_vlm_output(e).get("header", "") for e in extractions])

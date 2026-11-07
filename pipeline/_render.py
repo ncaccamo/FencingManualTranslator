@@ -189,7 +189,7 @@ def load_rotate(folder):
 
 
 # reserved names for the built-in PDF base-14 fonts
-ROMAN, ITALIC, BOLD = "times-roman", "times-italic", "times-bold"
+ROMAN, ITALIC, BOLD, BOLD_ITALIC = "times-roman", "times-italic", "times-bold", "times-bolditalic"
 _TAG = re.compile(r"(</?i>)", re.I)
 _SPACE_PT = 3.0      # width credited to one leading space when deriving indent
 _MIN_WRAP = 48.0     # never wrap into a column narrower than this (pt)
@@ -334,17 +334,25 @@ def _spans(s):
     return out or [("", 0)]
 
 
-def _w(txt, ital, size):
-    return _font(ITALIC if ital else ROMAN).text_length(txt, fontsize=size)
+def _face(ital, bold=False):
+    # a span's flag: 1 italic, 2 bold (bold_title), 3 both
+    bold = bold or bool(ital & 2)
+    ital = ital & 1
+    return (BOLD_ITALIC if ital else BOLD) if bold else (ITALIC if ital else ROMAN)
 
 
-def _wrap(spans, width, size, first_indent=0.0):
+def _w(txt, ital, size, bold=False):
+    return _font(_face(ital, bold)).text_length(txt, fontsize=size)
+
+
+def _wrap(spans, width, size, first_indent=0.0, bold=False):
     """Greedy word-wrap (text, ital) spans into visual lines; the first
-    line is `first_indent` pt narrower (a paragraph's first-line indent)."""
+    line is `first_indent` pt narrower (a paragraph's first-line indent);
+    `bold`: measured in bold (a heading)."""
     lines, cur, cur_w = [], [], first_indent
     for text, ital in spans:
         for tok in re.findall(r"\S+\s*|\s+", text):
-            w = _w(tok, ital, size)
+            w = _w(tok, ital, size, bold)
             if cur and tok.strip() and cur_w + w > width:
                 # punctuation glued to the word before it (after an italic
                 # term: "<i>quarte</i>; diseng.") goes down with that word,
@@ -355,9 +363,9 @@ def _wrap(spans, width, size, first_indent=0.0):
                     carry = [cur.pop()]
                 lines.append(cur)
                 cur = carry                   # later lines: full width
-                cur_w = sum(_w(t, i, size) for t, i in carry)
+                cur_w = sum(_w(t, i, size, bold) for t, i in carry)
                 tok = tok.lstrip()
-                w = _w(tok, ital, size)
+                w = _w(tok, ital, size, bold)
             if not tok:
                 continue
             cur.append((tok, ital))
@@ -368,15 +376,28 @@ def _wrap(spans, width, size, first_indent=0.0):
 
 
 class Line:
-    __slots__ = ("indent", "spans", "gap", "note", "tail", "table")
+    __slots__ = ("indent", "spans", "gap", "note", "tail", "table", "scale", "bold")
 
-    def __init__(self, indent=0.0, spans=None, gap=False, note=False, tail="", table=""):
+    def __init__(self, indent=0.0, spans=None, gap=False, note=False, tail="", table="",
+                 scale=1.0, bold=False):
         self.indent = indent
         self.spans = spans or []
         self.gap = gap
         self.note = note        # an author's margin note (see layout())
         self.tail = tail        # a contents line's page number: set flush right, dot leaders before it
         self.table = table      # an HTML table drawn as a grid in the flow (draw_table)
+        self.scale = scale      # a heading: its type size, as a multiple of the body's
+        self.bold = bold        # a heading: set in bold
+
+
+def line_height(ln, size, leading=1.28, gap_frac=0.55):
+    """The height a Line takes at body size `size` (a heading's is larger)."""
+    return size * leading * (gap_frac if ln.gap else ln.scale)
+
+
+def line_width(ln, size):
+    """The width of a Line's text at body size `size`."""
+    return sum(_w(t, i, size * ln.scale, ln.bold) for t, i in ln.spans if t)
 
 
 # A margin note arrives from step 2 as its own line, ⟦MARGIN: …⟧, placed
@@ -497,6 +518,34 @@ def page_left_open(tail, runs_on=False, centred=False):
             or bool(re.search(r"\([^()]*$", last))) and not toc_page(tail) and not centred
 
 
+def book_bold_headings(stem, books_dir="/data/books"):
+    """Does the book set its section headings in bold ([book] bold_headings)?"""
+    import _overrides
+    try:
+        return bool(_overrides.load(stem, books_dir)["book"].get("bold_headings", False))
+    except _overrides.OverridesError:
+        return False
+
+
+_LABEL = re.compile(r"\s*(?:§\s*)?[\dIVXLC]+[.°]?\s*[—–-]\s*")
+
+
+def bold_title(spans):
+    """A section heading's spans in bold, a leading number label in roman as
+    the books print it («§ 4. — **Posizione normale.**», Masiello 1887)."""
+    text = "".join(t for t, _ in spans)
+    m = _LABEL.match(text)
+    cut, out, at = (m.end() if m else 0), [], 0
+    for t, i in spans:
+        k = max(0, min(len(t), cut - at))
+        if t[:k]:
+            out.append((t[:k], i))
+        if t[k:]:
+            out.append((t[k:], i | 2))
+        at += len(t)
+    return out
+
+
 def book_paragraphs(stem, books_dir="/data/books"):
     """The book's paragraph style ([book] paragraphs; "indented" unless set)."""
     import _overrides
@@ -596,6 +645,37 @@ def _rejoin(text):
         else:
             out.append(line)
     return out
+
+
+# Heading levels (the renderer had one body size, so a part or chapter title
+# read as one more line). The level comes from what the heading says -- the
+# books mark their divisions in words, and their printed sizes are not in
+# the OCR (layout boxes and the text layer measure too unevenly):
+#   1  a part or book: "PART ONE", "FIRST PART", "BOOK II"
+#   2  a chapter, or a front / back matter title: "CHAPTER III", "PREFACE"
+#   3  any other heading (a numbered section, a title in capitals)
+_ORD = (r"FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH|EIGHTH|NINTH|TENTH|ELEVENTH|TWELFTH")
+_NUM = r"(?:[IVXLC]+|\d+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|ELEVEN|TWELVE|" + _ORD + r")\b"
+_LEVEL1 = re.compile(r"(?:(?:PART|BOOK)\s+" + _NUM + r"|(?:" + _ORD + r")\s+(?:PART|BOOK)\b)[.:]?(?:\s*[—–-].*)?$", re.I)
+_LEVEL2 = re.compile(r"(?:(?:CHAPTER|CHAP\.)\s+" + _NUM + r"|(?:" + _ORD + r")\s+CHAPTER\b)[.:]?(?:\s*[—–-].*)?$"
+                     r"|(?:PREFACE|INTRODUCTION|FOREWORD|PRESENTATION|DEDICATION|CONCLUSION|APPENDIX|PROLOGUE|EPILOGUE"
+                     r"|TO THE READER|NOTICE|ADVERTISEMENT|GLOSSARY|BIBLIOGRAPHY)\.?$", re.I)
+HEAD_SCALE = {1: 1.45, 2: 1.2, 3: 1.0}
+# not bold: the books set parts and chapters in larger roman capitals
+# (Barbasetti «PARTE II», Masiello «CAPITOLO SECONDO», Danet «CHAPITRE II.»)
+HEAD_BOLD = {1: False, 2: False, 3: False}
+BOLD_SECTIONS = False           # the book sets its section headings in bold (set per book)
+HEAD_LOG = None                 # a list: each heading's (level, text) is appended (dry runs)
+
+
+def heading_level(plain):
+    """1, 2 or 3 (see above) for a line already taken as a heading."""
+    t = re.sub(r"\s+", " ", plain).strip()
+    if len(t.split()) <= 8 and _LEVEL1.match(t):
+        return 1
+    if len(t.split()) <= 8 and _LEVEL2.match(t):
+        return 2
+    return 3
 
 
 def _title_line(plain):
@@ -835,6 +915,7 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
     out = []
     prev, prev_long = "start", False    # start | prose | prose-open | other
     gap = brace = prev_colon = False
+    head_above = 0                       # the heading line just above: its level (0: none)
     text = italian_low_high(italian_line_numerals(line_name_italics(text)))
     if toc if toc is not None else _toc_page((text or "").split("\n")):
         return _layout_toc(re.sub("[\x03-\x05]", "", text or "").split("\n"), width, size, centre)
@@ -909,14 +990,52 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
         title = alone and not cut and not forced and _title_line(plain) and (
             not re.search(r"\.(?:</i>)?$", body) or prev in ("start", "other")
             or bool(re.match(r"(?:§\s*)?[\dIVXLC]+[.°]", plain)))
-        if centre and not brace and not forced and (title or (not prose and _heading_line(plain))):
-            # a heading: centred, its space before kept
-            if gap:
-                out.append(Line(gap=True))
+        is_head = not brace and not forced and (title or (not prose and _heading_line(plain)))
+        # a book that sets its numbered sections «§ 4. — Title.» in bold: such a
+        # line is a heading even when long or with the text right under it
+        # (Masiello 1887 «§ 54. — Straight feint on the outside, ...» was set
+        # as running text, between headings centred in bold)
+        if (not is_head and BOLD_SECTIONS and not brace and not forced
+                and re.match(r"§\s*\d+[.°]?\s*[—–-]\s*\S", plain) and len(plain.split()) <= 30
+                and not _LEADERS.search(plain)):
+            is_head = True
+        # a title in capitals right under a part or chapter heading is its
+        # title, even where the text layer placed the row (Danet pdf 62
+        # «DE LA MARCHE.» under «CHAPITRE II.»)
+        if (not is_head and forced in ("flush", None) and not brace and head_above in (1, 2)
+                and _heading_line(plain)):
+            is_head = True
+        level = heading_level(plain) if is_head else 0
+        if is_head and level == 3 and head_above in (1, 2) and not re.match(r"(?:§\s*)?\d+[.°]", plain):
+            # a part's or chapter's own title, set under "CHAPTER III" -- not
+            # its first numbered section (Barbasetti «14. Inviti»)
+            level = head_above
+        head_above = level if is_head else 0
+        if is_head and (centre or level in (1, 2)):
+            # a heading: centred (when the book centres them); a part or
+            # chapter title larger and with more space before it
+            if HEAD_LOG is not None:
+                HEAD_LOG.append((level, plain))
+            hs, hb = size * HEAD_SCALE[level], HEAD_BOLD[level]
+            last = next((l for l in reversed(out) if not l.gap), None)
+            follows = (level in (1, 2) and last is not None and last.scale == HEAD_SCALE[level])
+            before = 0 if follows else {1: 2, 2: 1}.get(level, 1 if gap else 0)
+            while follows and out and out[-1].gap:
+                out.pop()                     # the space after the line above: the title sits under it
+            if out and not all(l.gap for l in out):
+                out += [Line(gap=True)] * before
             gap = prev_colon = False
-            for vline in _wrap(_spans(body), width, size):
-                w = sum(_w(t, i, size) for t, i in vline)
-                out.append(Line(max(0.0, (width - w) / 2), vline))
+            spans = _spans(body)
+            if level == 3 and BOLD_SECTIONS:
+                spans = bold_title(spans)
+            for vline in _wrap(spans, width, hs, bold=hb):
+                w = sum(_w(t, i, hs, hb) for t, i in vline)
+                # parts and chapters centred even in a book that sets its other
+                # headings flush left (Danet's «CHAPITRE II.»)
+                out.append(Line(max(0.0, (width - w) / 2) if centre or level in (1, 2) else 0.0, vline,
+                                scale=HEAD_SCALE[level], bold=hb))
+            if level in (1, 2) and at + 1 < len(rows) and rows[at + 1].strip():
+                out.append(Line(gap=True))    # space under it (a blank line in the text gives its own)
             prev, prev_long = "other", False
             continue
         if gap and not drop_gap:
@@ -962,8 +1081,7 @@ def centre_lines(lines, width, size):
     """The same lines, each centred in `width` (a title page's lines)."""
     for ln in lines:
         if not ln.gap and ln.indent >= 0 and not ln.tail:
-            w = sum(_w(t, i, size) for t, i in ln.spans if t)
-            ln.indent = max(0.0, (width - w) / 2)
+            ln.indent = max(0.0, (width - line_width(ln, size)) / 2)
     return lines
 
 
@@ -1031,17 +1149,18 @@ def draw(page, rect, lines, size, *, leading=1.28, gap_frac=0.55, fresh_top=None
                 draw_table(page, (x0, y, x1, y1), ln.table, size=min(size, 8.5))
             y = h + lh * 0.4
             continue
-        if y + lh > y1:
+        lsz, llh = size * ln.scale, lh * ln.scale       # a heading: larger
+        if y + llh > y1:
             leftover = lines[idx:]
             break
         if tw is not None:
             writer = tw_note if ln.note else tw
-            pt = fitz.Point(x0 + ln.indent, y + size)
+            pt = fitz.Point(x0 + ln.indent, y + lsz)
             for txt, ital in ln.spans:
                 if not txt:
                     continue
-                res = writer.append(pt, txt, font=_font(ITALIC if ital else ROMAN),
-                                    fontsize=size)
+                res = writer.append(pt, txt, font=_font(_face(ital, ln.bold)),
+                                    fontsize=lsz)
                 # TextWriter.append returns (text_rect, last_point) on this
                 # PyMuPDF; older builds return just the point.
                 pt = res[1] if isinstance(res, (tuple, list)) else res
@@ -1063,7 +1182,7 @@ def draw(page, rect, lines, size, *, leading=1.28, gap_frac=0.55, fresh_top=None
                 bx = x0 + ln.indent - 5
                 page.draw_line((bx, y + size * 0.15), (bx, y + lh * 0.95),
                                width=0.8, color=NOTE_COLOR)
-        y += lh
+        y += llh
     if wrote:
         tw.write_text(page, color=color)
     if wrote_note:
@@ -1237,7 +1356,7 @@ def measure(lines, size, *, leading=1.28, gap_frac=0.55):
     """Total height `lines` will occupy."""
     h = 0.0
     for ln in lines:
-        h += size * leading * (gap_frac if ln.gap else 1.0)
+        h += line_height(ln, size, leading, gap_frac)
     return h
 
 

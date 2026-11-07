@@ -1622,6 +1622,67 @@ def test_untranslated_table_drawn_from_its_scan_box():
     assert len(R.untranslated_table_crops(boxes, [])) == 2
 
 
+def test_heading_levels_parts_and_chapters_set_larger():
+    # parts and chapters were one more body-size line; they are set larger
+    # (roman capitals, as the books print them), a chapter's own title with
+    # it, centred even in a book that sets its other headings flush left
+    # (Danet «CHAPITRE II. / DE LA MARCHE.»); a numbered section under a
+    # chapter stays a section (Barbasetti «14. Inviti»)
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        import pymupdf  # noqa: F401  (_render needs it)
+    except ImportError:
+        return
+    R = importlib.import_module("_render")
+    lv = R.heading_level
+    assert [lv(t) for t in ("FIRST PART", "PART II.", "BOOK III", "SEVENTH CHAPTER.", "CHAPTER IV.", "PREFACE.")] == [1, 1, 1, 2, 2, 2]
+    assert [lv(t) for t in ("§ 47. — Feint of cavazione", "OF THE COUNTERS", "PARTS OF THE SWORD", "Part of the blade")] == [3, 3, 3, 3]
+    prose = "To march toward one's opponent, or, which is the same, to close the measure, is to step forward."
+    lines = lambda t, c: [ln for ln in R.layout(t, 400, 10, paras="indented", centre=c) if not ln.gap]
+    out = lines(f"CHAPTER II.\n\x04OF THE MARCH.\n\n{prose}", False)
+    assert [round(ln.scale, 2) for ln in out[:2]] == [1.2, 1.2] and out[0].indent > 100 and out[1].indent > 100, out
+    assert out[2].scale == 1.0
+    out = lines(f"PART II.\n\nCHAPTER III.\n\n14. Invitations\n\n{prose}", True)
+    assert [ln.scale for ln in out[:3]] == [1.45, 1.2, 1.0], [ln.scale for ln in out]
+    # a part line's height is its size's
+    assert abs(R.measure(out[:1], 10) - 10 * 1.28 * 1.45) < 0.01
+
+
+def test_bold_section_headings_a_per_book_setting():
+    # [book] bold_headings: a book that prints its section headings in bold
+    # (Masiello 1887 «§ 4. — Posizione normale.») gets them in bold, the
+    # number label in roman as printed; parts / chapters and other books as
+    # before (user 2026-11-07, card lay-heading-levels B)
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        import pymupdf  # noqa: F401
+    except ImportError:
+        return
+    R = importlib.import_module("_render")
+    assert R.bold_title([("§ 4. — Normal ", 0), ("position", 1), (".", 0)]) == \
+        [("§ 4. — ", 0), ("Normal ", 2), ("position", 3), (".", 2)]
+    assert R.bold_title([("OF THE COUNTERS", 0)]) == [("OF THE COUNTERS", 2)]
+    assert R._face(3) == R.BOLD_ITALIC and R._face(2) == R.BOLD and R._face(1) == R.ITALIC
+    text = "SECOND CHAPTER\n\n§ 4. — Normal position.\n\nHe turns the right flank toward the part where the opponent stands, placing the feet."
+    heads = lambda: [ln for ln in R.layout(text, 400, 10, paras="indented", centre=True) if not ln.gap][:2]
+    try:
+        R.BOLD_SECTIONS = True
+        ch, sec = heads()
+        assert not any(i & 2 for _, i in ch.spans)                       # the chapter: roman
+        assert [i for t, i in sec.spans if t.strip()][0] == 0 and sec.spans[-1][1] & 2
+        # a long section heading with its text right under it: a heading too
+        long = ("§ 54. — Straight feint on the outside, feint of <i>cavazione</i> on the inside and "
+                "<i>cavazione</i> on the outside.\nIt is executed in three tempi from the invitation of quarta:")
+        out = [ln for ln in R.layout(long, 400, 10, paras="indented", centre=True) if not ln.gap]
+        assert out[0].indent > 0 and out[0].spans[-1][1] & 2 and not any(i & 2 for _, i in out[-1].spans)
+    finally:
+        R.BOLD_SECTIONS = False
+    ch, sec = heads()
+    assert not any(i & 2 for _, i in sec.spans)                          # unset: as before
+
+
 def test_two_column_table_keeps_the_printed_widths_at_most():
     # a lesson table (_columns) keeps the columns' widths as the book prints
     # them; the master's short commands are not squeezed by the pupil's

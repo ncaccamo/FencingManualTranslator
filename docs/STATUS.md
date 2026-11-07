@@ -95,13 +95,15 @@ the operator's business and is not tracked here.)
    difference: book titles in bibliographies are translated, which suits
    the side-by-side (the original is on the facing scan); English-only
    should keep them in the original language.
-3. **Heading hierarchy — future work.** The renderer has a running head and
-   one body size; a part / chapter / section title in the body reads as one
-   more prose line. The fix is a per-book heading scheme with levels in
-   `_render.py` (sizes and spacing per level). Supersedes the
-   `fix_subheading_spacing()` stop-gap. A `TITLE:` field in the OCR prompt
-   was tested and not adopted (2026-09-25, 20/25 pages right); the layout
-   detector is the better signal (23/25).
+3. **Heading hierarchy — done for parts, chapters and bold sections.**
+   Parts and chapters are set larger, by their wording; section titles a
+   book prints in bold are bold by a per-book setting, `[book]
+   bold_headings` (`docs/pdf-layout.md`, Heading levels). Open: run-in
+   bold headings inside a paragraph (Kirchhoffer «Principes généraux et
+   Coups principaux.») stay plain. Printed sizes are not usable as a
+   signal: the layout boxes and the text layer measure heading heights too
+   unevenly to rank them (2026-11-07 survey). A `TITLE:` field in the OCR
+   prompt was tested and not adopted (2026-09-25, 20/25 pages right).
 4. **Running heads with OCR typos** ("FIORETTTO", "MASIEMLO") are kept as
    read; the review report lists a head one or two letters off another
    (`head_variants`), and the fix is an override per book (`[headers]`;
@@ -315,6 +317,8 @@ the operator's business and is not tracked here.)
   page but also listed roman sentences, and missed a glossary page's italic
   headwords. So italics in the English mean a kept term only, and run-in
   bold headings come out plain. Retry with a better local vision model.
+  (Section headings a book sets in bold on their own line are a per-book
+  setting instead, `[book] bold_headings`.)
 - **The pipeline owns the llama-servers, not the container entrypoint.**
   An earlier entrypoint started both servers under `wait -n`; a `pkill`
   from any pipeline step then dropped PID 1 and bounced the whole

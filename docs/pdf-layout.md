@@ -232,6 +232,26 @@ centred, level with it, above the text (`_layout.picture_caption`).
   as one line). A table too big for a whole column is still skipped (Bruno's
   synoptic tables in the side-by-side's right column).
 
+- **Heading levels** (`heading_level`, `HEAD_SCALE`): a part ("FIRST
+  PART", "PART II.", "BOOK III") is set 1.45 × the body size, a chapter
+  or a front / back matter title ("CHAPTER III.", "PREFACE",
+  "INTRODUCTION") 1.2 ×, centred, roman capitals as the books print them
+  (not bold), with space before and under. A title in capitals set right
+  under it («DE LA MARCHE.» under «CHAPITRE II.») goes with it, even
+  where the text layer placed the row; a numbered section under a chapter
+  («14. Inviti») does not. Parts and chapters are centred even in a book
+  whose other headings are flush left (Danet). Every other heading is as
+  before (level 3, body size). The level comes from the heading's wording:
+  the printed sizes are not in the OCR (the layout boxes and the text
+  layer measure them too unevenly to rank). Each `Line` carries its
+  `scale` and `bold`; `draw`, `measure`, `line_height` and the side-by-side
+  paragraph heights use them.
+- **Bold section headings** (`[book] bold_headings`, `bold_title`): for a
+  book that prints them so, a level-3 heading is set in bold, its number
+  label («§ 4. —») in roman. A span's flag carries it (1 italic, 2 bold,
+  3 both; `_face`). In such a book a «§ N. —» line is a heading even when
+  long or followed directly by its text.
+
 Captions, notes and the old callers use `paras=None` -- the previous
 rules, unchanged.
 

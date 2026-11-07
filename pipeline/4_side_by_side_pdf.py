@@ -132,7 +132,7 @@ def render_aligned(page, y_top, tr, size, fracs, src_page, bottom=RIGHT.y1, toc=
         if ln.table:
             th = _render.draw_table(page, (RIGHT.x0, 0, RIGHT.x1, 10000), ln.table, size=min(size, 8.5), dry=True)
             return (th if th is not None else 10000) + size * LEADING * 0.4
-        return size * LEADING if not ln.gap else size * LEADING * 0.55
+        return _render.line_height(ln, size, LEADING)
     line_h = [sum(h_of(ln) for ln in L) for L in laid]
 
     cur = y_top
@@ -308,6 +308,7 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
     src = fitz.open(ocr_pdf)
     n = min(len(src), len(translations))
     PARAS = _render.book_paragraphs(book)
+    _render.BOLD_SECTIONS = _render.book_bold_headings(book)
     CENTRE = _render.centres_headings(folder)
     TWO_PART = _layout.two_part_heads(folder, [parse_vlm_output(e).get("header", "") for e in extractions])
     sides = _render.folio_sides(folder, [parse_vlm_output(e).get("page_num", "") for e in extractions])

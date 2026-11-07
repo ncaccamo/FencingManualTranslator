@@ -29,6 +29,11 @@ continuation sheet, so it can't key anything durable.)
                          "inner", "centre", or "bottom-..." of these. The
                          running head is then centred. Unset: learned from
                          the scans (_layout.folio_plan).
+        bold_headings    true -> the book sets its section headings in bold
+                         (Masiello 1887 «§ 4. — Posizione normale.»): a
+                         heading that is not a part or chapter is set in
+                         bold, a leading number label («§ 4. —») in roman
+                         as printed (_render.bold_title).
         final            true -> the book is finished: scripts that would
                          change it skip it unless run with --unlock
                          (_books.py). The review report still runs.
@@ -74,7 +79,8 @@ import tomllib
 
 _PAGE_KEYS = {"page_number", "header", "retranslate", "note", "caption", "caption_en", "figure", "leave_out"}
 _TOP_KEYS = {"book", "headers", "terms", "pages", "fix", "table_fix"}
-_BOOK_KEYS = {"running_heads": bool, "final": bool, "paragraphs": str, "page_numbers": str}
+_BOOK_KEYS = {"running_heads": bool, "final": bool, "paragraphs": str, "page_numbers": str,
+              "bold_headings": bool}
 _PARAGRAPHS = ("indented", "spaced")
 _PAGE_NUMBERS = ("outer", "inner", "centre", "bottom-outer", "bottom-inner", "bottom-centre")
 
