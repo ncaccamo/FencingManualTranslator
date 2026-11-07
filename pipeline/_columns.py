@@ -13,16 +13,22 @@ words, and the English line with the same index takes its place (the
 translation keeps the source's lines one for one -- checked first). Only
 the drawing changes: translation.txt stays as it is.
 
-Left as it is when anything is uncertain: no text layer, the line counts
-differ, a line inside the passage could not be found, fewer than two lines
-a column, or the columns are a list of names or titles (Blengini pdf 134,
-Joseph-Renaud pdf 20). Dry run over the corpus 2026-11-07: Barbasetti 25,
-Masiello 1887 54, Masiello 1902 (sciabola) 26, Enrichetti 1 pages."""
+A scan with no text layer (Masiello's foil, a photographed copy): the
+layout boxes alone, one source line per box (box_positions). The table
+keeps the columns' widths as printed (data-split, from the column rule on
+the scan: column_rule).
+
+Left as it is when anything is uncertain: the line counts differ, a line
+inside the passage could not be found, fewer than two lines a column, or
+the columns are a list of names or titles (Blengini pdf 134, Joseph-Renaud
+pdf 20)."""
 import html
+import math
 import re
 from difflib import SequenceMatcher
 
 SKIP = [""]                     # why the last page was left as it is (for dry runs)
+EDGES = [None]                  # box_positions: the column boxes' (left x0, left x1, right x0, right x1)
 
 
 def _norm(s):
@@ -67,7 +73,7 @@ def wide_boxes(boxes, gx=0.5):
 
 
 def visual_lines(page, g, wide=(), band=None):
-    """[(y, side, text)]: 'L' / 'R' for a column's line, 'F' for a line
+    """[(y, side, text, x0, x1)]: 'L' / 'R' for a column's line, 'F' for a line
     across the page (a heading, a full-width sentence), from the scan's
     words. `g` = gutter(): its lx1 / rx0 are the columns' inner edges. A
     line with a wide gap between the columns is two; else a line starting
@@ -87,21 +93,21 @@ def visual_lines(page, g, wide=(), band=None):
         x0, x1 = ws[0][0], max(w[2] for w in ws)
         inwide = [b for b in wide if b[1] - 0.004 <= yc <= b[3] + 0.004]
         if any(b[0] - 0.01 <= x0 and x1 <= b[2] + 0.01 for b in inwide) and (x0 < gx < x1 or x0 > lx0 + 0.08):
-            out.append((y, "F", " ".join(w[4] for w in ws))); continue
+            out.append((y, "F", " ".join(w[4] for w in ws), x0, x1)); continue
         gaps = [(ws[k + 1][0] - ws[k][2], k) for k in range(len(ws) - 1)
                 if lx1 - 0.06 <= ws[k][2] and ws[k + 1][0] <= rx0 + 0.06]
         gap, k = max(gaps, default=(0, None))
         # two columns' lines on one baseline -- the left one starts at the
         # left column's edge (a centred heading «IV. ESEMPIO» does not)
         if k is not None and gap >= 0.02 and x0 <= lx0 + 0.08:
-            out.append((y, "L", " ".join(w[4] for w in ws[:k + 1])))
-            out.append((y, "R", " ".join(w[4] for w in ws[k + 1:])))
+            out.append((y, "L", " ".join(w[4] for w in ws[:k + 1]), x0, ws[k][2]))
+            out.append((y, "R", " ".join(w[4] for w in ws[k + 1:]), ws[k + 1][0], x1))
         elif x0 >= rx0 - 0.04:
-            out.append((y, "R", " ".join(w[4] for w in ws)))
+            out.append((y, "R", " ".join(w[4] for w in ws), x0, x1))
         elif x1 <= gx + 0.01:
-            out.append((y, "L", " ".join(w[4] for w in ws)))
+            out.append((y, "L", " ".join(w[4] for w in ws), x0, x1))
         else:                      # across the gutter: a heading, a full-width line
-            out.append((y, "F", " ".join(w[4] for w in ws)))
+            out.append((y, "F", " ".join(w[4] for w in ws), x0, x1))
     return sorted(out)
 
 
@@ -110,8 +116,8 @@ def place(src_lines, vis, y0, y1):
     wins over a near one («I. TEMPO» is not «II. TEMPO»); a label the OCR
     gave twice (as a margin note and as a line) takes the same place."""
     starts = []
-    for k, (y, s, t) in enumerate(vis):
-        nxt = [u for (yy, ss, u) in vis[k + 1:] if ss == s][:2]
+    for k, (y, s, t, *_) in enumerate(vis):
+        nxt = [u for (yy, ss, u, *_) in vis[k + 1:] if ss == s][:2]
         starts.append((y, s, _norm(t), _norm(" ".join([t] + nxt))))
     used, out, keys = {}, [], {}
     for line in src_lines:
@@ -146,11 +152,12 @@ def place(src_lines, vis, y0, y1):
     return out
 
 
-def build(en_lines, pos, g, y0, y1):
+def build(en_lines, pos, g, y0, y1, one_side_short=False, split=None):
     """The band of `en_lines` the book sets in two columns, rebuilt in the
     scan's order: each heading across the page once, the column lines
     between headings as a table, rows as printed (same baseline = same
-    row). Returns (first, last, block) -- the band's first and last line
+    row), the left column `split` of the width as printed. Returns
+    (first, last, block) -- the band's first and last line
     and what replaces them -- or None when a line inside the band could not
     be placed, or the columns are a list (names, titles), not actions."""
     ys = [p[0] for p in pos if p is not None and p[1] in "LR" and len(p) == 2]
@@ -169,7 +176,10 @@ def build(en_lines, pos, g, y0, y1):
     titled = lambda t: all(w[:1].isupper() or not w[:1].isalpha() for w in re.sub(r"<[^>]+>", "", t).split() if len(w) > 3)
     if not cells or sum(map(titled, cells)) >= 0.5 * len(cells):
         SKIP[0] = "a list of titles"; return None
-    if any(max((len(_norm(en_lines[k]).split()) for k in cols if pos[k][1] == side), default=0) < 4 for side in "LR"):
+    longest = [max((len(_norm(en_lines[k]).split()) for k in cols if pos[k][1] == side), default=0) for side in "LR"]
+    # (with no text layer only one side need have them: the foil's master's
+    # column is short commands, «Parerà terza.»)
+    if (max(longest) if one_side_short else min(longest)) < 4:
         SKIP[0] = "a side with only short lines"; return None              # a list with short notes beside it (Joseph-Renaud pdf 20's novels and publishers)
     first, last = idx[0], idx[-1]
     if any(pos[k] is None for k in range(last + 1, len(pos))):
@@ -197,7 +207,8 @@ def build(en_lines, pos, g, y0, y1):
             body = "".join(("<tr>" + "".join(f"<th>{r['cells'].get(c, '')}</th>" for c in "LR") + "</tr>") if (th and n == 0)
                            else ("<tr>" + "".join(f"<td>{r['cells'].get(c, '')}</td>" for c in "LR") + "</tr>")
                            for n, r in enumerate(rows))
-            block.append("\x00TABLE<table>" + body + "</table>")
+            tag = f'<table data-split="{split:.2f}">' if split else "<table>"
+            block.append("\x00TABLE" + tag + body + "</table>")
             rows.clear()
     for y, _, side, t in items:
         if side == "F":
@@ -208,6 +219,172 @@ def build(en_lines, pos, g, y0, y1):
             rows.append({"y": y, "cells": {side: t}})
     flush()
     return first, last, block
+
+
+def _dedup(bs):
+    """The layout boxes once each: the detector gives most boxes two or three
+    times (text and section_header, a second pass), and pieces of a heading
+    inside the heading's box."""
+    bs = sorted(bs, key=lambda b: -(b[2] - b[0]) * (b[3] - b[1]))
+    out = []
+    for b in bs:
+        inside = lambda o: (min(b[2], o[2]) - max(b[0], o[0])) * (min(b[3], o[3]) - max(b[1], o[1])) >= 0.8 * (b[2] - b[0]) * (b[3] - b[1])
+        if not any(min(b[2], o[2]) > max(b[0], o[0]) and min(b[3], o[3]) > max(b[1], o[1]) and inside(o) for o in out):
+            out.append(b)
+    return out
+
+PITCH = 0.0215                  # a printed line's height on the page (fraction; the foil's)
+
+
+def _rows(b):
+    return max(1, round((b[3] - b[1]) / PITCH))
+
+
+def box_positions(sl, boxes, g):
+    """Each source line's (y, side) from the layout boxes alone, or None --
+    for a scan with no text layer (Masiello's foil, a photographed copy).
+    One source line = one box. The OCR does not read such a page in one
+    order: one column then the other, row by row, or the left half of the
+    page first and then the right column (foil pdf 117). What is fixed: the
+    left half (lines across the page and the left column) top to bottom; a
+    right box after the left line level with it and before the next
+    section's heading or left column. Every such order whose lines fit
+    their boxes (length against the box's width x lines) is found; when
+    more than one fits, the best (lines closest to their boxes' length) is
+    kept only if clearly better on the lines where they differ -- else the
+    page is left as it is."""
+    gx, y0, y1, lx1, rx0, lx0 = g
+    bs = _dedup([b[2] for b in boxes if b[0] in ("text", "section_header", "title", "list_item", "caption") and b[1] >= 0.3])
+    F, Ls, Rs, cur = [], [], [], {"L": [], "R": []}
+    def flush():
+        l, r = sorted(cur["L"], key=lambda b: b[1]), sorted(cur["R"], key=lambda b: b[1])
+        # a short line across the page that ends before the gutter (foil pdf 135's
+        # «Si eseguisce in due tempi:») sits above the other column's first box
+        while l and r and (l[0][3] < r[0][1] - 0.005 or r[0][3] < l[0][1] - 0.005):
+            F.append(l.pop(0) if l[0][3] < r[0][1] - 0.005 else r.pop(0))
+        if l and r:
+            ry = {id(b): a[1] for a, b in zip(l, r) if len(l) == len(r) and abs(a[1] - b[1]) < 0.03}
+            Ls.extend((b, len(F), b[1]) for b in l)
+            Rs.extend((b, len(F), ry.get(id(b), b[1])) for b in r)
+        else:
+            F.extend(l + r)
+        cur["L"], cur["R"] = [], []
+    for b in sorted(bs, key=lambda b: b[1]):
+        inband = b[3] >= y0 - 0.01 and b[1] <= y1 + 0.01
+        if inband and b[2] <= rx0 + 0.01 and b[0] < gx:
+            cur["L"].append(b)
+        elif inband and b[0] >= lx1 - 0.01 and b[2] > gx:
+            cur["R"].append(b)
+        else:
+            flush(); F.append(b)
+    flush()
+    F.sort(key=lambda b: b[1])
+    n = len(F) + len(Ls) + len(Rs)
+    if n != len(sl):
+        SKIP[0] = f"boxes {n} != lines {len(sl)}"; return None
+    if not Ls or not Rs:
+        SKIP[0] = "no column boxes"; return None
+    allb = F + [x[0] for x in Ls + Rs]
+    D = sum(len(t) for t in sl) / sum((b[2] - b[0]) * _rows(b) for b in allb)     # characters per unit width, this page
+    def fits(t, b):
+        r, cap = _rows(b), D * (b[2] - b[0]) * _rows(b)
+        n = len(t)          # 4 characters' play: a one-word label in small capitals (foil pdf 135's «ALLIEVO.»)
+        return n <= 1.35 * cap + 4 and (n + 4 >= 0.35 * cap if r == 1 else n + 4 >= 0.75 * cap * (r - 1) / r)
+    left = sorted([(b[1], "F", k, b) for k, b in enumerate(F)] + [(x[0][1], "L", k, x[0]) for k, x in enumerate(Ls)],
+                  key=lambda z: z[0])
+    seg = lambda x: x[1]                      # a section: the number of F lines above it
+    need = [sum(1 for z in left if z[0] <= x[0][1] + 0.01) for x in Rs]
+    before = [min([j for j, z in enumerate(left) if z[1] == "L" and seg(Ls[z[2]]) > seg(x)] + [len(left)]) for x in Rs]
+    heads = [b[2] for b in boxes if b[0] in ("section_header", "title") and b[1] >= 0.3]
+    sols, path = [], []
+    def dfs(i, a, r):
+        if len(sols) > 50:
+            return
+        if i == n:
+            if tuple(path) not in sols:
+                sols.append(tuple(path))
+            return
+        t = sl[i]
+        # a section heading is not read while the right column above it is unfinished (foil pdf 81)
+        head = a < len(left) and left[a][1] == "F" and bool(re.match(r"\s*§", t) or any(
+            abs(h[1] - left[a][3][1]) < 0.005 and abs(h[0] - left[a][3][0]) < 0.02 for h in heads))
+        if a < len(left) and fits(t, left[a][3]) and all(before[q] > a for q in range(r, len(Rs))) \
+                and not (head and any(Rs[q][0][1] < left[a][3][1] for q in range(r, len(Rs)))):
+            path.append((left[a][1], left[a][2])); dfs(i + 1, a + 1, r); path.pop()
+        if r < len(Rs) and a >= need[r] and a <= before[r] and fits(t, Rs[r][0]):
+            path.append(("R", r)); dfs(i + 1, a, r + 1); path.pop()
+    dfs(0, 0, 0)
+    if not sols:
+        SKIP[0] = "no reading order fits"; return None
+    # several orders fit: the one whose lines best match their boxes' length
+    # (a box's last line is about half full), when it is clearly the best
+    def box(side, k):
+        return (left[[j for j, z in enumerate(left) if z[1] == side and z[2] == k][0]][3] if side != "R" else Rs[k][0])
+    def err(sol, only=None):
+        e = 0.0
+        for j, (t, (side, k)) in enumerate(zip(sl, sol)):
+            if only is not None and j not in only:
+                continue
+            b = box(side, k); r = _rows(b)
+            e += math.log((len(t) + 4) / (D * (b[2] - b[0]) * (r - 0.4 if r > 1 else 0.85) + 4)) ** 2
+        return e
+    sols.sort(key=err)
+    if len(sols) > 50:
+        SKIP[0] = "too many reading orders fit"; return None
+    for other in sols[1:]:          # on the lines where they differ
+        diff = {j for j in range(n) if sols[0][j] != other[j]}
+        if err(sols[0], diff) > err(other, diff) / 3:
+            SKIP[0] = "two reading orders fit"; return None
+    EDGES[0] = (min(x[0][0] for x in Ls), max(x[0][2] for x in Ls), min(x[0][0] for x in Rs), max(x[0][2] for x in Rs))
+    out = []
+    for side, k in sols[0]:
+        if side == "F":
+            out.append((F[k][1], "F"))
+        else:
+            x = (Ls if side == "L" else Rs)[k]
+            out.append((x[2], side))
+    return out
+
+
+def column_rule(page, x0, x1, y0, y1):
+    """x of the vertical rule the book prints between two columns, between
+    the left column's longest line (x0) and the right column's start (x1),
+    over the passage's height y0..y1 (fractions), or None. Centred columns
+    start well after their rule (Barbasetti pdf 133); a master's short
+    commands end well before it (Masiello sabre pdf 134)."""
+    import pymupdf as fitz
+    W, H = page.rect.width, page.rect.height
+    if x1 - x0 < 0.005 or y1 - y0 < 0.03:
+        return None
+    try:
+        pm = page.get_pixmap(dpi=150, colorspace=fitz.csGRAY,
+                             clip=fitz.Rect(x0 * W, y0 * H, x1 * W, min(y1, 1.0) * H))
+    except Exception:
+        return None
+    w, h, buf = pm.width, pm.height, pm.samples
+    if w < 1 or h < 10:
+        return None
+    # dark against the page's own paper: a thin rule prints lighter than type
+    # on a photographed copy (Masiello foil, sabre)
+    paper = sorted(buf[r * pm.stride + c] for r in range(0, h, 3) for c in range(w))
+    thr = paper[len(paper) // 2] - 35
+    # band by band: a photographed page's rule leans (foil pdf 76), and it
+    # breaks between two passages and prints lighter in places (Masiello
+    # pdf 295); its x = the median of the bands' darkest columns, when a
+    # third of the bands or more have one dark over 55% of them
+    n, xs = 12, []
+    for k in range(n):
+        r0, r1 = k * h // n, (k + 1) * h // n
+        if r1 - r0 < 3:
+            continue
+        dark = [sum(1 for r in range(r0, r1) if buf[r * pm.stride + c] < thr) / (r1 - r0) for c in range(w)]
+        c = max(range(w), key=lambda c: dark[c])
+        if dark[c] >= 0.55:
+            xs.append(c)
+    if len(xs) < n / 3:
+        return None
+    xs.sort()
+    return x0 + (xs[len(xs) // 2] + 0.5) / w * (x1 - x0)
 
 
 def column_tables(body, src_body, page, boxes, notes=False, stored=None):
@@ -229,8 +406,6 @@ def column_tables(body, src_body, page, boxes, notes=False, stored=None):
         has_words = bool(page.get_text("words"))
     except Exception:
         has_words = False
-    if not has_words:
-        SKIP[0] = "no text layer"; return body
     sl = [l for l in (src_body or "").split("\n") if l.strip()]
     raw = body.split("\n")
     nz = [k for k, l in enumerate(raw) if l.strip()]
@@ -240,7 +415,13 @@ def column_tables(body, src_body, page, boxes, notes=False, stored=None):
         sl = [l for l in sl if not re.match(r"\s*\(\d+\)\s", l)]
     if len(sl) != len(ref):
         SKIP[0] = "line counts differ"; return body
-    rpos = place(sl, visual_lines(page, g, wide_boxes(boxes, g[0])), g[1], g[2])
+    if has_words:
+        vis = visual_lines(page, g, wide_boxes(boxes, g[0]))
+        rpos = place(sl, vis, g[1], g[2])
+    else:                                   # no text layer: the layout boxes alone (Masiello's foil)
+        rpos = box_positions(sl, boxes, g)
+        if rpos is None:
+            return body
     if stored is None:
         pos = rpos
     else:                                   # each line of body: the place of the same stored line
@@ -250,7 +431,27 @@ def column_tables(body, src_body, page, boxes, notes=False, stored=None):
             if k is not None:
                 used.add(k)
             pos.append(rpos[k] if k is not None else None)
-    res = build(el, pos, *g[:3])
+    # the columns' widths as printed (from the scan's lines in the passage, or
+    # with no text layer its column boxes): the left column from where its
+    # lines start to the column rule, the right one from the rule to where
+    # its lines end
+    ys = [p[0] for p in pos if p is not None and len(p) == 2 and p[1] in "LR"]
+    edges = None
+    if not has_words:
+        edges = EDGES[0]
+    elif ys:
+        # lines of three words or more: a centred heading or label («I. ESERCIZIO.», «B.») is not an edge
+        col = [v for v in vis if v[1] in "LR" and min(ys) - 0.002 <= v[0] <= max(ys) + 0.002 and len(v[2].split()) >= 3]
+        if any(v[1] == "L" for v in col) and any(v[1] == "R" for v in col):
+            edges = (min(v[3] for v in col if v[1] == "L"), max(v[4] for v in col if v[1] == "L"),
+                     min(v[3] for v in col if v[1] == "R"), max(v[4] for v in col if v[1] == "R"))
+    split = None
+    if edges and ys and edges[3] > edges[0] and edges[2] > edges[1]:
+        rule = column_rule(page, edges[1], edges[2], min(ys), max(ys) + 0.02)
+        # no rule found (a skewed photograph's columns shift between two
+        # passages: foil pdf 106): the rule is set just before the right column
+        split = ((rule if rule is not None else edges[2] - 0.005) - edges[0]) / (edges[3] - edges[0])
+    res = build(el, pos, *g[:3], one_side_short=not has_words, split=split if split and 0.15 <= split <= 0.85 else None)
     if res is None:
         return body
     first, last, block = res

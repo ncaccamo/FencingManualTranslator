@@ -192,10 +192,30 @@ centred, level with it, above the text (`_layout.picture_caption`).
   page stay between the tables, once (the OCR repeats them per column);
   in a table a line level with one in the other column shares its row,
   one set lower starts a new row. Drawing only: `translation.txt` is
-  unchanged. Left as it is when anything is uncertain: no text layer
-  (Masiello 1902 foil), the line counts differ, a line in or after the
-  passage not found on the scan, a list of names or titles (Blengini,
-  Joseph-Renaud), or any English line that would be lost.
+  unchanged. Left as it is when anything is uncertain: the line counts
+  differ, a line in or after the passage not found on the scan, a list of
+  names or titles (Blengini, Joseph-Renaud), or any English line that
+  would be lost.
+  - **A scan with no text layer** (Masiello 1902 foil, a photographed
+    copy): the layout boxes alone place the lines (`box_positions`), one
+    source line per box. The OCR read these pages in different orders --
+    one column then the other, row by row, or the left half first -- so
+    every order consistent with how it reads (the left half top to bottom,
+    each right box after the left line level with it and before the next
+    heading) is tried against the boxes' sizes (a line's length against
+    the box's width × lines). The page becomes a table only when one order
+    fits clearly best; otherwise, or when the boxes and lines don't count
+    the same (a heading and its first sentence in one box), it is left as
+    it is.
+  - **Column widths as printed**: the table records the book's split
+    (`<table data-split="0.45">`) and `draw_table` keeps it, so a master's
+    short commands are not squeezed by the pupil's long lines. The left
+    column runs from where its lines start to the column rule printed
+    between the columns, found on the scan (`column_rule`: centred columns
+    start well after it, short commands end well before it); with no rule
+    found, the rule is taken as just before the right column. Each page is
+    measured, so the split follows that page's print. Tables from other
+    sources (no `data-split`) are sized by their content as before.
 
 Captions, notes and the old callers use `paras=None` -- the previous
 rules, unchanged.

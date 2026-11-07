@@ -1510,6 +1510,7 @@ def test_two_column_lesson_drawn_as_a_table():
     put(60, 240, "Sta in una posizione qualunque"); put(290, 240, "Sta in atteggiamento d'attacco")
     put(290, 260, "Lancia la botta con proposito deliberato di parare")
     put(60, 285, "Para e risponde con la massima velocità sulla linea")
+    pg.draw_line((270, 120), (270, 300), width=0.8)          # the column rule the book prints
     boxes = [["text", 0.9, [0.11, 0.15, 0.48, 0.23]], ["text", 0.9, [0.57, 0.15, 0.95, 0.2]],
              ["text", 0.9, [0.11, 0.29, 0.48, 0.37]], ["text", 0.9, [0.57, 0.29, 0.95, 0.34]],
              ["section_header", 0.8, [0.41, 0.11, 0.56, 0.13]], ["section_header", 0.8, [0.41, 0.25, 0.56, 0.27]]]
@@ -1522,9 +1523,11 @@ def test_two_column_lesson_drawn_as_a_table():
           "IX. EXAMPLE\nStands in line\nSeeks to guess the parry that the opponent is going to execute\n"
           "X. EXAMPLE\nStands in attitude of attack\nLaunches the thrust with the deliberate purpose of parrying")
     out = C.column_tables(en, src, pg, boxes)
-    assert out.count("\x00TABLE<table>") == 2, (C.SKIP, out)
+    # the columns' widths as printed: the left from where its lines start
+    # (0.12) to the rule (0.54), the right from the rule to its lines' end
+    assert out.count('\x00TABLE<table data-split="0.49">') == 2, (C.SKIP, out)
     assert out.count("IX. EXAMPLE") == 1 and out.index("IX. EXAMPLE") < out.index("X. EXAMPLE")
-    first = re.search(r"<table>(.*?)</table>", out).group(1)
+    first = re.search(r"<table[^>]*>(.*?)</table>", out).group(1)
     assert first.startswith("<tr><td>Stands in any position</td><td>Stands in line</td></tr>"), first
     assert "<tr><td></td><td>Seeks to guess" in first             # B's next line before A's, as printed
     assert first.index("Seeks to guess") < first.index("Interrupts the feint")
@@ -1534,6 +1537,66 @@ def test_two_column_lesson_drawn_as_a_table():
     assert C.column_tables(names, src, pg, boxes) == names
     # line counts that differ: left as it is
     assert C.column_tables(en + "\nOne more line.", src, pg, boxes) == en + "\nOne more line."
+
+
+def test_two_column_lesson_without_text_layer_from_the_boxes():
+    # Masiello's foil (a photographed copy, no text layer): each source line
+    # is one layout box; the OCR read some pages one column then the other,
+    # some row by row (foil pdf 81, 82). Either way the same table
+    import importlib, re
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        import pymupdf as fitz
+    except ImportError:
+        return
+    C = importlib.import_module("_columns")
+    pg = fitz.open().new_page(width=500, height=800)          # no words on it
+    boxes = [["section_header", 0.7, [0.352, 0.128, 0.801, 0.174]], ["text", 0.96, [0.245, 0.201, 0.909, 0.241]],
+             ["text", 0.92, [0.268, 0.27, 0.442, 0.291]], ["text", 0.97, [0.588, 0.272, 0.912, 0.427]],
+             ["text", 0.91, [0.27, 0.43, 0.48, 0.448]], ["text", 0.96, [0.591, 0.434, 0.912, 0.5]],
+             ["text", 0.85, [0.588, 0.272, 0.912, 0.427]]]                        # a box given twice
+    h = "§ 47. — Finta di cavazione in dentro e cavazione al fianco."
+    i = "Si eseguisce in due tempi dal legamento di terza dell’avversario:"
+    l1, l2 = "Legherà di terza.", "Parerà mezzocerchio."
+    r1 = ("Fingerà una cavazione al petto, in dentro, inclinando leggermente il corpo in avanti, battendo "
+          "contemporaneamente il piede destro, ed avvicinando la punta della propria spada al petto dell’avversario.")
+    r2 = "Eseguirà immediatamente la cavazione al fianco, evitando la parata di mezzocerchio."
+    E = {h: "§ 47. — Feint of <i>cavazione</i> on the inside and <i>cavazione</i> to the flank.",
+         i: "It is executed in two tempi from the engagement of <i>terza</i> of the opponent:",
+         l1: "Engage in <i>terza</i>.", l2: "Parry half-circle.",
+         r1: ("Indicate a <i>cavazione</i> to the chest, on the inside, inclining the body slightly forward, stamping "
+              "the right foot at the same time, and bringing the point of his own sword to the chest of the opponent."),
+         r2: "He will immediately execute the <i>cavazione</i> to the flank, avoiding the parry of half-circle."}
+    for order in ([h, i, l1, l2, r1, r2], [h, i, l1, r1, l2, r2]):
+        out = C.column_tables("\n".join(E[k] for k in order), "\n".join(order), pg, boxes)
+        rows = re.findall(r"<tr>(.*?)</tr>", out)
+        assert len(rows) == 2 and rows[0].startswith("<td>Engage in <i>terza</i>.</td><td>Indicate"), (C.SKIP, out)
+        assert rows[1].startswith("<td>Parry half-circle.</td><td>He will immediately"), rows
+        # no rule on this page: set just before the right column (0.583)
+        assert 'data-split="0.49"' in out and out.index("§ 47.") < out.index("It is executed") < out.index("\x00TABLE")
+    # a line the boxes do not account for: left as it is
+    en = "\n".join(E[k] for k in (h, i, l1, l2, r1, r2)) + "\nOne more line."
+    assert C.column_tables(en, "\n".join((h, i, l1, l2, r1, r2, "Un'altra riga.")), pg, boxes) == en
+
+
+def test_two_column_table_keeps_the_printed_widths():
+    # a lesson table (_columns) keeps the columns' widths as the book prints
+    # them; the master's short commands are not squeezed by the pupil's
+    # long lines (Masiello foil pdf 82: «Engage in / terza.» broke)
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        import pymupdf as fitz
+    except ImportError:
+        return
+    R = importlib.import_module("_render")
+    long = "He will immediately execute the cavazione to the flank, avoiding the parry of half-circle, " * 3
+    def first_col(tag):
+        pg = fitz.open().new_page(width=600, height=800)
+        R.draw_table(pg, (100, 100, 500, 700), f"{tag}<tr><td>Engage in terza.</td><td>{long}</td></tr></table>")
+        return min(r["rect"].width for r in pg.get_drawings() if r["rect"].width > 1)
+    assert abs(first_col('<table data-split="0.40">') - 160) < 0.5
+    assert first_col("<table>") < 120                   # no split: by content, as before
 
 
 def test_contents_page_column_label_set_over_the_numbers():

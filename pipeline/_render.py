@@ -1262,8 +1262,12 @@ def parse_table(html_text):
 def draw_table(page, rect, html_text, size=7.5, dry=False, min_size=5.5):
     """Draw an HTML table as a ruled grid in rect = (x0, y0, x1, y1); the
     largest size from `size` down to `min_size` that fits. Returns the y
-    under the table (or None when it can't fit at all)."""
+    under the table (or None when it can't fit at all). A table tagged
+    <table data-split="0.40"> (two columns as the book prints them) keeps
+    that share of the width for its first column."""
     rows, n_cols = parse_table(html_text)
+    m = re.match(r'\s*<table\b[^>]*\bdata-split="([\d.]+)"', html_text or "", re.I)
+    split = float(m.group(1)) if m else None
     if not rows or not n_cols:
         return None
     x0, y0, x1, y1 = rect
@@ -1288,7 +1292,10 @@ def draw_table(page, rect, html_text, size=7.5, dry=False, min_size=5.5):
         if sum(floor) > W and size - 0.5 >= min_size:   # longest words don't fit: smaller type
             size -= 0.5
             continue
-        if sum(floor) > W:              # not even at the smallest size: squeeze all
+        if split and n_cols == 2 and floor[0] <= W * split and floor[1] <= W * (1 - split):
+            # a passage the book sets in two columns (_columns): their widths as printed
+            widths = [W * split, W * (1 - split)]
+        elif sum(floor) > W:            # not even at the smallest size: squeeze all
             widths = [f_ * W / sum(floor) for f_ in floor]
         else:
             # share out what is left above the floors (Bruno's "Paragraph" was
