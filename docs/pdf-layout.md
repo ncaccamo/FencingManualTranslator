@@ -214,7 +214,10 @@ centred, level with it, above the text (`_layout.picture_caption`).
     between the columns, found on the scan (`column_rule`: centred columns
     start well after it, short commands end well before it); with no rule
     found, the rule is taken as just before the right column. Each page is
-    measured, so the split follows that page's print. Tables from other
+    measured, so the split follows that page's print. The split is a
+    ceiling: a left column of short commands takes only its longest line
+    plus an em, so on the wider sheet the commands sit next to the
+    pupil's lines instead of far from them. Tables from other
     sources (no `data-split`) are sized by their content as before.
 
 - **A table with no English is drawn from the scan** (`untranslated_table_crops`):

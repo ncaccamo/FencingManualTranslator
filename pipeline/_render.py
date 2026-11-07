@@ -1288,6 +1288,7 @@ def draw_table(page, rect, html_text, size=7.5, dry=False, min_size=5.5):
         # column widths: by the longest word / content of single-column cells
         need = [8.0] * n_cols
         floor = [8.0] * n_cols          # the longest word: a column never narrower
+        natural = [0.0] * n_cols        # the longest unwrapped line
         for line in rows:
             for c in line:
                 if c["colspan"] == 1 and c["text"]:
@@ -1300,12 +1301,18 @@ def draw_table(page, rect, html_text, size=7.5, dry=False, min_size=5.5):
                     full = wd(re.sub(r"</?i>", "", c["text"]))
                     need[c["col"]] = max(need[c["col"]], longest + 2 * pad, min(full, 140) * 0.6)
                     floor[c["col"]] = max(floor[c["col"]], longest + 2 * pad)
+                    natural[c["col"]] = max([natural[c["col"]]] + [
+                        wd(re.sub(r"</?i>", "", part)) for part in c["text"].split("\n")])
         if sum(floor) > W and size - 0.5 >= min_size:   # longest words don't fit: smaller type
             size -= 0.5
             continue
         if split and n_cols == 2 and floor[0] <= W * split and floor[1] <= W * (1 - split):
-            # a passage the book sets in two columns (_columns): their widths as printed
-            widths = [W * split, W * (1 - split)]
+            # a passage the book sets in two columns (_columns): their widths as
+            # printed, but a left column of short commands only as wide as its
+            # text plus an em -- at the printed split it stood far from the
+            # right column, on a sheet wider than the book's page
+            left = min(W * split, max(floor[0], natural[0] + 2 * pad + size))
+            widths = [left, W - left]
         elif sum(floor) > W:            # not even at the smallest size: squeeze all
             widths = [f_ * W / sum(floor) for f_ in floor]
         else:

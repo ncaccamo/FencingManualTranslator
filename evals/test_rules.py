@@ -1622,7 +1622,7 @@ def test_untranslated_table_drawn_from_its_scan_box():
     assert len(R.untranslated_table_crops(boxes, [])) == 2
 
 
-def test_two_column_table_keeps_the_printed_widths():
+def test_two_column_table_keeps_the_printed_widths_at_most():
     # a lesson table (_columns) keeps the columns' widths as the book prints
     # them; the master's short commands are not squeezed by the pupil's
     # long lines (Masiello foil pdf 82: «Engage in / terza.» broke)
@@ -1634,12 +1634,20 @@ def test_two_column_table_keeps_the_printed_widths():
         return
     R = importlib.import_module("_render")
     long = "He will immediately execute the cavazione to the flank, avoiding the parry of half-circle, " * 3
-    def first_col(tag):
+    def first_col(tag, left="Engage in terza."):
         pg = fitz.open().new_page(width=600, height=800)
-        R.draw_table(pg, (100, 100, 500, 700), f"{tag}<tr><td>Engage in terza.</td><td>{long}</td></tr></table>")
-        return min(r["rect"].width for r in pg.get_drawings() if r["rect"].width > 1)
-    assert abs(first_col('<table data-split="0.40">') - 160) < 0.5
-    assert first_col("<table>") < 120                   # no split: by content, as before
+        R.draw_table(pg, (100, 100, 500, 700), f"{tag}<tr><td>{left}</td><td>{long}</td></tr></table>")
+        lines = {round(w["bbox"][1]) for b in pg.get_text("dict")["blocks"] for l in b.get("lines", [])
+                 for w in [l] if l["bbox"][0] < 100 + 5 and "terza" in "".join(sp["text"] for sp in l["spans"])}
+        return min(r["rect"].width for r in pg.get_drawings() if r["rect"].width > 1), lines
+    # the short command keeps its line, and the column is only as wide as it
+    # (plus an em): at the printed split it stood far from the pupil's text
+    # (Masiello 1887 / foil / sabre lesson tables, user 2026-11-07)
+    w, lines = first_col('<table data-split="0.40">')
+    assert 55 < w < 90 and len(lines) <= 1
+    # a left column of long text is capped at the printed split
+    assert abs(first_col('<table data-split="0.40">', long)[0] - 160) < 0.5
+    assert first_col("<table>")[0] < 120                # no split: by content, as before
 
 
 def test_contents_page_column_label_set_over_the_numbers():
