@@ -486,6 +486,13 @@ def pictures(folder: str, i: int, score: float = 0.8, whole: bool = True, sidewa
             continue                                    # a decorated capital
         if any(_overlap(b[2], o) > 0.5 * w * h for o in out):
             continue
+        # a weaker box round a stronger one, with a margin on every side, that
+        # it fills a third of or more: the plate's printed frame or the page
+        # round it, drawn again (Kirchhoffer pdf 17). Not a box the stronger
+        # one only touches inside (Tiboldi pdf 7: the hand of a whole figure)
+        if any(o[0] - x0 >= 0.02 and o[1] - y0 >= 0.02 and x1 - o[2] >= 0.02 and y1 - o[3] >= 0.02
+               and (o[2] - o[0]) * (o[3] - o[1]) >= w * h / 3 for o in out):
+            continue
         out.append(b[2])
     caps = [c[2] for c in boxes if c[0] == "caption" and c[1] >= 0.5]
     strips = [c[2] for c in boxes if sideways and c[0] in ("caption", "text", "page_header") and c[1] >= 0.3

@@ -682,6 +682,22 @@ def _layout_toc(rows, width, size, centre):
         n = min(len(raw) - len(raw.lstrip(" ")), 8)
         body = raw.strip()
         plain = re.sub(r"<[^>]+>", "", body)
+        # the page-number column's own label, «Pages.», set over the numbers
+        # (Kirchhoffer pdf 105, Gomard pdf 330); the OCR often reads it as
+        # the first entry's page number, «Note n° 2 …… Pages.» (Cordelois
+        # pdf 400, Gomard pdf 325): the label goes above, the entry stays,
+        # its number lost. Only a capitalised label after leaders: not «»
+        # same page» (Lambertini pdf 132), nor Tiboldi's inline «… pag.»
+        # with «» 14» dittos below (pdf 64)
+        lab = re.fullmatch(r"(?P<lab>(?i:pages?|pag|pagine|pagina)\.?)", plain) \
+            or re.fullmatch(r"(?P<text>.*?\S)\s*(?:(?:\.\s*){2,}|…+)\s*(?P<lab>(?:Pages?|Pag|Pagine|Pagina)\.?)", plain)
+        if lab:
+            out.append(Line(max(0.0, width - _w(lab.group("lab"), 0, size)), _spans(lab.group("lab"))))
+            if "text" in lab.groupdict():
+                entry = re.sub(r"\s*(?:(?:\.\s*){2,}|…+)\s*(?:Pages?|Pag|Pagine|Pagina)\.?\s*$", "", body)
+                for k, v in enumerate(_wrap(_spans(entry), max(width - n * _SPACE_PT, _MIN_WRAP), size)):
+                    out.append(Line(n * _SPACE_PT if k == 0 else n * _SPACE_PT + 12, v))
+            continue
         m = _TOC_END.match(body)
         if m and not _heading_line(plain):
             tail = m.group("num")

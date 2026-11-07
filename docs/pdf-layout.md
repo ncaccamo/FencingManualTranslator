@@ -238,7 +238,10 @@ the rest of the code never thinks about page breaks:
      detector's picture boxes replace both for every page but a
      `figures.json` plate: `_layout.pictures()` (score 0.8+, or 0.6 on a
      page with no text of its own; slivers, the "Digitized by Google"
-     strip, decorated capitals and near-blank boxes left out) → one
+     strip, decorated capitals and near-blank boxes left out; a weaker
+     box round a stronger one, with a margin on every side, that it
+     fills a third of or more -- a plate's printed frame -- is not a
+     second picture: Kirchhoffer pdf 17) → one
      placement per picture, cropped to its box (a printed caption inside
      the box's foot cut off), drawn at its size against the text column.
      Captions: a page's standalone "Fig. N" lines move under their
@@ -368,7 +371,12 @@ for free (this is why figures were easy here and hard in step 3).
   In a book that centres its headings, headings in capitals are centred,
   and so is the contents' own title in ordinary case ("Table of
   Contents.", Kirchhoffer pdf 104); other short lines keep the book's
-  place (Jacob-André's lesson summaries, Gomard's "Page." label).
+  place (Jacob-André's lesson summaries). The page-number column's own
+  label ("Pages.", "Pag.") is set flush right over the numbers; when the
+  OCR gave it as the first entry's page number ("Note n° 2 …… Pages."),
+  the label goes above and the entry stays without a number (restore it
+  with a `[[fix]]`). Not a "» same page" reference, nor an inline
+  lower-case "pag." followed by "» 14" dittos (Tiboldi).
 - Body: try font size **9, then 8, then 7 pt** — the largest that fits
   the column (`draw(dry=True)`). If even 7 pt overflows, draw what fits
   and spill the rest onto a `(cont.)` continuation spread (same scan

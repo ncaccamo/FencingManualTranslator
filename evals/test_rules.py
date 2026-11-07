@@ -1488,6 +1488,31 @@ def test_harmonize_body_title_with_header():
         assert harmonize_titles_with_headers(d) == 0             # idempotent
 
 
+def test_contents_page_column_label_set_over_the_numbers():
+    # Kirchhoffer pdf 105, Gomard pdf 330, Lafaugère, Saint-Martin: the
+    # «Pages.» heading over the page numbers was a stray flush-left line, or
+    # the OCR gave it as the first entry's page number («Note n° 2 ……
+    # Pages.», Cordelois pdf 400) and no number showed
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    rows = ["Pages.", "FOIL, by Kirchhoffer...... 5", "Note no. 2 ...... Pages.", "Practice...... 8",
+            "» IV. Method of executing the feints . . . » same page",
+            "Part I. — Position of the blade and the body . . . . . . page."]
+    try:
+        R = importlib.import_module("_render")
+        out = [l for l in R._layout_toc(rows, 400, 10, True) if not l.gap]
+    except (TypeError, AttributeError, ImportError):   # needs real PyMuPDF (in the image)
+        return
+    text = lambda l: "".join(t for t, _ in l.spans)
+    assert text(out[0]) == "Pages." and out[0].indent > 350 and not out[0].tail
+    assert text(out[1]) == "FOIL, by Kirchhoffer" and out[1].tail == "5"
+    assert text(out[2]) == "Pages." and out[2].indent > 350
+    assert text(out[3]) == "Note no. 2" and not out[3].tail          # not "Note no." with page 2
+    same = next(l for l in out if "same" in text(l) or "same" in l.tail)
+    assert same.indent < 50                                          # «» same page» is a reference, not a label
+    assert not any(text(l) == "page." for l in out)                  # Tiboldi's inline «pag.» stays in its line
+
+
 def test_contents_title_in_ordinary_case_centred():
     # Kirchhoffer pdf 104: «Table of Contents.» (the book's «Table des
     # Matières.», centred) was set flush left -- only capitals counted as a
@@ -4394,6 +4419,29 @@ def test_place_tables_hand_written_table():
     text, ok = f("before\n[[TABLE]]\nafter", {"en": ["<table><tr><td>x</td></tr></table>"]})
     assert ok and text == "before\n\x00TABLE<table><tr><td>x</td></tr></table>\nafter", text
     assert f("a <table> mentioned in a sentence", None) == ("a <table> mentioned in a sentence", True)
+
+
+def test_plate_frame_box_not_a_second_picture():
+    # Kirchhoffer pdf 17: the detector boxes the photo (0.76) and the printed
+    # frame round it (0.60); on a page with no text both passed 0.6, and the
+    # framed page was drawn again, without its caption, on a sheet of its own
+    import json, tempfile, os
+    sys.path.insert(0, str(_PIPELINE))
+    import _layout
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(f"{d}/intermediate")
+        def run(boxes):
+            json.dump({"pages": {"0": {"boxes": boxes}}}, open(f"{d}/intermediate/layout.json", "w"))
+            _layout._LAY_CACHE.pop(d, None)
+            return _layout.pictures(d, 0, score=0.6)
+        photo, frame = (0.29, 0.21, 0.74, 0.7), (0.17, 0.13, 0.86, 0.85)
+        assert run([["picture", 0.76, list(photo)], ["picture", 0.6, list(frame)]]) == [photo]
+        # Tiboldi pdf 7: a whole figure (sword and arm) round its stronger
+        # hand box, which touches its edge -- both stay, the figure is not cut
+        fig, hand = (0.15, 0.53, 0.88, 0.6), (0.52, 0.535, 0.88, 0.59)
+        assert fig in run([["picture", 0.9, list(hand)], ["picture", 0.7, list(fig)]])
+        # a plate of several figures boxed whole, one figure boxed alone: the plate stays
+        assert (0.1, 0.1, 0.9, 0.9) in run([["picture", 0.9, [0.15, 0.15, 0.4, 0.4]], ["picture", 0.7, [0.1, 0.1, 0.9, 0.9]]])
 
 
 def test_pictures_file_kept_line_ignored():
