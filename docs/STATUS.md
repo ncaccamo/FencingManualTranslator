@@ -82,14 +82,21 @@ the operator's business and is not tracked here.)
    (model-quirks 2.8).
 2. **English-only PDF — resumed 2026-11-04.** Pictures, captions, notes
    across page breaks and decorations were reworked after an agent review
-   of seven books (`docs/pdf-layout.md`, step 3). Still open, all seen in
-   that review: a footnote continued from the page before is printed as
-   body text; a running head or section title can be taken for a plate
-   caption; a figure label the OCR split from its picture ("Fig." / "50")
-   stays in the text; tables that came out blank or as pictures on a few
-   synoptic-table pages; a stray offset print read as text. Each is a book
-   data fix today (`[[fix]]`, `[pages.N] caption`, `.pictures`) until a
-   second book shows the same failure. Consider decoupling the
+   of seven books (`docs/pdf-layout.md`, step 3). Fixed since (2026-11-06/07,
+   general rules): a footnote's further paragraphs printed as body text; a
+   caption also printed as a line of text; library and digitiser pages
+   (`[pages.N] leave_out`); tables skipped at a sheet's foot or left out
+   when the OCR could not read them; passages set in two columns (lesson
+   tables) drawn as tables at the printed widths; sideways plates turned
+   upright. Still open: a running head or section title can be taken for
+   a plate caption; a figure label the OCR split from its picture ("Fig." /
+   "50") stays in the text when no bare label is read from the scan; a
+   stray offset print read as text; a table too big for the side-by-side's
+   column is skipped there (Bruno's synoptic tables); a row of a lesson
+   table the OCR set as a text line ("Invites in *quarta*. | As first
+   feint…", Masiello 1887 §55). Each is a book data fix today (`[[fix]]`,
+   `[pages.N] caption`, `.pictures`) until a second book shows the same
+   failure. Consider decoupling the
    English-only renderer from code shared with the side-by-side, so fixes
    to one stop regressing the other. Content
    difference: book titles in bibliographies are translated, which suits

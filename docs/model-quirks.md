@@ -40,8 +40,8 @@ the fix) the raw garbage also shifted later pages.
 
 | Where | What |
 |---|---|
-| VLM request, `1_…py` ~L413 | `"repeat_penalty": 1.12` on the completion — makes the loop less likely to start |
-| `collapse_runs()`, `1_…py` L135 | clips a pathological run *after* the response comes back, before parsing: `x x x x …` (≥8 reps → keep 4), one char ×12+ → keep 6, a whole line ×4+ → keep 2. Also applied by [`reprocess_extracted.py`](../pipeline/reprocess_extracted.py) so an already-OCR'd book can be fixed without paying for OCR again |
+| VLM request, `_ocr.py` | `"repeat_penalty": 1.12` on the completion — makes the loop less likely to start |
+| `collapse_runs()`, `_ocr_parse.py` | clips a pathological run *after* the response comes back, before parsing: `x x x x …` (≥8 reps → keep 4), one char ×12+ → keep 6, a whole line ×4+ → keep 2. Also applied by [`reprocess_extracted.py`](../pipeline/reprocess_extracted.py) so an already-OCR'd book can be fixed without paying for OCR again |
 | `_translate.py` `translate_page()` | oversized-input guard: `src_words > 2500` → translate the first 2500 words, keep the rest verbatim, flag the page. Stops one bad page burning 3 dead API calls |
 | `vlm_ocr_prompt.txt` | "Render a decorative separator … as a line containing only: `* * *`" and "Do NOT paraphrase, summarize, or silently skip words or lines, even if they look repetitive" |
 
@@ -1189,6 +1189,13 @@ foot of the right column.
 self-identifies (`(1)` from the book, `[margin note] …`, `French: …`), so
 the label just cost a line.
 
+*2026-11-06:* "once per book" broke on retranslated pages of Italian books.
+`retranslate_pages()` rebuilt the list of notes already given from
+`French:` lines only, so a redone page repeated an `Italian: legamento`
+note given earlier. `notes_already_given()` (`_translate.py`) now reads the
+book's own label, and the review report lists any note repeated on a later
+page (`repeated_notes()`, `quality_report.py`) for removal.
+
 ### 2.4 Braced command groups still flatten ~half the time
 
 **Seen:** every book with drill chapters.
@@ -1263,13 +1270,13 @@ silently.
 
 Each page gets up to **3 attempts**. An attempt is rejected if:
 
-| Check | `2_…py` | Rule |
+| Check | Where | Rule |
 |---|---|---|
-| `looks_like_refusal()` | ~L430 | whole output is a refusal/echo → not even a fallback |
-| `strip_model_preamble()` → empty | ~L437 | preamble with nothing after it |
-| `has_wrong_script()` | L118 | CJK / Cyrillic / Hebrew / Arabic present (Greek is allowed — treatises quote it). Never kept, even as fallback |
-| `contains_too_much_non_english()` | L129 | after stripping `<i>…</i>`: > 35 % of words in a small FR/IT/DE/ES/LA stop-word list, **or** > 5 % French-only constructs — elisions (`d'une`, `qu'il`; English contractions put a consonant after the apostrophe so they don't match) and endings needing French letters (`-ité`, `-eaux`, …). The stop-word list alone missed a page returned untranslated in dense technical French — its content words (`fendre`, `réserve`, `convenable`) aren't stop words |
-| too short | L456 | `len(candidate) < 0.5 × src_words` — but **only when `src_words ≥ 25`**, because plate captions and drill lines are legitimately terse and were being rejected |
+| `looks_like_refusal()` | `_tx_checks.py` | whole output is a refusal/echo → not even a fallback |
+| `strip_model_preamble()` → empty | `_tx_checks.py` | preamble with nothing after it |
+| `has_wrong_script()` | `_tx_checks.py` | CJK / Cyrillic / Hebrew / Arabic present (Greek is allowed — treatises quote it). Never kept, even as fallback |
+| `contains_too_much_non_english()` | `_tx_checks.py` | after stripping `<i>…</i>`: > 35 % of words in a small FR/IT/DE/ES/LA stop-word list, **or** > 5 % French-only constructs — elisions (`d'une`, `qu'il`; English contractions put a consonant after the apostrophe so they don't match) and endings needing French letters (`-ité`, `-eaux`, …). The stop-word list alone missed a page returned untranslated in dense technical French — its content words (`fendre`, `réserve`, `convenable`) aren't stop words |
+| too short | `_translate.py` | `len(candidate) < 0.5 × src_words` — but **only when `src_words ≥ 25`**, because plate captions and drill lines are legitimately terse and were being rejected |
 
 If all 3 attempts fail: keep the best non-garbled attempt as
 `[low-confidence translation — review]`; if there was none and the source
