@@ -16,9 +16,11 @@ Each card shows the problem, the side-by-side PDF page (the words it is
 about outlined in red; the English-only page as well where only that PDF is
 affected), and the page's English text to copy from. Answer each card:
 
-    Fix          -- with a find / replace on the page's English, applied by
-                    apply_review.py; or a note saying what to change
-    Fine as is   -- the report stops counting it as a page to check
+    Change the English     -- with a find / replace on the page's English,
+                              applied by apply_review.py; or a note saying
+                              what to change
+    Leave it as it is      -- the page's English stays; the report stops
+                              counting it as a page to check
     Later        -- undecided
 
 Press "Save .review file" and put books/<stem>.review in books/ (replace the
@@ -211,7 +213,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 <div class="wrap">
   <header>
     <h1>Review — __TITLE__</h1>
-    <p class="lede">Every item of the book's review report, each with its page. Words the item is about are outlined in red. Answer <b>Fix</b> (a find / replace on the page's English, or a note saying what to change), <b>Fine as is</b> (the report stops listing it), or <b>Later</b>. Then save the <code>.review</code> file below into <code>books/</code>.</p>
+    <p class="lede">Every item of the book's review report, each with its page. Words the item is about are outlined in red. Answer <b>Change the English</b> (a find / replace on the page's English, or a note saying what to change), <b>Leave it as it is</b> (the page's English stays and the report stops listing it), or <b>Later</b>. Then save the <code>.review</code> file below into <code>books/</code>.</p>
   </header>
   <div class="bar">
     <div class="row">
@@ -275,7 +277,7 @@ function card(c) {
     <div class="shots">${c.shots.map(s => shot(s, s.src.includes("/eo-"))).join("")}</div>
     ${c.english ? `<details><summary>The page's English text (copy the words to fix from here)</summary><pre>${esc(c.english)}</pre></details>` : ""}
     <div class="ans"><span class="seg" role="group" aria-label="Answer">
-        <button data-v="fix">Fix</button><button data-v="fine">Fine as is</button><button data-v="later">Later</button></span>
+        <button data-v="fix">Change the English</button><button data-v="fine">Leave it as it is</button><button data-v="later">Later</button></span>
       <div class="fixbox" hidden>
         <div class="fr"><label>Find (exact words on this page's English)<input class="find" spellcheck="false"></label>
           <label>Replace with<input class="replace" spellcheck="false"></label></div>

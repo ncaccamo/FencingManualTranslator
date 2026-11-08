@@ -268,10 +268,11 @@ Open `processed/<stem>_translated/<stem> — Review.html` (the pictures are in
 the `— Review files` folder beside it; rebuild the PDFs first). Answer each
 card:
 
-- **Fix**, with a find / replace on the page's English (copy the words from
-  the page text shown on the card; the page warns when they don't match), or
-  with a note saying what to change.
-- **Fine as is**: the report stops listing it as a page to check.
+- **Change the English**, with a find / replace on the page's English (copy
+  the words from the page text shown on the card; the page warns when they
+  don't match), or with a note saying what to change.
+- **Leave it as it is**: the page's English stays, and the report stops
+  listing it as a page to check.
 - **Later**: undecided.
 
 Press *Save .review file* and put `<stem>.review` in `books/`, replacing
