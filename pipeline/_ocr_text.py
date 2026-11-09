@@ -35,6 +35,11 @@ def _glue_broken(left: str, right: str, compounds: set) -> str:
     return left[:-1] + right
 
 
+def _book_words(parsed: list) -> set:
+    """Every word of four letters or more in the book's text, lower case."""
+    return {w.lower() for p in parsed for w in re.findall(r"[A-Za-zÀ-ÿ]{4,}", p.get("body") or "")}
+
+
 def dehyphenate_across_pages(parsed: list) -> None:
     """A word hyphenated across a page break in the original ("...déjà pu-"
     | "bliés, on ...") is otherwise translated as two fragments. When page
@@ -48,6 +53,7 @@ def dehyphenate_across_pages(parsed: list) -> None:
     over, not joined into. A compound the book prints elsewhere keeps its
     hyphen (_book_compounds)."""
     compounds = _book_compounds(parsed)
+    vocab = None
     for i in range(len(parsed) - 1):
         a = (parsed[i].get("body") or "").rstrip()
         main, tail = a, ""
@@ -61,6 +67,24 @@ def dehyphenate_across_pages(parsed: list) -> None:
         lead = re.match(r"(?:\s*⟦MARGIN:[^⟧]*⟧)*\s*", b).group(0)
         m = re.match(r"([a-zà-ÿ]+[^\s\w]*)([\s\S]*)", b[len(lead):])
         if not m:
+            # the second half a few lines down: a two-column lesson page the
+            # OCR read master's column first («Parerà seconda.» then «tendo
+            # simultaneamente…», Masiello 1887 pdf 582). Only a line whose
+            # first word completes a word the book uses elsewhere.
+            vocab = vocab if vocab is not None else _book_words(parsed)
+            frag = re.search(r"([a-zà-ÿ]+)-\Z", main).group(1)
+            lines = b[len(lead):].split("\n")
+            for k in range(1, min(6, len(lines))):
+                mm = re.match(r"([a-zà-ÿ]+)([^\s\w]*)([\s\S]*)", lines[k])
+                # not a one-letter word ("e", "a") that happens to make one;
+                # two letters can be the word's end («la-» | «ma», pdf 601)
+                if mm and len(mm.group(1)) >= 2 and (frag + mm.group(1)).lower() in vocab:
+                    lines[k] = mm.group(3).lstrip()
+                    if not lines[k].strip():
+                        del lines[k]
+                    parsed[i]["body"] = _glue_broken(main, mm.group(1) + mm.group(2), compounds) + tail
+                    parsed[i + 1]["body"] = (lead.rstrip() + "\n\n" if lead.strip() else "") + "\n".join(lines).lstrip()
+                    break
             continue
         parsed[i]["body"] = _glue_broken(main, m.group(1), compounds) + tail
         parsed[i + 1]["body"] = (lead.rstrip() + "\n\n" if lead.strip() else "") + m.group(2).lstrip()
@@ -74,6 +98,43 @@ _HONORIFIC_END = r"(?:^|[\s(«\u201c])(?:M|MM|Mme|Mmes|Mlle|Mlles|Me|Mgr|Dr|St|S
 def _not_after_title(text, m):
     """A sentence-end match that isn't the full stop of a title ("MM. Anatole")."""
     return not (m.group(0).startswith(".") and re.search(_HONORIFIC_END[:-2] + r"\Z", text[:m.start() + 1]))
+
+
+# words a sentence can't end on: articles, prepositions, conjunctions,
+# possessives (French, Italian)
+_RUNS_ON = set("""le la les un une des de du à au aux en et ou que qui dont par pour sur sous
+dans avec sans vers chez entre comme ce cet cette ces son sa ses leur leurs mon ma mes notre nos
+votre vos se ne il lo gli i uno di del dello della dei degli delle da dal dallo dalla dai dagli
+dalle a al allo alla ai agli alle in nel nello nella nei negli nelle con col coi su sul sullo
+sulla sui sugli sulle per tra fra e ed o od che chi cui suo sua suoi sue loro""".split())
+
+
+def _capital_runs_on(main: str, rest: str) -> bool:
+    """A sentence that runs on into a capital on the next page -- a term the
+    book capitalises («… sur l'Arrêt de pied ferme, la Marche & la» |
+    «Retraite : …», Danet). A page that ends on a name («… quand Leon» |
+    «Battista Alberti …», Blengini) is left: a name can end a sentence. Only
+    when the page stops on a word a sentence can't end on, and the next page
+    opens with running text, not a heading, caption or label line: on 162
+    such page breaks in 30 books (2026-11-09) this joined 23, none wrongly;
+    a page that ends on any other word is left as it is (a lost full stop
+    looks the same as a run-on)."""
+    last = main.rsplit("\n", 1)[-1].strip()
+    if any(c in last for c in "\u27e6\u27e7|\u00bb") or len(last.split()) < 4:
+        return False
+    if last.split()[-1].lower() not in _RUNS_ON:
+        return False
+    first = re.sub(r"<[^>]+>", "", rest.split("\n", 1)[0]).strip()
+    if re.match(r"(?:Fig|FIG|§|\d|\(|ART|Art\.|Articolo|ARTICOLO|Parerà|Maestro|Allievo|Question|Réponse|Observation)", first):
+        return False
+    words = first.split()
+    if first.isupper() or len(words) < 5:
+        return False
+    if re.search(r"[.:)]$", first) and len(words) <= 12:
+        return False                       # a heading or caption line
+    if first.endswith("-") and len(words) <= 10:
+        return False                       # a two-line heading («Osservazioni sul … di- | sarmo …»)
+    return True
 
 
 def join_split_sentences(parsed: list) -> int:
@@ -140,7 +201,8 @@ def join_split_sentences(parsed: list) -> int:
         cont = re.match(r"[\u00ab\"][ \u00a0]*(?=[a-z\u00e0-\u00ff])", rest)
         if cont:
             rest = rest[cont.end():]
-        if not re.match(r"[a-z\u00e0-\u00ff]", rest) and not (honorific and re.match(r"[A-Z\u00c0-\u00de]", rest)):
+        if not re.match(r"[a-z\u00e0-\u00ff]", rest) and not (honorific and re.match(r"[A-Z\u00c0-\u00de]", rest)) \
+                and not _capital_runs_on(main, rest):
             continue
         # the sentence's start on page i: after the last sentence end or paragraph break
         cut = max([m.end() for m in re.finditer(r"[.!?\u2026][\u00bb\u201d\")\]]*\s+|\n\s*\n", main)

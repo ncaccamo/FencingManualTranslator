@@ -61,6 +61,14 @@ continuation sheet, so it can't key anything durable.)
                          prepend = "..." (added as the first line unless the
                          page already starts with it) or find = "..." +
                          replace = "..." (a no-op if find isn't there).
+    [[book_fix]]         a find + replace edit applied to EVERY page of the
+                         English, before the pages' own [[fix]] edits: one
+                         line for a book-wide wording change (Gomard's
+                         «coup» -> thrust, 2026-11-09) instead of a fix per
+                         page. find, replace; no scan. The body text only
+                         (not tables, captions or running heads). Never
+                         marks a page as edited; reported only when it
+                         matches nowhere.
     [[table_fix]]        the same find + replace edit for the English of a
                          page's TABLES (intermediate/tables.json, which the
                          [[fix]] edits never reach): scan = N, find, replace;
@@ -78,7 +86,7 @@ import re
 import tomllib
 
 _PAGE_KEYS = {"page_number", "header", "retranslate", "note", "caption", "caption_en", "figure", "leave_out"}
-_TOP_KEYS = {"book", "headers", "terms", "pages", "fix", "table_fix"}
+_TOP_KEYS = {"book", "headers", "terms", "pages", "fix", "book_fix", "table_fix"}
 _BOOK_KEYS = {"running_heads": bool, "final": bool, "paragraphs": str, "page_numbers": str,
               "bold_headings": bool}
 _PARAGRAPHS = ("indented", "spaced")
@@ -135,6 +143,16 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
         if has_prepend == has_find or (has_find and "replace" not in f):
             raise OverridesError(f"{p}: [[fix]] #{n} (scan {f['scan']}) needs either "
                                  f"prepend, or find + replace")
+    book_fixes = raw.get("book_fix") or []
+    for n, f in enumerate(book_fixes, 1):
+        if set(f) - {"find", "replace", "note"} or not isinstance(f.get("find"), str) or not f.get("find") \
+                or not isinstance(f.get("replace"), str):
+            raise OverridesError(f"{p}: [[book_fix]] #{n} needs exactly find and replace (no scan: "
+                                 f"it applies to every page)")
+        if f["find"] in f["replace"]:
+            # applied on every run to every page: it would add its text again each time
+            raise OverridesError(f"{p}: [[book_fix]] #{n}: the replace contains the find -- "
+                                 f"write a [[fix]] per page instead")
     table_fixes = raw.get("table_fix") or []
     for n, f in enumerate(table_fixes, 1):
         if not isinstance(f.get("scan"), int) or f["scan"] < 1:
@@ -159,7 +177,8 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
                 raise OverridesError(f"{p}: [{sec}] {k!r} must be a string")
     return {"book": dict(book),
             "headers": dict(raw.get("headers") or {}), "terms": dict(raw.get("terms") or {}),
-            "pages": pages, "fix": list(fixes), "table_fix": list(table_fixes)}
+            "pages": pages, "fix": list(fixes), "table_fix": list(table_fixes),
+            "book_fix": list(book_fixes)}
 
 
 def _check_range(ov: dict, n_pages: int, where: str) -> None:
@@ -242,13 +261,42 @@ def apply_headers(hmap: dict, ov: dict) -> int:
     return n
 
 
+def _q(s: str) -> str:
+    """«» as the English quotes the house rule writes (_tx_terms.english_quotes)."""
+    return re.sub(r"\s*»", "\u201d", re.sub(r"«\s*", "\u201c", s))
+
+
+def book_worded(fixes: list, book_fixes: list) -> list:
+    """Page fixes with their text passed through the book-wide edits, so
+    they speak the wording the page has after them."""
+    def w(v):
+        for g in book_fixes:
+            v = v.replace(g["find"], g["replace"])
+        return v
+    return [{k: (w(v) if k in ("find", "replace", "prepend") else v) for k, v in f.items()} for f in fixes]
+
+
 def apply_fixes(tr_pages: list, ov: dict) -> tuple:
     """translation.txt pages (in place). Returns (applied, not_found) --
     a find that no longer matches (the page was retranslated since) is
     reported, not an error: the fix may simply be obsolete."""
     _check_range(ov, len(tr_pages), "overrides [[fix]]")
     applied, missing = 0, []
-    for f in ov["fix"]:
+    # book-wide edits first, on every page; the pages' own fixes are then
+    # read in the same wording, so a fix written before a [[book_fix]]
+    # («<i>coup</i>» in its find, Gomard) still finds its text. Missing
+    # (reported as page 0) only when a book fix matches nowhere.
+    bf = ov.get("book_fix", [])
+    for f in bf:
+        hit = False
+        for i, t in enumerate(tr_pages):
+            if f["find"] in t:
+                tr_pages[i] = t.replace(f["find"], f["replace"])
+                applied += 1
+                hit = True
+        if not hit and not any(f["replace"] in t for t in tr_pages):
+            missing.append(0)
+    for f in (book_worded(ov["fix"], bf) if bf else ov["fix"]):
         i = f["scan"] - 1
         t = tr_pages[i]
         if "prepend" in f:
@@ -292,11 +340,16 @@ def apply_fixes(tr_pages: list, ov: dict) -> tuple:
                         tr_pages[i] = healed
                         applied += 1
                     continue
-            if f["find"] not in t:
-                if f["replace"] not in t:
+            find, repl = f["find"], f["replace"]
+            if find not in t and _q(find) in t:
+                # a fix written with «guillemets» the house rule has since
+                # turned into English quotes (a half pair it cannot convert)
+                find, repl = _q(find), _q(repl)
+            if find not in t:
+                if repl not in t and _q(repl) not in t:
                     missing.append(f["scan"])
                 continue
-            tr_pages[i] = t.replace(f["find"], f["replace"])
+            tr_pages[i] = t.replace(find, repl)
             applied += 1
     return applied, missing
 

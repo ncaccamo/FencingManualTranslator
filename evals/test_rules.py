@@ -1863,6 +1863,155 @@ def test_sideways_plates_found_from_boxes_and_text_layer():
             L.sideways_plates = orig
 
 
+def test_book_fix_applies_to_every_page_before_the_page_fixes():
+    # [[book_fix]]: one book-wide wording change (Gomard «coup» -> thrust,
+    # 2026-11-09) instead of a [[fix]] per page. It runs first, and a page
+    # fix written in the old wording still finds its text; one that matches
+    # nowhere is reported (page 0)
+    import importlib, tempfile, os
+    sys.path.insert(0, str(_PIPELINE))
+    O = importlib.import_module("_overrides")
+    pages = ["The <i>coup</i> is the action.", "A simple <i>coup</i>, a parried <i>coup</i>.", "Nothing here."]
+    ov = {"fix": [{"scan": 1, "find": "The <i>coup</i> is the action.", "replace": "The <i>coup</i> is the mechanical action."}],
+          "book_fix": [{"find": "<i>coup</i>", "replace": "thrust"}], "table_fix": [], "pages": {}}
+    applied, missing = O.apply_fixes(pages, ov)
+    assert pages == ["The thrust is the mechanical action.", "A simple thrust, a parried thrust.", "Nothing here."], pages
+    assert missing == []
+    again = list(pages)                       # a second run changes nothing, reports nothing
+    assert O.apply_fixes(again, ov) == (0, []) and again == pages
+    ov2 = dict(ov, book_fix=[{"find": "<i>botte</i>", "replace": "finish"}], fix=[])
+    assert O.apply_fixes(list(pages), ov2)[1] == [0]
+    with tempfile.TemporaryDirectory() as t:
+        open(f"{t}/demo_1900_x.overrides.toml", "w").write('[[book_fix]]\nscan = 3\nfind = "a"\nreplace = "b"\n')
+        try:
+            O.load("demo_1900_x", t)
+            assert False, "a [[book_fix]] with a scan must be refused"
+        except O.OverridesError:
+            pass
+        open(f"{t}/demo_1900_x.overrides.toml", "w").write('[[book_fix]]\nfind = "a"\nreplace = "b"\n')
+        assert O.load("demo_1900_x", t)["book_fix"] == [{"find": "a", "replace": "b"}]
+        # a replace that contains its find would add its text again on every run
+        open(f"{t}/demo_1900_x.overrides.toml", "w").write('[[book_fix]]\nfind = "coup"\nreplace = "coup (thrust)"\n')
+        try:
+            O.load("demo_1900_x", t)
+            assert False, "a [[book_fix]] whose replace contains its find must be refused"
+        except O.OverridesError:
+            pass
+
+
+def test_english_quotes_house_rule():
+    # «guillemets» left by the model become English quotes (~290 pairs in 22
+    # books, 2026-11-09); the per-line style, ditto marks, an empty pair and
+    # a quotation that runs on are left as printed; a fix written with « »
+    # still finds the converted text
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    T = importlib.import_module("_tx_terms")
+    O = importlib.import_module("_overrides")
+    q = T.english_quotes
+    assert q("completing the « grip » of the thumb") == "completing the \u201cgrip\u201d of the thumb"
+    assert q("Grisier says that « in the high lines one must have the hand higher, » and") \
+        == "Grisier says that \u201cin the high lines one must have the hand higher,\u201d and"
+    assert q("« The first line\n« the second line »") == "« The first line\n« the second line »"   # per-line style
+    tail = "Il dit: « la parade de quarte\n« se fait ainsi » et puis."      # one per-line mark, on line 2
+    assert q(tail) == tail
+    assert q("Quarte | »\nTierce | »") == "Quarte | »\nTierce | »"                                  # ditto marks
+    assert q("in single combats. «\n» He, he says") == "in single combats. «\n» He, he says"
+    runs_on = "« This science had, like every other, its infancy and » its manhood; and"
+    assert q(runs_on) == runs_on                                                            # Marchionni pdf 27
+    assert "\u201c" in T.house_italics("the « opening » open")
+    pages = ["it is dangerous to let the slightest \u201copening\u201d open."]
+    ov = {"fix": [{"scan": 1, "find": "slightest « opening » open", "replace": "slightest « opening » show"}],
+          "book_fix": [], "table_fix": [], "pages": {}}
+    assert O.apply_fixes(pages, ov) == (1, []) and pages[0].endswith("\u201copening\u201d show.")
+
+
+def test_title_page_one_block_level_with_the_first_printed_block():
+    # Barbasetti pdf 3: the English sets author and title as one block of two
+    # lines, the detector reads two blocks; the block count didn't match, so
+    # the title sat at the top of the column instead of half-way down
+    import importlib, json, os, tempfile
+    sys.path.insert(0, str(_PIPELINE))
+    L = importlib.import_module("_layout")
+    with tempfile.TemporaryDirectory() as t:
+        os.makedirs(f"{t}/intermediate")
+        boxes = [["picture", 0.93, [0.22, 0.0, 0.92, 0.38]], ["text", 0.73, [0.21, 0.47, 0.5, 0.49]],
+                 ["title", 0.54, [0.12, 0.52, 0.59, 0.56]]]
+        json.dump({"pages": {"1": {"w": 800, "h": 1200, "boxes": boxes}}}, open(f"{t}/intermediate/layout.json", "w"))
+        assert L.block_places(t, 1, 1) is None                    # two blocks, one paragraph: no match
+        places = L.block_places(t, 1, 1, as_one=True)
+        assert places and abs(places[0][0] - 0.47) < 0.001
+        assert L.block_places(t, 1, 2) and L.block_places(t, 1, 2, as_one=True) == L.block_places(t, 1, 2)
+
+
+def test_title_with_figure_reference_set_as_heading():
+    # Barbasetti pdf 73-74 (reviewer note): «Parata di Seconda / (Fig. 30)»
+    # was plain flush-left text -- the reference line kept the title from
+    # standing alone; title and reference are set together, centred, with
+    # or without a blank line before the text
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        import pymupdf  # noqa: F401  (_render needs it)
+    except ImportError:
+        return
+    R = importlib.import_module("_render")
+    for t in ("Opening paragraph of running text that ends here.\n\nParry of <i>Seconda</i>\n(Fig. 30)\n\na) Starting from the invitation of prima.",
+              "Opening paragraph of running text that ends here.\n\nParry of <i>terza</i>\n(Fig. 31)\na) Starting from the invitation of seconda."):
+        out = [ln for ln in R.layout(t, 400, 10, paras="indented", centre=True) if not ln.gap]
+        head = [ln for ln in out if "".join(x for x, _ in ln.spans).startswith(("Parry", "(Fig"))]
+        assert len(head) == 2 and all(ln.indent > 100 for ln in head), [(ln.indent, ln.spans) for ln in out]
+
+
+def test_word_split_at_page_turn_joined_from_a_lower_line():
+    # Masiello 1887 pdf 581/582: «… al fianco dell'avversario bat-» | the next
+    # page opens with the master's column («Parerà seconda.») and the word's
+    # second half is on line 2 («tendo simultaneamente …»): joined when the
+    # whole word is one the book uses; a lowercase line that makes no known
+    # word is left alone
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    X = importlib.import_module("_ocr_text")
+    pages = [{"body": "battendo il piede a terra."},
+             {"body": "accennerà una puntata al fianco dell'avversario bat-"},
+             {"body": "Parerà seconda.\ntendo simultaneamente il piede destro a terra."}]
+    X.dehyphenate_across_pages(pages)
+    assert pages[1]["body"].endswith("dell'avversario battendo"), pages[1]
+    assert pages[2]["body"] == "Parerà seconda.\nsimultaneamente il piede destro a terra.", pages[2]
+    pages = [{"body": "testo qualunque."}, {"body": "una parola spez-"}, {"body": "Parerà seconda.\nzata male qui."}]
+    X.dehyphenate_across_pages(pages)
+    assert pages[1]["body"] == "una parola spez-"              # «spezzata» is not in the book: left alone
+    pages = [{"body": "una parte."}, {"body": "e la stoccata un-"}, {"body": "Parerà prima.\na stoccata va."}]
+    X.dehyphenate_across_pages(pages)
+    assert pages[1]["body"] == "e la stoccata un-"             # «a» is a word, not the word's end
+
+
+def test_sentence_running_on_into_a_capital_joined():
+    # a sentence split at a page break whose next page opens with a capital
+    # (a name, a capitalised term) was left in two fragments; joined only
+    # when the page stops on a word no sentence ends on and the next page
+    # opens with running text (23 joins on 162 breaks, none wrong, 2026-11-09)
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    X = importlib.import_module("_ocr_text")
+    ok = X._capital_runs_on
+    assert ok("Loin toutefois que cet Art soit encore aujourd'hui dans l'enfance par rapport à la",
+              "Théorie, comme l'avance le sieur Angelo,")                                     # Danet pdf 26
+    assert not ok("ebbero già figurate stupende storie, quando Leon",
+                  "Battista Alberti dettò i precetti della pittura")   # a name after a name: left (not a word no sentence ends on)
+    assert not ok("che i dilettanti di scherma vogliano approfittarne in", "Scuola C. A. Blengini")   # caption
+    assert not ok("il faut que la pointe soit à quelques centimètres de sa",
+                  "Le mur (position après avoir dégagé dessus).")                           # plate caption
+    assert not ok("si muoveranno sulla posizione della Guarda, al passo che",
+                  "Osservazioni sul legarsi l'arme alla mano, sul di-\nsarmo, sulla ridura")  # heading
+    assert not ok("ragioni e motivi in nessun modo sostenibili",
+                  "Dico che la scuola di Milano fu chiusa, che la nuova scuola")            # a lost full stop
+    pages = [{"body": "Il y a trois temps de mesure.\n\nOn les exécute sur l'Arrêt de pied ferme, la Marche & la", "page_raw": "1"},
+             {"body": "Retraite : mais malgré cette quantité de Bottes qui fait tout le fondement de la Science, on n'en connaît que peu.\n\nQuestion suivante sur un autre sujet.", "page_raw": "2"}]
+    assert X.join_split_sentences(pages) == 1
+    assert "Marche & la Retraite" in pages[0]["body"] + pages[1]["body"]
+
+
 def _load_overrides_module():
     import importlib
     sys.path.insert(0, str(_PIPELINE))
@@ -4664,7 +4813,7 @@ def test_line_names_plain():
     assert house_italics("he has remised, riposting; RIPOSTES and <i>ripostes</i>") \
         == "he has <i>remised</i>, <i>riposting</i>; <i>RIPOSTES</i> and <i>ripostes</i>"
     assert house_italics("a counter-riposte; the premises; « <i>remise</i> »; the riposter") \
-        == "a counter-<i>riposte</i>; the premises; « <i>remise</i> »; the riposter"
+        == "a counter-<i>riposte</i>; the premises; \u201c<i>remise</i>\u201d; the riposter"   # English quotes since 2026-11-09
     assert house_italics("<i>quarte</i> then <i>quarta</i>", french=False) == "<i>quarte</i> then <i>quarta</i>"
     # «bourrer» / «larder» are footnoted terms (reviewer, 2026-10-31): ram, jab,
     # first use noted "French: bourrer" (Joseph-Renaud pdf 88, 61)

@@ -387,14 +387,50 @@ def plain_line_names(text: str) -> str:
 _BARE_KEPT_FORM = re.compile(r"(?<![\w>])(?:riposte[sd]?|riposting|remise[sd]?|remising)(?![\w<])", re.I)
 
 
-def house_italics(text: str, french: bool = True) -> str:
-    """The italics rules applied to finished text: line names stored plain
-    (French books; drawn italic), riposte / remise italic in every form."""
+def english_quotes(text: str) -> str:
+    """«guillemets» -> “English quotes” (house rule; the prompt asks for it
+    but the model left ~290 pairs in 22 books, 2026-11-09). A pair opened
+    mid-paragraph and closed in the same paragraph is converted. Left as
+    printed: a paragraph in the per-line style (two or more of its lines
+    open with «, as old books mark a running quotation), a lone » (a
+    ditto mark in a table), an empty «» at a line break, and, after more
+    than six words, a » followed by a small letter with no stop before it
+    -- a mark that the quotation runs on ("its infancy and » its manhood",
+    Marchionni pdf 27), not the close of a quoted term ("the « grip » of")."""
+    if not text or "«" not in text:
+        return text
+    out = []
+    for para in re.split(r"(\n\s*\n)", text):
+        lines = para.lstrip("\n").split("\n")
+        if sum(1 for line in lines if line.lstrip().startswith("«")) >= 2 \
+                or any(line.lstrip().startswith("«") for line in lines[1:]):
+            out.append(para)
+            continue
+
+        def conv(m, para=para):
+            inner = m.group(1)
+            if not inner.strip():
+                return m.group(0)
+            if re.match(r"\s+[a-zà-ÿ]", para[m.end():m.end() + 3]) and len(inner.split()) > 6 \
+                    and not re.search(r"[.,;:!?…]$", inner.rstrip()):
+                return m.group(0)
+            return "\u201c" + inner + "\u201d"
+        out.append(re.sub(r"«\s*([^«»\n]*?(?:\n(?!\s*«)[^«»\n]*?)*?)\s*»", conv, para))
+    return "".join(out)
+
+
+def house_italics(text: str, french: bool = True, quotes: bool = True) -> str:
+    """The house rules applied to finished text: line names stored plain
+    (French books; drawn italic), riposte / remise italic in every form,
+    and English quotation marks (english_quotes). quotes=False for a
+    [[fix]]'s text: a fragment can't tell a per-line quotation from a
+    mid-line one, so a fix keeps its marks and apply_fixes tries both."""
     if not text:
         return text
     if french:
         text = plain_line_names(text)
-    return _BARE_KEPT_FORM.sub(lambda m: f"<i>{m.group(0)}</i>", text)
+    text = _BARE_KEPT_FORM.sub(lambda m: f"<i>{m.group(0)}</i>", text)
+    return english_quotes(text) if quotes else text
 
 
 def enforce_kept_terms(text: str, src: str = "", lang: str = "French") -> str:

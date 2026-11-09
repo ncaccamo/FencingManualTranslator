@@ -476,6 +476,8 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         if DISPLAY and paras_:
             # every block centred, as title pages are set; each level with its
             # own on the scan when the blocks pair up, else one under another
+            if not places and len(paras_) == 1:
+                places = _layout.block_places(folder, i, 1, as_one=True)
             places = [(f, True) for f, _ in places] if places else [(0.0, True)] * len(paras_)
         if places:
             span0, span1 = displayed_scan_span(src[i])

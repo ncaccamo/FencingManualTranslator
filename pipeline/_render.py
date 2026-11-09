@@ -685,6 +685,7 @@ _LEVEL2 = re.compile(r"(?:(?:CHAPTER|CHAP\.)\s+" + _NUM + r"|(?:" + _ORD + r")\s
                      r"|(?:PREFACE|INTRODUCTION|FOREWORD|PRESENTATION|DEDICATION|CONCLUSION|APPENDIX|PROLOGUE|EPILOGUE"
                      r"|TO THE READER|NOTICE|ADVERTISEMENT|GLOSSARY|BIBLIOGRAPHY)\.?$", re.I)
 HEAD_SCALE = {1: 1.45, 2: 1.2, 3: 1.0}
+_FIG_REF = re.compile(r"(?i)^\s*\((?:<i>)?fig(?:ure|\.)?\s*\d+[a-z]?\.?(?:</i>)?\)\s*$")
 # not bold: the books set parts and chapters in larger roman capitals
 # (Barbasetti «PARTE II», Masiello «CAPITOLO SECONDO», Danet «CHAPITRE II.»)
 HEAD_BOLD = {1: False, 2: False, 3: False}
@@ -1002,7 +1003,13 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
         run_in = bool(_RUN_IN.match(plain))
         drop_gap = (style == "indented" and prose and prev == "prose" and (long_ or prev_long)
                     and not run_in and not prev_colon)
-        alone = ((at == 0 or not rows[at - 1].strip()) and (at + 1 == len(rows) or not rows[at + 1].strip()))
+        # a figure reference set under a title («Parata di Seconda / (Fig. 30)»,
+        # Barbasetti; Bruno) belongs to it: the title still stands alone
+        # -- and the reference marks it a title even with the text right under
+        # it («(Fig. 31) / a) Partendo…», Barbasetti pdf 74)
+        fig_ref = at + 1 < len(rows) and bool(_FIG_REF.match(rows[at + 1]))
+        alone = ((at == 0 or not rows[at - 1].strip())
+                 and (fig_ref or at + 1 == len(rows) or not rows[at + 1].strip()))
         # a title ending "." ("Synoptic charts.") only after a heading or at
         # the top -- after running text it is a one-line paragraph ("He returns.")
         # the page's last line breaking off mid-sentence ("... taking a pace
@@ -1028,6 +1035,9 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
         # «DE LA MARCHE.» under «CHAPITRE II.»)
         if (not is_head and forced in ("flush", None) and not brace and head_above in (1, 2)
                 and _heading_line(plain)):
+            is_head = True
+        # the «(Fig. 30)» line right under a title: set with it
+        if not is_head and head_above and _FIG_REF.match(plain):
             is_head = True
         level = heading_level(plain) if is_head else 0
         if is_head and level == 3 and head_above in (1, 2) and not re.match(r"(?:§\s*)?\d+[.°]", plain):

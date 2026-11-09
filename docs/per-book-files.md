@@ -116,6 +116,34 @@ page was retranslated since) is reported, not an error: update or remove
 it. For more than a sentence, use a page edit (below). **Rerun:**
 `apply_overrides.py`, then the PDFs.
 
+### `[[book_fix]]`: one wording change on every page
+
+```toml
+[[book_fix]]               # Gomard: «coup» -> thrust (2026-11-09)
+find = "<i>coup</i>"
+replace = "thrust"
+```
+
+A find / replace applied to every page of the English, for a book-wide
+change of wording that would otherwise take a `[[fix]]` per page. No
+`scan`. The book fixes run first, in file order, so put the specific
+phrases before the general one ("<i>coup</i> thrust" -> "thrust
+delivered" before "<i>coup</i>" -> "thrust"). Each page's own `[[fix]]`
+is then read in the new wording, so a fix written before the change
+still finds its text. A page fix can also make an exception on its page:
+its find is written in the old wording (`scan = 41`, "The <i>coups</i>
+are of two kinds" -> "The blows are of two kinds"). Change the book's
+`[terms]` line too, so a page retranslated later says the same. The
+review report lists a book fix when it matches no page, or when its old
+wording is still in the text (run `apply_overrides.py`).
+
+It changes the body text only: running heads take a `[headers]` line,
+table cells a `[[table_fix]]`, a caption its `[pages.N]` entry. A replace
+may not contain its own find (it would be added again on every run).
+A page fix's replace is read in the new wording too, so an exception that
+keeps the old word on one page works only when that word doesn't contain
+the book fix's find.
+
 ### `[[table_fix]]`: a small edit to a table's English
 
 ```toml

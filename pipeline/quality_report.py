@@ -467,11 +467,18 @@ def fix_status(tr: list, ov: dict, french: bool, edited=()) -> list:
     # take back an earlier one (Jacob-André scan 141: "halfway" -> "with a
     # half-lunge", then the decision changed back)
     pages, touched = list(tr), set()
-    for f in _tx._house_fixes(ov, french)["fix"]:
+    # the pages' fixes read in the book-wide edits' wording, on the pages
+    # with those edits made, as step 2 applies them ([[book_fix]],
+    # _overrides.apply_fixes); a book fix not made yet is pending, not a
+    # page fix gone missing
+    bf = ov.get("book_fix", [])
+    if bf:
+        _overrides.apply_fixes(pages, dict(ov, fix=[], pages={}, table_fix=[]))
+    for f in _overrides.book_worded(_tx._house_fixes(ov, french)["fix"], bf):
         s = f["scan"]
         if s > len(tr) or s in edited:            # a hand edit replaces the page
             continue
-        applied, missing = _overrides.apply_fixes(pages, dict(ov, fix=[f], pages={}, table_fix=[]))
+        applied, missing = _overrides.apply_fixes(pages, dict(ov, fix=[f], pages={}, table_fix=[], book_fix=[]))
         if missing:
             out.append((s, what(f), "not found"))
         touched.add(s)
@@ -479,6 +486,11 @@ def fix_status(tr: list, ov: dict, french: bool, edited=()) -> list:
     for s in sorted(touched):
         if hi(pages[s - 1], french) != tr[s - 1]:
             out.append((s, "on this page", "pending"))
+    for f in bf:                                  # a book-wide edit that matches nowhere
+        if not any(f["find"] in t or f["replace"] in t for t in tr):
+            out.append((0, f"{f['find'][:50]!r} → {f['replace'][:50]!r}", "not found"))
+        elif any(f["find"] in t for t in tr):
+            out.append((0, f"{f['find'][:50]!r} → {f['replace'][:50]!r}", "pending"))
     # a fix undone by a later one: the earlier one is clutter
     fx = [f for f in ov["fix"] if "find" in f]
     for k, a in enumerate(fx):
@@ -1025,6 +1037,11 @@ def check_book(folder: str) -> list:
         _ov = None
     if _ov:
         for s, what, status in fix_status(tr, _ov, _rules is not TERM_RULES_IT, edits):
+            if s == 0:                            # a [[book_fix]]: no page of its own
+                add(1, CHECK, "override", f"[[book_fix]] {what}: " + (
+                    "not in the text yet -- run apply_overrides.py" if status == "pending" else
+                    "matches no page of the book -- rewrite it or remove it"))
+                continue
             if status == "taken back":
                 add(s, NOTE, "override", f"[[fix]] {what} is taken back by a later fix on the "
                     "same page -- remove both, or the earlier one")

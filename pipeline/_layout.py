@@ -485,7 +485,7 @@ def ornaments(folder: str, i: int) -> list:
     return sorted(out)
 
 
-def block_places(folder: str, i: int, n_paras: int):
+def block_places(folder: str, i: int, n_paras: int, as_one: bool = False):
     """For a page of a few short paragraphs -- picture captions, a title
     page, a dedication: where each text block sits on the scan, top to
     bottom, as [(how far down 0-1, centred?)]: the boxes the detector reads
@@ -509,6 +509,11 @@ def block_places(folder: str, i: int, n_paras: int):
             g[1], g[2], g[3] = max(g[1], b[2][3]), min(g[2], b[2][0]), max(g[3], b[2][2])
         else:
             groups.append([b[2][1], b[2][3], b[2][0], b[2][2]])
+    if as_one and n_paras == 1 and len(groups) > 1:
+        # a title page the English sets as one block (author and title on
+        # two lines) and the detector reads as two: it starts level with the
+        # first (Barbasetti pdf 3 sat at the top of the column)
+        groups = [[groups[0][0], groups[-1][1], min(g[2] for g in groups), max(g[3] for g in groups)]]
     if len(groups) != n_paras or not n_paras:
         return None
     body = [b for b in page["boxes"] if b[0] in BODY + ("caption", "picture") and b[1] >= 0.5]

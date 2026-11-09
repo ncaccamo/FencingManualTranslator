@@ -486,7 +486,11 @@ class Flow:
             # English quotation marks, as in the text: a caption can be a
             # paragraph of it (general rule 2; André pdf 166 "Weapons")
             cl = _render.layout(_render.english_quotes(caption), COL.width, FS - 1)
-            if centred or frac is not None:  # a title page's lines, or a picture placed from its detector box
+            labels = [q for q in caption.split("\n") if q.strip()]
+            label_list = len(labels) >= 3 and all(len(re.sub(r"<[^>]+>", "", q).split()) <= 6 for q in labels)
+            # a title page's lines, a picture placed from its detector box, or
+            # a plate's list of labels (Masiello 1887 pdf 462)
+            if centred or frac is not None or label_list:
                 cl = _render.centre_lines(cl, COL.width, FS - 1)
         # room under the picture for its whole caption, not one line (a long
         # caption ran off the sheet's foot: Danet pdf 226, Vauresmont's cover)
@@ -499,6 +503,12 @@ class Flow:
             w, h = fit
         else:
             self._newpage()
+            # alone on a fresh sheet: smaller, so its whole caption fits under
+            # it (Masiello 1887 pdf 194, 462: a full-page plate's twelve label
+            # lines ran onto the next sheet)
+            room = COL.y1 - self.y - below
+            if h > room >= 0.5 * h:
+                w, h = w * room / h, room
         pix = src_page.get_pixmap(matrix=fitz.Matrix(150 / 72, 150 / 72), clip=clip)
         x0 = COL.x0 + (COL.width - w) / 2
         self.page.insert_image(fitz.Rect(x0, self.y, x0 + w, self.y + h),
@@ -704,7 +714,11 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
             recorded = bool(figs_here) if use_vlm_figs else False
             bare = is_empty or caption_only_page          # a page with no text of its own
             plate_head = bool(PLATE_HEAD.match(tr or "")) and len((tr or "").split()) <= 60
-            pics = [b for b in _layout.pictures(folder, i, 0.6 if (bare or recorded) else 0.8, whole=not bare,
+            # a plate the reviewer recorded ([pages.N] caption) may fill the whole
+            # scan: its box is not a cover's (Masiello 1887 pdf 194: the foil
+            # plate was cut to its left half, the next-best box)
+            decided_plate = any(f.get("decided") and f.get("kind") == "plate" for f in (figs_here if use_vlm_figs else []))
+            pics = [b for b in _layout.pictures(folder, i, 0.6 if (bare or recorded) else 0.8, whole=not bare or decided_plate,
                                                 sideways=bool(_rot) or i in _rot_pages)
                     if box_ink(src_page, b) >= 0.01]
             keep = []
@@ -775,6 +789,14 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
                 elif len(labels) == len(keep) and keep and not caption_only_page:
                     # the "Fig. N" lines go under their pictures, not in the text
                     body, sepn, notes_ = (tr or "").partition("___FOOTNOTES___")
+                    if len(keep) == 1:
+                        # and the picture where its label line was, not at the
+                        # foot of the page (Barbasetti pdf 73: Fig. 29 was drawn
+                        # after the paragraphs that follow it on the scan)
+                        ep = _layout.paras(body)
+                        j = next((j for j, q in enumerate(ep) if FIG_LABEL.fullmatch(q.strip())), None)
+                        if j is not None and 0 < j < len(ep) - 1:
+                            mid_after, below[0] = ep[j - 1], False
                     body = FIG_LABEL.sub("", body)
                     tr = re.sub(r"\n{3,}", "\n\n", body).strip() + (("\n\n" + sepn + notes_) if sepn else "")
                 elif keep and not caption_only_page and not is_empty:

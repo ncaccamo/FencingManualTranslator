@@ -761,7 +761,7 @@ def _house_fixes(ov: dict, french: bool) -> dict:
     before a rule changed still finds the text and leaves it rule-true."""
     out = []
     for f in ov["fix"]:
-        g = {k: (house_italics(v, french) if k in ("find", "replace", "prepend") else v)
+        g = {k: (house_italics(v, french, quotes=False) if k in ("find", "replace", "prepend") else v)
              for k, v in f.items()}
         out.append(f if "find" in g and g["find"] in g["replace"] else g)
     return dict(ov, fix=out)
@@ -827,7 +827,7 @@ def apply_book_overrides(folder: str, fixes: bool = True) -> None:
                 fh.write(house_italics(t, french))
     if fixes and os.path.exists(tp):
         move_note_continuations(folder)
-    if fixes and ov["fix"] and os.path.exists(tp):
+    if fixes and (ov["fix"] or ov.get("book_fix")) and os.path.exists(tp):
         tr = _pageio.split_pages(open(tp, encoding="utf-8").read())
         applied, missing = _overrides.apply_fixes(tr, _house_fixes(ov, french))
         tr2 = [house_italics(pg, french) for pg in tr]
@@ -837,7 +837,7 @@ def apply_book_overrides(folder: str, fixes: bool = True) -> None:
                 fh.write(_pageio.join_pages(tr))
         missing = [m for m in missing if m not in _overrides.load_edits(stem)]   # page edited by hand
         if missing:
-            print(f"  ⚠ overrides: [[fix]] text not found on scan page(s) {missing} "
+            print(f"  ⚠ overrides: [[fix]] text not found on scan page(s) {missing} (0: a [[book_fix]]) "
                   f"-- obsolete after a retranslation? Review {_overrides.path_for(stem)}")
     # hand edits of whole pages (books/<stem>.edits/) win over everything above
     edits = _overrides.load_edits(stem)
