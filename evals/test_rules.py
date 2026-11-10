@@ -5304,6 +5304,9 @@ def test_table_rows_rebuilt_from_the_scan():
                        "passata sotto o controazione"], rows[0]
     assert rows[1] == ["filo, o cavazione", "inquartata", "inquartata"], rows[1]
     assert TS.rebuild(pg, head, 5)[0] == []      # no spacing gives 5 rows: left alone
+    # specks the digitiser's layer reads as text (Masiello pdf 414)
+    assert TS.tidy("botta dritta, filo, -fianconata di quarta<br>i botta dritta, filo", {}) == \
+        "botta dritta, filo, fianconata di quarta<br>botta dritta, filo"
 
 
 def test_page_setting_picture_after():

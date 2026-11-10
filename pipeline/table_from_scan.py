@@ -134,17 +134,24 @@ def rebuild(page, table_html: str, want: int = None) -> tuple:
     # overlap in a centred cell (Masiello pdf 422: "passata sotto" and "o
     # controazione" a third of a line apart), so lines go by those numbers
     words = [(w[0] * sx, w[1] * sy, w[2] * sx, w[3] * sy, w[4], (w[5], w[6])) for w in page.get_text("words")
-             if re.search(r"\w|[—–-]", w[4])]          # a speck read as "." or "'" is no word
+             if re.search(r"\w|[—–-]", w[4])            # a speck read as "." or "'" is no word
+             and (len(w[4]) > 1 or w[4] in "oeaiyàèOEAIY0123456789—–-")]   # nor one read as "w", "M"
     left = int(min((w[0] for w in words if top < w[1] < bottom), default=rules[0]))
     hb = header_bottom(gray, min(left, rules[0]), rules[-1], top, bottom)
     # the rules can stop short of the last row's last lines: go on down
     # while lines follow at a line's spacing (Masiello pdf 704)
     lh0 = sorted(w[3] - w[1] for w in words)[len(words) // 2] if words else 10
+    # -- a word that fits inside one column is still the table's; a line of
+    # running text under it (a note, a paragraph) crosses the rules
     below = sorted((w for w in words if w[1] >= bottom), key=lambda w: w[1])
+    lines_below = {}
     for w in below:
-        if w[1] - bottom > 1.3 * lh0 or re.match(r"\(\d+\)|\*", w[4]):
+        lines_below.setdefault(w[5], []).append(w)
+    for ln in sorted(lines_below.values(), key=lambda l: min(x[1] for x in l)):
+        x0, x1 = min(x[0] for x in ln), max(x[2] for x in ln)
+        if any(x0 < r < x1 for r in rules) or ln[0][1] > 0.95 * gray.shape[0]:
             break
-        bottom = max(bottom, int(w[3]))
+        bottom = max(bottom, int(max(x[3] for x in ln)))
     body = [w for w in words if w[1] > hb + 2 and w[3] < bottom + 4]
     edges = list(rules)
     if any(w[2] <= rules[0] for w in body):
@@ -175,12 +182,39 @@ def rebuild(page, table_html: str, want: int = None) -> tuple:
                 if run > gap * lh and y - run > y0:
                     breaks.append(y - run // 2)
                 run = 0
-        return [(a, b) for a, b in zip([y0] + breaks, breaks + [bottom + 5])
-                if any(a <= (w[1] + w[3]) / 2 < b for w in body)]
+        out = [(a, b) for a, b in zip([y0] + breaks, breaks + [bottom + 5])
+               if any(a <= (w[1] + w[3]) / 2 < b for w in body)]
+        # the header's last line when its rule was not found: words all in capitals
+        while out and all(re.sub(r"[^\w]", "", w[4]).isupper() for w in body
+                          if out[0][0] <= (w[1] + w[3]) / 2 < out[0][1] and re.search(r"[^\W\d_]", w[4])):
+            out = out[1:]
+        return out
     spacings = [0.9]
     if want is not None and len(bands_at(0.9)) != want:
         spacings = [g / 20 for g in range(6, 41) if len(bands_at(g / 20)) == want]
         if not spacings:
+            # rows set too close for a blank band: a column with one line a
+            # row gives them -- each line a row, the breaks halfway between
+            for k in range(1, len(cols)):
+                lines = {}
+                for w in body:
+                    if col_of(w) == k:
+                        lines.setdefault(w[5], []).append(w)
+                tops = sorted((min(x[1] for x in g) + max(x[3] for x in g)) / 2 for g in lines.values()
+                              if not all(re.sub(r"[^\w]", "", x[4]).isupper() for x in g))   # header lines
+                cells = []                         # a cell's lines (a phrase wrapped) sit a line apart
+                for m in tops:
+                    if cells and m - cells[-1][-1] < 1.8 * lh:
+                        cells[-1].append(m)
+                    else:
+                        cells.append([m])
+                mids = [sum(c) / len(c) for c in cells]
+                if len(mids) == want:
+                    cuts = [(mids[n] + mids[n + 1]) / 2 for n in range(want - 1)]
+                    first = max(y0, mids[0] - (cuts[0] - mids[0]) if cuts else y0)    # not the header above
+                    rows, why = _rows(list(zip([first] + cuts, cuts + [bottom + 5])), body, cols, col_of, lh)
+                    if rows:
+                        return rows, ""
             return [], f"no row spacing gives {want} rows (at the usual spacing {len(bands_at(0.9))})"
         spacings.sort(key=lambda g: abs(g - 0.9))   # nearest the usual spacing first
     why = ""
@@ -223,6 +257,12 @@ def _rows(bands, body, cols, col_of, lh):
         rows.append(cells)
     # every cell holds something (the book prints "—" for nothing): a row
     # with empty cells is a multi-line cell cut in two, or rows run together
+    for r in rows:
+        # a row of one note mark or a dash in every column («(2)», «—»): a
+        # mark the text layer missed is the same mark (Masiello pdf 414)
+        marks = {c.strip() for c in r[1:] if c.strip()}
+        if len(marks) == 1 and re.fullmatch(r"\(\d\)|[—–-]", next(iter(marks))):
+            r[1:] = [c if c.strip() else next(iter(marks)) for c in r[1:]]
     bare = [n + 1 for n, r in enumerate(rows) if any(not c.strip() for c in r)]
     if bare:
         return [], f"row(s) {', '.join(map(str, bare[:6]))} with empty cells"
@@ -254,6 +294,8 @@ def tidy(cell: str, vocab: dict) -> str:
     less sure stays."""
     cell = re.sub(r"(?<=\s)[.,;:'`]+(?=\s|$|<br>)|(?<=>)\s*[.,;:'`]+\s+", " ", cell)
     cell = re.sub(r"([^\W\d_],?) 0(?= [^\W\d_])", r"\1 o", cell)
+    cell = re.sub(r"(?<=[\s,])-(?=[a-zà-ÿ])", "", cell)              # a speck stuck to a word: "-fianconata"
+    cell = re.sub(r"(^|<br>)\s*[iI]\s+(?=[a-zà-ÿ])", r"\1", cell)  # an item never opens on a lone "i"
     def fix(m):
         w = m.group(0)
         lw = w.lower()
@@ -322,6 +364,10 @@ def main(argv: list) -> int:
         done += 1
     if "--write" in argv and done:
         stamp = datetime.date.today().isoformat()
+        n = 1
+        while os.path.exists(f"{I}/raw_ocr.before-table-{stamp}{'' if n == 1 else f'-{n}'}.txt"):
+            n += 1                                 # an earlier run's backup is never replaced
+        stamp += "" if n == 1 else f"-{n}"
         os.replace(f"{I}/raw_ocr.txt", f"{I}/raw_ocr.before-table-{stamp}.txt")
         with open(f"{I}/raw_ocr.txt", "w", encoding="utf-8") as fh:
             fh.write(_pageio.join_pages(raw))
