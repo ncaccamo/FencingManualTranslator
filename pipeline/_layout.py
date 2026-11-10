@@ -597,8 +597,8 @@ def pictures(folder: str, i: int, score: float = 0.8, whole: bool = True, sidewa
     Masiello, Gomard, Prévost-Jollivet, Joseph-Renaud, Kirchhoffer,
     2026-11-04."""
     lay = _lay(folder)
-    page = lay and lay["pages"].get(str(i))
-    if not page:
+    page = (lay and lay["pages"].get(str(i))) or {}
+    if not page and i not in added_pictures(folder):
         return []
     boxes = page.get("boxes", [])
     text = [b[2] for b in boxes if b[0] in ("text", "list_item") and b[1] >= 0.5 and _wid(b) > 0.3]
@@ -627,6 +627,11 @@ def pictures(folder: str, i: int, score: float = 0.8, whole: bool = True, sidewa
                and (o[2] - o[0]) * (o[3] - o[1]) >= w * h / 3 for o in out):
             continue
         out.append(b[2])
+    for bx in added_pictures(folder).get(i, []):
+        # a picture the detector missed, boxed by hand in .pictures ("add:":
+        # Masiello pdf 164, a faint line drawing the detector never rated)
+        if not any(_overlap(bx, o) > 0.5 * (bx[2] - bx[0]) * (bx[3] - bx[1]) for o in out):
+            out.append(bx)
     caps = [c[2] for c in boxes if c[0] == "caption" and c[1] >= 0.5]
     strips = [c[2] for c in boxes if sideways and c[0] in ("caption", "text", "page_header") and c[1] >= 0.3
               and c[2][2] - c[2][0] < 0.1 and c[2][3] - c[2][1] > 0.25]
@@ -848,6 +853,34 @@ def text_frame(folder: str, i: int) -> float:
     return max(t[2] for t in text) - min(t[0] for t in text)
 
 
+def _pictures_file(folder: str):
+    stem = os.path.basename(folder.rstrip("/")).replace("_translated", "")
+    return next((q for q in (f"/data/books/{stem}.pictures", f"{folder}/{stem}.pictures") if os.path.exists(q)), None)
+
+
+_ADDED = {}
+
+
+def added_pictures(folder: str) -> dict:
+    """books/<stem>.pictures "add:" lines -> {page index: [(x0, y0, x1, y1)]}:
+    a picture the layout detector did not box, given by hand as fractions
+    of the scan page -- "add: 163 0.07,0.28,0.88,0.35" (scan page 163; more
+    than one: one "add:" line each). Drawn like a detected picture, with
+    the page's figure record for its caption."""
+    path = _pictures_file(folder)
+    key = (path, os.path.getmtime(path) if path else None)
+    if key in _ADDED:
+        return _ADDED[key]
+    out = {}
+    for line in (open(path, encoding="utf-8") if path else []):
+        m = re.match(r"^\s*add\s*:\s*(\d+)\s+([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)",
+                     line.split("#")[0], re.I)
+        if m:
+            out.setdefault(int(m.group(1)) - 1, []).append(tuple(float(m.group(k)) for k in range(2, 6)))
+    _ADDED[key] = out
+    return out
+
+
 def picture_rules(folder: str):
     """books/<stem>.pictures -> (decoration_off, drop). Decorative pictures
     (no caption, no figure record) are drawn in the English-only PDF unless
@@ -855,8 +888,7 @@ def picture_rules(folder: str):
     lists the scan page under "drop:" -- "drop: 17, 103" for every
     decorative picture on those pages, "drop: 103.2" for the second one
     down the page. Written from the decoration review sheet."""
-    stem = os.path.basename(folder.rstrip("/")).replace("_translated", "")
-    path = next((q for q in (f"/data/books/{stem}.pictures", f"{folder}/{stem}.pictures") if os.path.exists(q)), None)
+    path = _pictures_file(folder)
     off, drop = False, set()
     if not path:
         return off, drop

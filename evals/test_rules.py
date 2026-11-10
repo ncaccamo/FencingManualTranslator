@@ -4042,6 +4042,11 @@ def test_join_across_an_honorific():
          {"page_raw": "367", "body": "tutte quelle azioni che col destro finirebbero al petto sopra, anche col mancino."}]
     assert join_split_sentences(p) == 0
     assert p[0]["body"] == "Destro e mancino cavazione al fianco"
+    # nor a plate's list of labels (Masiello 1887 pdf 462, the saber's parts)
+    labels = "Sciabola montata\nModo d'impugnare la sciabola\nForte\nMedio\nDebole\nGhiera\nCoccia"
+    p = [{"page_raw": "none", "body": labels}, {"body": ""},
+         {"page_raw": "379", "body": "taglio verso la punta e comprende la quarta parte della lama;\nle scannellature."}]
+    assert join_split_sentences(p) == 0 and p[0]["body"] == labels
 
 
 def test_glossary_and_bibliography_pages():
@@ -5228,6 +5233,34 @@ def test_repoint_fixes_follows_later_changes_only():
         assert 'replace = "Paris, are nothing but"' in out and 'replace = "parry of high Prime"' in out
         assert 'replace = "new words"' in out                     # unresolved: untouched
         assert os.path.exists(f"{d}/processed/x_translated/intermediate/overrides.before-repoint.toml")
+    finally:
+        shutil.rmtree(d)
+
+
+def test_prompt_keeps_institution_names():
+    """User, 2026-11-10: names of societies, schools, clubs, academies and
+    journals stay in the book's language (Cloutier "French Fencing" for the
+    society «L'Escrime française», Joseph-Renaud "French Fencing School")."""
+    p = open(str(_PIPELINE / "translation_prompt.txt"), encoding="utf-8").read()
+    assert "society, school, club, academy or journal stays in the book's language" in p
+    assert "the Accademia Nazionale in Naples" in p
+
+
+def test_pictures_file_adds_a_picture_the_detector_missed():
+    """books/<stem>.pictures "add: <scan> x0,y0,x1,y1": a picture the layout
+    detector never boxed (Masiello pdf 164, a faint line drawing) is drawn
+    like a detected one; other pages are untouched."""
+    import os, tempfile, shutil
+    import _layout
+    d = tempfile.mkdtemp()
+    try:
+        f = f"{d}/zz_1900_test_translated"
+        os.makedirs(f"{f}/intermediate")
+        open(f"{f}/zz_1900_test.pictures", "w").write("drop: 5\nadd: 163 0.07,0.28,0.88,0.35  # the lever\n")
+        assert _layout.added_pictures(f) == {162: [(0.07, 0.28, 0.88, 0.35)]}
+        assert _layout.pictures(f, 162) == [(0.07, 0.28, 0.88, 0.35)]
+        assert _layout.pictures(f, 161) == []
+        assert _layout.picture_rules(f) == (False, {(4, 0)})
     finally:
         shutil.rmtree(d)
 

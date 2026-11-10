@@ -104,6 +104,12 @@ def main(argv):
     if r.returncode:
         print(r.stdout[-2000:], r.stderr[-2000:])
         sys.exit("✗ reprocess failed on the copies")
+    # as a queue "book" job does next: the page numbers the second look
+    # (read_folios.py) already confirmed, from its stored readings -- no
+    # model. Without it a confirmed number shows as lost (Danet scan 169)
+    subprocess.run(["docker", "exec", "-w", "/app", "fmt-translator", "python3", "read_folios.py", "--apply", "--unlock"]
+                   + [f"/data/processed/_audit/dry_run/{n}_translated" for n in names],
+                   capture_output=True, text=True)
     lines = []
     for n in names:
         c = compare(n)

@@ -178,10 +178,15 @@ def join_split_sentences(parsed: list) -> int:
         # a plate leaf's caption line -- no page number, the page's only line,
         # short, no punctuation -- is not a sentence's start: Masiello 1887 pdf 448
         # ("Destro e mancino cavazione al fianco") took the opening of pdf
-        # 450, whose sentence starts on pdf 443, six plate pages back
+        # 450, whose sentence starts on pdf 443, six plate pages back. Nor is
+        # a plate's list of labels, every line short and unpunctuated
+        # (Masiello 1887 pdf 462, the saber's parts: «… Ghiera | Coccia» took
+        # the opening of pdf 464, «taglio verso la punta …»)
+        lines_a = [ln for ln in a.strip().split("\n") if ln.strip()]
         if (parsed[i].get("page_raw") or "").strip().lower() in ("", "none") \
-                and "\n" not in a.strip() and len(a.split()) <= 8 \
-                and not re.search(r"[,;:.]", a):
+                and not re.search(r"[,;:.]", a) \
+                and (len(lines_a) == 1 and len(a.split()) <= 8
+                     or len(lines_a) >= 3 and all(len(ln.split()) <= 6 for ln in lines_a)):
             continue
         last_line = main.rsplit("\n", 1)[-1]
         # a contents line (dotted leader to a page number) or a table row --

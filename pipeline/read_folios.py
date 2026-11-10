@@ -89,12 +89,12 @@ def main():
     if spec:
         args.remove(spec)
     import _books
-    args = [_books.stem_of(n) for n in _books.select(
-        args + [a for a in sys.argv[1:] if a.startswith("--")], __doc__)]
+    names = _books.select(args + [a for a in sys.argv[1:] if a.startswith("--")], __doc__)
+    args = [_books.stem_of(n) for n in names]
     import _ocr as ns
     if "--apply" in sys.argv:
-        for stem in args:
-            apply(stem, ns)
+        for name in names:                   # a folder too: scripts/dry_run.py's copies
+            apply(name, ns)
         return
     fitz, Image = ns.fitz, ns.Image
     if ns.start_vlm_server() is None:
@@ -141,12 +141,15 @@ def ask(ns, img):
     except Exception:
         return None
 
-def apply(stem, ns):
+def apply(name, ns):
     """Show the hidden page numbers the stored readings confirm, in
-    page_numbers.txt and each page's PAGE_NUMBER line -- nothing else."""
+    page_numbers.txt and each page's PAGE_NUMBER line -- nothing else.
+    `name`: a book's stem, or its folder (a scratch copy)."""
     import re
+    import _books
     import _pageio
-    I = f"/data/processed/{stem}_translated/intermediate"
+    stem = _books.stem_of(name)
+    I = f"{_books.folder_of(name)}/intermediate"
     fs = f"{I}/folio_strips.json"
     if not os.path.exists(fs):
         print(f"{stem}: no folio_strips.json -- read first")
