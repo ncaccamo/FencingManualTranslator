@@ -663,6 +663,75 @@ def translate_tables(folder: str, force: bool = False) -> int:
     return n
 
 
+_CELL = r"(?is)<(t[hd])\b([^>]*)>(.*?)</t[hd]>"
+
+
+def _cell_key(cell_html: str) -> str:
+    return re.sub(r"\s*['’]\s*", "'", _cell_lines(cell_html))
+
+
+def harmonize_table_cells(tmap: dict, table_fixes: list) -> int:
+    """The same printed cell reads the same in English on every page, like
+    the running heads (user, 2026-11-10). Each page's table is translated
+    on its own, so a heading repeated on 44 pages came back in two to five
+    wordings (Masiello 1887: «PARATE CHE INGANNA» -> "PARRIES THAT HE /
+    IT DECEIVES"), and per-page [[table_fix]] edits broke at every
+    retranslation. Cells are matched on their exact source text (case as
+    printed; an apostrophe's spacing and shape ignored, "L' ATTACCANTE" =
+    "L’ATTACCANTE"); the English a [[table_fix]] produced wins, else the most
+    common English (a tie: the earliest page). Returns the cells changed."""
+    from collections import Counter
+    seen = {}                                   # source text -> Counter of English
+    fixed = {}                                  # source text -> Counter of fixed English
+    first = {}                                  # English -> first page it appears on
+    marks = {}
+    for f in table_fixes:
+        marks.setdefault(f["scan"] - 1, []).append(f["replace"])
+    pages = sorted(tmap, key=int)
+    for k in pages:
+        v = tmap[k]
+        for s, e in zip(v.get("src") or [], v.get("en") or []):
+            if not e:
+                continue
+            sc, ec = re.findall(_CELL, s), re.findall(_CELL, e)
+            if len(sc) != len(ec):
+                continue
+            for (_, _, a), (_, _, b) in zip(sc, ec):
+                key = _cell_key(a)
+                if not re.search(r"[^\W\d_]{2,}", key):
+                    continue
+                b = b.strip()
+                seen.setdefault(key, Counter())[b] += 1
+                first.setdefault(b, int(k))
+                if any(r in b for r in marks.get(int(k), [])):
+                    fixed.setdefault(key, Counter())[b] += 1
+    canon = {}
+    for key, c in seen.items():
+        pool = fixed.get(key) or c
+        if len(c) > 1:
+            canon[key] = max(pool, key=lambda b: (pool[b], -first[b]))
+    changed = 0
+    for k in pages:
+        v = tmap[k]
+        for j, (s, e) in enumerate(zip(v.get("src") or [], v.get("en") or [])):
+            if not e:
+                continue
+            sc = re.findall(_CELL, s)
+            if len(sc) != len(re.findall(_CELL, e)):
+                continue
+            it = iter(sc)
+
+            def _set(m):
+                nonlocal changed
+                want = canon.get(_cell_key(next(it)[2]))
+                if want is None or m.group(3).strip() == want:
+                    return m.group(0)
+                changed += 1
+                return f"<{m.group(1)}{m.group(2)}>{want}</{m.group(1)}>"
+            v["en"][j] = re.sub(_CELL, _set, e)
+    return changed
+
+
 def translate_headers(folder: str, force: bool = False) -> int:
     """Translate each distinct running header from extracted.txt into a
     headers.json { raw -> english } map, used by the PDF steps. Headers
@@ -889,10 +958,14 @@ def apply_book_overrides(folder: str, fixes: bool = True) -> None:
             with open(tp, "w", encoding="utf-8") as fh:
                 fh.write(_pageio.join_pages(tr))
     tbp = f"{I}/tables.json"
-    if fixes and ov["table_fix"] and os.path.exists(tbp):
+    if fixes and os.path.exists(tbp):
         tmap = json.load(open(tbp, encoding="utf-8"))
         applied, missing = _overrides.apply_table_fixes(tmap, ov)
-        if applied:
+        same = harmonize_table_cells(tmap, ov["table_fix"])
+        if same:                                # a fix's wording spread to its other pages:
+            missing = _overrides.apply_table_fixes(tmap, ov)[1]   # not obsolete there
+            print(f"  tables: {same} cell(s) set to the wording of the same text elsewhere in the book")
+        if applied or same:
             with open(tbp, "w", encoding="utf-8") as fh:
                 json.dump(tmap, fh, ensure_ascii=False, indent=1)
         if missing:

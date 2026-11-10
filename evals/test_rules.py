@@ -5346,6 +5346,31 @@ def test_table_cell_line_breaks_kept_for_translation():
     assert T._cell_lines("<br>seconda<br> ") == "seconda"
 
 
+def test_table_cells_same_text_same_english_across_pages():
+    """_translate.harmonize_table_cells: the same printed cell reads the same
+    on every page, like the running heads (Masiello 1887: «PARATE CHE
+    INGANNA» came back "PARRIES THAT HE / IT DECEIVES" page by page,
+    2026-11-10). A [[table_fix]]'s English wins over the most common one;
+    the case as printed and a different text are left alone."""
+    import _translate as T
+    tb = lambda h, d: f"<table><tr><th>{h}</th></tr><tr><td>{d}</td></tr></table>"
+    t = {"0": {"src": [tb("PARATE CHE INGANNA", "braccio sopra")], "en": [tb("PARRIES THAT IT DECEIVES", "arm above")]},
+         "1": {"src": [tb("PARATE CHE INGANNA", "braccio sopra")], "en": [tb("PARRIES THAT IT DECEIVES", "Arm above")]},
+         "2": {"src": [tb("PARATE CHE INGANNA", "Braccio sopra")], "en": [tb("PARRIES THAT HE DECEIVES", "Arm above")]},
+         "3": {"src": [tb("L' ATTACCANTE", "id.")], "en": [tb("THE ATTACKER", "id.")]},
+         "4": {"src": [tb("L’ATTACCANTE", "id.")], "en": [tb("THE ATTACKING FENCER", "id.")]},
+         "5": {"src": [tb("L'ATTACCANTE", "1. o 2.")], "en": [tb("THE ATTACKER", "1. or 2.")]},
+         "6": {"src": [tb("x", "y")], "en": [None]}}
+    fixes = [{"scan": 3, "find": "IT", "replace": "PARRIES THAT HE DECEIVES"}]
+    assert T.harmonize_table_cells(t, fixes) == 4
+    heads = [t[k]["en"][0] for k in "012"]
+    assert all("PARRIES THAT HE DECEIVES" in h for h in heads)          # the fixed wording, 1 page of 3
+    assert "<td>arm above</td>" in t["1"]["en"][0] and "<td>Arm above</td>" in t["2"]["en"][0]
+    assert "THE ATTACKER</th>" in t["4"]["en"][0]                        # apostrophe spacing ignored
+    assert t["6"]["en"] == [None]
+    assert T.harmonize_table_cells(t, fixes) == 0
+
+
 def test_page_setting_picture_after():
     """[pages.N] picture_after = "<words>": the page's picture goes after the
     paragraph holding those words (Prévost-Jollivet pdf 53, 290: printed

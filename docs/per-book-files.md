@@ -164,6 +164,13 @@ the tables on that page); it is applied after every table translation run
 and reported when it no longer matches, like `[[fix]]`. **Rerun:**
 `apply_overrides.py`, then the PDFs.
 
+The same printed cell reads the same on every page of the book, like the
+running heads: after the fixes, each cell is set to the English of the
+same source text elsewhere in the book (exact text, case as printed). The
+English a `[[table_fix]]` produced wins, else the most common one. So one
+fix on one page corrects a repeated heading everywhere; the other pages
+need no fix of their own.
+
 ---
 
 ## `<stem>.edits/`: pages edited by hand

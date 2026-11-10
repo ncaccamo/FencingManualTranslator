@@ -1915,6 +1915,21 @@ line against the source line. A table with line breaks translated before
 this (no `"br"` mark in `tables.json`) is translated again by the next table
 pass (`queue.py add tables <stem>`); tables without breaks are left alone.
 
+### 2.23 The same table heading worded differently page to page (2026-11-10)
+
+Even at temperature 0, a table heading repeated on many pages came back in
+two to five wordings (Masiello 1887: «PARATE CHE INGANNA» → "PARRIES THAT
+HE DECEIVES" ×39, "… IT DECEIVES" ×5; «POSIZIONE DA CUI PARTE
+L'ATTACCANTE» in five). Temperature 0 only repeats an identical prompt,
+and each page's cells go to the model as one numbered list, so the
+heading sits among different neighbours every time. Per-page
+`[[table_fix]]` edits chased each wording and 28 broke at one
+retranslation. `harmonize_table_cells` (run by `apply_book_overrides`
+after the table fixes) now sets every cell to the English of the same
+source text elsewhere in the book: a fix's English first, else the most
+common, a tie to the earliest page; apostrophe spacing is ignored, case is
+not. Matching is per book, not across books.
+
 ## Part 3 — shared / architectural
 
 - **Page separator** — `pipeline/_pageio.py::PAGE_SEP` (U+001E). Every
