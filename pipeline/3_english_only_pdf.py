@@ -754,7 +754,8 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
                 caps = ([_render.figure_caption(f) for f in figs_here] if (use_vlm_figs and figs_here) else [c for _, c in placements])
                 # a bare "Fig." / "Figure" with no number is no caption (Prévost-Jollivet pdf 48)
                 caps = [c for c in caps if c and not re.fullmatch(r"(?i)\s*fig(ure|\.)?\s*\.?\s*", c)]
-                labels = FIG_LABEL.findall(_render.split_footnotes(tr or "")[0]) if not caption_only_page else []
+                lab_re = _layout.label_lines(figs_here) if use_vlm_figs else FIG_LABEL
+                labels = lab_re.findall(_render.split_footnotes(tr or "")[0]) if not caption_only_page else []
                 _body = _render.split_footnotes(tr or "")[0]
                 paras = [q.strip() for q in re.split(r"\n\s*\n", _body) if q.strip()]
                 cap_paras = len(keep) >= 2 and len(paras) == len(keep) and (
@@ -794,10 +795,10 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
                         # foot of the page (Barbasetti pdf 73: Fig. 29 was drawn
                         # after the paragraphs that follow it on the scan)
                         ep = _layout.paras(body)
-                        j = next((j for j, q in enumerate(ep) if FIG_LABEL.fullmatch(q.strip())), None)
+                        j = next((j for j, q in enumerate(ep) if lab_re.fullmatch(q.strip())), None)
                         if j is not None and 0 < j < len(ep) - 1:
                             mid_after, below[0] = ep[j - 1], False
-                    body = FIG_LABEL.sub("", body)
+                    body = lab_re.sub("", body)
                     tr = re.sub(r"\n{3,}", "\n\n", body).strip() + (("\n\n" + sepn + notes_) if sepn else "")
                 elif keep and not caption_only_page and not is_empty:
                     # a picture's printed caption the OCR also set in the text:
@@ -847,10 +848,10 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
                     body_, sepn_, notes_ = (tr or "").partition("___FOOTNOTES___")
                     lines_ = {re.sub(r"\s+", " ", m_.strip()).rstrip(".").lower() for m_ in FIG_LABEL.findall(body_)}
                     for k, lab in enumerate(printed):
-                        if lab and re.fullmatch(r"(?i)fig(?:ura|ure)?\.?", lab):
+                        if lab and re.fullmatch(r"(?i)\(?\s*fig(?:ura|ure)?\.?\s*\)?", lab):
                             # its number lost: one below the next picture's, when the
                             # page's text has that label line
-                            nxt_ = re.match(r"(?i)fig\S* (\d+)", printed[k + 1] or "") if k + 1 < len(printed) else None
+                            nxt_ = re.match(r"(?i)\(?fig\S* (\d+)", printed[k + 1] or "") if k + 1 < len(printed) else None
                             lab = f"Fig. {int(nxt_.group(1)) - 1}" if nxt_ and f"fig. {int(nxt_.group(1)) - 1}" in lines_ else None
                         if lab and lab.lower() in {(l or "").lower() for l in printed[:k]}:
                             lab = None           # one label, one picture
@@ -861,7 +862,7 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
                         printed[k] = lab
                         if lab and k < len(placements):
                             placements[k] = (placements[k][0], lab)
-                    used = {re.sub(r"\s+", " ", l).rstrip(".").lower() for l in printed if l}
+                    used = {re.sub(r"\s+", " ", l.strip("() ")).rstrip(".").lower() for l in printed if l}   # «(Fig. 30)» is the text's «Fig. 30» line
                     if used:
                         body_ = re.sub(r"(?im)^[ \t]*(?:<i>)?(fig(?:ure|\.)?\s*\d+[a-z]?)\.?(?:</i>)?[ \t]*$",
                                        lambda m_: "" if re.sub(r"\s+", " ", m_.group(1)).lower() in used else m_.group(0), body_)

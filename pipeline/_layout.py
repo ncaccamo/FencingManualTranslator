@@ -695,6 +695,22 @@ def caption_box(folder: str, i: int, box):
 
 _BARE_LABEL = re.compile(r"\(?\s*(fig(?:ura|ure)?\.?)\s*(\d+)\s*(bis)?\s*\.?\s*\)?", re.I)
 
+_FIG_LINE = r"fig(?:ure|\.)?\s*\d+[a-z]?\.?"
+
+
+def label_lines(figs: list):
+    """The pattern for a page's figure label lines («Fig. 5» on a line of
+    its own; group 1 is the label as drawn). A caption the reviewer decided
+    that is a label in parentheses («(Fig. 30)», as printed under the
+    picture, Barbasetti pdf 74) is one too, parentheses kept -- only that
+    line: other «(Fig. N)» lines are references set under a heading."""
+    alts = [_FIG_LINE]
+    for f in figs or []:
+        cap = (f.get("caption_en") or "").strip()
+        if f.get("decided") and re.fullmatch(r"\(\s*" + _FIG_LINE + r"\s*\)", cap, re.I):
+            alts.insert(0, re.escape(cap))
+    return re.compile(r"(?im)^[ \t]*(?:<i>)?(" + "|".join(alts) + r")(?:</i>)?[ \t]*$")
+
 
 def printed_label(folder: str, i: int, box, page):
     """The picture's printed caption when it is a bare figure label: the
@@ -720,7 +736,7 @@ def printed_label(folder: str, i: int, box, page):
         return "Fig."                     # the number too faint for the layer (Barbasetti pdf 60)
     if not _BARE_LABEL.fullmatch(text):
         return None
-    return re.sub(r"\s+", " ", text.strip("() "))     # as printed: «Fig. 82.», «FIG. 5»
+    return re.sub(r"\s+", " ", text.strip())     # as printed: «Fig. 82.», «FIG. 5», «(Fig. 30)» (Barbasetti pdf 74)
 
 
 def paras(text):

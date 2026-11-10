@@ -5122,5 +5122,62 @@ def test_note_paragraphs_set_in_note_type_join_the_note():
     assert N.move_into_notes(en_c, src_c, pg_n, prev_open) is None
 
 
+
+def test_decided_caption_in_parentheses_is_the_label_line():
+    """Barbasetti pdf 74: the book prints «(Fig. 30)» under the picture (with
+    «(Fig. 31)» under the heading below it, a reference). The decided caption
+    "(Fig. 30)" makes that line the picture's label, parentheses kept; the
+    heading's «(Fig. 31)» stays in the text; with no such decision the
+    pattern is the plain «Fig. N» one."""
+    import _layout
+    en = "high.\n\n(Fig. 30)\n\nParry of <i>Terza</i>\n(Fig. 31)\na) Starting\n\nFig. 29"
+    pat = _layout.label_lines([{"kind": "inset", "caption": "(Fig. 30)", "decided": True, "caption_en": "(Fig. 30)"}])
+    assert pat.findall(en) == ["(Fig. 30)", "Fig. 29"], pat.findall(en)
+    assert "(Fig. 31)" in pat.sub("", en) and "(Fig. 30)" not in pat.sub("", en)
+    assert _layout.label_lines([{"caption_en": "(Fig. 30)"}]).findall(en) == ["Fig. 29"]   # not decided
+    assert _layout.label_lines([]).findall(en) == ["Fig. 29"]
+
+
+def test_printed_label_keeps_its_parentheses():
+    """A picture's printed label is drawn as the book prints it: «(Fig. 30)»
+    under the Barbasetti pdf 74 picture keeps its parentheses (they were
+    stripped); «Fig. 29» stays bare."""
+    import _layout, _textlayer
+    class R: width, height = 100.0, 100.0
+    class Pg: rect = R()
+    old_cb, old_pp = _layout.caption_box, _textlayer.page_pieces
+    try:
+        _layout.caption_box = lambda folder, i, box: (0.3, 0.5, 0.7, 0.55)
+        for printed in ("(Fig. 30)", "Fig. 29", "(Fig. 12.)"):
+            _textlayer.page_pieces = lambda page, p=printed: [(40.0, 52.0, p, 60.0)]
+            assert _layout.printed_label("f", 0, (0.2, 0.1, 0.8, 0.5), Pg()) == printed
+    finally:
+        _layout.caption_box, _textlayer.page_pieces = old_cb, old_pp
+
+
+def test_kept_term_in_a_heading_takes_the_case_of_the_books_heading():
+    """Case as printed, line by line for short lines (2026-11-10). Barbasetti
+    pdf 74: «Parata di Terza» was "Parry of <i>terza</i>" (the picture tag's
+    «Terza» and the text's «terza» made the page-wide count ambiguous).
+    Edom pdf 10: «& l’Épée» after an elision. Not: a term opening the book's
+    heading (Masiello «§ 151. — Rimessa semplice.»), a term after a sentence
+    start (Enrichetti «6. Id. fianconata»), a sentence paired with a heading
+    (Edom scan 254)."""
+    from _tx_case import source_case_kept_terms as K
+    src = ("![Parata di Terza](Fig. 30)\n\nParata di Terza\n(Fig. 31)\na) Partendo dall’invito di seconda.\n"
+           "Quando si vuole applicare la parata di terza dall’invito di seconda, questo dovrà essere basso.")
+    en = ("Fig. 30\n\nParry of <i>terza</i>\n(Fig. 31)\na) Starting from the invitation of <i>seconda</i>.\n"
+          "When one wants to apply the parry of <i>terza</i> from the invitation of <i>seconda</i>, this must be low.")
+    out = K(en, src)
+    assert "Parry of <i>Terza</i>\n" in out and "the parry of <i>terza</i> from" in out, out
+    assert K("and the <i>épée</i>", "& l’Épée") == "and the <i>Épée</i>"
+    assert K("§ 151. — Simple <i>rimessa</i>.", "§ 151. — Rimessa semplice.") == "§ 151. — Simple <i>rimessa</i>."
+    assert K("6. Same. <i>Fianconata</i> and thrust in <i>terza</i>.", "6. Id. fianconata e botta in 3.a") == \
+        "6. Same. <i>Fianconata</i> and thrust in <i>terza</i>."
+    from _tx_case import _heading_case_kept_terms as H
+    sent = "<i>Temps</i> and <i>arrêt</i> are generally confused and used interchangeably."
+    assert H(sent, "Temps, Arrêt et Contre-Temps") == sent
+    assert H("in <i>quarta</i> then <i>quarta</i>", "di Quarta poi di quarta") == "in <i>Quarta</i> then <i>quarta</i>"
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

@@ -316,7 +316,12 @@ the rest of the code never thinks about page breaks:
      placement per picture, cropped to its box (a printed caption inside
      the box's foot cut off), drawn at its size against the text column.
      Captions: a page's standalone "Fig. N" lines move under their
-     pictures when the counts match, else the `figures.json` captions.
+     pictures when the counts match, else the `figures.json` captions;
+     a label read off the scan under the picture is drawn as printed,
+     parentheses included («(Fig. 30)», Barbasetti pdf 74). A
+     `[pages.N] caption` set to such a label makes that one line the
+     picture's label (`_layout.label_lines()`); other «(Fig. N)» lines
+     are references under headings and stay in the text.
      A picture with no caption box and no figure record is a
      **decoration**: drawn unless `books/<stem>.pictures` leaves it out
      (the decoration review sheet writes that file). Step 3 lists every

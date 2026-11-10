@@ -1254,6 +1254,18 @@ entries still translate consistently with the body.
 Regression tests: `test_always_translate` (LISTE case added),
 `test_enforce_kept_terms_matches_surrounding_case`.
 
+* **A kept term in a heading took the model's case, not the book's**
+  (Barbasetti pdf 74 «Parata di Terza» → "Parry of <i>terza</i>"; «l’Épée»
+  in Dubois, Edom and Lamarche titles). `source_case_kept_terms()` counts
+  the book's uses page-wide and gives up when they can't be paired --
+  there a picture tag's «![Parata di Terza](…)» and a lower-case «terza»
+  in the text. `_heading_case_kept_terms()` pairs short lines one to one
+  (k-th English line with the term ↔ k-th short line of the book with it,
+  picture tags left out, an elided «l’» allowed) and gives the term the
+  book's case, unless the term opens either line or follows a sentence
+  start, the book's line is in capitals, or the lengths differ by more
+  than half. Test: `test_kept_term_in_a_heading_takes_the_case_of_the_books_heading`.
+
 ### 2.6 Literary prose defeats the translation model
 
 **Seen:** LaMarche (`Le Fleuret et l'Épée`) — florid 19th-c. literary

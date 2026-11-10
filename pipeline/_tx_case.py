@@ -152,6 +152,70 @@ def source_case_kept_terms(text: str, src: str = "") -> str:
     for (n, at), (old, new) in sorted(edits.items(), reverse=True):
         line = lines[n]
         lines[n] = line[:at] + f"<i>{new}</i>" + line[at + len(old) + 7:]
+    return _heading_case_kept_terms("\n".join(lines), plain_src)
+
+
+_PICTURE_TAG = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+
+
+def _short_line(line: str, most: int = 9) -> bool:
+    words = re.sub(r"<[^>]+>", "", line).split()
+    return 0 < len(words) <= most
+
+
+def _heading_case_kept_terms(text: str, src: str) -> str:
+    """A kept term in a short line -- a heading, a title, a contents line --
+    takes its case from the book's own line, line by line: the k-th short
+    English line using the term goes with the k-th short line of the book
+    using it, when they come in equal numbers (Barbasetti pdf 74: «Parata di
+    Terza» -> "Parry of <i>terza</i>", left as it was by the page-wide count,
+    which the picture tag's «![Parata di Terza](…)» and a lower-case «terza»
+    in the text made ambiguous). Not the term opening either line or
+    following a sentence start (a capital there is grammar or the heading's
+    own: Masiello «§ 151. — Rimessa semplice.»), not a line in capitals, and
+    the two lines of like length (Edom scan 254: a sentence is no heading)."""
+    body = text.split(FN_HEADER)[0]
+    lines = text.split("\n")
+    head_n = len(body.split("\n"))
+    src_lines = [l for l in (_PICTURE_TAG.sub("", l) for l in src.split("\n"))
+                 if _short_line(l) and not re.match(r"\s*(PAGE_NUMBER|HEADER|BODY_TEXT)\s*:", l)]
+
+    def _caps(line):
+        letters = [c for c in line if c.isalpha()]
+        return len(letters) >= 4 and sum(c.isupper() for c in letters) > 0.7 * len(letters)
+
+    en_lines = [n for n in range(head_n) if "<i>" in lines[n] and _short_line(lines[n])]
+    edits = {}
+    for n in en_lines:
+        for m in re.finditer(r"<i>([^<]+)</i>", lines[n]):
+            term = m.group(1)
+            if _case_class(term) not in ("lower", "cap"):
+                continue
+            before = re.sub(r"<[^>]+>", "", lines[n][:m.start()])
+            if _SENT_START.search(before):
+                continue
+            pat = r"(?<![\w-])" + re.escape(term) + r"(?![\w-])"     # after an elision too: «l’Épée»
+            mine = [k for k in en_lines if re.search(r"<i>" + re.escape(term) + r"</i>", lines[k], re.I)]
+            theirs = [l for l in src_lines if re.search(pat, l, re.I)]
+            if len(mine) != len(theirs):
+                continue
+            s = theirs[mine.index(n)]
+            words_en, words_src = len(re.sub(r"<[^>]+>", "", lines[n]).split()), len(s.split())
+            if _caps(s) or not 0.5 <= words_en / words_src <= 2:
+                continue
+            here = [x for x in re.finditer(r"<i>([^<]+)</i>", lines[n]) if x.group(1).lower() == term.lower()]
+            hits = list(re.finditer(pat, s, re.I))
+            if len(here) != len(hits):
+                continue
+            hit = hits[[x.start() for x in here].index(m.start())]      # the k-th use with the k-th
+            if _SENT_START.search(s[:hit.start()]):
+                continue
+            want = _case_class(hit.group(0))
+            if want in ("lower", "cap") and want != _case_class(term):
+                edits[(n, m.start())] = (term, _apply_case(term, want))
+    for (n, at), (old, new) in sorted(edits.items(), reverse=True):
+        line = lines[n]
+        lines[n] = line[:at] + f"<i>{new}</i>" + line[at + len(old) + 7:]
     return "\n".join(lines)
 
 
