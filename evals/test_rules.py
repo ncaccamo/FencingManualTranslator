@@ -5261,6 +5261,13 @@ def test_pictures_file_adds_a_picture_the_detector_missed():
         assert _layout.pictures(f, 162) == [(0.07, 0.28, 0.88, 0.35)]
         assert _layout.pictures(f, 161) == []
         assert _layout.picture_rules(f) == (False, {(4, 0)})
+        # a hand box replaces the detector's box it mostly covers (Gomard pdf 347)
+        import json as _json
+        _json.dump({"pages": {"7": {"boxes": [["picture", 0.9, [0.12, 0.05, 0.82, 0.99]]]}}},
+                   open(f"{f}/intermediate/layout.json", "w"))
+        open(f"{f}/zz_1900_test.pictures", "a").write("add: 8 0.165,0.05,0.75,0.99\n")
+        _layout._LAY_CACHE.pop(f, None)
+        assert _layout.pictures(f, 7, 0.6) == [(0.165, 0.05, 0.75, 0.99)]
     finally:
         shutil.rmtree(d)
 

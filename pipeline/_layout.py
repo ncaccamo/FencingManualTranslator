@@ -628,10 +628,13 @@ def pictures(folder: str, i: int, score: float = 0.8, whole: bool = True, sidewa
             continue
         out.append(b[2])
     for bx in added_pictures(folder).get(i, []):
-        # a picture the detector missed, boxed by hand in .pictures ("add:":
-        # Masiello pdf 164, a faint line drawing the detector never rated)
-        if not any(_overlap(bx, o) > 0.5 * (bx[2] - bx[0]) * (bx[3] - bx[1]) for o in out):
-            out.append(bx)
+        # a picture boxed by hand in .pictures ("add:"): one the detector
+        # missed (Masiello pdf 164, a faint line drawing), or a better box
+        # for one it found, which it replaces (Gomard pdf 347: the detector's
+        # box took in the sideways «Planche III.» beside the plate)
+        area = (bx[2] - bx[0]) * (bx[3] - bx[1])
+        out = [o for o in out if _overlap(bx, o) <= 0.5 * min(area, (o[2] - o[0]) * (o[3] - o[1]))]
+        out.append(bx)
     caps = [c[2] for c in boxes if c[0] == "caption" and c[1] >= 0.5]
     strips = [c[2] for c in boxes if sideways and c[0] in ("caption", "text", "page_header") and c[1] >= 0.3
               and c[2][2] - c[2][0] < 0.1 and c[2][3] - c[2][1] > 0.25]
@@ -868,7 +871,8 @@ def added_pictures(folder: str) -> dict:
     than one: one "add:" line each). Drawn like a detected picture, with
     the page's figure record for its caption."""
     path = _pictures_file(folder)
-    key = (path, os.path.getmtime(path) if path else None)
+    st = os.stat(path) if path else None
+    key = (path, st.st_mtime_ns, st.st_size) if st else (None,)
     if key in _ADDED:
         return _ADDED[key]
     out = {}
