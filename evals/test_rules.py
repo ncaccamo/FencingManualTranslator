@@ -5264,5 +5264,39 @@ def test_pictures_file_adds_a_picture_the_detector_missed():
     finally:
         shutil.rmtree(d)
 
+
+def test_table_rows_rebuilt_from_the_scan():
+    """pipeline/table_from_scan.py (Masiello 1887's synoptic tables): rows
+    from the text layer between the printed column rules, a new item at the
+    cell's left edge, an indented line going on with the item above, a speck
+    dropped, a lone "0" read as «o»; a page that can't give the row count
+    asked for is left alone."""
+    try:
+        import pymupdf as fitz, numpy  # noqa: F401
+    except ImportError:
+        return                                   # the image has them; the host may not
+    if not callable(getattr(fitz, "open", None)):
+        return
+    import table_from_scan as TS
+    doc = fitz.open()
+    pg = doc.new_page(width=400, height=300)
+    for x in (150, 270):
+        pg.draw_line((x, 40), (x, 260), width=1.2)
+    pg.draw_line((20, 40), (380, 40), width=1.2)
+    pg.draw_line((20, 62), (380, 62), width=1.2)
+    for x, y, t in [(25, 55, "Risposte"), (160, 55, "Primo"), (280, 55, "Secondo"),
+                    (25, 90, "filo, cavazione al petto"), (35, 100, "sopra"), (25, 110, "botta dritta"),
+                    (160, 90, "arresto al fianco"), (280, 90, "passata sotto 0 controazione"),
+                    (25, 160, "filo, o cavazione"), (160, 160, "inquartata ."), (280, 160, "inquartata")]:
+        pg.insert_text((x, y), t, fontsize=8)
+    head = "<table><tr><th>R</th><th>P</th><th>S</th></tr><tr><td>x</td><td>y</td><td>z</td></tr></table>"
+    rows, why = TS.rebuild(pg, head, 2)
+    assert rows, why
+    rows = [[TS.tidy(c, {}) for c in r] for r in rows]
+    assert rows[0] == ["filo, cavazione al petto sopra<br>botta dritta", "arresto al fianco",
+                       "passata sotto o controazione"], rows[0]
+    assert rows[1] == ["filo, o cavazione", "inquartata", "inquartata"], rows[1]
+    assert TS.rebuild(pg, head, 5)[0] == []      # no spacing gives 5 rows: left alone
+
 if __name__ == "__main__":
     sys.exit(_run_plain())
