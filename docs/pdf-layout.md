@@ -281,7 +281,11 @@ the rest of the code never thinks about page breaks:
   in step 1 sends one-off titles to the body); a `left\tright` value is
   drawn as a two-part head.
 - `body(text)` — `split_footnotes`, then `_flow(layout(body))`, then the
-  footnote block smaller and grey. `_flow` loops `draw()` → new page →
+  footnote block smaller and grey. When the page's last sentence runs on
+  to the next page, its notes are held (`Flow.held`) and drawn after the
+  next page's first paragraph, where the sentence ends, never in the
+  middle of it; pictures waiting for that place go there too (Barbasetti
+  pdf 63 and 76; 27 note blocks in the release books, 2026-11-04). `_flow` loops `draw()` → new page →
   `draw()` until there's no leftover.
 - `figure(src_page, band, caption)` — rasterise the scan page (or the
   `band` sub-rectangle) at 150 dpi, embed as JPEG scaled to the column

@@ -113,7 +113,11 @@ prepend = "OF DISARMING."
 
 Applied after every translation run. A `find` that no longer matches (the
 page was retranslated since) is reported, not an error: update or remove
-it. For more than a sentence, use a page edit (below). **Rerun:**
+it. When the decision is still on the page and only a later change moved
+its words -- a later `[[fix]]` on the page, or a case rule raising a letter
+-- `python3 pipeline/repoint_fixes.py <stem>` (host; `--write` to save)
+sets the replace to the page's wording; it leaves the rest for a person.
+For more than a sentence, use a page edit (below). **Rerun:**
 `apply_overrides.py`, then the PDFs.
 
 ### `[[book_fix]]`: one wording change on every page

@@ -161,6 +161,7 @@ same license with their source.
   [host setup](setup/MANUAL_SECTION_II_HOST_PREREQUISITES.md) ·
   [usage](setup/MANUAL_SECTION_III_USAGE.md) ·
   [per-book settings and corrections](docs/per-book-files.md)
+- **Every command:** [tools](docs/tools.md)
 - **How it works:** [model failure modes and fixes](docs/model-quirks.md) ·
   [PDF layout](docs/pdf-layout.md) · [remote GPU](docs/remote-gpu.md)
 - **For contributors:** [current status](docs/STATUS.md) ·

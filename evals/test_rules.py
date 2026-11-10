@@ -5204,5 +5204,32 @@ def test_plain_words_and_title_case_lines_follow_the_print():
     assert T("La Lupa d'Oro", "La Lupa d'Oro") == "La Lupa d'Oro"
     assert T("Fatigue him. Irritate him.", "Fatiguez-le. Énervez-le.") == "Fatigue him. Irritate him."
 
+
+def test_repoint_fixes_follows_later_changes_only():
+    """pipeline/repoint_fixes.py: a fix a later fix rewrote, or a case rule
+    raised a letter in, gets its replace set to the page's wording; one whose
+    result is gone (a retranslation) is left alone and counted unresolved."""
+    import os, tempfile, importlib, shutil
+    import _pageio
+    rp = importlib.import_module("repoint_fixes")
+    d = tempfile.mkdtemp()
+    try:
+        os.makedirs(f"{d}/books"); os.makedirs(f"{d}/processed/x_translated/intermediate")
+        toml = ('[[fix]]\nscan = 1\nfind = "Paris, are only"\nreplace = "Paris, are but"\n'
+                '[[fix]]\nscan = 1\nfind = "are but"\nreplace = "are nothing but"\n'
+                '[[fix]]\nscan = 1\nfind = "high parry of prime"\nreplace = "parry of high prime"\n'
+                '[[fix]]\nscan = 1\nfind = "old words"\nreplace = "new words"\n')
+        open(f"{d}/books/x.overrides.toml", "w").write(toml)
+        page = "In Paris, are nothing but works. The parry of high Prime. Other words."
+        open(f"{d}/processed/x_translated/intermediate/translation.txt", "w").write(_pageio.join_pages([page]))
+        rp.BOOKS, rp.PROCESSED = f"{d}/books", f"{d}/processed"
+        assert rp.repoint("x", write=True) == (2, 1)
+        out = open(f"{d}/books/x.overrides.toml").read()
+        assert 'replace = "Paris, are nothing but"' in out and 'replace = "parry of high Prime"' in out
+        assert 'replace = "new words"' in out                     # unresolved: untouched
+        assert os.path.exists(f"{d}/processed/x_translated/intermediate/overrides.before-repoint.toml")
+    finally:
+        shutil.rmtree(d)
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

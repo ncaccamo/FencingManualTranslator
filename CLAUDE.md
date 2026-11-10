@@ -67,6 +67,8 @@ no ROCm/Vulkan). `scripts/setup.sh --remote` + `docker-compose.override.yml`
   `vlm_ocr_prompt.txt` or `translation_prompt.txt`.
 - `docs/pdf-layout.md` — how steps 3 & 4 render the PDFs (`_render`
   layout engine, figure placement, paragraph alignment, the knobs).
+- `docs/tools.md` — every command (scripts/, pipeline/, evals/), where it
+  runs (host or container) and what it is for.
 - `docs/remote-gpu.md` — `backend.env`, remote-GPU mode (llama-swap or
   bare server), GPU-less host setup, `rocm714`.
 - `docs/evaluation-and-tuning.md` — maintainer-only: the `evals/`
@@ -99,7 +101,11 @@ no ROCm/Vulkan). `scripts/setup.sh --remote` + `docker-compose.override.yml`
   decorative pictures → `books/<stem>.pictures`), `pipeline/review_page.py`
   (offline decision page for every review report item → `books/<stem>.review`;
   `pipeline/apply_review.py`, host, writes its find / replace answers as
-  `[[fix]]`). The local review page is required: the pipeline must not
+  `[[fix]]`), `pipeline/repoint_fixes.py` (host: fixes a later fix or a
+  case rule outgrew, set to the page's wording). After every queue run, read
+  each book's review report (a cut-off page shows there, even one step 2
+  marked ✓) rather than only the queue log. Every command: `docs/tools.md`.
+  The local review page is required: the pipeline must not
   depend on Claude for review.
 
 ## Workflow notes

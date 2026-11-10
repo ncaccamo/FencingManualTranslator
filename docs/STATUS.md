@@ -18,6 +18,13 @@ the operator's business and is not tracked here.)
 - **Term policy:** three categories (translated / footnoted / kept): manual
   I.4, step 2. An "explained" category with notes was tried and dropped
   (`docs/model-quirks.md` 2.8).
+- **Letter case as printed (2026-11-10):** a line the book sets in
+  capitals is in capitals; a kept term takes the book's case page-wide and,
+  in headings and contents lines, line by line; a word printed alike in
+  both languages is raised to the book's capital («Quarte» in Danet and
+  Saint-Martin); a short line in Title Case stays Title Case. Plain words
+  are only ever raised (`pipeline/_tx_case.py`, `docs/model-quirks.md`).
+  Figure labels keep the parentheses the book prints («(Fig. 30)»).
 - **OCR:** olmOCR-2-7B-1025 via llama-server (:11435 locally) is the only
   path. A layout detector (Docling's `docling-layout-heron`, CPU) supplies
   running-head, figure and margin-note boxes (`intermediate/layout.json`).
