@@ -85,7 +85,8 @@ import os
 import re
 import tomllib
 
-_PAGE_KEYS = {"page_number", "header", "retranslate", "note", "caption", "caption_en", "figure", "leave_out"}
+_PAGE_KEYS = {"page_number", "header", "retranslate", "note", "caption", "caption_en", "figure", "leave_out",
+              "picture_after"}
 _TOP_KEYS = {"book", "headers", "terms", "pages", "fix", "book_fix", "table_fix"}
 _BOOK_KEYS = {"running_heads": bool, "final": bool, "paragraphs": str, "page_numbers": str,
               "bold_headings": bool}
@@ -391,6 +392,14 @@ def left_out_pages(ov: dict) -> list:
     text (a bookplate, a date-due slip, Google's notice) whose English is
     left out of both PDFs; the side-by-side still shows the scan."""
     return sorted(s for s, v in ov["pages"].items() if v.get("leave_out"))
+
+
+def picture_places(ov: dict) -> dict:
+    """{scan page: words}: the page's picture goes after the paragraph of
+    its English holding those words ([pages.N] picture_after), where the
+    book prints it inside the text and nothing in the text marks the place
+    (Prévost-Jollivet pdf 53: the prime picture inside the prime paragraph)."""
+    return {s: v["picture_after"] for s, v in ov["pages"].items() if v.get("picture_after")}
 
 
 def retranslate_pages(ov: dict) -> list:

@@ -32,6 +32,7 @@ from pathlib import Path
 import glob
 import re
 
+import _overrides
 import _render
 import _textlayer
 import _columns
@@ -544,6 +545,10 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
 
     with open(f"{int_dir}/translation.txt", "r", encoding="utf-8") as f:
         translations = _render.apply_left_out([p.strip() for p in _pageio.split_pages(f.read())], book)
+    try:
+        PLACES = _overrides.picture_places(_overrides.load(book))
+    except Exception:
+        PLACES = {}
     with open(f"{int_dir}/extracted.txt", "r", encoding="utf-8") as f:
         extractions = [p.strip() for p in _pageio.split_pages(f.read())]
 
@@ -593,6 +598,7 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
     for i, tr in enumerate(translations):
         flow.cur = i
         mid_after = None                 # the picture goes after this paragraph (its caption line's place)
+        label_cuts = None                # [(paragraph index, picture)]: labels printed over their pictures
         st = parse_vlm_output(extractions[i]) if i < len(extractions) else {}
         src_page = src_doc[i] if (src_doc is not None and i < len(src_doc)) else None
 
@@ -807,6 +813,18 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
                     body, sepn, notes_ = (tr or "").partition("___FOOTNOTES___")
                     src_b = extractions[i].split("BODY_TEXT:", 1)[-1] if i < len(extractions) else ""
                     found = _layout.caption_paras(body, src_b, src_page, folder, i, [b for b, _ in keep])
+                    boxes_k = [b for b, _ in keep]
+                    cbs = {k: _layout.caption_box(folder, i, boxes_k[k]) for k in found}
+                    if found and len(found) == len(keep) and all(
+                            cb and cb[3] <= boxes_k[k][1] + 0.01 for k, cb in cbs.items()):
+                        # every label printed OVER its picture (Prévost-Jollivet pdf
+                        # 55, 58, 59: «Parade de sixte.», then the picture, then its
+                        # text; Cordelois pdf 15: the notice over the signature): the
+                        # label stays in the text, the picture goes right after it,
+                        # nothing under it
+                        label_cuts = sorted((js[-1], k) for k, js in found.items())
+                        placements = [(band, "") for band, _ in placements]
+                        found = {}
                     if found:
                         ep = _layout.paras(body)
                         for k, js in found.items():
@@ -910,6 +928,36 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
             for _, c in placements)
 
         has_body = not is_empty and not body_is_caption
+        if placements and below and len(placements) == 1 and (i + 1) in PLACES and not label_cuts:
+            # the reviewer's place for the picture ([pages.N] picture_after)
+            want_ = PLACES[i + 1]
+            hit_ = next((q for q in _layout.paras(_render.split_footnotes(tr or "")[0]) if want_ in q), None)
+            if hit_:
+                mid_after, below[0] = hit_, False
+        if label_cuts and has_body:
+            # the page in pieces: its text to each label, then that label's picture
+            body_, sepn_, notes_ = (tr or "").partition("___FOOTNOTES___")
+            ep = _layout.paras(body_)
+            src_body = extractions[i].split("BODY_TEXT:", 1)[-1] if i < len(extractions) else ""
+            nxt = next((t for t in translations[i + 1:i + 3] if t and t not in SKIP_MARKERS), "")
+            start, title_ = 0, title_hdr
+            for cut, k in label_cuts + [(len(ep) - 1, None)]:
+                piece = "\n\n".join(ep[start:cut + 1])
+                last = k is None
+                if last and sepn_:
+                    piece += "\n\n" + sepn_ + notes_
+                if piece.strip():
+                    flow.body(piece, src_body if start == 0 else "", src_page if start == 0 else None, None,
+                              (), title=title_, centred=display, runs_on=runs_on(src_body, nxt) if last else False)
+                    title_ = ""
+                if k is not None:
+                    band = placements[k][0]
+                    flow.figure(src_page, band, caption="", rotate=rot if (k >= len(turn) or turn[k]) else 0,
+                                centred=display, frac=frac[k] if k < len(frac) else None)
+                start = cut + 1
+            rendered += 1
+            figures += len(placements)
+            continue
         late = has_body and placements and ((flow.open and not (caption_only_page or display)) or bool(mid_after))
         split = has_body and any(below[:len(placements)])
         if placements and not late:

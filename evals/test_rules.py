@@ -5298,5 +5298,20 @@ def test_table_rows_rebuilt_from_the_scan():
     assert rows[1] == ["filo, o cavazione", "inquartata", "inquartata"], rows[1]
     assert TS.rebuild(pg, head, 5)[0] == []      # no spacing gives 5 rows: left alone
 
+
+def test_page_setting_picture_after():
+    """[pages.N] picture_after = "<words>": the page's picture goes after the
+    paragraph holding those words (Prévost-Jollivet pdf 53, 290: printed
+    inside a paragraph, no caption line in the text to mark the place)."""
+    import os, tempfile, shutil
+    import _overrides
+    d = tempfile.mkdtemp()
+    try:
+        open(f"{d}/zz.overrides.toml", "w").write('[pages.52]\npicture_after = "The first numerical name"\n')
+        ov = _overrides.load("zz", d)
+        assert _overrides.picture_places(ov) == {52: "The first numerical name"}
+    finally:
+        shutil.rmtree(d)
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

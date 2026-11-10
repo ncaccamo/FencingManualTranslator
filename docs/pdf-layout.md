@@ -326,6 +326,13 @@ the rest of the code never thinks about page breaks:
      `[pages.N] caption` set to such a label makes that one line the
      picture's label (`_layout.label_lines()`); other «(Fig. N)» lines
      are references under headings and stay in the text.
+     A label printed **over** its picture (the caption box above it:
+     Prévost-Jollivet's parry labels «Parade de sixte.», then the
+     picture, then its text; Cordelois's notice over the signature)
+     stays in the text, and the picture is drawn right after it with
+     nothing under it -- the page drawn in pieces when it has more than
+     one. Where nothing in the text marks a picture's place,
+     `[pages.N] picture_after` names the paragraph it follows.
      A picture with no caption box and no figure record is a
      **decoration**: drawn unless `books/<stem>.pictures` leaves it out
      (the decoration review sheet writes that file). Step 3 lists every
