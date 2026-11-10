@@ -1900,6 +1900,21 @@ weapon" for *arme blanche* / *arma bianca* on 25 pages of 11 books, a dozen
 Latin quotations in Florio, «scoprire» as "discover" a target in Bruno and
 Marchionni.
 
+### 2.22 Table cells lost their line breaks (2026-11-10)
+
+A table cell often lists several items, one per printed line (Masiello's
+ripostes: «filo, o cavazione al fianco<br>botta dritta, filo, …»; Edom's
+"a) … <br> b) …"). The table pass sent each cell to the model as plain
+text, its `<br>` dropped with the other tags, so in every book's tables
+the items ran together in English ("glide, or *cavazione* to the flank
+straight thrust, glide, …"). Each cell now goes with its breaks kept
+(`_cell_lines`, " <br> " in the line) and the model is told to keep each
+one; a cell that comes back with another number of breaks is translated
+again line by line, and the after-rules (kept terms, case) work line by
+line against the source line. A table with line breaks translated before
+this (no `"br"` mark in `tables.json`) is translated again by the next table
+pass (`queue.py add tables <stem>`); tables without breaks are left alone.
+
 ## Part 3 — shared / architectural
 
 - **Page separator** — `pipeline/_pageio.py::PAGE_SEP` (U+001E). Every

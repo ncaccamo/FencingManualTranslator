@@ -104,6 +104,20 @@ def header_bottom(gray: np.ndarray, x0: int, x1: int, top: int, bottom: int) -> 
     return max(ys) if ys else top
 
 
+def heading_band(texts: list, head: list) -> bool:
+    """Are these words (a band of the table's text layer) mostly the
+    headings' own words? Matched loosely: the text layer misreads small
+    capitals ("tossono" for «possono», "temto" for «tempo»)."""
+    import difflib
+    norm = lambda w: re.sub(r"[^a-zà-ÿ]", "", w.lower())
+    hw = sorted({norm(w) for w in re.sub(r"<[^>]+>", " ", " ".join(head)).split() if len(norm(w)) >= 3})
+    ws = [norm(t) for t in texts if len(norm(t)) >= 3]
+    if not hw or len(ws) < 3:
+        return False
+    hit = sum(w in hw or bool(difflib.get_close_matches(w, hw, n=1, cutoff=0.8)) for w in ws)
+    return hit >= 0.5 * len(ws)
+
+
 def rebuild(page, table_html: str, want: int = None) -> tuple:
     """(rows as [[cell html]], message). Empty rows with a message when the
     page can't be rebuilt safely. `want`: the row count the page must have;
@@ -184,9 +198,13 @@ def rebuild(page, table_html: str, want: int = None) -> tuple:
                 run = 0
         out = [(a, b) for a, b in zip([y0] + breaks, breaks + [bottom + 5])
                if any(a <= (w[1] + w[3]) / 2 < b for w in body)]
-        # the header's last line when its rule was not found: words all in capitals
-        while out and all(re.sub(r"[^\w]", "", w[4]).isupper() for w in body
-                          if out[0][0] <= (w[1] + w[3]) / 2 < out[0][1] and re.search(r"[^\W\d_]", w[4])):
+        # the header's last line when its rule was not found: words all in
+        # capitals, or the headings' own words -- set in small capitals, which
+        # the text layer reads in lower case (Masiello pdf 392, 662: «Risposte
+        # che possono eseguirsi dalla parata finale» came out a body row)
+        while out and (all(re.sub(r"[^\w]", "", w[4]).isupper() for w in body
+                           if out[0][0] <= (w[1] + w[3]) / 2 < out[0][1] and re.search(r"[^\W\d_]", w[4]))
+                       or heading_band([w[4] for w in body if out[0][0] <= (w[1] + w[3]) / 2 < out[0][1]], head)):
             out = out[1:]
         return out
     spacings = [0.9]

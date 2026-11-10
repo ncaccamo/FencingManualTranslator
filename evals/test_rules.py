@@ -5309,6 +5309,43 @@ def test_table_rows_rebuilt_from_the_scan():
         "botta dritta, filo, fianconata di quarta<br>botta dritta, filo"
 
 
+def test_table_heading_row_in_small_capitals_not_a_body_row():
+    """table_from_scan.heading_band: the headings set in small capitals come
+    through the text layer in lower case and misread («Risposte che tossono
+    eseguirsi dalla tarata finale», Masiello pdf 392, 662) -- they are the
+    header, not the table's first row; a real row is not."""
+    try:
+        import numpy  # noqa: F401
+    except ImportError:
+        return                                   # the image has it; the host may not
+    import table_from_scan as TS
+    head = ['<tr><th rowspan="2">RISPOSTE CHE POSSONO ESEGUIRSI DALLA PARATA FINALE</th>'
+            '<th colspan="2">USCITE IN TEMPO</th></tr>', "<tr><th>AL PRIMO TEMPO</th><th>AL SECONDO TEMPO</th></tr>"]
+    assert TS.heading_band("Risposte che tossono eseguirsi dalla tarata finale Uscite AL PRIMO TEMPO in temto".split(), head)
+    assert not TS.heading_band("filo, cavazione al petto sopra, o trasporto in quarta cavazione al fianco inquartata (1)".split(), head)
+    # pdf 662: the first heading left empty by the OCR, the others still match
+    head2 = ['<tr><th rowspan="2"> </th><th colspan="2">USCITA IN TEMPO</th>'
+             "<th>CONTROTEMPO SULL' USCITA AL PRIMO TEMPO</th></tr>",
+             "<tr><th>AL PRIMO TEMPO</th><th>AL SECONDO TEMPO</th><th></th></tr>"]
+    assert TS.heading_band("Risposte che possono eseguirsi dalla parata finale al primo tempo secondo tempo "
+                           "sull' uscita al primo tempo".split(), head2)
+    assert not TS.heading_band("cavazione, sciabolata alla testa, al petto, al braccio arresto in dentro "
+                               "braccio in fuori braccio in dentro".split(), head2)
+
+
+def test_table_cell_line_breaks_kept_for_translation():
+    """_translate._cell_lines: a cell's printed line breaks go to the model as
+    " <br> " (Masiello's riposte lists «filo, o cavazione al fianco<br>botta
+    dritta, ...» ran together in English, every book's tables, 2026-11-10);
+    tags inside a line are dropped as before."""
+    import _translate as T
+    assert T._cell_lines("filo, o cavazione al fianco<br>botta dritta, <i>filo</i>") == \
+        "filo, o cavazione al fianco <br> botta dritta, filo"
+    assert T._cell_lines("La prime<br/>ou<BR>la septime") == "La prime <br> ou <br> la septime"
+    assert T._cell_lines("inquartata (1)") == T._cell_text("inquartata (1)")
+    assert T._cell_lines("<br>seconda<br> ") == "seconda"
+
+
 def test_page_setting_picture_after():
     """[pages.N] picture_after = "<words>": the page's picture goes after the
     paragraph holding those words (Prévost-Jollivet pdf 53, 290: printed

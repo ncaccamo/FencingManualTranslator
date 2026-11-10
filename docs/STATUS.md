@@ -103,7 +103,13 @@ the operator's business and is not tracked here.)
    table the OCR set as a text line ("Invites in *quarta*. | As first
    feint…", Masiello 1887 §55). Each is a book data fix today (`[[fix]]`,
    `[pages.N] caption`, `.pictures`) until a second book shows the same
-   failure. Consider decoupling the
+   failure (`.pictures add:` for a picture the detector missed or boxed
+   badly; `[pages.N] picture_after` for its place in the text). Tables
+   the OCR model damaged (rows lost, merged or shifted) on a scan with a
+   text layer and printed column rules are rebuilt from the scan with
+   `pipeline/table_from_scan.py` where it can check its result (Masiello
+   1887); the others still need a reading by hand or a better local OCR.
+   Consider decoupling the
    English-only renderer from code shared with the side-by-side, so fixes
    to one stop regressing the other. Content
    difference: book titles in bibliographies are translated, which suits

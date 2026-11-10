@@ -536,6 +536,28 @@ def _cell_text(cell_html: str) -> str:
     return _html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", cell_html))).strip()
 
 
+BR = " <br> "
+
+
+def _cell_lines(cell_html: str) -> str:
+    """A cell's text with its printed line breaks kept as " <br> " -- they
+    part the items of a list cell (Masiello's ripostes «filo, o cavazione al
+    fianco<br>botta dritta, ...»), which run together without them."""
+    return BR.join(t for t in (_cell_text(x) for x in re.split(r"<br\s*/?>", cell_html, flags=re.I)) if t)
+
+
+def _cell_post(cell: str, src: str) -> str:
+    """The rules every translated cell gets, line by line against its source line."""
+    out = []
+    for c, t in zip(cell.split(BR.strip()), src.split(BR.strip())):
+        c, t = c.strip(), t.strip()
+        c = enforce_kept_terms(apply_always_translate(c), t, lang=BOOK_LANG)
+        c = fix_parry_names(c, t)
+        c = enforce_footnoted_terms(c, set(), footnote=False, lang=BOOK_LANG)
+        out.append(caps_kept_terms(source_caps_lines(source_case_kept_terms(c, t), t), t))
+    return BR.join(out)
+
+
 def number_cells_or_and(table_html: str) -> str:
     """A table cell of numbers joined by Italian "o" / "e" (Bruno: "3. o 1.
     e 2.") has no word for the model, so it is never sent; its or / and are
@@ -573,8 +595,10 @@ def translate_tables(folder: str, force: bool = False) -> int:
         if not tables:
             done.pop(str(i), None)
             continue
-        if not force and done.get(str(i), {}).get("src") == tables:
-            continue
+        prev = done.get(str(i), {})
+        if not force and prev.get("src") == tables and (prev.get("br") or not any(
+                re.search(r"<br", t, re.I) for t in tables)):
+            continue                                # (translated before cells kept their breaks: again)
         en = []
         for tb in tables:
             cells = re.findall(r"<t([hd])\b[^>]*>(.*?)</t[hd]>", tb, re.S | re.I)
@@ -585,34 +609,52 @@ def translate_tables(folder: str, force: bool = False) -> int:
             if not any(re.search(r"\w", b) for b in body) and rows <= 3:
                 en.append(None)
                 continue
-            texts = list(dict.fromkeys(t for t in (_cell_text(c) for _, c in cells)
+            texts = list(dict.fromkeys(t for t in (_cell_lines(c) for _, c in cells)
                                        if re.search(r"[^\W\d_]{2,}", t)))
             tr = {}
-            for k in range(0, len(texts), 60):
-                chunk = texts[k:k + 60]
+
+            def _ask(chunk, brs):
                 listing = "\n".join(f"{j}. {t}" for j, t in enumerate(chunk, 1))
+                keep = (" A <br> in a line marks a line break in the printed cell: keep every <br> where "
+                        "it falls, the same number in each line.") if brs else ""
                 reply = translate_with_llama(
                     f"{PROMPT_TEMPLATE}\n\nThe text below is the cells of a TABLE, one per numbered line. "
                     f"Translate each line on its own, keeping its number; answer with exactly {len(chunk)} "
-                    f"numbered lines and nothing else.\n\nText to translate:\n{listing}")
+                    f"numbered lines and nothing else.{keep}\n\nText to translate:\n{listing}")
                 got = dict(re.findall(r"(?m)^\s*(\d+)\.\s*(.*\S)", strip_model_preamble(reply or "")))
-                for j, t in enumerate(chunk, 1):
-                    cell = got.get(str(j), "")
-                    cell = re.sub(r"<fn>.*?</fn>|</?fn>", "", cell, flags=re.S | re.I)
+                return [re.sub(r"\s*<br\s*/?>\s*", BR,
+                               re.sub(r"<fn>.*?</fn>|</?fn>", "", got.get(str(j), ""), flags=re.S | re.I)).strip()
+                        for j in range(1, len(chunk) + 1)]
+            redo = []                               # cells whose breaks the model moved or lost
+            for k in range(0, len(texts), 60):
+                chunk = texts[k:k + 60]
+                for t, cell in zip(chunk, _ask(chunk, any(BR in t for t in chunk))):
+                    if cell and cell.count(BR.strip()) != t.count(BR.strip()):
+                        redo.append(t)
+                        continue
                     if not cell or contains_too_much_non_english(cell) and len(cell.split()) > 3:
                         tr[t] = t                   # kept as printed: better than a wrong guess
                         continue
-                    cell = enforce_kept_terms(apply_always_translate(cell), t, lang=BOOK_LANG)
-                    cell = fix_parry_names(cell, t)
-                    cell = enforce_footnoted_terms(cell, set(), footnote=False, lang=BOOK_LANG)
-                    tr[t] = caps_kept_terms(source_caps_lines(source_case_kept_terms(cell, t), t), t)
+                    tr[t] = _cell_post(cell, t)
+            # each line of such a cell on its own: the breaks stay where printed
+            lines = list(dict.fromkeys(x for t in redo for x in t.split(BR)
+                                       if re.search(r"[^\W\d_]{2,}", x)))
+            one = {}
+            for k in range(0, len(lines), 60):
+                chunk = lines[k:k + 60]
+                one.update(zip(chunk, _ask(chunk, False)))
+            for t in redo:
+                parts = t.split(BR)
+                got = [one.get(x) or x for x in parts]
+                tr[t] = _cell_post(BR.join(got), t) if all(one.get(x) or not re.search(r"[^\W\d_]{2,}", x)
+                                                           for x in parts) else t
 
             def _sub(m, tr=tr):
-                raw = _cell_text(m.group(3))
-                return f"<{m.group(1)}{m.group(2)}>{tr.get(raw, raw)}</{m.group(1)}>"
+                raw = _cell_lines(m.group(3))
+                return f"<{m.group(1)}{m.group(2)}>{tr.get(raw, raw).replace(BR, '<br>')}</{m.group(1)}>"
             en.append(re.sub(r"\s+", " ", re.sub(r"<(t[hd])\b([^>]*)>(.*?)</t[hd]>", _sub, tb,
                                                  flags=re.S | re.I)))
-        done[str(i)] = {"src": tables, "en": en}
+        done[str(i)] = {"src": tables, "en": en, "br": True}
         n += 1
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(done, fh, ensure_ascii=False, indent=1)
