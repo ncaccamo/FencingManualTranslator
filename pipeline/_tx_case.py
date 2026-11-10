@@ -91,9 +91,11 @@ def source_case_kept_terms(text: str, src: str = "") -> str:
     must be as many in the English paragraph as in the French one (then
     in order). A word in a capitals heading takes the line's case, so it
     doesn't count."""
-    if not src or "<i>" not in text:
+    if not src:
         return text
     plain_src = re.sub(r"<[^>]+>", "", src)
+    if "<i>" not in text:
+        return _heading_case_kept_terms(text, plain_src)
     lines = text.split("\n")
     en_paras = [n for n, l in enumerate(lines) if l.strip() and l.strip() != FN_HEADER]
     src_paras = [l for l in plain_src.split("\n") if l.strip()]
@@ -157,65 +159,204 @@ def source_case_kept_terms(text: str, src: str = "") -> str:
 
 _PICTURE_TAG = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 
+# words that stay lower case in a Title Case line, English and the book's
+# own particles ("Palais des Arts", "Lumières dans la Nuit")
+_TITLE_LOWER = {
+    "a", "an", "the", "and", "or", "nor", "but", "of", "to", "in", "on", "at", "by",
+    "for", "with", "from", "as", "per", "via", "into", "onto", "upon", "within",
+    "over", "under", "about", "against", "between", "than", "after", "before",
+    "de", "du", "des", "la", "le", "les", "à", "au", "aux", "et", "ou", "en", "sur",
+    "par", "dans", "di", "da", "del", "della", "dei", "degli", "delle", "il", "lo",
+    "gli", "e", "o", "con", "per", "nel", "nella", "sul", "sulla", "al", "alla",
+}
+
+
+def _fold(s: str) -> str:
+    """Letters without their accents, one for one (positions kept):
+    «Epée» and "épée" are the same word."""
+    import unicodedata
+    return "".join((unicodedata.normalize("NFD", c)[0] if c.isalpha() else c) for c in s)
+
 
 def _short_line(line: str, most: int = 9) -> bool:
     words = re.sub(r"<[^>]+>", "", line).split()
     return 0 < len(words) <= most
 
 
-def _heading_case_kept_terms(text: str, src: str) -> str:
-    """A kept term in a short line -- a heading, a title, a contents line --
-    takes its case from the book's own line, line by line: the k-th short
-    English line using the term goes with the k-th short line of the book
-    using it, when they come in equal numbers (Barbasetti pdf 74: «Parata di
-    Terza» -> "Parry of <i>terza</i>", left as it was by the page-wide count,
-    which the picture tag's «![Parata di Terza](…)» and a lower-case «terza»
-    in the text made ambiguous). Not the term opening either line or
-    following a sentence start (a capital there is grammar or the heading's
-    own: Masiello «§ 151. — Rimessa semplice.»), not a line in capitals, and
-    the two lines of like length (Edom scan 254: a sentence is no heading)."""
-    body = text.split(FN_HEADER)[0]
+def _caps_ln(line: str) -> bool:
+    letters = [c for c in re.sub(r"<[^>]+>", "", line) if c.isalpha()]
+    return len(letters) >= 4 and sum(c.isupper() for c in letters) > 0.7 * len(letters)
+
+
+def _short_lines(text: str, src: str):
+    """The English body's short lines (line numbers) and the book's short
+    lines: picture tags, field names, margin notes, bracketed notes and
+    lines in capitals left out."""
     lines = text.split("\n")
-    head_n = len(body.split("\n"))
+    head_n = len(text.split(FN_HEADER)[0].split("\n"))
     src_lines = [l for l in (_PICTURE_TAG.sub("", l) for l in src.split("\n"))
-                 if _short_line(l) and not re.match(r"\s*(PAGE_NUMBER|HEADER|BODY_TEXT)\s*:", l)]
+                 if _short_line(l) and not _caps_ln(l) and "⟦" not in l
+                 and not re.match(r"\s*(PAGE_NUMBER|HEADER|BODY_TEXT)\s*:", l)]
+    en_n = [n for n in range(head_n) if _short_line(lines[n]) and not _caps_ln(lines[n])
+            and "⟦" not in lines[n] and not lines[n].strip().startswith("[")]
+    return lines, en_n, src_lines
 
-    def _caps(line):
-        letters = [c for c in line if c.isalpha()]
-        return len(letters) >= 4 and sum(c.isupper() for c in letters) > 0.7 * len(letters)
 
-    en_lines = [n for n in range(head_n) if "<i>" in lines[n] and _short_line(lines[n])]
+def _heading_case_kept_terms(text: str, src: str) -> str:
+    """A word of a short line -- a heading, a title, a contents line -- that
+    the English prints as the book does (a kept term, «quarte», «Duel»)
+    takes the book's case, line by line: the k-th short English line using
+    it goes with the k-th short line of the book using it, when they come
+    in equal numbers, and its k-th use there with the k-th (Barbasetti
+    pdf 74: «Parata di Terza» -> "Parry of <i>terza</i>", left as it was by
+    the page-wide count, which the picture tag's «![Parata di Terza](…)»
+    and a lower-case «terza» in the text made ambiguous; Lamarche «Contre
+    de Quarte» -> "Counter in quarte"). Accents aside («Epée» = "épée"),
+    after an elision too («l’Épée»). Not the word opening either line or
+    following a sentence start (a capital there is grammar or the
+    heading's own: Masiello «§ 151. — Rimessa semplice.»), not a line in
+    capitals, and the two lines of like length (Edom scan 254: a sentence
+    is no heading)."""
+    lines, en_n, src_lines = _short_lines(text, src)
+    tok = re.compile(r"<i>([^<]+)</i>|<[^>]+>|(?<![\w’'])([^\W\d_][\w-]*)")
+    plain = lambda l: re.sub(r"<[^>]+>", "", l)
     edits = {}
-    for n in en_lines:
-        for m in re.finditer(r"<i>([^<]+)</i>", lines[n]):
-            term = m.group(1)
-            if _case_class(term) not in ("lower", "cap"):
+    for n in en_n:
+        for m in tok.finditer(lines[n]):
+            term = m.group(1) or m.group(2)
+            if not term or _case_class(term) not in ("lower", "cap"):
                 continue
-            before = re.sub(r"<[^>]+>", "", lines[n][:m.start()])
-            if _SENT_START.search(before):
+            if m.group(2) and (term.lower() in _TITLE_LOWER or term.lower() in _FALSE_FRIENDS or len(term) < 3):
                 continue
-            pat = r"(?<![\w-])" + re.escape(term) + r"(?![\w-])"     # after an elision too: «l’Épée»
-            mine = [k for k in en_lines if re.search(r"<i>" + re.escape(term) + r"</i>", lines[k], re.I)]
-            theirs = [l for l in src_lines if re.search(pat, l, re.I)]
-            if len(mine) != len(theirs):
+            at = m.start(1) if m.group(1) else m.start(2)
+            if _SENT_START.search(plain(lines[n][:at])):
+                continue
+            pat = re.compile(r"(?<![\w-])" + re.escape(_fold(term)) + r"(?![\w-])", re.I)
+            mine = [k for k in en_n if pat.search(_fold(plain(lines[k])))]
+            theirs = [l for l in src_lines if pat.search(_fold(l))]
+            if len(mine) != len(theirs) or n not in mine:
                 continue
             s = theirs[mine.index(n)]
-            words_en, words_src = len(re.sub(r"<[^>]+>", "", lines[n]).split()), len(s.split())
-            if _caps(s) or not 0.5 <= words_en / words_src <= 2:
+            words_en, words_src = len(plain(lines[n]).split()), len(s.split())
+            if not 0.5 <= words_en / words_src <= 2:
                 continue
-            here = [x for x in re.finditer(r"<i>([^<]+)</i>", lines[n]) if x.group(1).lower() == term.lower()]
-            hits = list(re.finditer(pat, s, re.I))
+            here = [x for x in tok.finditer(lines[n]) if (x.group(1) or x.group(2) or "").lower() == term.lower()]
+            hits = list(pat.finditer(_fold(s)))
             if len(here) != len(hits):
                 continue
             hit = hits[[x.start() for x in here].index(m.start())]      # the k-th use with the k-th
             if _SENT_START.search(s[:hit.start()]):
                 continue
-            want = _case_class(hit.group(0))
+            want = _case_class(s[hit.start():hit.end()])
+            if m.group(2) and want != "cap":
+                continue               # a plain word is only raised: English capitals («provençal» -> "Provençal") stay
             if want in ("lower", "cap") and want != _case_class(term):
-                edits[(n, m.start())] = (term, _apply_case(term, want))
+                edits[(n, at)] = (term, _apply_case(term, want))
     for (n, at), (old, new) in sorted(edits.items(), reverse=True):
-        line = lines[n]
-        lines[n] = line[:at] + f"<i>{new}</i>" + line[at + len(old) + 7:]
+        lines[n] = lines[n][:at] + new + lines[n][at + len(old):]
+    return _raise_plain_words(_heading_title_case("\n".join(lines), src), src)
+
+
+# the book's word and the English one spelt alike but not the same word
+# (Italian «Come» = how, «Sole» = only, French «Fine» = thin ...)
+_FALSE_FRIENDS = {"come", "sole", "all", "alle", "pure", "note", "fine", "case", "mode", "base",
+                  "dice", "male", "more", "once", "son", "tire", "sale", "dove", "data", "per"}
+
+
+def _raise_plain_words(text: str, src: str) -> str:
+    """A word the English prints as the book does («Quarte», «Art», «Duel»)
+    takes the book's capital where every mid-sentence use of it on the
+    book's page has one (reviewer rule, 2026-11-10: case matches the print;
+    Danet and Saint-Martin set the guards «Quarte», «Tierce» ... always so).
+    Only raised -- English capitals («Provençal», «Rue») stay; not a word
+    at a sentence start, an elided one («All'entrare»), a false friend, or
+    in a line in capitals or a margin note."""
+    src_lines = [_PICTURE_TAG.sub("", l) for l in src.split("\n")
+                 if not _caps_ln(l) and "⟦" not in l
+                 and not re.match(r"\s*(PAGE_NUMBER|HEADER|BODY_TEXT)\s*:", l)]
+    folded = [_fold(l) for l in src_lines]
+    memo = {}
+
+    def book_case(w):
+        k = _fold(w).lower()
+        if k not in memo:
+            seen = set()
+            for l in folded:
+                for m in re.finditer(r"(?<![\w-])" + re.escape(k) + r"(?![\w’'-])", l, re.I):
+                    if not _SENT_START.search(l[:m.start()]):
+                        seen.add(_case_class(l[m.start():m.end()]))
+            memo[k] = seen.pop() if len(seen) == 1 else None
+        return memo[k]
+
+    tok = re.compile(r"<i>[^<]+</i>|<[^>]+>|(?<![\w’'])([^\W\d_][\w-]*)")
+    out = []
+    for line in text.split("\n"):
+        if "⟦" in line or _caps_ln(line) or line.strip() == FN_HEADER:
+            out.append(line)
+            continue
+
+        def up(m):
+            w = m.group(1)
+            if (not w or _case_class(w) != "lower" or len(w) < 3 or w in _TITLE_LOWER
+                    or w in _FALSE_FRIENDS):
+                return m.group(0)
+            if _SENT_START.search(re.sub(r"<[^>]+>", "", line[:m.start()])):
+                return w
+            return w[:1].upper() + w[1:] if book_case(w) == "cap" else w
+        out.append(tok.sub(up, line))
+    return "\n".join(out)
+
+
+def _heading_title_case(text: str, src: str) -> str:
+    """A short line the book sets in Title Case is in Title Case in the
+    English (Barbasetti «Quarta di Cambiamento», Danet «Reprise sur le
+    Dégagement.»; reviewer rule: case matches the book). Only when the
+    book's short lines and the English ones come in equal numbers (paired
+    in order), the line is one phrase (no second sentence: Lamarche
+    «Fatiguez-le. Énervez-le.»), has no word in capitals (Masiello «PMN e
+    PBB»), its page number is the English one's (a contents line), every
+    word but the particles is capitalised, and one of those capitals is on
+    a word the English translates -- a capital the English could only
+    copy (a verse's first word, a name: Blengini «Lacera Emanuel.») is no
+    sign of Title Case. Prepositions and the book's particles stay lower."""
+    lines, en_n, src_lines = _short_lines(text, src)
+    if not en_n or len(en_n) != len(src_lines):
+        return text
+    word = re.compile(r"(?<![\w’'])[^\W\d_][\w’'-]*")     # not "st" of "1st"
+    plain = lambda l: re.sub(r"<[^>]+>", "", l)
+
+    def content(l):
+        out = []
+        for m in word.finditer(l):
+            w = re.split(r"['’]", m.group(0))[-1] or m.group(0)
+            if w.lower() not in _TITLE_LOWER and len(w) >= 3:
+                out.append(w)
+        return out
+
+    for n, s in zip(en_n, src_lines):
+        en = plain(lines[n])
+        if (re.search(r"[.!?;:]\s+\S", s.strip().rstrip(".")) and not re.search(r"\.{3,}", s)) \
+                or re.search(r"\b[A-Z]{2,}\b", s):
+            continue
+        if re.findall(r"\d+", s) != re.findall(r"\d+", en):
+            continue
+        if not 0.5 <= len(en.split()) / len(s.split()) <= 2:
+            continue
+        cw = content(s)
+        if len(cw) < 2 or not all(w[0].isupper() for w in cw):
+            continue
+        en_words = {_fold(w).lower() for w in word.findall(en)}
+        if not any(_fold(w).lower() not in en_words for w in cw[1:]):
+            continue                       # every capital after the first is a word the English copies
+
+        def up(m):
+            w = m.group(0)
+            if (w.lower() in _TITLE_LOWER or not w[:1].islower() or len(w) < 2
+                    or re.match(r"(?i)(d|l|dall|dell|nell|sull|all|qu)['’]", w)):
+                return w              # a particle, a list letter «b)», an elision «d'Oro»
+            return w[:1].upper() + w[1:]
+        lines[n] = "".join(p if p.startswith("<") else word.sub(up, p)
+                           for p in re.split(r"(<[^>]+>)", lines[n]))
     return "\n".join(lines)
 
 

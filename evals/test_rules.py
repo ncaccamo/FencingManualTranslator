@@ -5179,5 +5179,30 @@ def test_kept_term_in_a_heading_takes_the_case_of_the_books_heading():
     assert H(sent, "Temps, Arrêt et Contre-Temps") == sent
     assert H("in <i>quarta</i> then <i>quarta</i>", "di Quarta poi di quarta") == "in <i>Quarta</i> then <i>quarta</i>"
 
+
+def test_plain_words_and_title_case_lines_follow_the_print():
+    """Case as printed for words the English shares with the book and for
+    lines the book sets in Title Case (reviewer, 2026-11-10). Danet prints
+    the guards «Quarte», «Prime» always capitalised; a plain word is only
+    raised (English «Provençal» stays); not an elided «All'», a false
+    friend («Come» = how), an ordinal «1st», a list letter «b)», an
+    elision «d'Oro», the book's particles («Palais des Arts»)."""
+    from _tx_case import source_case_kept_terms as K, _heading_title_case as T
+    src = "Feinte de Quarte, tirez Prime.\nOn pare Quarte, & l'on riposte."
+    assert K("Feint in quarte, thrust in prime.\nOne parries quarte, and ripostes.", src) == \
+        "Feint in Quarte, thrust in Prime.\nOne parries Quarte, and ripostes."
+    assert K("a Provençal gentleman", "un gentilhomme provençal") == "a Provençal gentleman"
+    assert K("free in all his movements.", "All'entrare del Maestro nella Sala") == "free in all his movements."
+    assert K("how have come out so many", "dirà: Come mai sono usciti") == "how have come out so many"
+    # Title Case lines (Barbasetti «Quarta di Cambiamento», Danet «Reprise sur le Dégagement.»)
+    src_t = "Quarta di Cambiamento\nTesto della pagina che continua qui con molte parole e altre ancora."
+    assert T("Change of <i>quarta</i>\nThe page's text going on here with many words and more besides.", src_t) \
+        .startswith("Change of <i>Quarta</i>\n")
+    assert T("<i>Reprise</i> on the disengagement.", "Reprise sur le Dégagement.") == "<i>Reprise</i> on the Disengagement."
+    assert T("Library of the Palais des Arts", "Biblioth. du Palais des Arts") == "Library of the Palais des Arts"
+    assert T("1st position or guard, b) the rest", "1a Posizione o Guardia, b) Il Resto") == "1st Position or Guard, b) the Rest"
+    assert T("La Lupa d'Oro", "La Lupa d'Oro") == "La Lupa d'Oro"
+    assert T("Fatigue him. Irritate him.", "Fatiguez-le. Énervez-le.") == "Fatigue him. Irritate him."
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

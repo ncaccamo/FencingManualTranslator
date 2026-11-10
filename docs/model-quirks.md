@@ -1265,6 +1265,18 @@ Regression tests: `test_always_translate` (LISTE case added),
   book's case, unless the term opens either line or follows a sentence
   start, the book's line is in capitals, or the lengths differ by more
   than half. Test: `test_kept_term_in_a_heading_takes_the_case_of_the_books_heading`.
+  The same pairing covers a plain word printed alike in both («Contre de
+  Quarte» → "Counter in Quarte"), and two more rules follow
+  (`test_plain_words_and_title_case_lines_follow_the_print`):
+  `_heading_title_case()` -- a short line the book sets in Title Case
+  (one phrase, no word in capitals, a capital on a word the English
+  translates, page numbers agreeing) is Title Case in English, particles
+  of both languages lower; `_raise_plain_words()` -- a word printed alike
+  takes the book's capital where every mid-sentence use of it on the
+  page has one (Danet, Saint-Martin: «Quarte», «Tierce» throughout).
+  Plain words are only ever raised (English «Provençal», «Rue» stay);
+  an elided «All'» and false friends (`_FALSE_FRIENDS`: Italian «Come»,
+  «Sole») don't count.
 
 ### 2.6 Literary prose defeats the translation model
 
