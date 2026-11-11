@@ -693,17 +693,21 @@ def harmonize_table_cells(tmap: dict, table_fixes: list) -> int:
         for s, e in zip(v.get("src") or [], v.get("en") or []):
             if not e:
                 continue
-            sc, ec = re.findall(_CELL, s), re.findall(_CELL, e)
+            sc, ec = re.findall(_CELL, s), list(re.finditer(_CELL, e))
             if len(sc) != len(ec):
                 continue
-            for (_, _, a), (_, _, b) in zip(sc, ec):
+            # where this page's fixes put their English: a fix may span the
+            # cell's tags ("<th>FROM WHICH THE ATTACKER DEPARTS</th>")
+            spans = [(m.start(), m.end()) for r in marks.get(int(k), []) if r
+                     for m in re.finditer(re.escape(r), e)]
+            for (_, _, a), m in zip(sc, ec):
                 key = _cell_key(a)
                 if not re.search(r"[^\W\d_]{2,}", key):
                     continue
-                b = b.strip()
+                b = m.group(3).strip()
                 seen.setdefault(key, Counter())[b] += 1
                 first.setdefault(b, int(k))
-                if any(r in b for r in marks.get(int(k), [])):
+                if any(x < m.end(3) and m.start(3) < y for x, y in spans):
                     fixed.setdefault(key, Counter())[b] += 1
     canon = {}
     for key, c in seen.items():

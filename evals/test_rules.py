@@ -5369,6 +5369,12 @@ def test_table_cells_same_text_same_english_across_pages():
     assert "THE ATTACKER</th>" in t["4"]["en"][0]                        # apostrophe spacing ignored
     assert t["6"]["en"] == [None]
     assert T.harmonize_table_cells(t, fixes) == 0
+    # a fix written with the cell's tags still counts as the decision
+    t = {"0": {"src": [tb("DA CUI PARTE", "x")], "en": [tb("FROM WHICH IT STARTS", "x")]},
+         "1": {"src": [tb("DA CUI PARTE", "x")], "en": [tb("FROM WHICH IT STARTS", "x")]},
+         "2": {"src": [tb("DA CUI PARTE", "x")], "en": [tb("FROM WHICH IT DEPARTS", "x")]}}
+    T.harmonize_table_cells(t, [{"scan": 3, "find": "?", "replace": "<th>FROM WHICH IT DEPARTS</th>"}])
+    assert all("<th>FROM WHICH IT DEPARTS</th>" in t[k]["en"][0] for k in "012")
 
 
 def test_page_setting_picture_after():
