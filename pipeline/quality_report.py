@@ -1059,10 +1059,18 @@ def check_book(folder: str) -> list:
             elif any(h and f["find"] in h and f["find"] not in f["replace"] for h in en):
                 add(f["scan"], CHECK, "override", f"[[table_fix]] {f['find'][:50]!r}: not in "
                     "the table yet -- run apply_overrides.py")
+        _raw = f"{folder}/intermediate/raw_ocr.txt"
+        if _ov["ocr_fix"] and os.path.exists(_raw):
+            raw = _pageio.split_pages(open(_raw, encoding="utf-8").read())
+            for f in _ov["ocr_fix"]:
+                page = raw[f["scan"] - 1] if f["scan"] <= len(raw) else ""
+                if f["find"] not in page and f["replace"] not in page:
+                    add(f["scan"], CHECK, "override", f"[[ocr_fix]] {f['find'][:50]!r} → "
+                        f"{f['replace'][:50]!r}: its text is not in the page's OCR -- the page was "
+                        "read again: rewrite the correction or remove it")
     if edits:
-        fp = _tx.page_fingerprint
         stale = {s for s, e in edits.items()
-                 if s <= len(ex) and e["source"] and e["source"] != fp(ex[s - 1])}
+                 if s <= len(ex) and e["source"] and not _tx.fingerprint_matches(e["source"], ex[s - 1])}
         issues[:] = [x for x in issues if x["scan"] not in edits or x["level"] in ("TERMS", "BOOK")]
         for s in sorted(stale):
             add(s, CHECK, "hand edit", f"the page's source text changed after it was edited "

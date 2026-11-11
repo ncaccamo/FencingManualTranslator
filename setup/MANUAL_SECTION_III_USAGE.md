@@ -69,7 +69,7 @@ works.) Within the named books, each step decides what still needs doing:
 |---|---|---|
 | 1 — OCR | `processed/<stem>_translated/` does **not** exist yet | `rm -rf processed/<stem>_translated/` (loses everything), or see III.5 to re-parse without re-OCR |
 | | …or its OCR run was interrupted: OCR saves after every page (`intermediate/raw_ocr.partial.json`), and re-running step 1 resumes after the last saved page, reading any failed pages again. The save is used only while the scan's page count and crop are unchanged, and is deleted once `raw_ocr.txt` is written | start over instead: `rm processed/<stem>_translated/intermediate/raw_ocr.partial.json` |
-| 2 — translate | `intermediate/translation.txt` is missing (whole book); otherwise only the pages whose body text changed since they were translated (fingerprints in `intermediate/translated_from.json`) | whole book: `rm processed/<stem>_translated/intermediate/translation.txt`; chosen pages: `2_translate.py --pages <stem> 12,40-42` (III.5b) |
+| 2 — translate | `intermediate/translation.txt` is missing (whole book); otherwise only the pages whose running text changed since they were translated (fingerprints in `intermediate/translated_from.json`; a table is left out of the fingerprint, as the table pass has its own record) | whole book: `rm processed/<stem>_translated/intermediate/translation.txt`; chosen pages: `2_translate.py --pages <stem> 12,40-42` (III.5b) |
 | | A whole-book run saves after every page (`intermediate/translation.partial.json`); if it crashes or is cancelled, re-running step 2 resumes after the last saved page, with the footnote state it had then. The save is used only while those pages' source text is unchanged, and is deleted when the book finishes | start over instead: `rm processed/<stem>_translated/intermediate/translation.partial.json` |
 | 3 — English-only PDF | `intermediate/translation.txt` exists | just re-run it — it overwrites |
 | 4 — side-by-side PDF | `intermediate/translation.txt` and `intermediate/<stem>_OCR.pdf` exist | just re-run it — it overwrites |
@@ -149,7 +149,8 @@ docker exec fmt-translator python3 /app/reprocess_extracted.py <stem> [<stem> ..
 docker exec fmt-translator python3 /app/reprocess_extracted.py --all
 ```
 
-Then re-run steps 2→4. This does **not** re-apply the OCR *prompt* —
+It applies the overrides file's `[[ocr_fix]]` corrections on the way
+(III.5b); `raw_ocr.txt` itself is never edited. Then re-run steps 2→4. This does **not** re-apply the OCR *prompt* —
 changing `vlm_ocr_prompt.txt` genuinely needs the vision model, which
 means `rm -rf` the book's folder and re-running step 1.
 
@@ -210,8 +211,9 @@ side-by-side PDF. What it checks:
 - **Negation:** a page whose source has two or more negations more than its
   English: a "not" lost (the sentence now says the opposite), or a passage
   left out.
-- **Override:** your own `[[fix]]` and `[[table_fix]]` decisions, checked
-  against the text. A fix whose text is no longer on the page (the page
+- **Override:** your own `[[fix]]`, `[[table_fix]]` and `[[ocr_fix]]`
+  decisions, checked against the text (an `[[ocr_fix]]` against the page's
+  OCR: after a re-OCR read the page again, its `find` may be gone). A fix whose text is no longer on the page (the page
   was retranslated after you wrote it, or the find has a typo) is listed:
   your decision is not in the PDFs. Rewrite the fix for the new text, or
   remove it. A fix not yet in the text means `apply_overrides.py` hasn't
@@ -411,11 +413,37 @@ scan = 153
 find = "ON THE COUNTER-<i>RIPOSTE</i>"
 replace = "OF THE COUNTER-<i>RIPOSTE</i>"
 
-[[table_fix]]                    # the same, in a table drawn on that page (tables.json)
-scan = 709
+[[table_fix]]                    # the same, in a table drawn on that page (tables.json);
+scan = 709                       # it also sets every other page that prints the same cell
 find = "transport of <i>quarta</i>"
 replace = "transport of <i>terza</i>"
+
+[[ocr_fix]]                      # the OCR MISREAD the print: correct the source text
+scan = 263                       # (applied before parsing; raw_ocr.txt is never edited)
+find = "indietro"
+replace = "indentro"
 ```
+
+**Which kind of correction.** Decide first where the mistake was made:
+
+- **The OCR misread the print** (the scan says *indentro*, the text says
+  *indietro*): `[[ocr_fix]]`. The source becomes right, so the translation
+  is made from the right words and the error cannot come back at the next
+  retranslation. Rerun: `queue.py add reprocess <stem>` then
+  `add tables <stem>` for a table, or `add book <stem>` for running text;
+  run `scripts/dry_run.py <stem>` first to see that only your corrections
+  change.
+- **The source is right, the English is wrong:** `[[fix]]` for running
+  text, `[[table_fix]]` for a table cell, `[terms]` for a term used
+  throughout the book. Rerun: `apply_overrides.py`, then the PDFs.
+- **The same mistake in many places, or in other books:** a pipeline rule
+  (prompt, glossary, code), not a list of corrections.
+
+Every rerun redoes only what the correction touched: a corrected table
+cell is the only cell translated again (the rest of the page keeps its
+English, your fixes included), and a page's running text is retranslated
+only when its own text changed — a correction inside a table never
+retranslates the page around it.
 
 Apply it to a book's existing outputs (no model, seconds), then rebuild
 the PDFs:
@@ -441,8 +469,9 @@ source page with a table changed:
 docker exec fmt-translator python3 /app/2_translate.py --tables <stem>
 ```
 
-It translates only the pages whose tables changed, so a stopped run
-resumes; then rebuild the PDFs.
+It translates only the pages whose tables changed, and on those only the
+cells whose source text changed (every other cell keeps its English), so a
+stopped run resumes; then rebuild the PDFs.
 
 To redo a few pages without retranslating the book (a changed source page,
 a bad translation, a new `[terms]` entry), name the scan pages:

@@ -558,6 +558,12 @@ def main():
             # went straight downstream, so a hallucinated "PAGE_NUMBER: 57"
             # (read off an engraving plate) became a line handed to the
             # translator and printed on the side-by-side PDF.
+            # the reviewer's corrections of OCR misreadings ([[ocr_fix]]), after
+            # raw_ocr.txt is written (it always keeps the model's own reply)
+            _n, _miss = _overrides.apply_ocr_fixes(extracted_pages, _overrides.load(stem))
+            if _miss:
+                print(f"  ⚠ overrides: [[ocr_fix]] text not found on scan page(s) {_miss} -- "
+                      f"read right by this OCR? Review {_overrides.path_for(stem)}")
             parsed = [parse_vlm_response(p) for p in extracted_pages]
             postprocess_parsed_pages(parsed)
             # running heads read from the page where the OCR reply left the field out

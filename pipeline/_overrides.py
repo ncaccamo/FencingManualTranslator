@@ -73,6 +73,17 @@ continuation sheet, so it can't key anything durable.)
                          page's TABLES (intermediate/tables.json, which the
                          [[fix]] edits never reach): scan = N, find, replace;
                          applied after every table translation run.
+    [[ocr_fix]]          a correction to the SOURCE text where the OCR misread
+                         the print (Bruno: «inden-tro» split at a line end,
+                         read as «indietro», 2026-11-10): scan = N, find,
+                         replace, matched in the page's OCR reply. Applied
+                         by step 1 and reprocess_extracted.py before the
+                         reply is parsed; raw_ocr.txt itself is never
+                         changed, so the correction survives a re-OCR and
+                         is reported when it no longer matches. Only what
+                         the corrected text feeds is translated again: the
+                         changed table cells, or the page if its running
+                         text changed.
 
 Hand edits of whole pages live beside it, in books/<stem>.edits/: one file
 per page, scan-0091.txt, made by edit_page.py. Everything below the file's
@@ -87,7 +98,7 @@ import tomllib
 
 _PAGE_KEYS = {"page_number", "header", "retranslate", "note", "caption", "caption_en", "figure", "leave_out",
               "picture_after"}
-_TOP_KEYS = {"book", "headers", "terms", "pages", "fix", "book_fix", "table_fix"}
+_TOP_KEYS = {"book", "headers", "terms", "pages", "fix", "book_fix", "table_fix", "ocr_fix"}
 _BOOK_KEYS = {"running_heads": bool, "final": bool, "paragraphs": str, "page_numbers": str,
               "bold_headings": bool}
 _PARAGRAPHS = ("indented", "spaced")
@@ -117,7 +128,8 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
     decision is the failure this file exists to prevent."""
     p = path_for(stem, books_dir)
     if not os.path.exists(p):
-        return {"book": {}, "headers": {}, "terms": {}, "pages": {}, "fix": [], "table_fix": []}
+        return {"book": {}, "headers": {}, "terms": {}, "pages": {}, "fix": [], "table_fix": [],
+                "book_fix": [], "ocr_fix": []}
     try:
         with open(p, "rb") as fh:
             raw = tomllib.load(fh)
@@ -162,6 +174,14 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
                 or not isinstance(f.get("replace"), str):
             raise OverridesError(f"{p}: [[table_fix]] #{n} (scan {f['scan']}) needs exactly "
                                  f"scan, find and replace")
+    ocr_fixes = raw.get("ocr_fix") or []
+    for n, f in enumerate(ocr_fixes, 1):
+        if not isinstance(f.get("scan"), int) or f["scan"] < 1:
+            raise OverridesError(f"{p}: [[ocr_fix]] #{n} needs scan = <page number>")
+        if set(f) - {"scan", "find", "replace"} or not isinstance(f.get("find"), str) \
+                or not f.get("find") or not isinstance(f.get("replace"), str):
+            raise OverridesError(f"{p}: [[ocr_fix]] #{n} (scan {f['scan']}) needs exactly "
+                                 f"scan, find and replace")
     book = raw.get("book") or {}
     for k, v in book.items():
         if k not in _BOOK_KEYS:
@@ -179,11 +199,11 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
     return {"book": dict(book),
             "headers": dict(raw.get("headers") or {}), "terms": dict(raw.get("terms") or {}),
             "pages": pages, "fix": list(fixes), "table_fix": list(table_fixes),
-            "book_fix": list(book_fixes)}
+            "book_fix": list(book_fixes), "ocr_fix": list(ocr_fixes)}
 
 
 def _check_range(ov: dict, n_pages: int, where: str) -> None:
-    for s in list(ov["pages"]) + [f["scan"] for f in ov["fix"] + ov.get("table_fix", [])]:
+    for s in list(ov["pages"]) + [f["scan"] for f in ov["fix"] + ov.get("table_fix", []) + ov.get("ocr_fix", [])]:
         if s > n_pages:
             raise OverridesError(f"{where}: scan page {s} is past the end of the book "
                                  f"({n_pages} pages)")
@@ -352,6 +372,26 @@ def apply_fixes(tr_pages: list, ov: dict) -> tuple:
                 continue
             tr_pages[i] = t.replace(find, repl)
             applied += 1
+    return applied, missing
+
+
+def apply_ocr_fixes(raw_pages: list, ov: dict) -> tuple:
+    """Step 1 / reprocess: the [[ocr_fix]] corrections, in place, on the
+    pages' OCR replies (a list, 0-based; scan = index + 1) before they are
+    parsed. Returns (applied, not_found): a find that is no longer in its
+    page (a re-OCR read it right, or differently) is reported, never
+    silently skipped -- unless the page already reads the replace."""
+    applied, missing = 0, []
+    for f in ov.get("ocr_fix", []):
+        i = f["scan"] - 1
+        if i >= len(raw_pages):
+            missing.append(f["scan"])
+            continue
+        if f["find"] in raw_pages[i]:
+            raw_pages[i] = raw_pages[i].replace(f["find"], f["replace"])
+            applied += 1
+        elif f["replace"] not in raw_pages[i]:
+            missing.append(f["scan"])
     return applied, missing
 
 

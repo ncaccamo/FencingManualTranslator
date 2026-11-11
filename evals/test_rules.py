@@ -5391,5 +5391,94 @@ def test_page_setting_picture_after():
     finally:
         shutil.rmtree(d)
 
+
+def test_ocr_fix_corrects_the_source_before_parsing():
+    """[[ocr_fix]]: a known OCR misreading is corrected in the page's OCR
+    reply before it is parsed (Bruno: «inden-tro» split at a line end, read
+    as «indietro», 11 table pages, 2026-11-10); raw_ocr.txt is never changed,
+    a find no longer in its page is reported, a page already right is not."""
+    import os, tempfile, shutil
+    import _overrides
+    d = tempfile.mkdtemp()
+    try:
+        open(f"{d}/zz.overrides.toml", "w").write(
+            '[[ocr_fix]]\nscan = 2\nfind = "Al braccio indietro."\nreplace = "Al braccio indentro."\n'
+            '[[ocr_fix]]\nscan = 3\nfind = "al petto indietro"\nreplace = "al petto indentro"\n'
+            '[[ocr_fix]]\nscan = 1\nfind = "zzz"\nreplace = "yyy"\n')
+        ov = _overrides.load("zz", d)
+        pages = ["BODY_TEXT:\nnothing here", "<td>Al braccio indietro.</td><td>Al braccio indietro.</td>",
+                 "<td>al petto indentro</td>"]
+        applied, missing = _overrides.apply_ocr_fixes(pages, ov)
+        assert pages[1] == "<td>Al braccio indentro.</td><td>Al braccio indentro.</td>"
+        assert applied == 1 and missing == [1]          # scan 3 already reads the correction
+        open(f"{d}/zz.overrides.toml", "w").write('[[ocr_fix]]\nscan = 2\nfind = "x"\n')
+        try:
+            _overrides.load("zz", d)
+            assert False, "an ocr_fix without replace must not load"
+        except _overrides.OverridesError:
+            pass
+    finally:
+        shutil.rmtree(d)
+
+
+def test_page_fingerprint_ignores_table_text():
+    """The page fingerprint covers what the page translation reads: a table is
+    its [[TABLE]] marker, so a corrected table cell does not mark the page's
+    running text for retranslation; a change in the running text still does.
+    A stored record of the old kind moves to the new one only for pages it
+    still matches (2026-11-10)."""
+    import os, json, tempfile, shutil
+    import _translate as T
+    page = "PAGE_NUMBER: 3\nHEADER: none\nBODY_TEXT:\nDalla guardia di terza.\n<table><tr><td>Al braccio indietro.</td></tr></table>"
+    fixed = page.replace("indietro", "indentro")
+    assert T.page_fingerprint(page) == T.page_fingerprint(fixed)
+    assert T._fingerprint_v1(page) != T._fingerprint_v1(fixed)
+    assert T.page_fingerprint(page) != T.page_fingerprint(page.replace("terza", "quarta"))
+    assert T.fingerprint_matches(T._fingerprint_v1(fixed), fixed)
+    assert T.fingerprint_matches(T.page_fingerprint(page), fixed)
+    d = tempfile.mkdtemp()
+    try:
+        os.makedirs(f"{d}/intermediate")
+        other = page.replace("terza", "quarta")
+        rec = {"version": 1, "pages": [T._fingerprint_v1(page), T._fingerprint_v1(page)],
+               "models": ["m", "m"], "stamps": [None, None]}
+        json.dump(rec, open(f"{d}/intermediate/translated_from.json", "w"))
+        got = T.load_fingerprints(d, [page, other])     # page 2 changed since it was translated
+        assert got[0] == T.page_fingerprint(page)
+        assert got[1] == T._fingerprint_v1(page) and got[1] != T.page_fingerprint(other)
+        assert json.load(open(f"{d}/intermediate/translated_from.json"))["version"] == 2
+    finally:
+        shutil.rmtree(d)
+
+
+def test_table_pass_sends_only_changed_cells():
+    """translate_tables: a page whose tables changed keeps the book's English
+    for every cell whose source text is unchanged (fixes included) and sends
+    only the changed cells to the model (2026-11-10: a corrected cell must
+    not reword the rest of the page)."""
+    import os, json, tempfile, shutil
+    import _translate as T, _pageio
+    tb = lambda a, b: f"<table><tr><th>PARATA FINALE</th></tr><tr><td>{a}</td></tr><tr><td>{b}</td></tr></table>"
+    d = tempfile.mkdtemp()
+    sent, keep = [], T.translate_with_llama
+    try:
+        os.makedirs(f"{d}/intermediate")
+        old, new = tb("Al braccio indietro.", "Al braccio infuori."), tb("Al braccio indentro.", "Al braccio infuori.")
+        open(f"{d}/intermediate/extracted.txt", "w").write(_pageio.join_pages([f"BODY_TEXT:\n{new}"]))
+        json.dump({"0": {"src": [old], "en": [tb("To the arm back.", "To the arm outside (fixed).").replace(
+            "PARATA FINALE", "FINAL PARRY")], "br": True}}, open(f"{d}/intermediate/tables.json", "w"))
+
+        def fake(prompt, *a, **k):
+            sent.append(prompt)
+            return "1. To the arm on the inside."
+        T.translate_with_llama = fake
+        assert T.translate_tables(d) == 1
+        en = json.load(open(f"{d}/intermediate/tables.json"))["0"]["en"][0]
+        assert len(sent) == 1 and "1. Al braccio indentro." in sent[0] and "infuori" not in sent[0].split("Text to translate:")[-1]
+        assert "<td>To the arm on the inside.</td>" in en and "To the arm outside (fixed)." in en and "FINAL PARRY" in en
+    finally:
+        T.translate_with_llama = keep
+        shutil.rmtree(d)
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

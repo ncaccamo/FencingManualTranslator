@@ -585,7 +585,12 @@ def translate_tables(folder: str, force: bool = False) -> int:
         return 0
     pages = _pageio.split_pages(open(ex_path, encoding="utf-8").read())
     done = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
-    n = 0
+    # the English the book already has for each cell's source text (fixes and
+    # the book's one wording included): a page whose tables changed sends
+    # only its new or changed cells to the model, so a corrected cell
+    # ([[ocr_fix]]) never rewords the rest of the page (2026-11-10)
+    mem = {} if force else table_cell_memory(done)
+    n = reused = 0
     for i, page in enumerate(pages):
         src = clean_vlm_extraction(page)
         tables = re.findall(r"<table\b.*?</table\s*>", src, re.S | re.I)
@@ -611,6 +616,9 @@ def translate_tables(folder: str, force: bool = False) -> int:
                 continue
             texts = list(dict.fromkeys(t for t in (_cell_lines(c) for _, c in cells)
                                        if re.search(r"[^\W\d_]{2,}", t)))
+            known = [t for t in texts if _cell_key(t) in mem]
+            reused += len(known)
+            texts = [t for t in texts if t not in known]
             tr = {}
 
             def _ask(chunk, brs):
@@ -651,6 +659,8 @@ def translate_tables(folder: str, force: bool = False) -> int:
 
             def _sub(m, tr=tr):
                 raw = _cell_lines(m.group(3))
+                if raw not in tr and re.search(r"[^\W\d_]{2,}", raw) and _cell_key(raw) in mem:
+                    return f"<{m.group(1)}{m.group(2)}>{mem[_cell_key(raw)]}</{m.group(1)}>"
                 return f"<{m.group(1)}{m.group(2)}>{tr.get(raw, raw).replace(BR, '<br>')}</{m.group(1)}>"
             en.append(re.sub(r"\s+", " ", re.sub(r"<(t[hd])\b([^>]*)>(.*?)</t[hd]>", _sub, tb,
                                                  flags=re.S | re.I)))
@@ -659,8 +669,30 @@ def translate_tables(folder: str, force: bool = False) -> int:
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(done, fh, ensure_ascii=False, indent=1)
     if n:
-        print(f"  translated the tables of {n} page(s)")
+        print(f"  translated the tables of {n} page(s)"
+              + (f" ({reused} cell(s) kept the book's English: their text is unchanged)" if reused else ""))
     return n
+
+
+def table_cell_memory(done: dict) -> dict:
+    """{cell source text -> its English} from tables.json as it stands (the
+    fixes and the book's one wording applied): every cell with words, in
+    page order, the first English seen kept (harmonize_table_cells makes
+    them agree)."""
+    mem = {}
+    for k in sorted(done, key=int):
+        v = done[k]
+        for s, e in zip(v.get("src") or [], v.get("en") or []):
+            if not e:
+                continue
+            sc, ec = re.findall(_CELL, s), re.findall(_CELL, e)
+            if len(sc) != len(ec):
+                continue
+            for (_, _, a), (_, _, b) in zip(sc, ec):
+                key = _cell_key(a)
+                if re.search(r"[^\W\d_]{2,}", key) and (v.get("br") or not re.search(r"<br", a, re.I)):
+                    mem.setdefault(key, b.strip())  # (not one translated before breaks were kept)
+    return mem
 
 
 _CELL = r"(?is)<(t[hd])\b([^>]*)>(.*?)</t[hd]>"
@@ -1003,15 +1035,45 @@ def apply_book_overrides(folder: str, fixes: bool = True) -> None:
 # no longer matches, instead of the old "extracted.txt is newer than
 # translation.txt -> redo the whole book" rule, which cost a full GPU run
 # after any reprocess and needed a manual `touch` to avoid.
-def page_fingerprint(page_text: str) -> str:
+# Since 2026-11-10 (record "version": 2) the fingerprint covers exactly what
+# the page translation reads: each table is its [[TABLE]] marker, so a
+# corrected table cell ([[ocr_fix]]) retranslates that cell in the table pass
+# (tables.json keeps its own source), not the page's running text.
+def _fingerprint_v1(page_text: str) -> str:
     import hashlib
     body = re.sub(r"\s+", " ", clean_vlm_extraction(page_text) if page_text.strip() else "").strip()
     return hashlib.sha1(body.encode("utf-8")).hexdigest()[:16]
 
 
-def load_fingerprints(folder: str):
+def page_fingerprint(page_text: str) -> str:
+    import hashlib
+    body = clean_vlm_extraction(page_text) if page_text.strip() else ""
+    body = re.sub(r"\s+", " ", _mark_tables(body) if body else "").strip()
+    return hashlib.sha1(body.encode("utf-8")).hexdigest()[:16]
+
+
+def fingerprint_matches(stored: str, page_text: str) -> bool:
+    """A stored fingerprint of either kind (a hand edit made before the
+    2026-11-10 change keeps the old kind in its header)."""
+    return stored in (page_fingerprint(page_text), _fingerprint_v1(page_text))
+
+
+def load_fingerprints(folder: str, pages: list = None):
+    """The stored fingerprints. Given the book's current pages, a record of the
+    old kind (whole page, tables included) is moved to the new kind once:
+    a page whose old fingerprint still matches gets the new one, a page that
+    had changed keeps its old one, so it stays marked as changed."""
     p = f"{folder}/intermediate/translated_from.json"
-    return json.load(open(p, encoding="utf-8"))["pages"] if os.path.exists(p) else None
+    if not os.path.exists(p):
+        return None
+    d = json.load(open(p, encoding="utf-8"))
+    if d.get("version", 1) < 2 and pages is not None and len(pages) == len(d["pages"]):
+        d["pages"] = [page_fingerprint(t) if old == _fingerprint_v1(t) else old
+                      for old, t in zip(d["pages"], pages)]
+        d["version"] = 2
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(d, fh, ensure_ascii=False, indent=1)
+    return d["pages"]
 
 
 _RUN_STAMP = None
@@ -1055,7 +1117,7 @@ def save_fingerprints(folder: str, fps: list, translated: list = None,
     for k, t in enumerate(page_stamps or []):
         stamps[k] = t or stamps[k]
     with open(p, "w", encoding="utf-8") as fh:
-        json.dump({"version": 1, "pages": fps, "models": models, "stamps": stamps},
+        json.dump({"version": 2, "pages": fps, "models": models, "stamps": stamps},
                    fh, indent=0)
 
 
@@ -1610,7 +1672,7 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
         finished = set()
     if finished:
         print(f"Resuming: {len(finished)} of {len(targets)} page(s) already done")
-    fps = load_fingerprints(folder) or [page_fingerprint(p) for p in ex]
+    fps = load_fingerprints(folder, ex) or [page_fingerprint(p) for p in ex]
     kinds = _pagekind.book_page_kinds([clean_vlm_extraction(p) for p in ex])
     _progress.start(stem, "translation", len([t for t in targets if t not in finished]))
     for s_ in targets:
@@ -1732,7 +1794,7 @@ def main():
 
             if os.path.exists(dst):
                 n_tr = len(_pageio.split_pages(open(dst, encoding="utf-8").read()))
-                stored = load_fingerprints(folder)
+                stored = load_fingerprints(folder, pages)
                 if stored is None and n_tr == len(pages):
                     # translated before fingerprints existed: take the current
                     # source as the baseline (the translation is assumed to match it)

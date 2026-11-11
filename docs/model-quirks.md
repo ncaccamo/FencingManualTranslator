@@ -1103,6 +1103,19 @@ report spots the pattern (small head boxes where the OCR reads no head, on
 book*. Robaglia (19 such pages) fell just under the threshold — check the
 scan when a book's report shows many "running head, but none is shown".
 
+### 1.17 A word split at a line end read as a different real word (2026-11-10)
+
+Bruno's synoptic tables have a narrow last column; «indentro» there is
+printed «inden-» / «tro» across two lines, and the OCR joined the halves as
+«indietro» ("back") — a real word, so no check catches it. 39 cells on 10
+pages came out "To the arm back", "Stop-hit to the chest back". The scan
+decides (pdf 252, 264, 278 print «inden-» clearly); the running text uses
+«indietro» only as «flettere l'avambraccio indietro». Not a rule: a code
+rule would break the real word, and it is one book's column. Fixed with
+`[[ocr_fix]]` (new: a correction to the OCR text before parsing,
+`docs/per-book-files.md`), so the source is right and only the corrected
+cells were translated again.
+
 ## Part 2 — Translation (Qwen3.8-27B i1-Q4_K_S, port 11434)
 
 Qwen3.8-27B is the default since 2026-09-25 (translation model selection
@@ -1932,6 +1945,18 @@ not. Matching is per book, not across books.
 
 ## Part 3 — shared / architectural
 
+- **What a correction retranslates** (2026-11-10). A page's fingerprint
+  (`translated_from.json`, record version 2) covers what the page
+  translation reads, with each table as its `[[TABLE]]` marker: a change
+  inside a table no longer marks the page's running text as changed (the
+  table pass keeps its own source in `tables.json`). Old records were
+  moved page by page, only where the page still matched; Masiello 1887's
+  61 table-only pages were proved table-only from the pre-rewrite OCR
+  backup. The table pass sends only cells whose source text changed and
+  keeps every other cell's English (`table_cell_memory`), so a corrected
+  cell never rewords the rest of the page. Before this, any source fix
+  risked rewording everything around it, which is why corrections drifted
+  to English-side patches that broke at the next retranslation.
 - **Page separator** — `pipeline/_pageio.py::PAGE_SEP` (U+001E). Every
   stage joins / splits the multi-page files on it. Was `\n---\n`, which a
   stray Markdown rule could split (see 2.1); the control char can't occur

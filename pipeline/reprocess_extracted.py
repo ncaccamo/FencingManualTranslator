@@ -50,6 +50,12 @@ for folder in targets:
 
     raw_pages = [collapse_runs(p) for p in
                  _pageio.split_pages(open(raw_path, encoding="utf-8").read())]
+    # the reviewer's corrections of OCR misreadings ([[ocr_fix]]); raw_ocr.txt is never changed
+    _stem = os.path.basename(folder).replace("_translated", "")
+    _n, _miss = _overrides.apply_ocr_fixes(raw_pages, _overrides.load(_stem))
+    if _miss:
+        print(f"  ⚠ overrides: [[ocr_fix]] text not found on scan page(s) {_miss} -- "
+              f"read right by a re-OCR? Review {_overrides.path_for(_stem)}")
     parsed = [parse_vlm_response(p) for p in raw_pages]
     postprocess_parsed_pages(parsed)
     # running heads read from the page where the OCR reply left the field out

@@ -53,7 +53,10 @@ the operator's business and is not tracked here.)
   another copy (`pipeline/patch_scan.py`).
 - **Review loop:** each run writes a review report (French and Italian
   checks); decisions go in `books/<stem>.overrides.toml` and are re-applied
-  on every run; only pages whose source text changed are retranslated.
+  on every run. A correction reruns only what it touches: an OCR misreading
+  is corrected in the source (`[[ocr_fix]]`), a table retranslates only its
+  changed cells, a page's running text only when its own text changed;
+  the same table cell reads the same on every page.
 - **Cover page:** title (original, English, full title as printed), author,
   first-published year and the scan's edition, source and its terms, the
   models and the pipeline revision and date behind each page, and the

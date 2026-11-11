@@ -171,6 +171,46 @@ English a `[[table_fix]]` produced wins, else the most common one. So one
 fix on one page corrects a repeated heading everywhere; the other pages
 need no fix of their own.
 
+A table is never retranslated wholesale: when a page's table source
+changes (an `[[ocr_fix]]`, a re-read), only the cells whose source text
+changed go to the model; every other cell keeps the English it has, your
+fixes included.
+
+### `[[ocr_fix]]`: a correction to the OCR text
+
+```toml
+[[ocr_fix]]                # the scan prints «inden-tro» split at a line end;
+scan = 263                 # the OCR read «indietro»
+find = "indietro"
+replace = "indentro"
+```
+
+For a word the OCR **misread** — the scan clearly prints something else.
+The correction is made to the page's OCR reply before it is parsed, so the
+source text is right and everything built from it follows: the table cell
+or the running text is translated from the corrected words. `raw_ocr.txt`
+itself is never changed (it keeps what the model read), so the correction
+survives a re-OCR and is reported in the review report when its `find` is
+no longer in the page (the page was read again). `find` is plain text in
+the OCR reply and replaces every occurrence on that page; check that it
+cannot match anything that is right (`show_page.py`, or a dry run).
+
+**What it reruns, and only that:**
+
+| The corrected word is in… | Rerun | What is translated again |
+|---|---|---|
+| a table | `queue.py add reprocess <stem>`, then `add tables <stem>` | only the table cells whose text changed |
+| the running text | `queue.py add book <stem>` (it reprocesses first, then translates the changed pages) | that page's running text |
+
+Before the reprocess, `scripts/dry_run.py <stem>` shows every page it
+would change: it should list only your corrections. Then the PDFs.
+
+Prefer `[[ocr_fix]]` to a `[[fix]]` / `[[table_fix]]` on the English when
+the cause is a misreading: the English fix hides the error but leaves the
+wrong word in the source, so it returns at the next retranslation; the
+OCR fix removes the cause. Never edit `raw_ocr.txt` or `extracted.txt` by
+hand: a hand edit there is invisible to review and lost at the next run.
+
 ---
 
 ## `<stem>.edits/`: pages edited by hand
@@ -265,8 +305,9 @@ III.5a). The original is kept in `books/_alt/`.
 | A running head is wrong, or shouldn't be there | `[pages.N] header` |
 | A running head's English is wrong | `[headers]` |
 | A term should always be rendered one way in this book | `[terms]`, then retranslate the pages that use it |
+| The OCR misread a word (the scan prints something else) | `[[ocr_fix]]`, then reprocess and translate what it feeds |
 | A word or sentence in the English is wrong | `[[fix]]` |
-| A table cell's English is wrong | `[[table_fix]]` |
+| A table cell's English is wrong (one fix covers every page with the same cell) | `[[table_fix]]` |
 | A paragraph or page needs rewriting, or a line is missing | `edit_page.py` (`<stem>.edits/`) |
 | A page's translation is poor and a retranslation may fix it | `2_translate.py --pages <stem> N` or `[pages.N] retranslate` |
 | A plate caption is misread | `[pages.N] caption` (+ `caption_en`) |
@@ -274,6 +315,13 @@ III.5a). The original is kept in `books/_alt/`.
 | Plates are sideways | `<stem>.rotate` |
 | A border or shadow is transcribed as text | `<stem>.crop` (before the first run) |
 | A page is missing or damaged in this copy | `patch_scan.py` |
+
+**Correct the cause where it happens.** An OCR misreading is corrected in
+the source (`[[ocr_fix]]`), a translation choice in the English (`[[fix]]`,
+`[[table_fix]]`, `[terms]`), a mistake that recurs in a pipeline rule.
+Each correction reruns only what it affects: a corrected table cell
+retranslates that cell, not its page; a page's running text is
+retranslated only when its own text changed.
 
 **Keep corrections few.** When the same mistake shows up on many pages or
 in several books, it is a pipeline rule to improve, not a list of
