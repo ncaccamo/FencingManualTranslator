@@ -196,6 +196,18 @@ centred, level with it, above the text (`_layout.picture_caption`).
   differ, a line in or after the passage not found on the scan, a list of
   names or titles (Blengini, Joseph-Renaud), or any English line that
   would be lost.
+  - **Labels, intros and page turns** (2026-11-13, Masiello pdf 294–600,
+    Enrichetti pdf 125): two labels each centred over its column on one
+    printed line («Maestro.» … «Allievo.», «COLPI» … «PARATE») are split
+    by where the words *start* -- a line of up to three words, one well
+    inside each column (the text layer's box for a small-capitals word can
+    run far past it). A source line the scan spaces across both columns
+    («Si eseguisce … in due tempi:») is found as its left and right pieces
+    on one baseline. An intro ending ":" with nothing beside it is set
+    above the table, so the label row after it becomes the table's header
+    row. A table run on from the page before may open a page with one line
+    on a side (one Maestro command beside the pupil's lines); anywhere
+    else a table still needs two lines a side.
   - **A scan with no text layer** (Masiello 1902 foil, a photographed
     copy): the layout boxes alone place the lines (`box_positions`), one
     source line per box. The OCR read these pages in different orders --
@@ -380,7 +392,12 @@ the rest of the code never thinks about page breaks:
      picture's caption; a page's one such picture goes where the line was
      (before the text, after it, or after the paragraph before it). The
      side-by-side keeps the line: it is that PDF's only copy of the caption.
-     Only when the source and the English have as many paragraphs. A
+     Only when the source and the English have as many paragraphs.
+     A caption a reviewer set (`[pages.N] caption`) that the English text
+     does not carry is drawn in the side-by-side's English column above the
+     text; a picture's alt text in the OCR («![caption](…)») does not count
+     as the source carrying it -- the translation drops it
+     (Prévost-Jollivet pdf 307, 2026-11-13). A
      two-line printed caption (a credit over a description, Blengini pdf
      49-58) is matched whole: the next paragraph joins when the detector's
      larger caption box, or the one right under, holds its line; a letter

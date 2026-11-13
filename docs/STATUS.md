@@ -115,8 +115,9 @@ the operator's business and is not tracked here.)
    "50") stays in the text when no bare label is read from the scan; a
    stray offset print read as text; a table too big for the side-by-side's
    column is skipped there (Bruno's synoptic tables); a row of a lesson
-   table the OCR set as a text line ("Invites in *quarta*. | As first
-   feint…", Masiello 1887 §55). Each is a book data fix today (`[[fix]]`,
+   table the OCR set as one line joined by "|" (Masiello 1887 § 55: an
+   `[[ocr_fix]]` splits it, and the table is then rebuilt from the scan).
+   Each is a book data fix today (`[[fix]]`, `[[ocr_fix]]`,
    `[pages.N] caption`, `.pictures`) until a second book shows the same
    failure (`.pictures add:` for a picture the detector missed or boxed
    badly; `[pages.N] picture_after` for its place in the text). Tables
@@ -181,6 +182,35 @@ the operator's business and is not tracked here.)
    book ("first-use note"). The kept and footnoted lists the code works
    from are read from the tables since 2026-11-12; the always-translate
    repairs and the report's wording checks are still Python lists.
+9. **Long quotations left untranslated.** Prompt rule 0 asks for every
+   quotation in English, but Latin and French passages in an Italian book
+   are still left as printed or tagged "[Latin in the original]" without
+   a translation (Florio, retranslated 2026-11-11, needed page edits). The
+   review report lists them; the fix in the pipeline is a stronger prompt
+   example or a second "translate this quotation" call.
+10. **Step 1 puts a footnote's continuation before the page's first
+   paragraph** when it joins a footnote across a page break (Florio pdf 15:
+   the end of the previous page's note sat ahead of the body text, and the
+   translation then dropped the paragraph). One case so far, fixed by a
+   page edit; the join code is the cause.
+11. **The review report's consistency check counts a printed speaker label
+   as different wording** ("MAESTRO — Parries *terza*" against "Parries
+   *terza*"). It should ignore a leading MAESTRO / ALLIEVO / STUDENT label;
+   such items are answered "fine" by hand today.
+12. **Italian rules the model still breaks, no code check yet:** Maestro
+   lines in the present where the book prints the future (tense follows the
+   print, 2026-11-12); ordinals «1ª … 8ª» as "1st … 8th" (rule 3: *prima*
+   … *ottava*); «tempi» as "tempos"; «quarta bassa» as "low *quarta*";
+   «maestro» as "master". Fixed per book today; a term-table check or a
+   repair would cover the next Italian book.
+13. **Pages that may be cut off without a record.** French pages over about
+   250 words translated between 2026-10-19 and the page prompt (2026-11-12)
+   can be cut short; the review report lists a cut-off only for pages
+   translated since. Check a book's long pages before its release.
+14. **Not built:** the one page model (note area and labels: its own
+   session, starting with a `scripts/dry_run.py` survey of what a
+   note-aware sentence join would move in every book); reason / scope
+   fields on fixes.
 
 ## Not yet tested
 

@@ -263,6 +263,10 @@ def missing_captions(figs, body, src_body=""):
     words (a retranslation, Kirchhoffer pdf 76 again, 2026-10-22), so the
     book's own caption is looked for in the source page too (`src_body`)."""
     norm = lambda t: re.sub(r"[\W_]+", " ", re.sub(r"<[^>]+>", "", t or "")).lower().strip()
+    # a picture's alt text ("![caption](...)") is not printed text: the
+    # translation drops it, so it says nothing about the English carrying the
+    # caption (Prévost-Jollivet pdf 307, 2026-11-13)
+    src_body = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", src_body or "")
     text, src = norm(body), norm(src_body)
     out = []
     for f in figs:

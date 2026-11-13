@@ -1539,6 +1539,66 @@ def test_two_column_lesson_drawn_as_a_table():
     assert C.column_tables(en + "\nOne more line.", src, pg, boxes) == en + "\nOne more line."
 
 
+def test_two_column_lesson_labels_and_page_turn():
+    # Masiello pdf 599-600 (2026-11-13): «Maestro.» / «Allievo.» each centred
+    # over its column on one line (the text layer's box for «Maestro.» runs
+    # far past the word); «Si eseguisce … in due tempi:» spaced across both
+    # columns; and a table run on from the page before, one line on a side
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        import pymupdf as fitz           # the real library: runs in the image
+    except ImportError:
+        return
+    C = importlib.import_module("_columns")
+    boxes = [["text", 0.9, [0.11, 0.38, 0.40, 0.41]], ["text", 0.9, [0.57, 0.38, 0.95, 0.43]],
+             ["text", 0.9, [0.11, 0.45, 0.40, 0.48]], ["text", 0.9, [0.57, 0.45, 0.95, 0.50]]]
+    doc = fitz.open()
+    pg = doc.new_page(width=500, height=800)
+    put = lambda x, y, t: pg.insert_text((x, y), t, fontsize=9)
+    put(60, 270, "Si eseguisce"); put(290, 270, "in due tempi:")
+    put(100, 290, "Maestro."); put(340, 290, "Allievo.")
+    put(60, 315, "Legherà di terza."); put(290, 315, "Dalla guardia di terza svincolerà il ferro")
+    put(290, 335, "e accennerà una sciabolata di coupé.")
+    put(60, 370, "Parerà sesta."); put(290, 370, "Evitando la parata colpirà l'avversario")
+    put(290, 390, "alla guancia destra od al fianco.")
+    src = ("Si eseguisce in due tempi:\nMAESTRO.\nLegherà di terza.\nParerà sesta.\nALLIEVO.\n"
+           "Dalla guardia di terza svincolerà il ferro e accennerà una sciabolata di coupé.\n"
+           "Evitando la parata colpirà l'avversario alla guancia destra od al fianco.")
+    en = ("It is executed in two tempi:\nMAESTRO.\nHe will engage in terza.\nHe will parry sesta.\nSTUDENT.\n"
+          "From the guard of terza he will disengage his blade and indicate a cut of coupé.\n"
+          "Avoiding the parry he will hit the opponent on the right cheek or on the flank.")
+    out = C.column_tables(en, src, pg, boxes)
+    # the intro above the table, the labels its header row
+    assert "<tr><th>MAESTRO.</th><th>STUDENT.</th></tr>" in out, (C.SKIP, out)
+    assert out.index("It is executed in two tempi:") < out.index("<table")
+    assert "<tr><td>He will engage in terza.</td><td>From the guard" in out, out
+    assert "<tr><td>He will parry sesta.</td><td>Avoiding the parry" in out, out
+    # the next page opens in the table: one Maestro line beside two of the pupil's
+    doc2 = fitz.open()
+    p2 = doc2.new_page(width=500, height=800)
+    put2 = lambda x, y, t: p2.insert_text((x, y), t, fontsize=9)
+    put2(290, 90, "quarta, svincolerà il proprio ferro da quello avverso.")
+    put2(60, 115, "Parerà quinta."); put2(290, 115, "Eviterà il contatto del ferro nemico e colpirà")
+    put2(290, 135, "l'avversario alla guancia sinistra o al petto.")
+    put2(60, 200, "Tutte le azioni già accennate possono risolversi al braccio, e non occorre avanzare la gamba.")
+    b2 = [["text", 0.9, [0.11, 0.125, 0.40, 0.15]], ["text", 0.9, [0.57, 0.10, 0.95, 0.135]],
+          ["text", 0.9, [0.57, 0.13, 0.95, 0.18]], ["text", 0.9, [0.11, 0.23, 0.95, 0.26]]]
+    src2 = ("quarta, svincolerà il proprio ferro da quello avverso.\nParerà quinta.\n"
+            "Eviterà il contatto del ferro nemico e colpirà l'avversario alla guancia sinistra o al petto.\n"
+            "Tutte le azioni già accennate possono risolversi al braccio, e non occorre avanzare la gamba.")
+    en2 = ("quarta, he will disengage his blade from the opponent's.\nHe will parry quinta.\n"
+           "He will avoid the contact of the enemy blade and hit the opponent on the left cheek or the chest.\n"
+           "All the feint actions already indicated can be resolved to the arm, and one need not advance the leg.")
+    out2 = C.column_tables(en2, src2, p2, b2)
+    assert "<tr><td>He will parry quinta.</td><td>He will avoid" in out2, (C.SKIP, out2)
+    # a page whose passage does not open it keeps the two-lines-a-side rule
+    en3 = "A paragraph of running text opens this page and is set across it.\n" + en2
+    src3 = "Un paragrafo di testo corrente apre questa pagina ed è composto per tutta la sua larghezza.\n" + src2
+    p2.insert_text((60, 60), "Un paragrafo di testo corrente apre questa pagina ed è composto per tutta la sua larghezza.", fontsize=9)
+    assert C.column_tables(en3, src3, p2, b2 + [["text", 0.9, [0.11, 0.06, 0.95, 0.08]]]) == en3
+
+
 def test_two_column_lesson_without_text_layer_from_the_boxes():
     # Masiello's foil (a photographed copy, no text layer): each source line
     # is one layout box; the OCR read some pages one column then the other,

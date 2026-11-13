@@ -97,6 +97,18 @@ def visual_lines(page, g, wide=(), band=None):
         gaps = [(ws[k + 1][0] - ws[k][2], k) for k in range(len(ws) - 1)
                 if lx1 - 0.06 <= ws[k][2] and ws[k + 1][0] <= rx0 + 0.06]
         gap, k = max(gaps, default=(0, None))
+        # two labels each centred over its column on one baseline («Maestro.»
+        # … «Allievo.», Masiello pdf 599): a line of up to three words, one
+        # starting well inside the left column and the next well inside the
+        # right one (by where words start: the text layer's word boxes can
+        # run far past the printed word)
+        wide_gap = [(ws[j + 1][0] - ws[j][0], j) for j in range(len(ws) - 1)
+                    if len(ws) <= 3 and ws[j][0] <= gx - 0.1 and ws[j + 1][0] >= rx0 + 0.05]
+        if wide_gap:
+            gap, k = max(wide_gap)
+            out.append((y, "L", " ".join(w[4] for w in ws[:k + 1]), x0, ws[k][2]))
+            out.append((y, "R", " ".join(w[4] for w in ws[k + 1:]), ws[k + 1][0], x1))
+            continue
         # two columns' lines on one baseline -- the left one starts at the
         # left column's edge (a centred heading «IV. ESEMPIO» does not)
         if k is not None and gap >= 0.02 and x0 <= lx0 + 0.08:
@@ -142,6 +154,19 @@ def place(src_lines, vis, y0, y1):
                     best, bi = r, k
             if best < 0.8:
                 bi = None
+        if bi is None and len(key) >= 12:
+            # one line spaced out across both columns («Si eseguisce … in due
+            # tempi:», Masiello pdf 599): a left piece and a right piece on
+            # the same baseline, read together
+            for k in free:
+                y, s, t = starts[k][0], starts[k][1], starts[k][2]
+                if s != "L":
+                    continue
+                rk = next((j for j in free if j != k and starts[j][1] == "R" and abs(starts[j][0] - y) < 0.003), None)
+                if rk is not None and (t + " " + starts[rk][2]).startswith(key):
+                    bi = k
+                    used[rk] = True
+                    break
         if bi is None and len(key) < 12 and key in keys:
             out.append(keys[key] + ("dup",)); continue      # the same label again
         if bi is None:
@@ -168,7 +193,12 @@ def build(en_lines, pos, g, y0, y1, one_side_short=False, split=None):
     inband = lambda p: p is not None and (y0 - (0.04 if p[1] == "F" else 0.005)) <= p[0] <= y1 + 0.005
     idx = [k for k, p in enumerate(pos) if inband(p)]
     cols = [k for k in idx if pos[k][1] in "LR" and len(pos[k]) == 2]
-    if sum(pos[k][1] == "L" for k in cols) < 2 or sum(pos[k][1] == "R" for k in cols) < 2:
+    nl, nr = sum(pos[k][1] == "L" for k in cols), sum(pos[k][1] == "R" for k in cols)
+    # a table run on from the page before opens the page: its last row may
+    # have one line on a side (Masiello pdf 600: «Parerà quinta.» beside the
+    # pupil's two lines)
+    cont = bool(cols) and cols[0] == 0 and min(nl, nr) >= 1 and max(nl, nr) >= 2
+    if (nl < 2 or nr < 2) and not cont:
         SKIP[0] = "under 2 lines a side"; return None
     # both columns hold sentences (actions, hits and parries), not a list of
     # names or titles (Blengini pdf 134's masters, Joseph-Renaud's novels)
@@ -199,6 +229,14 @@ def build(en_lines, pos, g, y0, y1, one_side_short=False, split=None):
             seen.add((round(y, 3), _norm(en_lines[k])))
         items.append((y, 0 if side == "F" else 1, side, re.sub(r"⟦MARGIN:\s*(.*?)⟧", r"\1", en_lines[k])))
     items.sort()
+    # an intro ending ":" with nothing beside it («Si eseguisce in due
+    # tempi:», which the scan spaces across the columns) is set above the
+    # table, so a label row («MAESTRO.» | «ALLIEVO.») after it heads the
+    # table (Masiello pdf 599)
+    for n, (y, o, side, t) in enumerate(items):
+        if side in "LR" and re.sub(r"<[^>]+>", "", t).rstrip().endswith(":") and not any(
+                m != n and s2 in "LR" and abs(y2 - y) < 0.012 for m, (y2, _, s2, _) in enumerate(items)):
+            items[n] = (y, 0, "F", t)
     block, rows = [], []
     def flush():
         if rows:

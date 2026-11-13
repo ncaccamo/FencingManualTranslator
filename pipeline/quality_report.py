@@ -909,6 +909,11 @@ def check_book(folder: str) -> list:
     # two ways in the book: Barbasetti "I. TEMPO" -> "I. TIME" / "I. TEMPO"
     # (38 of 86), "Azioni composte" -> compound / composite actions
     plain = lambda x: re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", x)).strip()
+    # a lesson line's printed speaker label is not part of its wording:
+    # "MAESTRO — He will parry terza" is "He will parry terza" (Masiello 1887,
+    # 42 items answered "fine" by hand, 2026-11-11/13). Only the speakers --
+    # "NOTE. —", "Tierce. —" are headings and stay.
+    speaker = re.compile(r"^(?:MAESTRO|ALLIEVO|STUDENT|PUPIL|MA[IÎ]TRE|[EÉ]L[EÈ]VE)\s*[—–-]\s*", re.I)
     seen_as = defaultdict(lambda: defaultdict(list))
     for i, (e, t) in enumerate(zip(ex, tr)):
         sl = [plain(l) for l in clean_vlm_extraction(e).split("\n") if l.strip()] if e.strip() else []
@@ -916,6 +921,7 @@ def check_book(folder: str) -> list:
         if len(sl) != len(el):
             continue
         for a, b in zip(sl, el):
+            a, b = speaker.sub("", a), speaker.sub("", b)
             if 1 <= len(a.split()) <= 6 and len(re.findall(r"[^\W\d_]", a)) >= 3:
                 seen_as[a.upper().rstrip(".:")][b.upper().rstrip(".:")].append(i + 1)
     for a, ens in seen_as.items():
