@@ -332,7 +332,7 @@ line = '''sciabolata → cut ("sciabolata alla testa" → cut to the head)'''
 id = "montante"
 kind = "translate"
 source = ["montante"]
-line = '''montante → rising ("sciabolata di montante" → rising cut, "molinello montante" → rising <i>molinello</i>) — a direction, not a named cut in these books.'''
+line = '''montante → rising cut, the side first ("montante esterno" → outside rising cut, "finta montante interno" → feint of inside rising cut, "sciabolata di montante" → rising cut); "molinello montante" → rising <i>molinello</i>. Never "rising" alone as a noun.'''
 
 [[term]]
 id = "taglio"

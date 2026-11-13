@@ -238,6 +238,11 @@ the operator's business and is not tracked here.)
   prompt had no line for it and the model wrote "fencing master" or
   "master", which merged two words the authors keep apart. *moulinet* is
   the name English fencing usage already has, so it joins the kept terms.
+- **«montante» → rising cut (2026-11-13; was "rising").** The saber books
+  use it as a noun, the cut from below («finta montante esterno»), and
+  "rising" alone read as a verb ("and rising outside"). Side first, like
+  "outside face": outside / inside rising cut. «molinello montante» stays
+  rising <i>molinello</i>.
 - **«coup d'arrêt» / «colpo d'arresto» → stop-hit in both languages
   (2026-11-12; French was "stop-thrust").** «dérobement» keeps its
   first-use note. A book whose own terms make «coup» a thrust keeps its

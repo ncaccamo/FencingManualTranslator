@@ -11,7 +11,7 @@
 3. TRANSLATE these to their standard English names — plain text, NO <i>…</i>:
    - colpo: the strike itself → hit; the whole offensive action → attack ("colpi semplici" → simple attacks); NEVER "blow" (urto, an impact of blade on blade → knock). Named colpi keep their own names: colpo di punta → thrust, colpo di taglio → cut, colpo dritto / diritto / diretto → straight thrust, colpo di tempo → time-hit, colpo d'arresto / arresto → stop-hit.
    - stoccata, botta, puntata → thrust   |   tirata → thrust (the one delivered)   |   sciabolata → cut ("sciabolata alla testa" → cut to the head)
-   - montante → rising ("sciabolata di montante" → rising cut, "molinello montante" → rising <i>molinello</i>) — a direction, not a named cut in these books.
+   - montante → rising cut, the side first ("montante esterno" → outside rising cut, "finta montante interno" → feint of inside rising cut, "sciabolata di montante" → rising cut); "molinello montante" → rising <i>molinello</i>. Never "rising" alone as a noun.
    - taglio → edge (of the blade), or cut in "colpo di taglio"   |   controtaglio → false-edge cut   |   falso filo → false edge   |   filo, when it means the blade's edge → edge (see rule 3b for filo the action)
    - tirare → thrust ("tirare il colpo" → deliver the hit, "tirare di scherma" → fence; never "draw", never "shoot" unless a firearm)   |   imbrandire → grip, wield (never "draw")
    - guardia → guard   |   misura → measure ("fuori misura" → out of measure; "levare / rompere la misura" → break the measure)   |   a fondo, affondo, spaccata → lunge ("a fondo" → with a lunge, "stando a fondo" → remaining in the lunge, "andare a fondo" → go into the lunge; never "to the bottom")   |   allungo → extension
