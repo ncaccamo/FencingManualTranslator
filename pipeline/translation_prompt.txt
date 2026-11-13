@@ -13,7 +13,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
 1. Translate EVERYTHING into modern English. The output must be entirely English (Latin script only). Do not leave French / Italian / German / Spanish / Latin sentences, phrases, headings, or captions untranslated. Never write a note to yourself in any language.
 
 2. KEEP in the original language, wrapped in <i>…</i>, ONLY this small set — the terms English-language fencing literature itself retains:
-   - French: riposte, remise, reprise, croisé, corps à corps, volte, sentiment du fer, tac-au-tac ("du tac au tac" → <i>tac-au-tac</i>), flanconnade (also spelled flanconade — write <i>flanconnade</i>), appel (the stamp of the foot: <i>appel</i>, plural <i>appels</i>), pointe d'arrêt (the pointed tip fixed to the épée's button — a device, never an action), doublé and dédoublé (a double, and a double in the reverse direction: <i>doublé</i>, <i>dédoublé</i>; the verbs "doubler", "dédoubler" → make a <i>doublé</i>, make a <i>dédoublé</i>; where the book DEFINES the word, keep the defined word itself: "dédoubler signifie doubler en sens inverse du premier doublé" → "<i>dédoubler</i> means to double in the direction opposite to the first <i>doublé</i>"), and the numbered lines/parries prime, seconde, tierce, quarte, quinte, sixte, septime, octave; belle (the deciding hit when the score is level: "le dernier, dénommé belle" → the last, called the <i>belle</i>).
+   - French: riposte, remise, reprise, croisé, corps à corps, volte, sentiment du fer, tac-au-tac ("du tac au tac" → <i>tac-au-tac</i>), flanconnade (also spelled flanconade — write <i>flanconnade</i>), moulinet (plural <i>moulinets</i>), appel (the stamp of the foot: <i>appel</i>, plural <i>appels</i>), pointe d'arrêt (the pointed tip fixed to the épée's button — a device, never an action), doublé and dédoublé (a double, and a double in the reverse direction: <i>doublé</i>, <i>dédoublé</i>; the verbs "doubler", "dédoubler" → make a <i>doublé</i>, make a <i>dédoublé</i>; where the book DEFINES the word, keep the defined word itself: "dédoubler signifie doubler en sens inverse du premier doublé" → "<i>dédoubler</i> means to double in the direction opposite to the first <i>doublé</i>"), and the numbered lines/parries prime, seconde, tierce, quarte, quinte, sixte, septime, octave; belle (the deciding hit when the score is level: "le dernier, dénommé belle" → the last, called the <i>belle</i>).
    - "parade de tierce" = "parry of tierce" — translate "parade" (rule 3), keep the number.
    - épée — keep as "épée" (it IS the English term), wrap in <i>épée</i>.
    - German: Ausfallen, Zornhau, Versetzung, Absetzen, Winden
@@ -26,7 +26,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - fleuret → foil   |   sabre → saber   |   doublement → doubling
    - coup droit → straight thrust   (NOT "straight right"; "droit" here = straight)
    - une-deux → one-two   |   fente → lunge   |   demi-fente → half-lunge
-   - assaut → bout   |   tireur → fencer   |   maître (d'armes) → fencing master   |   salle (d'armes) → fencing hall/room
+   - assaut → bout   |   tireur → fencer   |   maître (d'armes) → fencing master   |   professeur → professor ("professeur d'escrime" → professor of fencing)   |   salle (d'armes) → fencing hall/room
    - "leçon d'assaut" → "bout lesson" (keep the word "lesson" — NOT the same as a bare "assaut")
    - "un assaut d'épée" → "an épée bout"  (plain "assaut", NO "lesson")
    - mouvement, mise en garde, botte, temps, mesure, ligne → movement, on-guard position, thrust, tempo, measure, line   ("hors de mesure" → out of measure)

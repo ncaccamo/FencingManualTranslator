@@ -77,6 +77,13 @@ english = ["volte"]
 enforce = [["volte", []]]
 
 [[term]]
+id = "moulinet-kept"
+kind = "keep"
+source = ["moulinet*"]
+english = ["moulinet"]
+enforce = [["moulinet", []]]
+
+[[term]]
 id = "sentiment-du-fer-kept"
 kind = "keep"
 source = ["sentiment du fer"]
@@ -313,6 +320,12 @@ id = "maitre"
 kind = "translate"
 source = ["maître"]
 line = '''maître (d'armes) → fencing master'''
+
+[[term]]
+id = "professeur"
+kind = "translate"
+source = ["professeur"]
+line = '''professeur → professor ("professeur d'escrime" → professor of fencing)'''
 
 [[term]]
 id = "salle"

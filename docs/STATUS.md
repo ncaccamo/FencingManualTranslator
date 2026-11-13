@@ -232,6 +232,12 @@ the operator's business and is not tracked here.)
   example gives that form: "One will bring the right foot forward" (a
   passive version was tried first and turned the reviewed books' "one
   will" into passives).
+- **«professeur» → professor; *moulinet* kept (2026-11-13).** «professeur»
+  is the word printed, so it reads "professor" ("professeur d'escrime" →
+  professor of fencing); «maître (d'armes)» stays "fencing master". The
+  prompt had no line for it and the model wrote "fencing master" or
+  "master", which merged two words the authors keep apart. *moulinet* is
+  the name English fencing usage already has, so it joins the kept terms.
 - **«coup d'arrêt» / «colpo d'arresto» → stop-hit in both languages
   (2026-11-12; French was "stop-thrust").** «dérobement» keeps its
   first-use note. A book whose own terms make «coup» a thrust keeps its
