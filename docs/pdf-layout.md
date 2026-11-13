@@ -282,10 +282,13 @@ the rest of the code never thinks about page breaks:
   drawn as a two-part head.
 - `body(text)` — `split_footnotes`, then `_flow(layout(body))`, then the
   footnote block smaller and grey. When the page's last sentence runs on
-  to the next page, its notes are held (`Flow.held`) and drawn after the
-  next page's first paragraph, where the sentence ends, never in the
-  middle of it; pictures waiting for that place go there too (Barbasetti
-  pdf 63 and 76; 27 note blocks in the release books, 2026-11-04). `_flow` loops `draw()` → new page →
+  to the next page, its notes are held (`Flow.held`) and drawn at the foot
+  of their own page, just before the next page's head (`section_label`),
+  as the book prints them: the head already breaks the sentence there
+  (user, Barbasetti pdf 66, 2026-11-13; until then they waited for the
+  sentence's end, inside the next page's text). Pictures still wait until
+  the next page's first paragraph, where the sentence ends (Barbasetti
+  pdf 63 and 76, 2026-11-04). `_flow` loops `draw()` → new page →
   `draw()` until there's no leftover.
 - `figure(src_page, band, caption)` — rasterise the scan page (or the
   `band` sub-rectangle) at 150 dpi, embed as JPEG scaled to the column
@@ -390,9 +393,9 @@ the rest of the code never thinks about page breaks:
 3. `section_label`, then draw each figure, then `body(tr)` — **unless**
    the body is just the figure's caption again (≤ 20 words, matches a
    caption), in which case the body is skipped. When the page before
-   stopped mid-sentence, its notes and this page's figures wait until
-   this page's first paragraph is drawn, so neither lands inside the
-   sentence (`_render.page_left_open`: also when its last line has an
+   stopped mid-sentence, this page's figures wait until this page's
+   first paragraph is drawn, so none lands inside the sentence (its notes
+   were drawn before this page's head) (`_render.page_left_open`: also when its last line has an
    unclosed "(" — "(see fig." with the number on the next page, Barbasetti
    pdf 92 — but never after a title page, whose last line is an imprint:
    Kirchhoffer pdf 12). A page set `[pages.N] leave_out = true` (library

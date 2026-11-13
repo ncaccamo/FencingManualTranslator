@@ -306,6 +306,11 @@ class Flow:
         # tightens the rule, so a run of small/landscape plates can pack
         # two to a sheet when they genuinely fit (portrait plates hit the
         # 82%-height cap and still get one each -- no shrinking to force it).
+        # notes of a page whose sentence ran on: at the foot of their own
+        # page, before the next page's head, as the book prints them -- the
+        # head already breaks the sentence there; drawn after it, they sat
+        # inside the next page's text (user, Barbasetti pdf 66, 2026-11-13)
+        self.release()
         label_h = self.LABEL_H * (0.6 if compact else 1.0)
         if self.page is None or self.y + label_h + reserve > COL.y1:
             self._newpage()
@@ -374,8 +379,8 @@ class Flow:
         """`interject` (figures) and notes held from the page before are drawn
         after this page's first paragraph when the last page's sentence ran
         on to this one -- not in the middle of it (Barbasetti pdf 63:
-        "(fig. [picture] 24)"; 27 note blocks in the release books,
-        2026-11-04)."""
+        "(fig. [picture] 24)", 2026-11-04). Held notes are normally drawn
+        already, before this page's head (section_label, 2026-11-13)."""
         body_txt, notes = _render.split_footnotes(text)
         if not _render.toc_page(body_txt):
             # a passage set in two columns (master | pupil): a table, rows as printed

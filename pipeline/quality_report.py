@@ -942,6 +942,15 @@ def check_book(folder: str) -> list:
         for chunk in [m.group(1) for m in re.finditer(r"<i>([^<]+)</i>", ptxt)] + \
                 ([keep_rule.group(0)] if keep_rule else []):
             kept |= {w.lower() for w in re.findall(r"[^\W\d_][\w'’-]*", chunk)}
+    # and the book's own kept terms: a [terms] English in italics ("sbasso" =
+    # "<i>sbasso</i>", Bruno; Florio's <i>mossa</i>, 2026-11-13)
+    try:
+        _bt = _overrides.load(os.path.basename(folder)[:-len("_translated")])["terms"]
+    except _overrides.OverridesError:
+        _bt = {}
+    for v in _bt.values():
+        for chunk in re.findall(r"<i>([^<]+)</i>", str(v)):
+            kept |= {w.lower() for w in re.findall(r"[^\W\d_][\w'’-]*", chunk)}
 
     def is_kept(w):                       # plurals and inflections: croisés, épées, appuntate
         stems = {w, w.rstrip("s"), w[:-1] + "a", w[:-1] + "o", w[:-1] + "e", w[:-2] + "a", w[:-2] + "o"}
