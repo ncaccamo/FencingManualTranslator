@@ -1026,6 +1026,54 @@ def check_book(folder: str) -> list:
     for s, level, kind, detail in english_only_issues(tr, figs, tables):
         add(s, level, kind, detail)
 
+    # pages step 2 kept from a reply that ran out of room (cut_off.json,
+    # _translate.record_cut_off): the English stops before the page does,
+    # whatever became of its banner. A hand edit of the page clears it (below).
+    cut_p = os.path.join(folder, "intermediate", "cut_off.json")
+    if os.path.exists(cut_p):
+        for s in sorted(int(k) for k in json.load(open(cut_p, encoding="utf-8"))):
+            if 1 <= s <= len(tr):
+                add(s, CHECK, "translation", "cut off: the model's reply ran out of room, so the English "
+                    "stops before the page does -- retranslate the page, or complete it with edit_page.py")
+
+    # a footnoted term the book uses and translates, with its first-use note
+    # nowhere in the book: the model translated the word and left the note
+    # off, and the code adds a note only where the word was left in the
+    # source language (2026-11-12: about one book-and-term pair in six).
+    # One item per term for the whole book; a note taken out on purpose is
+    # answered "leave it" once.
+    import _glossary_table as _gt
+    import _tx_terms as _tt
+    _lang = "Italian" if _rules is TERM_RULES_IT else "French"
+    _refs = defaultdict(list)
+    for _fr, _en in _tt._footnoted(_lang):
+        _refs[_tt._footnote_ref(_lang).get(_fr, _fr)].append(_fr)
+    try:
+        _book_terms = {k.lower() for k in _overrides.load(os.path.basename(folder)[:-len("_translated")])["terms"]}
+    except _overrides.OverridesError:
+        _book_terms = set()
+    _src = [_gt.norm(_gt.running_text(clean_vlm_extraction(e)) if e.strip() else "", accents=True) for e in ex]
+    _whole = "\n".join(tr)
+    for _ref, _forms in _refs.items():
+        if f"{_lang}: {_ref}" in _whole or _ref in _book_terms or _book_terms & set(_forms):
+            continue
+        _rx = re.compile(r"(?<![\w-])(?:" + "|".join(re.escape(f) for f in _forms) + r")(?![\w-])")
+        _on = [i + 1 for i, t in enumerate(_src) if _rx.search(t)]
+        if len(_on) >= 3:
+            add(0, "BOOK", "first-use note", f"«{_ref}» is on {len(_on)} pages (first: scan {_on[0]}) and "
+                f"translated, but the note \"{_lang}: {_ref}\" is nowhere in the book -- add it at the first "
+                "use (a [[fix]]), or leave it if the note was taken out on purpose")
+
+    # a checked term rule (glossary_*.toml, check = "retry") still broken
+    # after step 2's retry -- term_checks.json, _translate.record_term_left
+    term_p = os.path.join(folder, "intermediate", "term_checks.json")
+    if os.path.exists(term_p):
+        for k, left in sorted(json.load(open(term_p, encoding="utf-8")).items(), key=lambda kv: int(kv[0])):
+            if 1 <= int(k) <= len(tr):
+                for what in left:
+                    add(int(k), CHECK, "term", f"{what} -- against the term rule, and a retry naming the rule "
+                        "did not mend it: fix the wording, or set the book's own rendering under [terms]")
+
     import _cover
     for s, level, detail in name_variants(_cover._meta(os.path.basename(folder)[:-len("_translated")]), tr):
         add(s, level, "name", detail)

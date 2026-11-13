@@ -39,6 +39,8 @@ from _tx_structure import (
     match_boundary_punctuation, restore_dividers, restore_dropped_part_title,
     restore_table_markers,
 )
+import _glossary_table
+import _tx_terms
 from _tx_terms import (
     apply_always_translate, enforce_footnoted_terms, enforce_kept_terms, enforce_maestro,
     fix_known_garbles, fix_parry_names, house_italics, restore_blade_phrases, restore_rapier,
@@ -141,7 +143,100 @@ def prompt_for_book(stem: str) -> str:
     prompt for its language + its own [terms] (overrides file)."""
     global BOOK_LANG
     BOOK_LANG = book_language(stem)
-    return prompt_for_language(BOOK_LANG) + _overrides.terms_addendum(_overrides.load(stem))
+    global BOOK_TERMS
+    ov = _overrides.load(stem)
+    BOOK_TERMS = dict(ov["terms"])
+    _tx_terms.set_book_terms(ov["terms"])     # the code corrections follow the book's own terms too
+    return prompt_for_language(BOOK_LANG) + _overrides.terms_addendum(ov)
+
+# The prompt has to fit the model's context window together with the page and
+# the reply. By 2026-11 the French prompt had grown to ~7,100 tokens of an
+# 8,192 window: a page over ~250 words ran out of room and was cut off (34 of
+# 68 French test pages; six pages of the 2026-11-09 queue run). A larger
+# window costs video memory the GPU system does not have. So: a page whose
+# prompt + text + reply fits gets the whole prompt, exactly as before; one
+# that does not gets the page prompt -- the same prompt with rules 3 / 3b cut
+# down to the term-table entries whose source word is on the page
+# (_glossary_table.py), set after the examples so the fixed part before them
+# is read once by the server and reused. Measured on 97 pages and 60 gold
+# passages (docs/evaluation-and-tuning.md): no cut-off, the same speed, the
+# same score against published translations.
+CONTEXT_TOKENS = int(os.environ.get("TRANSLATION_CONTEXT_TOKENS", "8192"))
+# tokens per character, measured on the server's own counts (2026-11-11, 97
+# pages): 0.275-0.290 for prompt + source text; a reply is at most ~0.30 per
+# character of its source (95th percentile 0.31). With these the rule named
+# all 34 pages the whole prompt could not finish and 1 of 61 it could.
+_PROMPT_TOKENS_PER_CHAR, _REPLY_TOKENS_PER_CHAR = 0.29, 0.30
+_TERM_TABLES = {}
+BOOK_TERMS = {}     # the book's own [terms] (overrides file), set by prompt_for_book()
+
+
+def _term_table() -> list:
+    if BOOK_LANG not in _TERM_TABLES:
+        try:
+            _TERM_TABLES[BOOK_LANG] = _glossary_table.load(BOOK_LANG)
+        except (KeyError, ValueError, OSError) as e:
+            print(f"  (no term table for {BOOK_LANG}: {type(e).__name__}: {e})")
+            _TERM_TABLES[BOOK_LANG] = []
+    return _TERM_TABLES[BOOK_LANG]
+
+
+def term_findings(candidate: str, clean_text: str) -> list:
+    """The term rules a reply breaks, among the table entries set to
+    check = "retry" (pipeline/glossary_*.toml): (message, hint for the
+    retry). The model is asked once more with the rule named; a prompt line
+    is a request, this is the check that it was followed. The book's own
+    [terms] outrank the table."""
+    out = []
+    for t, what in _glossary_table.findings(_term_table(), clean_text, candidate, BOOK_TERMS):
+        src = _glossary_table.source_hit(t, _glossary_table.running_text(clean_text))
+        if what == "(missing)":
+            out.append((f"«{src}» kept in {BOOK_LANG} is missing",
+                        f" The source has «{src}»: it stays in {BOOK_LANG}, in <i>…</i>, as rule 2 says;"
+                        " it is missing from the translation."))
+        else:
+            out.append((f"«{src}» written \"{what}\"",
+                        f" The source has «{src}»: do not write \"{what}\" for it. The rule: {t['line']}"))
+    return out
+
+
+def record_term_left(folder: str, scan: int, left: list) -> None:
+    """intermediate/term_checks.json: the pages where a checked term rule
+    was still broken after the retry (the first try's wording was kept).
+    The review report lists them; a later translation of the page that
+    follows the rule clears the entry."""
+    p = f"{folder}/intermediate/term_checks.json"
+    rec = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    if (rec.get(str(scan)) or []) == list(left or []):
+        return
+    if left:
+        rec[str(scan)] = list(left)
+    else:
+        del rec[str(scan)]
+    with open(p + ".tmp", "w", encoding="utf-8") as fh:
+        json.dump(rec, fh, indent=1, sort_keys=True, ensure_ascii=False)
+    os.replace(p + ".tmp", p)
+
+
+def prompt_fits(prompt: str, text: str) -> bool:
+    """Will `prompt` + the page `text` + its translation fit the window?"""
+    need = (len(prompt) + len(text) + 60) * _PROMPT_TOKENS_PER_CHAR + len(text) * _REPLY_TOKENS_PER_CHAR
+    return need <= CONTEXT_TOKENS
+
+
+def page_prompt(text: str):
+    """The book's prompt cut down to this page's term entries, or None when
+    it cannot be built (a language without a term table, a prompt variant
+    without the rule headings): the whole prompt is used then."""
+    terms = _term_table()
+    if not terms:
+        return None
+    try:
+        return _glossary_table.page_prompt(PROMPT_TEMPLATE, BOOK_LANG, text, terms, at_end=True)
+    except (KeyError, ValueError, OSError) as e:
+        print(f"  (no page prompt: {type(e).__name__}: {e} -- using the whole prompt)")
+        return None
+
 
 def clean_vlm_extraction(text: str) -> str:
     """Extract only the body text from VLM structured output"""
@@ -1121,6 +1216,27 @@ def save_fingerprints(folder: str, fps: list, translated: list = None,
                    fh, indent=0)
 
 
+def record_cut_off(folder: str, scan: int, cut: bool) -> None:
+    """intermediate/cut_off.json: the pages whose English is a reply that
+    ran out of room on every try (the context window: prompt + page +
+    reply), so it stops before the page does. Kept apart from the page's
+    banner, which a person can delete: on 2026-11-09 six such pages were
+    repaired by hand and one (Prévost-Jollivet pdf 237) lost its banner
+    while still cut off. The review report lists a recorded page until it
+    is translated again without a cut, or has a hand edit."""
+    p = f"{folder}/intermediate/cut_off.json"
+    rec = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    if cut == (str(scan) in rec):
+        return
+    if cut:
+        rec[str(scan)] = run_stamp()
+    else:
+        del rec[str(scan)]
+    with open(p + ".tmp", "w", encoding="utf-8") as fh:
+        json.dump(rec, fh, indent=1, sort_keys=True)
+    os.replace(p + ".tmp", p)
+
+
 def _partial_path(folder: str) -> str:
     return f"{folder}/intermediate/translation.partial.json"
 
@@ -1456,6 +1572,8 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
     _check_reply(); a failed check retries hotter (with a hint for some),
     and when every try fails _fallback() picks what to keep."""
     fn_seen, footnoted_seen, fn_state = st["fn_seen"], st["footnoted_seen"], st["fn_state"]
+    st["page_cut"] = False      # set below when the page is kept from a reply that ran out of room
+    st["term_left"] = []        # term rules still broken after the retry (term_findings)
     if not page_text.strip() or "VLM Error" in page_text:
         print(f"  Page {i}/{n} — empty / OCR error, passed through")
         return page_text
@@ -1492,8 +1610,21 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
     # kind of page it has, and code completes what it still leaves out
     kind = st.get("kind")
     kind_note = f"{_pagekind.INSTRUCTION[kind]}\n\n" if kind else ""
+    best_is_cut = False         # the try kept if every try fails ran out of room
+    term_first, term_found = None, []   # the first try, when all it failed was a checked term rule
+
+    def accept(candidate):
+        candidate = match_boundary_punctuation(candidate, clean_text)
+        candidate, n_fn = pull_footnotes(candidate, clean_text, fn_seen, lang=BOOK_LANG)
+        candidate = extract_source_footnotes(candidate, fn_state)
+        print(f" ✓{'  (%d fn)' % n_fn if n_fn else ''}")
+        return candidate
+
+    # the whole prompt where it fits the window with this page, else the page prompt
+    template = PROMPT_TEMPLATE if prompt_fits(PROMPT_TEMPLATE, clean_text) else (page_prompt(clean_text) or PROMPT_TEMPLATE)
     for attempt in range(3):
-        print(f"  Page {i}/{n} (try {attempt + 1})", end="", flush=True)
+        print(f"  Page {i}/{n} (try {attempt + 1}{', page prompt' if template is not PROMPT_TEMPLATE else ''})",
+              end="", flush=True)
 
         # After a first failure, raise the temperature and add a
         # blunt instruction -- the old 7B model sometimes gets stuck echoing
@@ -1501,10 +1632,10 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         # extra line breaks it out.
         ctx = page_context_block(st) + kind_note
         if attempt == 0:
-            full_prompt = f"{PROMPT_TEMPLATE}\n\n{ctx}Text to translate:\n{clean_text}"
+            full_prompt = f"{template}\n\n{ctx}Text to translate:\n{clean_text}"
             temp = FIRST_TRY_TEMPERATURE
         else:
-            full_prompt = (f"{PROMPT_TEMPLATE}\n\nTranslate the following into "
+            full_prompt = (f"{template}\n\nTranslate the following into "
                            f"fluent English. Do NOT repeat any of it in the "
                            f"original language. Match the capitalisation of the "
                            f"source; do NOT write the text in all capitals."
@@ -1542,11 +1673,25 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
             time.sleep(8)
             continue
 
+        first_usable = best_candidate is None
         best_candidate = best_candidate or candidate
 
         candidate, problem = _check_reply(candidate, clean_text, attempt, src_words)
+        if not problem and attempt == 0:
+            # a checked term rule broken: asked once more with the rule named.
+            # The first try is kept for the case that the retry does no better
+            term_found = term_findings(candidate, clean_text)
+            if term_found:
+                term_first = candidate
+                problem = ("term rule: " + "; ".join(m for m, _ in term_found), 0,
+                           ("line", "".join(h for _, h in term_found)))
         if problem:
             message, pause, hint = problem
+            if first_usable:
+                best_is_cut = message.startswith("cut off")
+            if message.startswith("cut off") and template is PROMPT_TEMPLATE:
+                # the estimate was wrong: the same prompt would be cut again
+                template = page_prompt(clean_text) or template
             print(f" → {message}")
             if pause:
                 time.sleep(pause)
@@ -1556,12 +1701,22 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
                 line_hint = hint[1]
             continue
 
-        candidate = match_boundary_punctuation(candidate, clean_text)
-        candidate, n_fn = pull_footnotes(candidate, clean_text, fn_seen, lang=BOOK_LANG)
-        candidate = extract_source_footnotes(candidate, fn_state)
-        print(f" ✓{'  (%d fn)' % n_fn if n_fn else ''}")
-        return candidate
+        if term_first is not None and term_findings(candidate, clean_text):
+            # the retry breaks the rule too: the first try's wording stays
+            # (a hotter try that mends nothing is no gain), and the page is
+            # recorded for the review report
+            print(" (term rule not mended: first try kept)", end="")
+            st["term_left"] = [m for m, _ in term_found]
+            candidate = term_first
+        return accept(candidate)
 
+    if term_first is not None:
+        # the first try failed only a term rule and no retry passed the other
+        # checks: it is a usable page, not a low-confidence one
+        print(" (retries failed: first try kept)", end="")
+        st["term_left"] = [m for m, _ in term_found]
+        return accept(term_first)
+    st["page_cut"] = bool(best_candidate) and best_is_cut
     return _fallback(best_candidate, clean_text, src_words, fn_seen)
 
 
@@ -1681,11 +1836,16 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
         st["context"] = neighbour_context(ex, s_ - 1) if PAGE_CONTEXT else None
         st["kind"] = kinds.get(s_ - 1)
         tr[s_ - 1] = translate_page(ex[s_ - 1].strip(), s_, len(ex), st)
+        record_cut_off(folder, s_, st.get("page_cut", False))
+        record_term_left(folder, s_, st.get("term_left"))
         done[str(s_)] = fp(ex[s_ - 1])
         fps[s_ - 1] = page_fingerprint(ex[s_ - 1])
         finished.add(s_)
-        with open(tp, "w", encoding="utf-8") as fh:
+        # written beside the file and renamed: a crash or a full disk in the
+        # middle of the write must not leave the book's translation cut short
+        with open(tp + ".tmp", "w", encoding="utf-8") as fh:
             fh.write(_pageio.join_pages(tr))
+        os.replace(tp + ".tmp", tp)
         with open(done_p, "w", encoding="utf-8") as fh:
             json.dump(done, fh, indent=1, sort_keys=True)
         save_fingerprints(folder, fps, translated=[s_])
@@ -1841,6 +2001,8 @@ def main():
                 _st["context"] = neighbour_context(pages, i - 1) if PAGE_CONTEXT else None
                 _st["kind"] = kinds.get(i - 1)
                 translated_pages.append(translate_page(pages[i - 1], i, len(pages), _st))
+                record_cut_off(folder, i, _st.get("page_cut", False))
+                record_term_left(folder, i, _st.get("term_left"))
                 # "-": no model reply (blank / marker page) -- the cover skips it
                 page_models.append((LAST_MODEL or TRANSLATION_MODEL_NAME)
                                    if MODEL_CALLS != calls else "-")
@@ -1849,8 +2011,9 @@ def main():
                 _progress.page(i)
             _progress.finish()
 
-            with open(dst, "w", encoding="utf-8") as f:
+            with open(dst + ".tmp", "w", encoding="utf-8") as f:
                 f.write(_pageio.join_pages(translated_pages))
+            os.replace(dst + ".tmp", dst)
             save_fingerprints(folder, cur_fp, page_models=page_models,
                               page_stamps=page_stamps)
             os.remove(_partial_path(folder))

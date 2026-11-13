@@ -109,6 +109,10 @@ RUN python3 -m venv /opt/rocm714-venv && \
 # specific dirs BEFORE the build tree is deleted - newer llama.cpp links
 # these dynamically, and ROCm/Vulkan builds must not share the same
 # filenames (different backend-specific implementations).
+# llama.cpp is NOT pinned (owner's decision, 2026-11-12): each build takes
+# its newest version. In remote mode this copy is not used; in local mode a
+# rebuild can change how the models run -- manual III.12. (The image in use
+# on 2026-11-12 was built at commit a25c986.)
 RUN git clone --depth 1 https://github.com/ggerganov/llama.cpp /opt/llama.cpp && \
     cd /opt/llama.cpp && \
     \
@@ -179,8 +183,12 @@ RUN for b in llama-server llama-cli llama-bench llama-qwen2vl-cli; do \
 
 # BUILDSTAGE END
 
+# Versions pinned to what the image the pipeline was tested with holds
+# (2026-11-12): an unpinned rebuild could change how PDFs are read or drawn
+# with no test to notice. Raise one deliberately, then run evals/test_rules.py
+# and rebuild a book's PDFs to compare.
 RUN python3 -m pip install --break-system-packages --no-cache-dir \
-    ocrmypdf pdf2image pillow tqdm pymupdf requests \
+    ocrmypdf==17.12.1 pdf2image==1.17.0 pillow==12.3.0 tqdm==4.70.1 pymupdf==1.28.2 requests==2.34.2 \
     && rm -rf /root/.cache/pip
 
 # Page-layout detector (pipeline/_layout.py): tells a running head from a
@@ -191,7 +199,7 @@ RUN python3 -m pip install --break-system-packages --no-cache-dir \
 RUN python3 -m pip install --break-system-packages --no-cache-dir \
         --index-url https://download.pytorch.org/whl/cpu torch==2.14.0 \
     && python3 -m pip install --break-system-packages --no-cache-dir \
-        transformers==5.17.0 huggingface_hub \
+        transformers==5.17.0 huggingface_hub==1.33.0 \
     && python3 -c "from huggingface_hub import snapshot_download; \
 snapshot_download('docling-project/docling-layout-heron', \
 revision='8f39ad3c0b4c58e9c2d2c84a38465abf757272d8', \

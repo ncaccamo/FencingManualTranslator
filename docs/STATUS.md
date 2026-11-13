@@ -36,7 +36,16 @@ the operator's business and is not tracked here.)
   speculative decoding, see `docs/remote-gpu.md`), ~0.25 s per source word
   there (25-75 s/page depending on page size; 2.2x slower without it). First try at temperature 0 (repeatable
   wording; retries hotter). A page is never dropped; low-confidence output
-  is flagged inline.
+  is flagged inline. A page too long for the whole prompt to fit the
+  model's window gets the page prompt: the same prompt with only that
+  page's term entries (`pipeline/_glossary_table.py`, the term tables
+  `glossary_fr.toml` / `glossary_it.toml`); a page that fits is sent the
+  whole prompt. A reply that still runs out of room is recorded
+  (`intermediate/cut_off.json`) and stays in the review report until the
+  page is complete. A few term rules are checked after translation (table
+  entries with `check = "retry"`): a reply that breaks one is asked once
+  more with the rule named; if that does not mend it the first try stays
+  and the page is listed in the review report (`term_checks.json`).
 - **Page breaks:** a sentence split across a page break is joined onto one
   page before translation (`join_split_sentences()`, the shorter fragment
   moves), so it is translated whole. The review report flags any split left
@@ -82,7 +91,10 @@ the operator's business and is not tracked here.)
   and resends, instead of keeping the original text.
 - **Regression net:** `python3 evals/test_rules.py`: frozen input → output
   tests, one per bug fixed. Run it after any pipeline change; a failure
-  means a fix broke a different book.
+  means a fix broke a different book. `evals/test_glossary_table.py` holds
+  the term tables to the prompts; both run before every commit once
+  `scripts/install_hooks.sh` has been run. `evals/test_pdf_steps.py` (in
+  the container) runs steps 3 and 4 on a made-up book.
 
 ## Open items
 
@@ -153,6 +165,22 @@ the operator's business and is not tracked here.)
    buries them in nitpicks, and its fencing-term knowledge is unreliable;
    filtered, it finds under half. Not adopted -- results and the bar in
    `docs/evaluation-and-tuning.md` §4a.
+8. **Term-table checks — a first few in step 2 (2026-11-12).** The
+   tables can check a page after translation (a forbidden form present, a
+   kept term missing); 26 entries are switched on (`check = "retry"`),
+   the ones that fired on no page a reviewer had passed. Scored against the fixes already made
+   (`evals/glossary_score.py`) they would have flagged about one fix in
+   six; a check on a bare ordinary word ("time", "game") fires too often
+   and needs a phrase (`never_re`, `check_source_re`). «doublé» is left
+   off on purpose: as a participle it is also "lined", and a retry naming
+   the rule could plant the term where it does not belong. Open: more
+   entries, each after `glossary_score.py` shows it safe; a review-card-only
+   level. A first-use note the model leaves off is not added by code (84%
+   of the book-and-term pairs that should have one do; some of the rest
+   were removed on purpose): the review report lists the term once for the
+   book ("first-use note"). The kept and footnoted lists the code works
+   from are read from the tables since 2026-11-12; the always-translate
+   repairs and the report's wording checks are still Python lists.
 
 ## Not yet tested
 
@@ -166,6 +194,48 @@ the operator's business and is not tracked here.)
   the side-by-side falls back to plain flow for the whole book.
 
 ## Non-obvious decisions / don't-retry-this
+
+- **The prompt outgrew the window; long pages get a shorter prompt, not a
+  larger window (2026-11-12).** The French prompt had grown to ~7,100
+  tokens of an 8,192 window, so a page over ~250 words was cut off: 34 of
+  68 French test pages, and six pages of a queue run that were repaired
+  by hand without the cause being measured. A larger window costs video
+  memory the GPU system does not have. Tested on 97 hard pages and 60
+  gold passages (`docs/evaluation-and-tuning.md` §3.4): with only the
+  page's own term entries the prompt is ~4,200 tokens, no reply is cut
+  off, and the score against published translations is the same (46.59
+  vs 46.49). It does **not** make the model follow rules better: about
+  half of the reviewer's corrected wordings come back wrong under either
+  prompt. Against the reviewed English the page prompt read ~1 point
+  lower (a measure that favours the whole prompt), so a page that fits
+  still gets the whole prompt, unchanged. The entries go after the
+  examples: between rules 2 and 4 the server re-read everything after
+  them for each page (+11 s a page).
+- **A book's `[terms]` outrank the language's lists in code too
+  (2026-11-12).** The lists said barré → "bar"; Joseph-Renaud's `[terms]`
+  keep *barré*. The prompt carried the book's term, and the code
+  correction after the model turned every *barré* back into "bar" (16
+  hand fixes). What looked like the model ignoring a rule was the code.
+  `_tx_terms.set_book_terms()`.
+- **A repeated fix is not a rule by its count (2026-11-12).**
+  `scripts/repeated_fixes.py` lists the corrections made again and again;
+  the reviewer decides each one's scope. Some are one book's choice, and a
+  word with an ordinary sense is never rewritten by code: «double» (two)
+  and «doublé» (the technique) stand on the same page, and where the OCR
+  lost the accent only a reader can tell them apart. The term tables'
+  checks flag; they do not rewrite.
+- **Tense follows the print (2026-11-12).** Italian lesson lines printed
+  in the future («Inviterà di terza») read "He will invite in *terza*".
+  An example in the Italian prompt had shown them in the present, and
+  fixes followed the example; the example was the mistake. Corrected, it
+  pulled the impersonal «si …rà» to "he will" as well, so a second
+  example gives that form: "One will bring the right foot forward" (a
+  passive version was tried first and turned the reviewed books' "one
+  will" into passives).
+- **«coup d'arrêt» / «colpo d'arresto» → stop-hit in both languages
+  (2026-11-12; French was "stop-thrust").** «dérobement» keeps its
+  first-use note. A book whose own terms make «coup» a thrust keeps its
+  wording through `[terms]`.
 
 - **English-only pictures: the detector's boxes, a person picks the
   decorations (2026-11-04).** The density profiler and the OCR model's

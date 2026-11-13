@@ -54,9 +54,13 @@ services:
       # also covers ~/.cache/comgr etc. if LLAMA_BACKEND switches to a rocm
       # build. HOME is /home/ubuntu (image user ubuntu:1000).
       - llama-cache:/home/ubuntu/.cache
+    # The model servers answer on this system only. They take no password in
+    # local mode, so they are not offered to the network unless you choose
+    # to: LLAMA_BIND=0.0.0.0 in .env opens them to other systems. Containers
+    # on ai-net reach them by container name either way.
     ports:
-      - "11434:11434"
-      - "11435:11435"
+      - "${LLAMA_BIND:-127.0.0.1}:11434:11434"
+      - "${LLAMA_BIND:-127.0.0.1}:11435:11435"
     networks:
       - ai-net
     deploy:

@@ -24,6 +24,26 @@ def _footnote_ref(lang: str):
     return _FOOTNOTE_REF_IT if lang == "Italian" else _FOOTNOTE_REF_FR
 
 
+# Words the book being translated keeps in its own language through its
+# [terms] (overrides file): «barré» = "<i>barré</i>" in Joseph-Renaud, where
+# it is the author's named action. The lists here say barré → "bar", and
+# enforce_footnoted_terms() turned every <i>barré</i> the model rightly
+# wrote back into "bar" with a French note: 16 hand fixes in that book
+# (2026-11-12). A book's decision outranks the language's list. Set by
+# set_book_terms(), which step 2 calls wherever it takes up a book.
+_BOOK_KEPT = set()
+
+
+def set_book_terms(terms: dict) -> None:
+    """Take up a book's [terms]: the keys whose English is the word itself
+    (tags and a trailing remark aside) are kept terms of that book."""
+    _BOOK_KEPT.clear()
+    for key, value in (terms or {}).items():
+        rendering = re.split(r"\s+--\s+|\s+\(|;", re.sub(r"<[^>]+>", "", value), maxsplit=1)[0]
+        if rendering.strip().lower() == key.strip().lower():
+            _BOOK_KEPT.add(key.strip().lower())
+
+
 def enforce_footnoted_terms(text: str, seen: set, footnote: bool = True, lang: str = "French") -> str:
     """Backstop for footnoted terms. Translate EVERY occurrence the model
     left in French (bare or italicised) to its English rendering, and on
@@ -43,6 +63,8 @@ def enforce_footnoted_terms(text: str, seen: set, footnote: bool = True, lang: s
 
     label = _LANG_REF.get(lang, _LANG_REF["French"])[1]
     for fr, en in _footnoted(lang=lang):
+        if fr.lower() in _BOOK_KEPT or _footnote_ref(lang=lang).get(fr, fr).lower() in _BOOK_KEPT:
+            continue                                # this book keeps the word (its [terms])
         pat = re.compile(r"(?:<i>\s*)?(?<![\w-])" + re.escape(fr)
                          + r"(?![\w-])" + _FOOTNOTED_NOT_BEFORE.get(fr, "")
                          + r"(?:\s*</i>)?(?!\s*(?:</i>\s*)?\()", re.I)   # not a glossary headword: "<i>Caver</i> (to angle)"

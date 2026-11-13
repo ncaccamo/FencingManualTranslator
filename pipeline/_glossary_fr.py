@@ -9,70 +9,55 @@ _tx_terms.py / _tx_notes.py after the model -- and the review report's
 checks for renderings against the glossary (quality_report.py). A book's
 own choices go in its overrides file's [terms], not here."""
 
-# Footnoted terms (see translation_prompt.txt): translate to the English
-# rendering, and on the FIRST occurrence in a book mark it as
-# "English<fn>Fr. <term></fn>" -- a bare source reference, never an
-# explanatory gloss. The model does this from the prompt;
-# enforce_footnoted_terms() is the backstop for when it leaves the term in
-# French or forgets the note. Plural before singular so the longer pattern
-# wins.
-_FOOTNOTED_FR = [
-    ("prise de fer",   "taking the blade"),
-    ("rassemblements", "gatherings of the feet"), ("rassemblement", "gathering of the feet"),
-    ("rassemblant",    "gathering the feet"),     ("rassembler",   "to gather the feet"),
-    ("dérobements",    "evasions of the blade"),   ("dérobement",   "evasion of the blade"),
-    ("dégagements",    "disengagements"),          ("dégagement",   "disengagement"),
-    ("liements",       "binds"),                   ("liement",      "bind"),
-    ("froissements",   "grazes"),                  ("froissement",  "graze"),
-    ("coup de temps",  "time-hit"),
-    ("coupés",         "cut-overs"),               ("coupé",        "cut-over"),
-    ("coulés",         "glides"), ("coulé", "glide"), ("déroulé", "glide"),
-    ("à-propos",       "timing"),
-    # caver was "to drop the point" until 2026-10-11 -- wrong: the books define it
-    # as the opposite of opposition, an angled thrust (Kirchhoffer, Joseph-Renaud
-    # scan 144). barré: Robaglia's "croisé de seconde ... chasse vigoureusement le
-    # fer"; coup fourré = coup double (Kirchhoffer's glossary). Reviewer's choices.
-    ("en cavant",      "by angling"),             ("cavant",       "angling"),
-    ("caver",          "angle"),
-    ("barrés",         "bars"),                    ("barré",        "bar"),
-    ("coups fourrés",  "double hits"),             ("coup fourré",  "double hit"),
-    ("tendre la perche", "stick the arm out stiffly"), ("tendre la broche", "stick the arm out stiffly"),
-    ("la perche tendue", "the arm stuck out stiffly"),
-    # bourrer: drawing the arm back and driving the point in hard (Joseph-Renaud
-    # pdf 290, Kirchhoffer pdf 61, Cordelois); larder: in-and-out jabs.
-    # Reviewer's choices, 2026-10-31 (were shove / pressing / larding).
-    ("bourrades",      "ramming thrusts"),         ("bourrade",     "ramming thrust"),
-    ("bourreurs",      "rammers"),                 ("bourreur",     "rammer"),
-    ("en bourrant",    "by ramming"),              ("bourrant",     "ramming"),
-    ("bourrer",        "ram"),
-    ("en lardant",     "jabbing"),                 ("larder",       "jab"),
-    # fencer types and slang, reviewer's choices 2026-10-31 (terms questionnaire)
-    ("picoteurs",      "prickers"),                ("picoteur",     "pricker"),
-    ("tendeurs à outrance", "extenders to excess"), ("tendeur à outrance", "extender to excess"),
-    ("bricoleurs",     "tinkerers"),               ("bricoleur",    "tinkerer"),
-]
+# The kept and the footnoted terms are held in the term table
+# (glossary_fr.toml: fields forms / refs / model_notes / not_before /
+# enforce, described at the top of that file) and read from it here, so a
+# term's status is decided in one place. Before 2026-11-12 the lists were
+# written out in this file and had drifted from the prompt (dérobement was
+# footnoted here and plain there).
+#
+#   _FOOTNOTED_FR          [(French form, English)]: translate to the English
+#       rendering, and on the FIRST occurrence in a book mark it as
+#       "English<fn>Fr. <term></fn>" -- a bare source reference, never an
+#       explanatory gloss. The model does this from the prompt;
+#       enforce_footnoted_terms() is the backstop for when it leaves the term
+#       in French or forgets the note. A longer form goes before a shorter one
+#       it contains ("en cavant" before "cavant").
+#   _FOOTNOTE_REF_FR       the singular each form is noted under ("French:
+#       appel"), so a plural ("appels") doesn't produce a second note
+#   _FOOTNOTED_NOT_BEFORE  a footnoted term inside an ordinary phrase is not the
+#       fencing action: "froissement d'amour-propre" is hurt pride, not a graze
+#       (Jacob 1887, 2026-10-13)
+#   _KEEP_TERMS_FR         kept terms the code puts back in italics, each with the
+#       English mistranslations snapped back to it (see below)
+#   _FOOTNOTED_FR_REFS     footnoted terms left to the model (accepted as source
+#       references in its <fn> notes) -- ordinary words elsewhere, so the
+#       backstop must not rewrite them
+#
+# Why some of them read as they do (reviewer's choices):
+#   caver was "to drop the point" until 2026-10-11 -- wrong: the books define it
+#     as the opposite of opposition, an angled thrust (Kirchhoffer, Joseph-Renaud
+#     scan 144). barré: Robaglia's "croisé de seconde ... chasse vigoureusement le
+#     fer"; coup fourré = coup double (Kirchhoffer's glossary).
+#   bourrer: drawing the arm back and driving the point in hard (Joseph-Renaud
+#     pdf 290, Kirchhoffer pdf 61, Cordelois); larder: in-and-out jabs.
+#     2026-10-31 (were shove / pressing / larding).
+#   picoteur, tendeur à outrance, bricoleur: fencer types and slang, 2026-10-31
+#     (terms questionnaire).
+#   riposte / remise / reprise: normally kept by the model, but a bare heading
+#     ("DE LA RIPOSTE.") gets mangled -- "OF THE RAPIER RAPIER"; "PARADES ET
+#     RIPOSTES" -> "PARRIES AND RAPISES" is the same failure.
+#   pointe d'arrêt: kept, never "stop-point(s)" (Joseph-Renaud pdf 46,
+#     Kirchhoffer pdf 39).
+#   doublé / dédoublé: kept in French (2026-10-13: the books explain them;
+#     Prévost-Jollivet had seven renderings).
+#   tac-au-tac: parry and riposte in one instant -- kept in French in English
+#     fencing writing. Qwen3.8 rendered it word for word ("FROM THE TAC TO THE
+#     TAC", Gomard scan 239); older output left it bare / unitalic.
+from _glossary_table import code_lists as _code_lists
 
-# the singular each form is noted under ("French: appel"), so a plural
-# ("appels") doesn't produce a second note
-_FOOTNOTE_REF_FR = {
-    "en cavant": "caver", "cavant": "caver", "barrés": "barré", "coups fourrés": "coup fourré",
-    "rassemblements": "rassemblement", "rassemblant": "rassemblement",
-    "rassembler": "rassemblement", "dérobements": "dérobement",
-    "dégagements": "dégagement", "liements": "liement",
-    "froissements": "froissement", "coupés": "coupé",
-    "coulés": "coulé", "déroulé": "coulé", "appels": "appel",
-    "bourrades": "bourrade", "bourreurs": "bourreur", "en bourrant": "bourrer", "bourrant": "bourrer",
-    "en lardant": "larder", "picoteurs": "picoteur", "tendeurs à outrance": "tendeur à outrance",
-    "bricoleurs": "bricoleur", "vous loger": "se loger", "se logeant": "se loger", "loger": "se loger",
-    "désuni": "se désunir", "se désunit": "se désunir", "s'enferre": "s'enferrer",
-    "en filant": "filer", "filer au corps": "filer", "fléchards": "fléchard",
-    "attaque d'emblée": "d'emblée", "coups amenés": "coup amené",
-}
-
-# a footnoted term inside an ordinary phrase is not the fencing action:
-# "froissement d'amour-propre" is hurt pride, not a graze (Jacob 1887, 2026-10-13)
-_FOOTNOTED_NOT_BEFORE = {"froissement": r"(?!\s+d['’]\s*amour)",
-                         "froissements": r"(?!\s+d['’]\s*amour)"}
+(_FOOTNOTED_FR, _FOOTNOTE_REF_FR, _FOOTNOTED_NOT_BEFORE,
+ _KEEP_TERMS_FR, _FOOTNOTED_FR_REFS) = _code_lists("French")
 
 # Rule-3 "always translate" terms the old 7B model dropped inconsistently (leaves
 # "an arm called a fleuret" in the body, "ENTRAINEMENT" as a header).
@@ -126,46 +111,6 @@ _ALWAYS_TRANSLATE = [
     (r"a bout lesson with the épée", "an épée bout"),
     (r"bout lesson with the épée", "épée bout"),
 ]
-
-# Kept terms: "keep in the source language, italic" that the model (the old
-# 7B model first) drops the <i>...</i> off or mistranslates -- plate captions especially.
-# Only the tight retained set; riposte / remise / reprise / the parry
-# numbers the model handles on its own. Each entry: term -> English
-# mistranslations to snap back to it.
-_KEEP_TERMS_FR = [
-    ("corps à corps", [r"body[- ]to[- ]body", r"body contact"]),
-    ("sentiment du fer", [r"feeling of (?:the )?(?:blade|iron|steel)"]),
-    ("croisé", []),
-    ("volte", []),
-    # riposte / remise / reprise: normally kept by the model, but a bare
-    # heading ("DE LA RIPOSTE.") gets mangled -- "OF THE RAPIER RAPIER".
-    # Isolated-heading translation (no body context, no retry ladder) is
-    # where this shows up -- "PARADES ET RIPOSTES" -> "PARRIES AND
-    # RAPISES" is the same failure with a different garbled spelling.
-    ("riposte", [r"rapier(?:[- ]?(?:rapier|response|riposte|reply))?",
-                 r"riposte response", r"rapises?"]),
-    # kept, never "stop-point(s)" (Joseph-Renaud pdf 46, Kirchhoffer pdf 39)
-    ("pointes d'arrêt", [r"stop[- ]points"]), ("pointe d'arrêt", [r"stop[- ]point"]), ("pointe d’arrêt", []),
-    ("flanconnade", []),
-    ("appels", []), ("appel", []),
-    ("remise", []),
-    ("reprise", []),
-    # doublé / dédoublé kept in French (reviewer, 2026-10-13: the books explain
-    # them; Prévost-Jollivet had seven renderings). Plurals first.
-    ("dédoublés", []), ("dédoublé", []), ("doublés", []), ("doublé", []),
-    # "du tac au tac": parry and riposte in one instant -- kept in French in
-    # English fencing writing. Qwen3.8 rendered it word for word ("FROM THE
-    # TAC TO THE TAC", Gomard scan 239); older output left it bare/unitalic.
-    ("tac-au-tac", [r"(?:(?:from|of)\s+the\s+|du\s+)?tac[- ]to[- ]the[- ]tac",
-                    r"(?:(?:from|of)\s+the\s+|du\s+)?tac[- ]au[- ]tac"]),
-]
-
-
-# footnoted terms left to the model (accepted as source references in its
-# <fn> notes) -- ordinary words elsewhere, so the backstop must not rewrite them
-_FOOTNOTED_FR_REFS = {"se loger", "au pied levé", "tension à outrance", "se désunir", "s'enferrer",
-                      "filer", "fléchard", "d'emblée", "coup amené", "temps moral"}
-
 
 # Terms the model is known to render against the glossary. (source regex,
 # wrong-English regex, what it should be). Only fires when the SOURCE has

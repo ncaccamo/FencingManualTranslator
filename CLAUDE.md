@@ -83,8 +83,15 @@ no ROCm/Vulkan). `scripts/setup.sh --remote` + `docker-compose.override.yml`
   hold the parts that talk to the models. The rules are in `_ocr_parse`,
   `_ocr_cleanup`, `_ocr_heads`, `_ocr_folios`, `_ocr_text` (step 1) and
   `_tx_terms`, `_tx_case`, `_tx_notes`, `_tx_checks`, `_tx_structure`
-  (step 2). A term decision is a prompt line plus `_glossary_fr.py` /
-  `_glossary_it.py` (code backstops and review-report checks).
+  (step 2). A term decision is a prompt line plus its entry in
+  `glossary_fr.toml` / `glossary_it.toml` (the term tables: a test fails if
+  the two differ). The entry also holds what the code does with the term:
+  the forms it translates or puts back in italics, and whether step 2
+  checks the rule after translation (`check = "retry"`, to be set only
+  after `evals/glossary_score.py` shows it safe). `_glossary_fr.py` /
+  `_glossary_it.py` keep the always-translate repairs and the review
+  report's wording checks. The tables hold language-wide decisions only; a
+  book's own choice goes in its `[terms]`.
 
 - Every script takes the books to work on by name, or `--all`
   (`pipeline/_books.py`); none runs on the whole folder by default. A book
@@ -120,7 +127,9 @@ no ROCm/Vulkan). `scripts/setup.sh --remote` + `docker-compose.override.yml`
   `extracted.txt` fields, and rendered PDF page (scratchpad script in
   the container) before changing code, and re-check the same page after.
   Run `python3 evals/test_rules.py` after every change — one frozen test
-  per past fix; a failure means a different book regressed. With only
+  per past fix; a failure means a different book regressed. A prompt line
+  and its term-table entry change together (`evals/test_glossary_table.py`;
+  both tests run before every commit). With only
   one confirmed instance, prefer a narrow fix or a direct data patch
   over widening a shared function (e.g. `reconcile_headers()`,
   `reconcile_page_numbers()`); a second real example is the bar for

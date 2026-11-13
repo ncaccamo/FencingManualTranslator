@@ -1562,7 +1562,8 @@ delivery). This matches the model's own majority rendering, and
 period sources on Gomard say the same. A first attempt (coup → thrust,
 botte → hit) got it backwards and was reverted. Named techniques keep their
 own names: coup droit → straight thrust, coup de temps → time-hit, coup
-d'arrêt → stop-thrust. The prompt carries the rule, Gomard's overrides
+d'arrêt → stop-thrust ("stop-hit" in every other book since 2026-11-12;
+this book keeps stop-thrust through its `[terms]`). The prompt carries the rule, Gomard's overrides
 file carries it as [terms] plus the header wording, and the 33 pages the
 review report showed as inconsistent were retranslated with `--pages`.
 Limit: a bare *coup* rendered "thrust" elsewhere can't be told apart
@@ -1942,6 +1943,48 @@ after the table fixes) now sets every cell to the English of the same
 source text elsewhere in the book: a fix's English first, else the most
 common, a tie to the earliest page; apostrophe spacing is ignored, case is
 not. Matching is per book, not across books.
+
+### 2.24 Long pages cut off: the prompt had outgrown the window (2026-11-12)
+
+**Symptom.** `cut off (out of room)` on all three tries, then `kept (low
+confidence)`: the English stops mid-page. French books only, pages over
+about 250 words.
+
+**Cause.** Not the page. The prompt is sent whole with every page, and
+review after review had added lines to it: ~4,900 tokens in October,
+~7,100 in November, in a window of 8,192 that must also hold the page and
+the reply. The Italian prompt is ~2,000 tokens smaller and was not
+affected. The server's own counts showed it at once (prompt 7,749 + reply
+440 = the window); they had never been logged.
+
+**Fix.** `_translate.prompt_fits()` estimates the tokens a page needs from
+the lengths; a page that does not fit gets `page_prompt()`: rules 3 / 3b
+cut down to the term-table entries whose source word is on the page. A
+reply cut off all the same is retried with the page prompt, and a page
+kept from a cut-off reply is recorded (`cut_off.json`). Before adding a
+line to a prompt file, add its entry to `glossary_*.toml` (the tests hold
+the two together).
+
+The same change added a check after translation for a few term rules
+(`check = "retry"` in the tables, `_translate.term_findings()`): a prompt
+line is a request, and about half of a reviewer's corrected wordings came
+back wrong under any prompt layout. One retry with the rule named; the
+first try is kept if the retry does no better, and the page goes to the
+review report. Switch an entry on only after `evals/glossary_score.py`
+shows it fires on no page a reviewer passed.
+
+### 2.25 A book's kept term turned back by the code (2026-11-12)
+
+**Symptom.** Joseph-Renaud: "the bar in seconde" with a note "French:
+barré", on every page, although the book's `[terms]` keep *barré*.
+
+**Cause.** The model had written *barré*. `enforce_footnoted_terms()`
+runs after it with the language's list (barré → bar) and knew nothing of
+the book's `[terms]`, which reached the prompt only.
+
+**Fix.** `set_book_terms()`: a word the book's `[terms]` keep in its own
+language is skipped by that correction. When a rule seems ignored, check
+what the code did to the reply before blaming the model.
 
 ## Part 3 — shared / architectural
 

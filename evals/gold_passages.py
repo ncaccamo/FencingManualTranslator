@@ -86,13 +86,21 @@ def run(label):
     res_p = f"{OUT}/{label}.json"
     res = json.load(open(res_p, encoding="utf-8")) if os.path.exists(res_p) else {
         "label": label, "model": os.environ.get("TRANSLATION_MODEL_NAME", ""),
-        "deterministic": os.environ.get("EVAL_DETERMINISTIC", ""), "prompt_variant": variant, "passages": {}}
+        "deterministic": os.environ.get("EVAL_DETERMINISTIC", ""), "prompt_variant": variant,
+        "page_prompt": os.environ.get("PAGE_PROMPT", ""), "passages": {}}
     todo = [p for p in passages if p["id"] not in res["passages"]]
     print(f"{label}: {len(todo)} passage(s) to translate ({len(passages) - len(todo)} done)")
     _progress.start(f"translation quality test: {label}", "translation", len(todo))
     for k, p in enumerate(todo, 1):
         ns["BOOK_LANG"] = {"it": "Italian", "fr": "French"}.get(p["lang"], "French")
         ns["PROMPT_TEMPLATE"] = ns["prompt_for_language"](ns["BOOK_LANG"])
+        if os.environ.get("PAGE_PROMPT", "").lower() in ("1", "true", "yes", "on", "end"):
+            # the per-page prompt: rules 3 / 3b cut down to the passage's term-table
+            # entries (PAGE_PROMPT=end: after the examples) -- _glossary_table.py
+            import _glossary_table
+            ns["PROMPT_TEMPLATE"] = _glossary_table.page_prompt(
+                ns["PROMPT_TEMPLATE"], ns["BOOK_LANG"], p["src"],
+                at_end=os.environ["PAGE_PROMPT"].lower() == "end")
         st = {"fn_seen": set(), "footnoted_seen": set(), "fn_state": {}}
         t0 = time.time()
         out = ns["translate_page"](f"PAGE_NUMBER: none\nHEADER: none\nBODY_TEXT:\n{p['src']}", k, len(todo), st)

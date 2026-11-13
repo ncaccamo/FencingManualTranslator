@@ -21,6 +21,8 @@ that was already signed off.
 | tool | what it does |
 |---|---|
 | `evals/test_rules.py` | frozen input → output cases for the code that doesn't call a model (page numbers, running heads, sentence join, term enforcement, cover lines, …): one per bug ever fixed. Runs with or without pytest. **Run after every change; must stay green.** |
+| `evals/test_glossary_table.py` | the term tables against the prompt files, and the code lists built from them. A prompt line changed without its table entry (or the reverse) fails here |
+| `evals/test_pdf_steps.py` (container) | steps 3 and 4 run on a made-up three-page book: both PDFs written, every page's text in them. After a change to package versions or to the layout code |
 | `scripts/dry_run.py <stem> … / --all` | **before reprocessing for real after a change to step 1's code** (parsing, running heads, page numbers, sentence join, captions): re-derives copies of the books with the current code and reports, per book, the pages, page numbers and running heads that would change, and whether text only *moved* across a page break or words were added / removed. Seconds per book, no GPU, books untouched; `processed/_audit/dry_run/report.md` |
 | `evals/freeze.py <stem>` | snapshot a reviewed book's `translation.txt`, `extracted.txt`, `figures.json`, `headers.json` and `page_numbers.txt` into `evals/baselines/<stem>/`, with a `MANIFEST.json` (commit, time) |
 | `evals/check.py [stem] [--quiet]` | compare the current output with every baseline: pages, page numbers, figures and headers that changed (with diffs), plus a before/after health table. Exits non-zero on any change; writes `evals/reports/<time>.md` |
@@ -38,6 +40,7 @@ history that skipped the dry run broke a book that had been signed off.
 python3 evals/freeze.py <stem>              # after a book's PDFs pass review
 # ...change a prompt or rule, rerun the affected steps on frozen books...
 python3 evals/test_rules.py                 # the frozen cases
+python3 evals/test_glossary_table.py        # the term tables (both run before every commit: scripts/install_hooks.sh)
 python3 evals/check.py                      # "these N pages of book X changed"
 python3 evals/freeze.py <stem> --force      # accept a change as an improvement
 ```
@@ -213,6 +216,35 @@ are free translations, so chrF++ rewards paraphrase.
   *destramente*, the Masiello page left in Italian); the review report's
   checks flagged 1 page against 4 before; 54.7 s/page. Rules changed after
   a run are rechecked on their pages with `PAGE_SET=followup`.
+
+- **The page prompt (2026-11-11/12).** Three runs of `PAGE_SET=retranslation`
+  (97 pages): the whole prompt; `PAGE_PROMPT=1` (rules 3 / 3b cut down to
+  the page's term-table entries, in place); `PAGE_PROMPT=end` (the entries
+  after the examples). `evals/prompt_run_compare.py <run> <run> …` sets
+  them against each other from the server's own counts, which
+  `translation_model_test.py` now records for every call.
+
+  | | whole prompt | entries in place | entries at the end |
+  |---|---|---|---|
+  | replies cut off | 99 | 0 | 0 |
+  | pages kept as low confidence | 33 | 0 | 1 |
+  | prompt + page, tokens (mean) | 7,296 | 4,184 | 4,236 |
+  | seconds per page, where the whole prompt finished | 37.1 | 48.0 | 37.5 |
+  | reviewer's fixes written wrong again, same pages | 36 | 30 | 35 |
+  | closeness to the reviewed English, same pages (chrF++) | 93.8 | 93.2 | 92.8 |
+  | gold passages (chrF++) | 46.49 | | 46.59 |
+
+  "Fixes written wrong again": each `[[fix]]` on a test page whose "find"
+  wording the run reproduced. The reviewed English descends from
+  whole-prompt output, so closeness to it favours the whole prompt. Step 2
+  therefore sends the whole prompt where it fits and the page prompt
+  (entries at the end) where it does not: the same 97 pages then ran with
+  no cut-off and no low-confidence page.
+- **The term tables' checks (2026-11-12).** `evals/glossary_score.py`
+  runs each table entry's check over the reviewed books: how many
+  `[[fix]]` entries it would have flagged, and on how many reviewed pages
+  it still fires (a false alarm, or an error the review missed). The
+  report proposes a level for each entry; set them by hand.
 
 ### 3.5 Why it errs: the model's own probabilities
 

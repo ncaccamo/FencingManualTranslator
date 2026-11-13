@@ -14,6 +14,10 @@ Nothing here calls a model. It runs on the host with stock Python 3
 |---|---|
 | `_rules.py` | loads the pipeline's *pure* helpers (`apply_always_translate`, `match_case`, `reconcile_page_numbers`, `parse_figures_block`, …) from `pipeline/_translate.py` with its rule modules `_tx_*.py`, and `pipeline/_ocr.py` with `_ocr_*.py` (steps 2 and 1, importable without starting a server), with stubs for heavy libraries the tests don't need. |
 | `test_rules.py` | frozen input→output cases for those helpers, one per bug ever fixed. `python3 evals/test_rules.py` (or `pytest`). |
+| `test_glossary_table.py` | the term tables (`pipeline/glossary_*.toml`): they say what the prompt files say, source forms match printed forms, the code's kept / footnoted lists come out of them in a safe order. `python3 evals/test_glossary_table.py`. |
+| `test_pdf_steps.py` | steps 3 and 4 run for real on a three-page book made up on the spot, in a temporary folder (container only: `docker exec fmt-translator python3 /data/evals/test_pdf_steps.py`). |
+| `glossary_score.py` | the term tables' checks scored against the fixes already made in `books/*.overrides.toml` and the books' present English → `reports/glossary-score/`. Run before switching a check on (`check = "retry"`). |
+| `prompt_run_compare.py` | two or more `translation_model_test.py` runs set against each other: tokens, cut-off replies, retries, and how many of the reviewer's fixes each run wrote wrong again. |
 | `metrics.py` | crude per-book health numbers (French-residue pages, all-caps pages, untrusted folios, figure rows, italic spans, …). |
 | `freeze.py` | snapshot a book's accepted artifacts into `baselines/<book>/`. |
 | `check.py` | diff current pipeline output against the baselines + metrics table → `reports/<timestamp>.md`. Exit ≠ 0 if anything changed. |
@@ -40,6 +44,7 @@ docker exec fmt-translator python3 /app/4_side_by_side_pdf.py <stem>
 
 # 3. see what moved:
 python3 evals/test_rules.py          # deterministic layer — must stay green
+python3 evals/test_glossary_table.py # the term tables against the prompts
 python3 evals/check.py               # per-book page/figure/folio/metric diff
 
 # 4. a change is not automatically a regression. Read the flagged pages.

@@ -1,0 +1,1390 @@
+# French term decisions, one [[term]] per decision. Read by pipeline/_glossary_table.py.
+# Written 2026-11-11 from translation_prompt.txt; the wording of every "line" is the prompt's own.
+#
+#   id      a short name, unique in this file
+#   kind    keep       left in French, in <i>…</i>          (prompt rule 2)
+#           translate  translated, plain text              (rule 3)
+#           footnote   translated, "Fr. original" note at first use (rule 3b)
+#           note       not a term: a heading or remark sent with its group's entries
+#   with    on a note: the kind of entry it is sent with
+#   group   "ordinary" for ordinary words the model misreads; fencing terms have none
+#   source  the French forms that put this entry in a page's prompt. Matched as whole words,
+#           any case, accents optional, common endings allowed; "tir*" = any word starting "tir"
+#   source_re  a regular expression on the page's text, where a word list is not enough
+#   english on a kept term: how it is written in the English, as a word start
+#           ("ripost" finds riposte, riposted); accents count ("doublé" is not "double")
+#   never   English forms the line forbids (for the checks; shown to the model through "line")
+#   never_re         a pattern for the forbidden English, where the words alone are too common
+#   check_source_re  the check runs only where this pattern is in the source (narrower than "source")
+#   check   "retry": step 2 checks the page after translation (a forbidden form present, a kept
+#           term missing), asks once more with the rule named, and records the page for the
+#           review report if that does not mend it. Left out = no check. Set it only for an
+#           entry evals/glossary_score.py shows to be safe: a check that fires on pages a
+#           reviewer passed costs a wasted retry on every such page
+#   The code's own lists are built from these (pipeline/_glossary_fr.py, _glossary_it.py):
+#   forms        on a footnoted term: [source form, English] pairs the code translates when the
+#                model left the word in the source language, adding the first-use note; a third
+#                item is the word the note is written under ("barrés" under "barré")
+#   refs         more [form, word noted under] pairs, for notes the model writes itself
+#   model_notes  footnoted terms left to the model (ordinary words elsewhere: the code must not
+#                rewrite them); its note is accepted as a source reference
+#   not_before   [form, pattern]: the form is not the fencing term before this ("froissement
+#                d'amour-propre")
+#   enforce      on a kept term: [term, [wrong English renderings]] the code puts back in
+#                italics and snaps the wrong renderings to
+#   line    what the model is told, word for word
+
+[[term]]
+id = "riposte-kept"
+kind = "keep"
+source = ["ripost*"]
+english = ["ripost"]
+enforce = [["riposte", ["rapier(?:[- ]?(?:rapier|response|riposte|reply))?", "riposte response", "rapises?"]]]
+
+[[term]]
+id = "remise-kept"
+kind = "keep"
+source = ["remis*"]
+english = ["remis"]
+enforce = [["remise", []]]
+
+[[term]]
+id = "reprise-kept"
+kind = "keep"
+source = ["reprise"]
+english = ["reprise"]
+enforce = [["reprise", []]]
+
+[[term]]
+id = "croise-kept"
+kind = "keep"
+source = ["crois*"]
+english = ["croisé"]
+enforce = [["croisé", []]]
+
+[[term]]
+id = "corps-a-corps-kept"
+kind = "keep"
+source = ["corps à corps"]
+english = ["corps à corps"]
+enforce = [["corps à corps", ["body[- ]to[- ]body", "body contact"]]]
+
+[[term]]
+id = "volte-kept"
+kind = "keep"
+source = ["volte"]
+english = ["volte"]
+enforce = [["volte", []]]
+
+[[term]]
+id = "sentiment-du-fer-kept"
+kind = "keep"
+source = ["sentiment du fer"]
+english = ["sentiment du fer"]
+enforce = [["sentiment du fer", ["feeling of (?:the )?(?:blade|iron|steel)"]]]
+
+[[term]]
+id = "tac-au-tac-kept"
+check = "retry"
+kind = "keep"
+source = ["tac au tac"]
+english = ["tac-au-tac"]
+enforce = [["tac-au-tac", ["(?:(?:from|of)\\s+the\\s+|du\\s+)?tac[- ]to[- ]the[- ]tac", "(?:(?:from|of)\\s+the\\s+|du\\s+)?tac[- ]au[- ]tac"]]]
+
+[[term]]
+id = "flanconnade-kept"
+check = "retry"
+kind = "keep"
+source = ["flanconnade", "flanconade"]
+english = ["flanconnade"]
+enforce = [["flanconnade", []]]
+
+[[term]]
+id = "appel-kept"
+kind = "keep"
+source = ["appel"]
+english = ["appel"]
+refs = [["appels", "appel"]]
+enforce = [["appels", []], ["appel", []]]
+
+[[term]]
+id = "pointe-d-arret-kept"
+check = "retry"
+kind = "keep"
+source = ["pointe d'arrêt"]
+english = ["pointe d'arrêt", "pointes d'arrêt"]
+enforce = [["pointes d'arrêt", ["stop[- ]points"]], ["pointe d'arrêt", ["stop[- ]point"]], ["pointe d’arrêt", []]]
+
+[[term]]
+id = "double-kept"
+kind = "keep"
+source = ["doublé", "doubler", "doublez", "doublant"]
+# the check: the noun and the command only; «doubler la parade», «doublée de toile» are ordinary French
+check_source_re = '''(?i)\b(?:doublés?|doublez)\b'''
+english = ["doublé"]
+enforce = [["doublés", []], ["doublé", []]]
+
+[[term]]
+id = "dedouble-kept"
+check = "retry"
+kind = "keep"
+source = ["dédoubl*"]
+english = ["dédoubl"]
+enforce = [["dédoublés", []], ["dédoublé", []]]
+
+[[term]]
+id = "belle-kept"
+kind = "keep"
+source = ["belle"]
+english = ["belle"]
+
+[[term]]
+id = "epee-kept"
+kind = "keep"
+source = ["épée"]
+english = ["épée"]
+
+[[term]]
+id = "prime-kept"
+kind = "keep"
+source = ["prime"]
+english = ["prime"]
+
+[[term]]
+id = "seconde-kept"
+kind = "keep"
+source = ["seconde"]
+english = ["seconde"]
+
+[[term]]
+id = "tierce-kept"
+kind = "keep"
+source = ["tierce"]
+english = ["tierce"]
+
+[[term]]
+id = "quarte-kept"
+kind = "keep"
+source = ["quarte"]
+english = ["quarte"]
+
+[[term]]
+id = "quinte-kept"
+kind = "keep"
+source = ["quinte"]
+english = ["quinte"]
+
+[[term]]
+id = "sixte-kept"
+kind = "keep"
+source = ["sixte"]
+english = ["sixte"]
+
+[[term]]
+id = "septime-kept"
+kind = "keep"
+source = ["septime"]
+english = ["septime"]
+
+[[term]]
+id = "octave-kept"
+kind = "keep"
+source = ["octave"]
+english = ["octave"]
+
+[[term]]
+id = "ausfallen-kept"
+kind = "keep"
+source = ["Ausfallen"]
+english = ["Ausfallen"]
+
+[[term]]
+id = "zornhau-kept"
+kind = "keep"
+source = ["Zornhau"]
+english = ["Zornhau"]
+
+[[term]]
+id = "versetzung-kept"
+kind = "keep"
+source = ["Versetzung"]
+english = ["Versetzung"]
+
+[[term]]
+id = "absetzen-kept"
+kind = "keep"
+source = ["Absetzen"]
+english = ["Absetzen"]
+
+[[term]]
+id = "winden-kept"
+kind = "keep"
+source = ["Winden"]
+english = ["Winden"]
+
+[[term]]
+id = "custodia-kept"
+kind = "keep"
+source = ["custodia"]
+english = ["custodia"]
+
+[[term]]
+id = "puncta-kept"
+kind = "keep"
+source = ["puncta"]
+english = ["puncta"]
+
+[[term]]
+id = "garde"
+kind = "translate"
+source = ["garde"]
+line = '''garde → guard'''
+
+[[term]]
+id = "engagement"
+kind = "translate"
+source = ["engagement"]
+line = '''engagement → engagement'''
+
+[[term]]
+id = "parade"
+kind = "translate"
+source = ["parade"]
+line = '''parade → parry (a parade is never a riposte)'''
+
+[[term]]
+id = "fleuret"
+kind = "translate"
+source = ["fleuret"]
+line = '''fleuret → foil'''
+
+[[term]]
+id = "sabre"
+kind = "translate"
+source = ["sabre"]
+line = '''sabre → saber'''
+
+[[term]]
+id = "doublement"
+kind = "translate"
+source = ["doublement"]
+line = '''doublement → doubling'''
+
+[[term]]
+id = "coup-droit"
+check = "retry"
+kind = "translate"
+source = ["coup droit"]
+never = ["straight right"]
+line = '''coup droit → straight thrust   (NOT "straight right"; "droit" here = straight)'''
+
+[[term]]
+id = "une-deux"
+kind = "translate"
+source = ["une-deux"]
+line = '''une-deux → one-two'''
+
+[[term]]
+id = "fente"
+kind = "translate"
+source = ["fente"]
+line = '''fente → lunge'''
+
+[[term]]
+id = "demi-fente"
+kind = "translate"
+source = ["demi-fente"]
+line = '''demi-fente → half-lunge'''
+
+[[term]]
+id = "assaut"
+kind = "translate"
+source = ["assaut"]
+line = '''assaut → bout'''
+
+[[term]]
+id = "tireur"
+kind = "translate"
+source = ["tireur"]
+line = '''tireur → fencer'''
+
+[[term]]
+id = "maitre"
+kind = "translate"
+source = ["maître"]
+line = '''maître (d'armes) → fencing master'''
+
+[[term]]
+id = "salle"
+kind = "translate"
+source = ["salle"]
+line = '''salle (d'armes) → fencing hall/room'''
+
+[[term]]
+id = "lecon-d-assaut"
+kind = "translate"
+source = ["leçon d'assaut"]
+line = '''"leçon d'assaut" → "bout lesson" (keep the word "lesson" — NOT the same as a bare "assaut")'''
+
+[[term]]
+id = "assaut-d-epee"
+kind = "translate"
+source = ["assaut d'épée"]
+line = '''"un assaut d'épée" → "an épée bout"  (plain "assaut", NO "lesson")'''
+
+[[term]]
+id = "mouvement-etc"
+kind = "translate"
+source = ["mouvement", "mise en garde", "botte", "temps", "mesure", "ligne"]
+line = '''mouvement, mise en garde, botte, temps, mesure, ligne → movement, on-guard position, thrust, tempo, measure, line   ("hors de mesure" → out of measure)'''
+
+[[term]]
+id = "coup-botte"
+kind = "translate"
+source = ["coup", "botte"]
+never = ["blow", "cutting blow", "point cut"]
+line = '''coup vs botte: the coup is the whole offensive action (its path and movements), the botte is its
+finish (the line it ends in and the hand position). coup → attack ("coups simples" → simple attacks,
+"coups composés" → compound attacks), or hit where it means the touch that lands ("recevoir un coup" →
+receive a hit); NEVER "blow" — also in phrasings like "coup porté" → attack delivered, "coup paré" →
+parried attack, "coups pour coups" → hit for hit. A cut with the edge is a cut: "coup de taille",
+"coup de tranchant", "coup de sabre", "coup d'estramaçon" → cut ("coups de taille" → cuts), never
+"cutting blow". A hit with the point is a thrust: "coup de pointe" → thrust ("coups de pointe" →
+thrusts), never "point cut". Only where coup is not a fencing action does ordinary English stay: "coups et
+blessures" → blows and wounds, "coup de marteau" → hammer blow. botte → thrust ("botte de quarte" → thrust in quarte). Named techniques
+keep their own names: coup droit → straight thrust, coup de temps → time-hit, coup d'arrêt → stop-hit.
+Where the text DEFINES or CONTRASTS the two words as terms ("le coup est … ; la botte est …", "on ne
+doit appeler botte que …"), keep them in French: <i>coup</i>, <i>botte</i>.'''
+
+[[term]]
+id = "coup-d-arret"
+kind = "translate"
+source = ["coup d'arrêt"]
+line = '''coup d'arrêt → stop-hit'''
+
+[[term]]
+id = "temps-d-arret"
+check = "retry"
+kind = "translate"
+source = ["temps d'arrêt"]
+never = ["stop-hit"]
+line = '''temps d'arrêt → a pause ("marquer un temps d'arrêt" → pause, "sans temps d'arrêt" → without pausing, "précédée d'un temps d'arrêt" → preceded by a pause); never "stop-hit" — the stopping hit is the coup d'arrêt'''
+
+[[term]]
+id = "note-1"
+kind = "note"
+with = "translate"
+line = '''fencing terms these books use — the standard English, never a guess:'''
+
+[[term]]
+id = "battement"
+kind = "translate"
+source = ["battement", "batt*"]
+never = ["cut"]
+line = '''battement → beat ("double battement" → double beat; never "cut")'''
+
+[[term]]
+id = "a-fond"
+check = "retry"
+kind = "translate"
+source = ["à fond"]
+never = ["to the bottom"]
+line = '''à fond → fully, with a full lunge ("contre-ripostez à fond" → counter-<i>riposte</i> with a full lunge; never "to the bottom")'''
+
+[[term]]
+id = "contre"
+kind = "translate"
+source = ["contre"]
+never = ["against"]
+line = '''contre, the circular parry → counter ("contre de quarte" → counter of quarte, "double contre" → double counter; never "against")'''
+
+[[term]]
+id = "tirer"
+kind = "translate"
+source = ["tir*", "tireur"]
+never = ["draw", "throw"]
+line = '''tirer → thrust ("tirer droit", "tiré droit" → thrust straight, "tirer les contres" → thrust the counters; never "draw", never "throw"); of a pistol → fire, and the tireur at the pistol → marksman (in a pistol duel tirer is NEVER thrust)'''
+
+[[term]]
+id = "coup-double"
+kind = "translate"
+source = ["coup double"]
+line = '''coup double → double hit (both fencers hit each other at the same time)'''
+
+[[term]]
+id = "coup-pour-coup"
+kind = "translate"
+source = ["coup pour coup"]
+line = '''coup pour coup → hit for hit'''
+
+[[term]]
+id = "fausse-attaque"
+kind = "translate"
+source = ["fausse attaque"]
+line = '''fausse attaque → false attack (not a feint)'''
+
+[[term]]
+id = "redoublement"
+kind = "translate"
+source = ["redoubl*"]
+line = '''redoublement, redoubler → redoubling, to redouble (doublement and doublé are other actions)'''
+
+[[term]]
+id = "contre-temps"
+kind = "translate"
+source = ["contre-temps", "contretemps"]
+never = ["time-hit"]
+line = '''contre-temps, contretemps → counter-time (never "time-hit")'''
+
+[[term]]
+id = "les-avances"
+kind = "translate"
+source = ["avancés"]
+line = '''les avancés, aux avancés → the advanced target (hand, wrist, forearm)'''
+
+[[term]]
+id = "coquille"
+kind = "translate"
+source = ["coquille"]
+line = '''coquille → bell guard'''
+
+[[term]]
+id = "jarret"
+kind = "translate"
+source = ["jarret"]
+line = '''jarret → back of the knee ("jarrets tendus" → knees straight)'''
+
+[[term]]
+id = "saignee"
+kind = "translate"
+source = ["saignée"]
+line = '''saignée → crook of the elbow'''
+
+[[term]]
+id = "de-pied-ferme"
+kind = "translate"
+source = ["de pied ferme"]
+line = '''de pied ferme → without moving the feet'''
+
+[[term]]
+id = "a-bras-raccourci"
+kind = "translate"
+source = ["à bras raccourci"]
+line = '''à bras raccourci → with a shortened arm'''
+
+[[term]]
+id = "sur-les-armes"
+kind = "translate"
+source = ["sur les armes", "dessus les armes", "dans les armes", "hors les armes", "sous les armes"]
+line = '''sur les armes, dessus les armes → over the arm ('quarte sur les armes' → quarte over the arm); dans les armes, the line paired with it → inside the arm; hors les armes → outside the arm; sous les armes → under the arm; but dans les armes meaning fencing in general ('quelque chose de nouveau dans les armes') → in fencing'''
+
+[[term]]
+id = "ecarter-le-fer"
+kind = "translate"
+source = ["écart* le fer"]
+line = '''écarter le fer → set the blade aside'''
+
+[[term]]
+id = "marche"
+kind = "translate"
+source = ["marche", "march*"]
+never = ["walk", "advance backward"]
+line = '''marche, en marchant → advance, advancing (never "walk"); but marcher en arrière → step back (never "advance backward")'''
+
+[[term]]
+id = "invite-de-sixte"
+kind = "translate"
+source = ["invite"]
+line = '''invite de sixte → invitation in sixte'''
+
+[[term]]
+id = "a-la-muette"
+kind = "translate"
+source = ["à la muette"]
+line = '''à la muette → in silence ("la leçon à la muette" → the silent lesson)'''
+
+[[term]]
+id = "poule"
+kind = "translate"
+source = ["poule"]
+line = '''poule → pool (a competition)'''
+
+[[term]]
+id = "terrain"
+kind = "translate"
+source = ["terrain"]
+never = ["piste"]
+line = '''terrain, of a duel → the ground (never "piste")'''
+
+[[term]]
+id = "combat"
+kind = "translate"
+source = ["combat"]
+line = '''combat → combat (assaut is the bout)'''
+
+[[term]]
+id = "developpement"
+kind = "translate"
+source = ["développ*"]
+line = '''développement, se développer → lunge, to lunge (extension is a different word)'''
+
+[[term]]
+id = "se-relever"
+kind = "translate"
+source = ["relev*"]
+line = '''se relever (after the lunge) → recover'''
+
+[[term]]
+id = "epee-blade"
+kind = "translate"
+source = ["épée"]
+line = '''épée meaning the blade, in set phrases (also in headings) → blade: attaque à l'épée → attack on the blade, joindre / engager l'épée → join / engage the blade, absence d'épée → absence of blade, changement d'épée → change of engagement, donner l'épée → give the blade, liement d'épée → bind; <i>épée</i> only for the weapon'''
+
+[[term]]
+id = "se-tromper"
+kind = "translate"
+source = ["tromp*"]
+never = ["err"]
+line = '''se tromper, of a parry → to be deceived ("la parade se trompe" → the parry is deceived; never "err")'''
+
+[[term]]
+id = "un-simple"
+kind = "translate"
+source = ["un simple", "au simple"]
+line = '''un simple, parer au simple → a simple parry, to parry with the simple parry'''
+
+[[term]]
+id = "menace"
+kind = "translate"
+source = ["menacé"]
+line = '''menacé (noun, in riposte tables) → threat'''
+
+[[term]]
+id = "effacer"
+check = "retry"
+kind = "translate"
+source = ["effac*"]
+never = ["squared"]
+line = '''effacer, effacé (the body turned sideways) → efface, effaced (never "squared")'''
+
+[[term]]
+id = "parer-de-tac"
+kind = "translate"
+source = ["de tac"]
+line = '''parer de tac → beat parry'''
+
+[[term]]
+id = "demi-contre"
+kind = "translate"
+source = ["demi-contre"]
+line = '''demi-contre → half-counter'''
+
+[[term]]
+id = "demi-cercle"
+kind = "translate"
+source = ["demi-cercle"]
+line = '''demi-cercle → half-circle'''
+
+[[term]]
+id = "estramacon"
+kind = "translate"
+source = ["estramaçon"]
+line = '''estramaçon → cut'''
+
+[[term]]
+id = "estocade"
+kind = "translate"
+source = ["estocade"]
+line = '''estocade → thrust'''
+
+[[term]]
+id = "monture"
+kind = "translate"
+source = ["monture"]
+line = '''monture → hilt'''
+
+[[term]]
+id = "passe"
+kind = "translate"
+source = ["passe"]
+line = '''passe → pass'''
+
+[[term]]
+id = "droit-fil"
+kind = "translate"
+source = ["droit-fil", "faux-fil"]
+line = '''droit-fil / faux-fil → true edge / false edge'''
+
+[[term]]
+id = "engagement-2"
+kind = "translate"
+source = ["engagement", "engag*"]
+never = ["bind"]
+line = '''engagement → engagement (never "bind", which is liement)'''
+
+[[term]]
+id = "prise"
+kind = "translate"
+source = ["prise"]
+never = ["bind"]
+line = '''prise alone (short for prise de fer) → take ("la prise" → the take; never "bind")'''
+
+[[term]]
+id = "lier"
+kind = "translate"
+source = ["lier", "liez", "liant", "lié"]
+line = '''lier, liez (joining two movements) → link ("liez sa fente à des pas" → link his lunge to steps)'''
+
+[[term]]
+id = "line-names"
+kind = "translate"
+source = ["prime", "seconde", "tierce", "quarte", "quinte", "sixte", "septime", "octave"]
+never = ["second", "third", "fourth", "seventh"]
+line = '''a line name (prime … octave) is always the French word, never "second", "third", "fourth", "seventh"'''
+
+[[term]]
+id = "coup-d-attaque"
+kind = "translate"
+source = ["coup d'attaque"]
+never = ["attacking attack"]
+line = '''coup d'attaque → the attack (never "attacking attack")'''
+
+[[term]]
+id = "le-mur"
+kind = "translate"
+source = ["le mur", "au mur"]
+line = '''le mur, tirer au mur → the wall exercise'''
+
+[[term]]
+id = "pointe-volante"
+kind = "translate"
+source = ["pointe volante"]
+line = '''pointe volante → flying point'''
+
+[[term]]
+id = "doigte"
+kind = "translate"
+source = ["doigté"]
+line = '''doigté → fingering'''
+
+[[term]]
+id = "pronation-moyenne"
+kind = "translate"
+source = ["pronation moyenne"]
+line = '''pronation moyenne → middle pronation'''
+
+[[term]]
+id = "attaque-franche"
+kind = "translate"
+source = ["attaque franche"]
+line = '''attaque franche → frank attack'''
+
+[[term]]
+id = "a-temps-perdu"
+kind = "translate"
+source = ["à temps perdu"]
+line = '''à temps perdu → at a lost tempo'''
+
+[[term]]
+id = "fusee"
+kind = "translate"
+source = ["fusée"]
+line = '''fusée → grip'''
+
+[[term]]
+id = "talon"
+kind = "translate"
+source = ["talon"]
+line = '''talon (of the blade) → heel'''
+
+[[term]]
+id = "rapiere"
+kind = "translate"
+source = ["rapière"]
+never = ["riposte"]
+line = '''rapière → rapier (never "riposte")'''
+
+[[term]]
+id = "espadon"
+kind = "translate"
+source = ["espadon"]
+line = '''espadon → two-handed sword'''
+
+[[term]]
+id = "baton-a-deux-bouts"
+kind = "translate"
+source = ["bâton à deux bouts"]
+line = '''bâton à deux bouts → quarterstaff'''
+
+[[term]]
+id = "prendre-le-temps"
+kind = "translate"
+source = ["pren* le temps", "pren* un temps", "pris le temps"]
+never = ["take the time"]
+line = '''prendre le temps, prendre un temps (seizing the moment in the opponent's action) → take the tempo, take a tempo (never "take the time", which reads as "be slow")'''
+
+[[term]]
+id = "temps-time-hit"
+kind = "translate"
+source = ["temps"]
+line = '''temps meaning that hit itself, made into the opponent's attack ("un temps", "les temps", "parades des temps", a glossary's "Temps. C'est une attaque …") → time-hit'''
+
+[[term]]
+id = "temps-count"
+kind = "translate"
+source = ["temps"]
+line = '''temps counting the movements of an attack ("en deux temps", "premier temps") → tempo'''
+
+[[term]]
+id = "tension"
+kind = "translate"
+source = ["tension", "tend*"]
+never = ["stiffly"]
+line = '''tension, tendre le bras, tendre → extension, extend the arm, extend (plain tendre is NEVER "stiffly": that is only the slang tendre la perche / la broche, rule 3b)'''
+
+[[term]]
+id = "contre-oppose"
+kind = "translate"
+source = ["contre-opposé"]
+line = '''contre-opposé → counter-opposite'''
+
+[[term]]
+id = "parade-seche"
+kind = "translate"
+source = ["parade sèche", "sec", "sèche", "sèchement"]
+line = '''parade sèche (the parry that strikes and leaves the blade) → dry parry; but "d'un coup sec", sec, sèchement as an adverb (striking sharply) → sharp, sharply'''
+
+[[term]]
+id = "dessus"
+check = "retry"
+kind = "translate"
+source = ["dessus", "dessous", "dedans", "dehors", "haut", "bas", "basse"]
+never = ["line over / under"]
+line = '''dessus / dessous, the lines ("ligne du dessus", "dessus les armes", "dégagez dessus") → over / under ("the line over", "over the arm"); dedans / dehors → inside / outside; haut / bas → high / low ("ligne haute / basse" → high / low line, never "line over / under"); but of the hand or nails (ongles, main, poignet) "en dessus", "en-dessus", "dessus" → up, "en dessous", "en-dessous", "dessous" → down ("les ongles légèrement en-dessus" → the nails slightly up)'''
+
+[[term]]
+id = "jour"
+kind = "translate"
+source = ["jour"]
+line = '''jour (an opening) → opening'''
+
+[[term]]
+id = "decouvert"
+kind = "translate"
+source = ["découv*"]
+line = '''découvert (noun), se découvrir, à la découverte → opening, expose oneself, at the open target; découvert as an adjective (one's own attack, arm or body left unprotected) → uncovered'''
+
+[[term]]
+id = "jeu"
+kind = "translate"
+source = ["jeu"]
+never = ["game"]
+line = '''jeu (a fencer's style or way of fencing) → play, never "game" ("jeu de terrain" → play on the ground; "son jeu" → his play)'''
+
+[[term]]
+id = "ferrailler"
+kind = "translate"
+source = ["ferraill*"]
+line = '''ferrailler, ferrailleur → clash blades, blade-clasher'''
+
+[[term]]
+id = "ecraser"
+kind = "translate"
+source = ["écras*"]
+line = '''écraser, écrasement (du corps) → crouch, crouching; but écraser le fer, l'écraser (the opponent's blade) → crush the blade, crush it'''
+
+[[term]]
+id = "derober-le-corps"
+kind = "translate"
+source = ["dérob*"]
+line = '''dérober le corps, dérober le haut du corps (the body) → slip the body away, slip the upper body; but dérober, dérobez (the blade, a taking of the blade) → evade'''
+
+[[term]]
+id = "garde-volante"
+kind = "translate"
+source = ["garde volante"]
+line = '''garde volante → flying guard'''
+
+[[term]]
+id = "coup-voulu"
+kind = "translate"
+source = ["coup voulu"]
+line = '''coup voulu → intended hit'''
+
+[[term]]
+id = "coup-de-raccroc"
+kind = "translate"
+source = ["coup de raccroc"]
+line = '''coup de raccroc → fluke hit'''
+
+[[term]]
+id = "demi-allonge"
+kind = "translate"
+source = ["demi-allonge"]
+line = '''demi-allonge → half-extension'''
+
+[[term]]
+id = "attaques-a-la-retraite"
+kind = "translate"
+source = ["à la retraite"]
+line = '''attaques à la retraite → attacks on the retreat'''
+
+[[term]]
+id = "semelle"
+kind = "translate"
+source = ["semelle"]
+line = '''semelle → sole (one foot-length)'''
+
+[[term]]
+id = "cou-de-pied"
+kind = "translate"
+source = ["cou-de-pied"]
+line = '''cou-de-pied → instep'''
+
+[[term]]
+id = "rencontre"
+kind = "translate"
+source = ["rencontre", "affaire"]
+never = ["bout"]
+line = '''rencontre, affaire (a duel) → encounter, affair (never "bout")'''
+
+[[term]]
+id = "donner-le-change"
+kind = "translate"
+source = ["le change"]
+line = '''donner le change → mislead'''
+
+[[term]]
+id = "defaut-de-l-epaule"
+kind = "translate"
+source = ["défaut de l'épaule"]
+line = '''défaut de l'épaule → hollow of the shoulder'''
+
+[[term]]
+id = "coup-de-plat"
+kind = "translate"
+source = ["coup de plat"]
+line = '''coup de plat → hit with the flat'''
+
+[[term]]
+id = "battement-coup-droit"
+kind = "translate"
+source = ["battement coup droit", "battement et coup droit"]
+line = '''battement coup droit, battement et coup droit → beat and straight thrust (that order)'''
+
+[[term]]
+id = "remise-en-garde"
+kind = "translate"
+source = ["remise en garde"]
+never = ["the remise", "on-guard position"]
+line = '''remise en garde → return to guard (never "the remise", never "on-guard position")'''
+
+[[term]]
+id = "esquive"
+kind = "translate"
+source = ["esquiv*"]
+line = '''esquive, esquiver → dodge (dérobement is the evasion)'''
+
+[[term]]
+id = "plastron"
+kind = "translate"
+source = ["plastron*"]
+line = '''plastron: the master's padded jacket → plastron; the lesson at it ("le plastron", "pendant le plastron", "donner le plastron", "quelques minutes de plastron") → plastron work; au plastron → at the plastron; plastronner → work at the plastron (unless the book defines it otherwise)'''
+
+[[term]]
+id = "passe-d-armes"
+kind = "translate"
+source = ["passe d'armes"]
+line = '''passe d'armes → passage of arms'''
+
+[[term]]
+id = "assaut-en-un"
+kind = "translate"
+source = ["assaut en un"]
+line = '''assaut en un → one-touch bout'''
+
+[[term]]
+id = "riposte-d-opposition"
+kind = "translate"
+source = ["riposte d'opposition"]
+never = ["counter-riposte"]
+line = '''riposte d'opposition → <i>riposte</i> with opposition (never "counter-riposte")'''
+
+[[term]]
+id = "riposteur"
+kind = "translate"
+source = ["riposteur"]
+line = '''riposteur (the fencer who ripostes) → riposter'''
+
+[[term]]
+id = "martingale"
+kind = "translate"
+source = ["martingale"]
+line = '''martingale → martingale'''
+
+[[term]]
+id = "prevot"
+kind = "translate"
+source = ["prévôt"]
+line = '''prévôt → provost'''
+
+[[term]]
+id = "salut"
+kind = "translate"
+source = ["salut", "salut des armes"]
+line = '''salut, salut des armes (the formal salute before a bout) → salute, salute of arms'''
+
+[[term]]
+id = "tantot"
+kind = "translate"
+source = ["tantôt", "tantôt"]
+line = '''tantôt … tantôt → sometimes … sometimes'''
+
+[[term]]
+id = "chasser-le-fer"
+check = "retry"
+kind = "translate"
+source = ["chass*"]
+never = ["chase"]
+line = '''chasser le fer, chasser l'épée, chasser la lame → drive the blade aside (never "chase")'''
+
+[[term]]
+id = "fuyard"
+kind = "translate"
+source = ["fuyard"]
+line = '''fuyard (a fencer who keeps breaking ground) → runaway'''
+
+[[term]]
+id = "tireur-d-allonge"
+kind = "translate"
+source = ["tireur d'allonge"]
+line = '''tireur d'allonge → long-reach fencer'''
+
+[[term]]
+id = "tireur-de-tete"
+kind = "translate"
+source = ["tireur de tête", "tireur de tempérament"]
+line = '''tireur de tête / tireur de tempérament → thinking fencer / impulsive fencer'''
+
+[[term]]
+id = "a-mains-contraires"
+kind = "translate"
+source = ["à mains contraires", "à mains pareilles"]
+line = '''à mains contraires / à mains pareilles → opposite-handed / same-handed'''
+
+[[term]]
+id = "departs-d-ensemble"
+kind = "translate"
+source = ["départs d'ensemble"]
+line = '''départs d'ensemble → simultaneous starts'''
+
+[[term]]
+id = "se-coucher"
+kind = "translate"
+source = ["couch*"]
+line = '''se coucher (dropping the body under the opponent's point) → duck'''
+
+[[term]]
+id = "parer-tierce"
+kind = "translate"
+source = ["parer", "parez", "parant"]
+line = '''"parer tierce" → parry tierce'''
+
+[[term]]
+id = "de-quarte-en-seconde"
+kind = "translate"
+source = ["de quarte en seconde"]
+line = '''"de quarte en seconde" → from quarte to seconde'''
+
+[[term]]
+id = "septime-enveloppee"
+kind = "translate"
+source = ["septime enveloppée"]
+line = '''septime enveloppée → septime enveloped'''
+
+[[term]]
+id = "note-2"
+kind = "note"
+with = "translate"
+group = "ordinary"
+line = '''ordinary words these books use in a sense the model misreads:'''
+
+[[term]]
+id = "defendre"
+kind = "translate"
+group = "ordinary"
+source = ["défend*"]
+line = '''défendre (l'usage de …) → forbid'''
+
+[[term]]
+id = "ne-plus-que"
+kind = "translate"
+group = "ordinary"
+source_re = '''(?i)\bn(?:e\s|['’])[^.;!?\n]{1,40}\bplus\s+qu'''
+never = ["no longer"]
+line = '''ne … plus que → now only (never "no longer")'''
+
+[[term]]
+id = "ajuster"
+kind = "translate"
+group = "ordinary"
+source = ["ajust*"]
+line = '''ajuster (a hit) → aim'''
+
+[[term]]
+id = "grande-force"
+kind = "translate"
+group = "ordinary"
+source = ["grande force", "de première force"]
+line = '''grande force, de première force → great skill, first-rate'''
+
+[[term]]
+id = "vicieux"
+kind = "translate"
+group = "ordinary"
+source = ["vicieux"]
+line = '''vicieux → faulty'''
+
+[[term]]
+id = "juste"
+kind = "translate"
+group = "ordinary"
+source = ["juste", "justesse"]
+never = ["just"]
+line = '''juste, justesse → correct, accuracy (never "just")'''
+
+[[term]]
+id = "venir-a-bout-de"
+kind = "translate"
+group = "ordinary"
+source = ["à bout de"]
+line = '''venir à bout de → get the better of'''
+
+[[term]]
+id = "faire-des-armes"
+kind = "translate"
+group = "ordinary"
+source = ["fai* des armes"]
+line = '''faire des armes → fence'''
+
+[[term]]
+id = "or"
+kind = "translate"
+group = "ordinary"
+source_re = '''(?m)(?:^|[.!?»”]\s+)Or\b'''
+line = '''Or (opening a sentence) → Now'''
+
+[[term]]
+id = "arme-blanche"
+kind = "translate"
+group = "ordinary"
+source = ["arme blanche", "armes blanches"]
+never = ["white weapon"]
+line = '''arme blanche, armes blanches → by context: edged weapon(s), bladed weapon(s), or "cold steel" in a set phrase ("charger à l'arme blanche" → charge with cold steel); never "white weapon"'''
+
+[[term]]
+id = "divers"
+kind = "translate"
+source = ["divers"]
+line = '''divers (as a heading) → miscellaneous'''
+
+[[term]]
+id = "avant-propos"
+kind = "translate"
+source = ["avant-propos"]
+line = '''avant-propos → foreword'''
+
+[[term]]
+id = "premiere-partie"
+check = "retry"
+kind = "translate"
+source_re = '''(?i)\b(?:premi[eè]re|deuxi[eè]me|seconde|troisi[eè]me|quatri[eè]me|cinqui[eè]me|sixi[eè]me)\s+partie\b'''
+never = ["Part One"]
+line = '''première partie, deuxième partie … → First Part, Second Part … (ordinal first, never "Part One")'''
+
+[[term]]
+id = "soie"
+kind = "translate"
+source = ["soie"]
+never = ["silk", "thread"]
+line = '''soie (of a blade) → tang   (NOT "silk" or "thread")'''
+
+[[term]]
+id = "fort"
+kind = "translate"
+source = ["fort", "faible"]
+line = '''fort / faible (of a blade) → forte / foible'''
+
+[[term]]
+id = "tete"
+kind = "translate"
+source = ["tête"]
+line = '''targets: tête → head'''
+
+[[term]]
+id = "figure"
+kind = "translate"
+source = ["figure"]
+line = '''figure ("attaque à la figure") → face'''
+
+[[term]]
+id = "manchette"
+kind = "translate"
+source = ["manchette"]
+line = '''manchette → wrist'''
+
+[[term]]
+id = "tierce-basse"
+kind = "translate"
+source_re = '''(?i)\b(?:prime|seconde|tierce|quarte|quinte|sixte|septime|octave)s?\s+(?:basse|haute)s?\b'''
+line = '''tierce basse, quarte haute … → low tierce, high quarte …   (the adjective before the parry name)'''
+
+[[term]]
+id = "fer"
+kind = "translate"
+source = ["fer"]
+never = ["iron"]
+line = '''fer (the opponent's steel) → the blade   (NOT "iron"): "attaque au fer" → attack on the blade, "chercher le fer" → seek the blade.'''
+
+[[term]]
+id = "prise-de-fer"
+kind = "footnote"
+source = ["prise de fer"]
+forms = [["prise de fer", "taking the blade"]]
+line = '''prise de fer → taking the blade'''
+
+[[term]]
+id = "liement"
+kind = "footnote"
+source = ["liement"]
+forms = [["liements", "binds", "liement"], ["liement", "bind"]]
+line = '''liement → bind'''
+
+[[term]]
+id = "coupe"
+kind = "footnote"
+source = ["coupé", "coupez", "couper"]
+forms = [["coupés", "cut-overs", "coupé"], ["coupé", "cut-over"]]
+line = '''coupé → cut-over'''
+
+[[term]]
+id = "degagement"
+kind = "footnote"
+source = ["dégag*"]
+forms = [["dégagements", "disengagements", "dégagement"], ["dégagement", "disengagement"]]
+line = '''dégagement → disengagement'''
+
+[[term]]
+id = "froissement"
+kind = "footnote"
+source = ["froiss*"]
+forms = [["froissements", "grazes", "froissement"], ["froissement", "graze"]]
+not_before = [["froissement", "(?!\\s+d['’]\\s*amour)"], ["froissements", "(?!\\s+d['’]\\s*amour)"]]
+line = '''froissement → graze'''
+
+[[term]]
+id = "coule"
+kind = "footnote"
+source = ["coulé", "coulez", "couler"]
+forms = [["coulés", "glides", "coulé"], ["coulé", "glide"]]
+line = '''coulé → glide'''
+
+[[term]]
+id = "caver"
+kind = "footnote"
+source = ["cav*"]
+forms = [["en cavant", "by angling", "caver"], ["cavant", "angling", "caver"], ["caver", "angle"]]
+line = '''caver → to angle ("en cavant" → by angling, "coup cavé" → angled hit)'''
+
+[[term]]
+id = "barre"
+kind = "footnote"
+source = ["barré"]
+forms = [["barrés", "bars", "barré"], ["barré", "bar"]]
+line = '''barré → bar ("le barré de seconde" → the bar in seconde)'''
+
+[[term]]
+id = "coup-fourre"
+kind = "footnote"
+source = ["coup fourré"]
+forms = [["coups fourrés", "double hits", "coup fourré"], ["coup fourré", "double hit"]]
+line = '''coup fourré → double hit (the same as coup double)'''
+
+[[term]]
+id = "bourrer"
+kind = "footnote"
+source = ["bourr*"]
+never = ["shove", "press", "stuff"]
+forms = [["bourrades", "ramming thrusts", "bourrade"], ["bourrade", "ramming thrust"], ["bourreurs", "rammers", "bourreur"], ["bourreur", "rammer"], ["en bourrant", "by ramming", "bourrer"], ["bourrant", "ramming", "bourrer"], ["bourrer", "ram"]]
+line = '''bourrer → to ram ("en bourrant" → by ramming), bourrade → ramming thrust, bourreur → rammer (a thrust made by drawing the arm back and driving the point in hard; never "shove", "press", "stuff")'''
+
+[[term]]
+id = "larder"
+check = "retry"
+kind = "footnote"
+source = ["lard*"]
+never = ["lard"]
+forms = [["en lardant", "jabbing", "larder"], ["larder", "jab"]]
+line = '''larder, en lardant → to jab, jabbing (thrusting in and out like a larding needle; never "lard")'''
+
+[[term]]
+id = "tendre-la-perche"
+kind = "footnote"
+source = ["perche", "broche"]
+forms = [["tendre la perche", "stick the arm out stiffly"], ["tendre la broche", "stick the arm out stiffly"], ["la perche tendue", "the arm stuck out stiffly"]]
+line = '''tendre la perche, la perche tendue, tendre la broche (slang for sticking the arm out stiffly at an attack, hoping the attacker runs onto the point; no English saying) → stick the arm out stiffly, the arm stuck out stiffly'''
+
+[[term]]
+id = "se-loger"
+kind = "footnote"
+source = ["loge*"]
+refs = [["vous loger", "se loger"], ["se logeant", "se loger"], ["loger", "se loger"]]
+model_notes = ["se loger"]
+line = '''se loger, vous loger, se logeant (working one's way into striking distance) → lodge oneself, lodge yourself, lodging oneself'''
+
+[[term]]
+id = "picoteur"
+kind = "footnote"
+source = ["picot*"]
+forms = [["picoteurs", "prickers", "picoteur"], ["picoteur", "pricker"]]
+line = '''picoteur (a fencer who pricks at the wrist and forearm) → pricker'''
+
+[[term]]
+id = "au-pied-leve"
+kind = "footnote"
+source = ["au pied levé"]
+model_notes = ["au pied levé"]
+line = '''au pied levé (a stop-hit taken as the attacker lifts his foot) → with the foot raised'''
+
+[[term]]
+id = "tendeur-a-outrance"
+kind = "footnote"
+source = ["à outrance"]
+forms = [["tendeurs à outrance", "extenders to excess", "tendeur à outrance"], ["tendeur à outrance", "extender to excess"]]
+model_notes = ["tension à outrance"]
+line = '''tendeur à outrance, tension à outrance → extender to excess, extension to excess'''
+
+[[term]]
+id = "se-desunir"
+kind = "footnote"
+source = ["désuni*"]
+refs = [["désuni", "se désunir"], ["se désunit", "se désunir"]]
+model_notes = ["se désunir"]
+line = '''se désunir, désuni (losing the unity of body and arm) → become disunited, disunited'''
+
+[[term]]
+id = "s-enferrer"
+kind = "footnote"
+source = ["enferr*"]
+refs = [["s'enferre", "s'enferrer"]]
+model_notes = ["s'enferrer"]
+line = '''s'enferrer (running oneself onto the opponent's point) → run oneself onto the point'''
+
+[[term]]
+id = "filer-au-corps"
+kind = "footnote"
+source = ["fil* au corps", "en filant"]
+refs = [["en filant", "filer"], ["filer au corps", "filer"]]
+model_notes = ["filer"]
+line = '''filer au corps, en filant (the point running straight on to the body) → run through to the body, running on'''
+
+[[term]]
+id = "bricoleur"
+kind = "footnote"
+source = ["bricoleur"]
+forms = [["bricoleurs", "tinkerers", "bricoleur"], ["bricoleur", "tinkerer"]]
+line = '''bricoleur → tinkerer'''
+
+[[term]]
+id = "flechard"
+kind = "footnote"
+source = ["fléchard"]
+refs = [["fléchards", "fléchard"]]
+model_notes = ["fléchard"]
+line = '''fléchard → <i>flèche</i> fencer'''
+
+[[term]]
+id = "attaque-d-emblee"
+kind = "footnote"
+source = ["d'emblée"]
+refs = [["attaque d'emblée", "d'emblée"]]
+model_notes = ["d'emblée"]
+line = '''attaque d'emblée, d'emblée au corps → attack straight off, straight off to the body'''
+
+[[term]]
+id = "coup-amene"
+kind = "footnote"
+source = ["coup amen*"]   # "amen!" is how the OCR read it once (Prévost-Jollivet)
+refs = [["coups amenés", "coup amené"]]
+model_notes = ["coup amené"]
+line = '''coup amené → drawn attack'''
+
+[[term]]
+id = "temps-moral"
+kind = "footnote"
+source = ["temps moral"]
+model_notes = ["temps moral"]
+line = '''temps moral (the fencer's mental reaction time) → mental time'''
+
+[[term]]
+id = "a-propos"
+kind = "footnote"
+source = ["à propos"]
+never = ["at a lost tempo"]
+forms = [["à-propos", "timing"]]
+line = '''à-propos → timing (plural: moments of timing); but "mal à propos" → at the wrong moment, "à propos" (opportunely) → at the right moment — never "at a lost tempo", which is à temps perdu'''
+
+[[term]]
+id = "coup-de-temps"
+kind = "footnote"
+source = ["coup de temps"]
+forms = [["coup de temps", "time-hit"]]
+line = '''coup de temps → time-hit'''
+
+[[term]]
+id = "rompre"
+kind = "footnote"
+source = ["romp*"]
+never = ["romp", "retreat", "retraite"]
+line = '''rompre → to break ground, but "rompre la mesure" → break the measure   (a single deliberate step back, NOT "romp" -- and NOT "retreat"/"retraite", a different, more general backward movement; keep the two distinct if both appear)'''
+
+[[term]]
+id = "plastron-person"
+kind = "footnote"
+source = ["plastron"]
+line = '''plastron meaning a person, the master who gives the lesson ("un remarquable plastron") → lesson-giver'''
+
+[[term]]
+id = "rassemblement"
+check = "retry"
+kind = "footnote"
+source = ["rassembl*"]
+never = ["raassemblant"]
+forms = [["rassemblements", "gatherings of the feet", "rassemblement"], ["rassemblement", "gathering of the feet"], ["rassemblant", "gathering the feet", "rassemblement"], ["rassembler", "to gather the feet", "rassemblement"]]
+line = '''rassemblement / rassembler / rassemblant → gathering (of the feet)   (spell the French EXACTLY: "rassemblant", never "raassemblant")'''
+
+[[term]]
+id = "derobement"
+kind = "footnote"
+source = ["dérobement"]
+forms = [["dérobements", "evasions of the blade", "dérobement"], ["dérobement", "evasion of the blade"]]
+line = '''dérobement → evasion (of the blade)'''
+
+[[term]]
+id = "deroule"
+kind = "footnote"
+source = ["déroulé"]
+forms = [["déroulé", "glide", "coulé"]]
+line = '''déroulé → glide'''
+
+[[term]]
+id = "note-3"
+kind = "note"
+with = "footnote"
+line = '''Example:  "… and by a bind<fn>Fr. liement</fn> he carried the blade aside."'''
+
+[[term]]
+id = "note-4"
+kind = "note"
+with = "footnote"
+line = '''In a HEADING (rule 4) translate the term but omit the <fn> tag.'''

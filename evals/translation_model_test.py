@@ -137,11 +137,26 @@ FOLLOWUP_PAGES = [("lamarche", 133, "tendre la perche"), ("prevost-jollivet", 15
                   ("prevost-jollivet", 79, "d'un coup sec"), ("barbasetti", 116, "parate di tasto"),
                   ("lamarche", 56, "ongles en-dessus"), ("prevost-jollivet", 21, "rapière"),
                   ("prevost-jollivet", 248, "rapière")]
+if os.environ.get("PAGE_SET") == "tense":          # Italian lesson lines in the future, and impersonal «si …rà»
+    PAGES = [("masiello_1887", 302, "lesson lines"), ("masiello_1887", 600, "lesson lines"),
+             ("masiello_1887", 349, "lesson text"), ("masiello_1887", 397, "lesson text")]
+    OUT = OUT + "/retranslation"
+if os.environ.get("PAGE_SET") == "terms":          # pages whose present English breaks a checked term rule
+    PAGES = [("masiello_1902_fioretto", 34, "two tempos"), ("masiello_1902_fioretto", 38, "four tempos"),
+             ("masiello_1902_fioretto", 60, "two tempos"), ("masiello_1902_fioretto", 74, "two tempos"),
+             ("masiello_1887", 302, "lesson lines"), ("kirchhoffer", 52, "quarte -> tierce")]
+    OUT = OUT + "/retranslation"
+if os.environ.get("PAGE_SET") == "smoke":          # two pages, to see that a run works before a long one
+    PAGES = [("kirchhoffer", 52, "quarte -> tierce"), ("masiello_1887", 164, "coccia -> pommel")]
+    OUT = OUT + "/retranslation"
 if os.environ.get("PAGE_SET") == "followup2":
     PAGES = [("lamarche", 56, "ongles en-dessus; own-language note")]
     OUT = OUT + "/retranslation"
 if os.environ.get("PAGE_SET") == "followup":
     PAGES = FOLLOWUP_PAGES
+    OUT = OUT + "/retranslation"
+if os.environ.get("PAGE_SET") == "italian":        # the Italian pages of the retranslation set
+    PAGES = [p for p in RETRANSLATION_PAGES if p[0] in ("barbasetti", "masiello_1887")]
     OUT = OUT + "/retranslation"
 if os.environ.get("PAGE_SET") == "retranslation":
     PAGES = RETRANSLATION_PAGES
@@ -181,20 +196,55 @@ def run(label, current=False):
         # the hotter retries (0.55, 0.8) stay as they are
         ns["FIRST_TRY_TEMPERATURE"] = float(first_temp)
         ns["translate_with_llama"].__defaults__ = (float(first_temp),)
+    # PAGE_PROMPT=1: each page gets the prompt with rules 3 / 3b cut down to
+    # the term-table entries whose source word is on it (_glossary_table.py)
+    # PAGE_PROMPT=end: the same, with the page's entries after the examples
+    page_prompt = os.environ.get("PAGE_PROMPT", "").lower() in ("1", "true", "yes", "on", "end")
+    at_end = os.environ.get("PAGE_PROMPT", "").lower() == "end"
     res = {"label": label, "model": os.environ.get("TRANSLATION_MODEL_NAME", ""),
-           "first_temp": first_temp or "step 2 default", "prompt_variant": variant, "pages": {}}
+           "first_temp": first_temp or "step 2 default", "prompt_variant": variant,
+           "page_prompt": ("end" if at_end else page_prompt), "pages": {}}
+    if ns and os.path.exists(f"{OUT}/{label}.json"):       # a stopped run goes on where it was
+        res["pages"] = json.load(open(f"{OUT}/{label}.json", encoding="utf-8")).get("pages", {})
+    calls = []
+    if ns:
+        # what each model call cost: the server's token counts and timings
+        import requests
+        post = requests.post
+
+        def counted(*a, **k):
+            r = post(*a, **k)
+            try:
+                j = r.json()
+                calls.append({**{x: j.get("usage", {}).get(x) for x in ("prompt_tokens", "completion_tokens")},
+                              **{x: j.get("timings", {}).get(x) for x in ("cache_n", "prompt_n", "prompt_ms",
+                                                                         "predicted_n", "predicted_ms")},
+                              "finish": (j.get("choices") or [{}])[0].get("finish_reason")})
+            except Exception:                       # noqa: BLE001 -- counting must never break a run
+                pass
+            return r
+        requests.post = counted
     for prefix, folder, scan, why, page in _pages():
         key = f"{prefix}:{scan}"
         if current:
             tr = _pageio.split_pages(open(f"{folder}/intermediate/translation.txt", encoding="utf-8").read())
             res["pages"][key] = {"text": tr[scan - 1].strip(), "secs": None}
             continue
+        if key in res["pages"]:
+            continue
         stem = os.path.basename(folder)[:-len("_translated")]
         ns["PROMPT_TEMPLATE"] = ns["prompt_for_book"](stem)   # language prompt + book terms, as step 2
+        extra = {}
+        if page_prompt:
+            import _glossary_table
+            full = ns["PROMPT_TEMPLATE"]
+            ns["PROMPT_TEMPLATE"] = _glossary_table.page_prompt(full, ns["BOOK_LANG"], page, at_end=at_end)
+            extra = {"prompt_chars": len(ns["PROMPT_TEMPLATE"]), "full_prompt_chars": len(full)}
         st = {"fn_seen": set(), "footnoted_seen": set(), "fn_state": {}}
+        del calls[:]
         t0 = time.time()
         out = ns["translate_page"](page, scan, 0, st)
-        res["pages"][key] = {"text": out, "secs": round(time.time() - t0, 1)}
+        res["pages"][key] = {"text": out, "secs": round(time.time() - t0, 1), "calls": list(calls), **extra}
         json.dump(res, open(f"{OUT}/{label}.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     json.dump(res, open(f"{OUT}/{label}.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(f"✓ {label}: {len(res['pages'])} page(s) -> {OUT}/{label}.json")

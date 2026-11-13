@@ -5480,5 +5480,169 @@ def test_table_pass_sends_only_changed_cells():
         T.translate_with_llama = keep
         shutil.rmtree(d)
 
+def test_a_books_kept_term_is_not_translated_back():
+    """Joseph-Renaud's [terms] keep «barré» ("<i>barré</i>"); the footnoted-terms
+    list says barré → bar, and the code turned the model's <i>barré</i> back
+    into "bar" with a note (16 hand fixes). The book's term wins; other books
+    and other terms are as before."""
+    import _tx_terms as X
+    line = "Against the <i>barré</i> of seconde; the <i>barrés</i> and a liement."
+    try:
+        X.set_book_terms({"barré": "<i>barré</i>", "fausse attaque": "false attack",
+                          "flèche": "<i>flèche</i> -- the kept term, not arrow"})
+        got = X.enforce_footnoted_terms(line, set(), lang="French")
+        assert "<i>barré</i> of seconde" in got and "<i>barrés</i>" in got and "bar<fn>" not in got
+        assert "bind<fn>French: liement</fn>" in got                      # the list's other terms still apply
+        assert X._BOOK_KEPT == {"barré", "flèche"}                        # "false attack" is a translation, not a kept word
+        X.set_book_terms({})
+        back = X.enforce_footnoted_terms(line, set(), lang="French")
+        assert "the bar of seconde" in back and "the bars<fn>French: barré</fn>" in back
+    finally:
+        X.set_book_terms({})
+
+
+def test_a_page_kept_from_a_cut_off_reply_is_recorded():
+    """A reply that ran out of room on every try is kept with a banner; the
+    page is also recorded in cut_off.json, which outlives the banner
+    (Prévost-Jollivet pdf 237, 2026-11-09). A later complete translation, or
+    a page that fails for another reason, is not recorded."""
+    import json, os, shutil, tempfile
+    import _translate as T
+    page = "PAGE_NUMBER: 12\nHEADER: none\nBODY_TEXT:\n" + " ".join(["Le tireur attaque et son adversaire pare."] * 12)
+    full = " ".join(["The fencer attacks and his opponent parries."] * 12)
+    keep, keep_cut = T.translate_with_llama, T.LAST_CUT
+    d = tempfile.mkdtemp()
+    os.makedirs(f"{d}/intermediate")
+    st = lambda: {"fn_seen": set(), "footnoted_seen": set(), "fn_state": {}}
+
+    def model(text, cut):
+        def fake(prompt, *a, **k):
+            T.LAST_CUT = cut
+            return text
+        return fake
+    try:
+        s = st()
+        T.translate_with_llama = model(full[:200], True)
+        out = T.translate_page(page, 12, 20, s)
+        assert out.startswith("[low-confidence translation") and s["page_cut"] is True
+        T.record_cut_off(d, 12, s["page_cut"])
+        assert list(json.load(open(f"{d}/intermediate/cut_off.json"))) == ["12"]
+        s = st()
+        T.translate_with_llama = model(full, False)
+        out = T.translate_page(page, 12, 20, s)
+        assert not out.startswith("[") and s["page_cut"] is False
+        T.record_cut_off(d, 12, s["page_cut"])
+        assert json.load(open(f"{d}/intermediate/cut_off.json")) == {}
+        s = st()
+        s["page_cut"] = True                                              # left over from the page before
+        assert T.translate_page("", 13, 20, s) == "" and s["page_cut"] is False
+    finally:
+        T.translate_with_llama, T.LAST_CUT = keep, keep_cut
+        shutil.rmtree(d)
+
+
+def test_a_page_too_long_for_the_whole_prompt_gets_the_page_prompt():
+    """The French prompt + a page over ~250 words no longer fits the 8,192
+    window (2026-11-11: 34 of 68 French test pages cut off). A page that
+    fits gets the whole prompt, word for word as before; one that does not
+    gets the page prompt (its own term entries, after the examples); and a
+    reply cut off under the whole prompt is retried with the page prompt."""
+    import _translate as T
+    keep = (T.translate_with_llama, T.LAST_CUT, T.PROMPT_TEMPLATE, T.BOOK_LANG)
+    T.BOOK_LANG = "French"
+    T.PROMPT_TEMPLATE = T.prompt_for_language("French") + "\n\nBOOK-SPECIFIC TERMS -- for this book these override the lists above:\n   - flèche → <i>flèche</i>"
+    sent = []
+    st = lambda: {"fn_seen": set(), "footnoted_seen": set(), "fn_state": {}}
+    sentence = "Le tireur fait un battement et son adversaire pare."
+    page = lambda n: "PAGE_NUMBER: 12\nHEADER: none\nBODY_TEXT:\n" + " ".join([sentence] * n)
+    english = lambda n: " ".join(["The fencer makes a beat and his opponent parries."] * n)
+
+    def model(n, cut_first=False):
+        def fake(prompt, *a, **k):
+            sent.append(prompt)
+            T.LAST_CUT = cut_first and len(sent) == 1
+            return english(n)
+        return fake
+    try:
+        assert T.prompt_fits(T.PROMPT_TEMPLATE, " ".join([sentence] * 12)) and not T.prompt_fits(T.PROMPT_TEMPLATE, " ".join([sentence] * 60))
+        T.translate_with_llama = model(12)                     # a short page: the whole prompt
+        assert not T.translate_page(page(12), 12, 20, st()).startswith("[")
+        assert sent[0].startswith(T.PROMPT_TEMPLATE) and "TERMS ON THIS PAGE" not in sent[0]
+        del sent[:]
+        T.translate_with_llama = model(60)                     # a long page: the page prompt
+        assert not T.translate_page(page(60), 12, 20, st()).startswith("[")
+        p = sent[0]
+        assert "TERMS ON THIS PAGE" in p and "battement → beat" in p and "soie (of a blade)" not in p
+        assert "KEEP in the original language" in p and "flèche → <i>flèche</i>" in p      # rule 2 and the book's terms stay
+        assert len(p) < len(T.PROMPT_TEMPLATE) + len(page(60)) - 8000
+        del sent[:]
+        T.translate_with_llama = model(12, cut_first=True)     # the estimate was wrong: cut, then the page prompt
+        s = st()
+        assert not T.translate_page(page(12), 12, 20, s).startswith("[") and s["page_cut"] is False
+        assert len(sent) == 2 and "TERMS ON THIS PAGE" not in sent[0] and "TERMS ON THIS PAGE" in sent[1]
+    finally:
+        T.translate_with_llama, T.LAST_CUT, T.PROMPT_TEMPLATE, T.BOOK_LANG = keep
+
+
+def test_a_checked_term_rule_is_asked_again_once():
+    """A table entry set to check = "retry" (colpo: never "blow"): the reply
+    that breaks it is asked once more with the rule named. If the retry
+    mends it, the retry is the page; if not -- or if the retries fail other
+    checks -- the first try's wording stays, without a low-confidence
+    banner, and the page is recorded for the review report."""
+    import json, os, shutil, tempfile
+    import _translate as T
+    keep = (T.translate_with_llama, T.LAST_CUT, T.PROMPT_TEMPLATE, T.BOOK_LANG, dict(T.BOOK_TERMS))
+    T.BOOK_LANG, T.BOOK_TERMS = "Italian", {}
+    T.PROMPT_TEMPLATE = T.prompt_for_language("Italian")
+    page = "PAGE_NUMBER: 12\nHEADER: none\nBODY_TEXT:\n" + " ".join(
+        ["Il colpo deve giungere al bersaglio prima che l'avversario abbia compiuto la sua azione."] * 6)
+    bad = " ".join(["The blow must reach the target before the opponent has completed his action."] * 6)
+    good = bad.replace("blow", "hit")
+    sent = []
+    st = lambda: {"fn_seen": set(), "footnoted_seen": set(), "fn_state": {}}
+
+    def model(*replies):
+        def fake(prompt, *a, **k):
+            sent.append(prompt)
+            T.LAST_CUT = False
+            return replies[min(len(sent), len(replies)) - 1]
+        return fake
+    try:
+        T.translate_with_llama = model(bad, good)              # the retry mends it
+        s = st()
+        out = T.translate_page(page, 12, 20, s)
+        assert "hit" in out and "blow" not in out and s["term_left"] == [] and len(sent) == 2
+        assert 'do not write "blow" for it' in sent[1] and "«colpo»" in sent[1] and "NEVER \"blow\"" in sent[1]
+        del sent[:]
+        T.translate_with_llama = model(bad, bad.replace("must", "has to"))     # the retry does no better
+        s = st()
+        out = T.translate_page(page, 12, 20, s)
+        assert "blow must" in out and not out.startswith("[") and len(sent) == 2
+        assert s["term_left"] == ['«colpo» written "blow"']
+        del sent[:]
+        T.translate_with_llama = model(bad, "Blow.", "Blow.")                  # the retries fail other checks
+        s = st()
+        out = T.translate_page(page, 12, 20, s)
+        assert "blow must" in out and not out.startswith("[") and len(sent) == 3 and s["term_left"]
+        del sent[:]
+        T.BOOK_TERMS = {"colpo": "blow -- this author's own word"}             # the book decides otherwise
+        T.translate_with_llama = model(bad)
+        s = st()
+        assert "blow must" in T.translate_page(page, 12, 20, s) and len(sent) == 1 and s["term_left"] == []
+        d = tempfile.mkdtemp()
+        os.makedirs(f"{d}/intermediate")
+        try:
+            T.record_term_left(d, 12, ['«colpo» written "blow"'])
+            assert json.load(open(f"{d}/intermediate/term_checks.json")) == {"12": ['«colpo» written "blow"']}
+            T.record_term_left(d, 12, [])
+            assert json.load(open(f"{d}/intermediate/term_checks.json")) == {}
+        finally:
+            shutil.rmtree(d)
+    finally:
+        T.translate_with_llama, T.LAST_CUT, T.PROMPT_TEMPLATE, T.BOOK_LANG = keep[:4]
+        T.BOOK_TERMS = keep[4]
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

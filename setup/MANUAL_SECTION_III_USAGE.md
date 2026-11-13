@@ -126,6 +126,8 @@ from — lives in an `intermediate/` subfolder, so the root stays clean.
 | `intermediate/extracted.txt` | 1 | Canonical `PAGE_NUMBER / HEADER / BODY_TEXT` scaffold per page |
 | `intermediate/page_numbers.txt` | 1 | One reconciled folio per line; `[n]` = inferred sheet ordinal, not a printed number |
 | `intermediate/translation.txt` | 2 | English, one record per page (U+001E separator), aligned with `extracted.txt` |
+| `intermediate/cut_off.json` | 2 | The pages whose English is a reply that ran out of room and stops early. The review report lists them until they are translated again in full or given a hand edit |
+| `intermediate/term_checks.json` | 2 | The pages where a checked term rule was still broken after the retry; the review report lists them ("term") |
 | `… — English Only (Portrait).pdf` | 3 | Reading copy |
 | `… — Side by Side (Landscape).pdf` | 4 | Comparison copy |
 
@@ -174,7 +176,17 @@ side-by-side PDF. What it checks:
   (something dropped), model chatter, a plate's "Planche N." label
   missing from the English, and a line left in Latin (or French in an
   Italian book) that rule 0 says to translate, with an "… in the original"
-  note.
+  note. Also a page whose reply was **cut off** (it ran out of room and
+  stops before the page does).
+- **Term:** a term rule that step 2 checks after translation (a table
+  entry set to `check = "retry"`, e.g. Italian *colpo* never "blow") was
+  broken, and asking the model again with the rule named did not mend it.
+  The first try's wording was kept. Fix the wording, or, if the book is
+  right to differ, set its own rendering under `[terms]`. Under *About
+  this book*, **first-use note**: a term that is translated with a note at
+  its first use ("French: liement") is on three or more pages and the
+  book has no such note. Add it at the first use, or leave it if the note
+  was taken out on purpose.
 - **Wording:** misspellings the model is known to make (THUST, THROUGHS) and
   renderings against the glossary ("THROWS" for *coup*, "romp" for *rompre*,
   "plank" for *planche*). This covers running heads too. In Italian books
@@ -844,6 +856,16 @@ for that page is garbled — look at the same page in
 miss, adjust `translation_prompt.txt`, `rm intermediate/translation.txt`,
 re-run step 2.
 
+A fourth cause is logged as `cut off (out of room)`: the prompt, the page
+and the reply together were larger than the model's window, so the reply
+stops before the page does. Step 2 avoids it by sending a shorter prompt
+for a long page; where it still happens, the page is also recorded in
+`intermediate/cut_off.json` and the review report keeps listing it ("cut
+off") even if the banner is removed, until the page is translated again
+in full or completed with `edit_page.py`. Do not complete such a page by
+editing `translation.txt` directly: the next run of that page overwrites
+it, and nothing records that the text was replaced.
+
 ### A page reads `[Empty page]`
 
 Expected for a blank leaf, a section-break page, or a page whose OCR body
@@ -953,3 +975,23 @@ models, `books/`, and `processed/` are all preserved. Restart later with
   even `full_cleanup.sh` never re-downloads them.
 - Keep an untouched copy of every source PDF outside `books/` — the
   pipeline treats `books/` as disposable input.
+- **Who can reach the model servers.** In local mode the container's two
+  model servers (ports 11434 and 11435) take no password, so they answer
+  on this system only. To use them from another system on a network you
+  trust, set `LLAMA_BIND=0.0.0.0` in `.env` and run `docker compose up -d`.
+  Other containers on `ai-net` reach them by the container's name either
+  way.
+- **What a rebuild of the image changes.** The Python packages the
+  pipeline reads and draws PDFs with are fixed to set versions in
+  `docker/Dockerfile`, so a rebuild gives the same ones. llama.cpp, the
+  program that runs the models, is **not** fixed: a rebuild compiles
+  whatever its newest version is that day. That is deliberate. In remote
+  mode the image's copy is not used at all (the GPU system runs its own,
+  and that is the version that decides how a book is translated:
+  `docs/remote-gpu.md`), and a newer version is how new features arrive.
+  In local mode a rebuild can therefore change how the models run. After
+  one, see which version the image holds:
+  `docker exec -e LD_LIBRARY_PATH=/usr/local/lib/llama-vulkan fmt-translator llama-server-vulkan --version`,
+  and translate a few pages you know before a whole book. To stay on a
+  version that works, add a `git checkout <commit>` after the `git clone`
+  line in the Dockerfile.

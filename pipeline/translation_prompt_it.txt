@@ -92,7 +92,12 @@ From the engagement<fn>It. legamento</fn> of <i>seconda</i>, glide<fn>It. filo</
 Input:
 MAESTRO — Inviterà di terza. Parerà contro di quarta. Si lascerà colpire.
 Output:
-<i>MAESTRO</i> — Invites in <i>terza</i>. Parries counter of <i>quarta</i>. Lets himself be hit.
+<i>MAESTRO</i> — He will invite in <i>terza</i>. He will parry counter of <i>quarta</i>. He will let himself be hit.
+
+Input:
+Si porterà il piede destro avanti e si distenderà il braccio.
+Output:
+One will bring the right foot forward and extend the arm.
 
 Input:
 Il colpo deve giungere al bersaglio prima che l'avversario abbia compiuto la sua azione.

@@ -9,50 +9,21 @@ checks for renderings against the glossary and for translated words left in
 Italian (quality_report.py). A book's own choices go in its overrides
 file's [terms], not here."""
 
-# Italian footnoted terms (translated, first use footnoted "It. <term>"),
-# 2026-09-30. "filo" (glide) is left to the model -- as a bare word it also
-# means the blade's edge, so the backstop must not rewrite it.
-_FOOTNOTED_IT = [
-    ("legamenti",       "engagements"),     ("legamento",   "engagement"),
-    ("filo sottomesso", "forced glide"),
-    ("trasporti",       "transports"),      ("trasporto",   "transport"),
-    ("uscita in tempo", "action in tempo"),
-    ("deviamenti",      "deviations"),      ("deviamento",  "deviation"),
-    ("parata di picco", "beat parry"),
-    ("controtempo",     "countertime"),
-    ("controazioni",    "counter-actions"), ("controazione", "counter-action"),
-    ("circolazioni",    "circlings"),       ("circolazione", "circling"),
-    ("di striscio",     "grazing"),         ("striscio",    "graze"),
-    ("volanti",         "off the blade"),   ("volante",     "off the blade"),
-    ("spratico",        "practice bout"),
-    ("parate di tasto", "opposition parries"), ("parata di tasto", "opposition parry"),
-    ("forconatori",     "pitchforkers"),    ("forconatore", "pitchforker"),
-]
+# The kept and the footnoted terms are held in the term table
+# (glossary_it.toml) and read from it here; see _glossary_fr.py for what
+# each list is.
+#   _FOOTNOTED_IT: "filo" (glide) is left to the model -- as a bare word it
+#     also means the blade's edge, so the backstop must not rewrite it.
+#   _KEEP_TERMS_IT (translation_prompt_it.txt rule 2): only words that never
+#     occur as ordinary English -- the hand positions and Maestro are left to
+#     the model. riposte: kept in the body, but an isolated heading can garble
+#     it (the French "RAPISES"; "RIPONSES" is fixed in fix_known_garbles).
+#   _FOOTNOTED_IT_REFS: accepted as source references in the model's <fn>
+#     notes, beyond _FOOTNOTED_IT.
+from _glossary_table import code_lists as _code_lists
 
-# the singular each form is noted under ("Italian: legamento"), so a plural
-# ("legamenti") doesn't produce a second note
-_FOOTNOTE_REF_IT = {"parate di tasto": "parata di tasto", "legamenti": "legamento", "trasporti": "trasporto",
-                 "deviamenti": "deviamento", "controazioni": "controazione",
-                 "circolazioni": "circolazione", "di striscio": "striscio",
-                 "volanti": "volante", "forconatori": "forconatore"}
-
-# Italian kept terms (translation_prompt_it.txt rule 2), 2026-09-30. Only
-# words that never occur as ordinary English -- the hand positions and
-# Maestro are left to the model.
-_KEEP_TERMS_IT = [(t, []) for t in (
-    "controcavazione", "cavazione", "cartoccio", "fianconata", "inquartata",
-    "intrecciata", "appuntata", "passata sotto", "intagliata", "molinello",
-    "molinelli", "fendente", "traversone", "raddoppio", "ripigliata",
-    "copertino", "balestrata", "scandaglio", "traccheggio", "ricasso",
-    "imbroccata", "mandritto", "coupé", "sforzi", "sforzo", "rimessa", "ripresa")] + [
-    # riposte: kept in the body, but an isolated heading can garble it
-    # (the French "RAPISES"; "RIPONSES" is fixed in fix_known_garbles)
-    ("riposte", [r"rapier(?:[- ]?(?:rapier|response|riposte|reply))?",
-                 r"riposte response", r"rapises?"])]
-
-
-# accepted as source references in the model's <fn> notes, beyond _FOOTNOTED_IT
-_FOOTNOTED_IT_REFS = {"filo", "camminando", "forconare", "lezione muta"}
+(_FOOTNOTED_IT, _FOOTNOTE_REF_IT, _FOOTNOTED_NOT_BEFORE_IT,
+ _KEEP_TERMS_IT, _FOOTNOTED_IT_REFS) = _code_lists("Italian")
 
 
 # Italian books only (glossary 2026-09-30, translation_prompt_it.txt) -- a

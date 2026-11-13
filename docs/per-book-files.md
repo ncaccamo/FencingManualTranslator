@@ -95,7 +95,11 @@ The left side is the head exactly as in `extracted.txt`. **Rerun:**
 ```
 
 Added to the translation prompt for this book only. It overrides the
-general term lists, for a term the book uses in its own way. **Rerun:**
+general term lists, for a term the book uses in its own way. The code
+follows it too: a word the book keeps in its own language (`"barré" =
+"<i>barré</i>"`) is not turned back into the general list's English after
+the model, and the term tables' checks do not flag a rendering the book
+sets here. **Rerun:**
 retranslate the pages that use the term (`2_translate.py --pages <stem>
 <pages>`), then the PDFs.
 

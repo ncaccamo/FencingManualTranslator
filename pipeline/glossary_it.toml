@@ -1,0 +1,1110 @@
+# Italian term decisions, one [[term]] per decision. Read by pipeline/_glossary_table.py.
+# Written 2026-11-11 from translation_prompt_it.txt; the wording of every "line" is the prompt's own.
+#
+#   id      a short name, unique in this file
+#   kind    keep       left in Italian, in <i>…</i>          (prompt rule 2)
+#           translate  translated, plain text              (rule 3)
+#           footnote   translated, "It. original" note at first use (rule 3b)
+#           note       not a term: a heading or remark sent with its group's entries
+#   with    on a note: the kind of entry it is sent with
+#   group   "ordinary" for ordinary words the model misreads; fencing terms have none
+#   source  the Italian forms that put this entry in a page's prompt. Matched as whole words,
+#           any case, accents optional, common endings allowed; "tir*" = any word starting "tir"
+#   source_re  a regular expression on the page's text, where a word list is not enough
+#   english on a kept term: how it is written in the English, as a word start
+#           ("ripost" finds riposte, riposted); accents count ("doublé" is not "double")
+#   never   English forms the line forbids (for the checks; shown to the model through "line")
+#   never_re         a pattern for the forbidden English, where the words alone are too common
+#   check_source_re  the check runs only where this pattern is in the source (narrower than "source")
+#   check   "retry": step 2 checks the page after translation (a forbidden form present, a kept
+#           term missing), asks once more with the rule named, and records the page for the
+#           review report if that does not mend it. Left out = no check. Set it only for an
+#           entry evals/glossary_score.py shows to be safe: a check that fires on pages a
+#           reviewer passed costs a wasted retry on every such page
+#   The code's own lists are built from these (pipeline/_glossary_fr.py, _glossary_it.py):
+#   forms        on a footnoted term: [source form, English] pairs the code translates when the
+#                model left the word in the source language, adding the first-use note; a third
+#                item is the word the note is written under ("barrés" under "barré")
+#   refs         more [form, word noted under] pairs, for notes the model writes itself
+#   model_notes  footnoted terms left to the model (ordinary words elsewhere: the code must not
+#                rewrite them); its note is accepted as a source reference
+#   not_before   [form, pattern]: the form is not the fencing term before this ("froissement
+#                d'amour-propre")
+#   enforce      on a kept term: [term, [wrong English renderings]] the code puts back in
+#                italics and snaps the wrong renderings to
+#   line    what the model is told, word for word
+
+[[term]]
+id = "prima-kept"
+kind = "keep"
+source = ["prima"]
+english = ["prima"]
+
+[[term]]
+id = "seconda-kept"
+kind = "keep"
+source = ["seconda"]
+english = ["seconda"]
+
+[[term]]
+id = "terza-kept"
+kind = "keep"
+source = ["terza"]
+english = ["terza"]
+
+[[term]]
+id = "quarta-kept"
+kind = "keep"
+source = ["quarta"]
+english = ["quarta"]
+
+[[term]]
+id = "quinta-kept"
+kind = "keep"
+source = ["quinta"]
+english = ["quinta"]
+
+[[term]]
+id = "sesta-kept"
+kind = "keep"
+source = ["sesta"]
+english = ["sesta"]
+
+[[term]]
+id = "settima-kept"
+kind = "keep"
+source = ["settima"]
+english = ["settima"]
+
+[[term]]
+id = "ottava-kept"
+kind = "keep"
+source = ["ottava"]
+english = ["ottava"]
+
+[[term]]
+id = "cavazione-kept"
+check = "retry"
+kind = "keep"
+source = ["cavazione"]
+english = ["cavazion"]
+enforce = [["cavazione", []]]
+
+[[term]]
+id = "controcavazione-kept"
+kind = "keep"
+source = ["controcavazione"]
+english = ["controcavazion"]
+enforce = [["controcavazione", []]]
+
+[[term]]
+id = "cartoccio-kept"
+kind = "keep"
+source = ["cartoccio"]
+english = ["cartocci"]
+enforce = [["cartoccio", []]]
+
+[[term]]
+id = "inquartata-kept"
+check = "retry"
+kind = "keep"
+source = ["inquartata"]
+english = ["inquartat"]
+enforce = [["inquartata", []]]
+
+[[term]]
+id = "intrecciata-kept"
+kind = "keep"
+source = ["intrecciata"]
+english = ["intrecciat"]
+enforce = [["intrecciata", []]]
+
+[[term]]
+id = "appuntata-kept"
+kind = "keep"
+source = ["appuntata"]
+english = ["appuntat"]
+enforce = [["appuntata", []]]
+
+[[term]]
+id = "sforzo-kept"
+kind = "keep"
+source = ["sforzo"]
+english = ["sforz"]
+enforce = [["sforzi", []], ["sforzo", []]]
+
+[[term]]
+id = "passata-kept"
+kind = "keep"
+source = ["passata"]
+english = ["passat"]
+
+[[term]]
+id = "intagliata-kept"
+kind = "keep"
+source = ["intagliata"]
+english = ["intagliat"]
+enforce = [["intagliata", []]]
+
+[[term]]
+id = "molinello-kept"
+check = "retry"
+kind = "keep"
+source = ["molinello"]
+english = ["molinell"]
+enforce = [["molinello", []], ["molinelli", []]]
+
+[[term]]
+id = "fendente-kept"
+kind = "keep"
+source = ["fendente"]
+english = ["fendent"]
+enforce = [["fendente", []]]
+
+[[term]]
+id = "tocco-kept"
+kind = "keep"
+source = ["tocco"]
+english = ["tocc"]
+
+[[term]]
+id = "traversone-kept"
+kind = "keep"
+source = ["traversone"]
+english = ["traverson"]
+enforce = [["traversone", []]]
+
+[[term]]
+id = "raddoppio-kept"
+kind = "keep"
+source = ["raddoppio"]
+english = ["raddoppi"]
+enforce = [["raddoppio", []]]
+
+[[term]]
+id = "ripigliata-kept"
+kind = "keep"
+source = ["ripigliata"]
+english = ["ripigliat"]
+enforce = [["ripigliata", []]]
+
+[[term]]
+id = "rimessa-kept"
+kind = "keep"
+source = ["rimessa"]
+english = ["rimess"]
+enforce = [["rimessa", []]]
+
+[[term]]
+id = "ripresa-kept"
+kind = "keep"
+source = ["ripresa"]
+english = ["ripres"]
+enforce = [["ripresa", []]]
+
+[[term]]
+id = "copertino-kept"
+check = "retry"
+kind = "keep"
+source = ["copertino"]
+english = ["copertin"]
+enforce = [["copertino", []]]
+
+[[term]]
+id = "scandaglio-kept"
+kind = "keep"
+source = ["scandaglio"]
+english = ["scandagli"]
+enforce = [["scandaglio", []]]
+
+[[term]]
+id = "traccheggio-kept"
+kind = "keep"
+source = ["traccheggio"]
+english = ["traccheggi"]
+enforce = [["traccheggio", []]]
+
+[[term]]
+id = "imbroccata-kept"
+kind = "keep"
+source = ["imbroccata"]
+english = ["imbroccat"]
+enforce = [["imbroccata", []]]
+
+[[term]]
+id = "mandritto-kept"
+kind = "keep"
+source = ["mandritto"]
+english = ["mandritt"]
+enforce = [["mandritto", []]]
+
+[[term]]
+id = "manrovescio-kept"
+kind = "keep"
+source = ["manrovescio"]
+english = ["manrovesci"]
+
+[[term]]
+id = "ricasso-kept"
+check = "retry"
+kind = "keep"
+source = ["ricasso"]
+english = ["ricass"]
+enforce = [["ricasso", []]]
+
+[[term]]
+id = "maestro-kept"
+kind = "keep"
+source = ["maestro"]
+english = ["maestr"]
+
+[[term]]
+id = "fianconata-kept"
+check = "retry"
+kind = "keep"
+source = ["fianconata", "flanconata"]
+english = ["fianconat"]
+enforce = [["fianconata", []]]
+
+[[term]]
+id = "passata-sotto-kept"
+check = "retry"
+kind = "keep"
+source = ["passata sotto"]
+english = ["passata sotto"]
+enforce = [["passata sotto", []]]
+
+[[term]]
+id = "balestra-kept"
+kind = "keep"
+source = ["balestra", "balestrata"]
+english = ["balestr"]
+enforce = [["balestrata", []]]
+
+[[term]]
+id = "coupe-kept"
+check = "retry"
+kind = "keep"
+source = ["coupé"]
+english = ["coupé"]
+enforce = [["coupé", []]]
+
+[[term]]
+id = "riposte-kept"
+kind = "keep"
+source = ["rispost*", "rispond*"]
+english = ["ripost"]
+enforce = [["riposte", ["rapier(?:[- ]?(?:rapier|response|riposte|reply))?", "riposte response", "rapises?"]]]
+
+[[term]]
+id = "old-cut-names-as-printed-kept"
+kind = "keep"
+source = ["rovescio", "roverso", "riverso", "mandrilli", "manroversi", "ridoppio"]
+english = ["rovesci", "rovers", "rivers", "mandrill", "manrovers", "ridoppi"]
+
+[[term]]
+id = "colpo"
+check = "retry"
+kind = "translate"
+source = ["colpo", "urto", "arresto"]
+never = ["blow"]
+line = '''colpo: the strike itself → hit; the whole offensive action → attack ("colpi semplici" → simple attacks); NEVER "blow" (urto, an impact of blade on blade → knock). Named colpi keep their own names: colpo di punta → thrust, colpo di taglio → cut, colpo dritto / diritto / diretto → straight thrust, colpo di tempo → time-hit, colpo d'arresto / arresto → stop-hit.'''
+
+[[term]]
+id = "stoccata"
+kind = "translate"
+source = ["stoccata", "botta", "puntata"]
+line = '''stoccata, botta, puntata → thrust'''
+
+[[term]]
+id = "tirata"
+kind = "translate"
+source = ["tirata"]
+line = '''tirata → thrust (the one delivered)'''
+
+[[term]]
+id = "sciabolata"
+kind = "translate"
+source = ["sciabolata"]
+line = '''sciabolata → cut ("sciabolata alla testa" → cut to the head)'''
+
+[[term]]
+id = "montante"
+kind = "translate"
+source = ["montante"]
+line = '''montante → rising ("sciabolata di montante" → rising cut, "molinello montante" → rising <i>molinello</i>) — a direction, not a named cut in these books.'''
+
+[[term]]
+id = "taglio"
+kind = "translate"
+source = ["taglio"]
+line = '''taglio → edge (of the blade), or cut in "colpo di taglio"'''
+
+[[term]]
+id = "controtaglio"
+kind = "translate"
+source = ["controtaglio"]
+line = '''controtaglio → false-edge cut'''
+
+[[term]]
+id = "falso-filo"
+kind = "translate"
+source = ["falso filo"]
+line = '''falso filo → false edge'''
+
+[[term]]
+id = "filo-edge"
+kind = "translate"
+source = ["filo"]
+line = '''filo, when it means the blade's edge → edge (see rule 3b for filo the action)'''
+
+[[term]]
+id = "tirare"
+kind = "translate"
+source = ["tir*"]
+never = ["draw", "shoot"]
+line = '''tirare → thrust ("tirare il colpo" → deliver the hit, "tirare di scherma" → fence; never "draw", never "shoot" unless a firearm)'''
+
+[[term]]
+id = "imbrandire"
+kind = "translate"
+source = ["imbrand*"]
+never = ["draw"]
+line = '''imbrandire → grip, wield (never "draw")'''
+
+[[term]]
+id = "guardia"
+kind = "translate"
+source = ["guardia"]
+line = '''guardia → guard'''
+
+[[term]]
+id = "misura"
+kind = "translate"
+source = ["misura"]
+line = '''misura → measure ("fuori misura" → out of measure; "levare / rompere la misura" → break the measure)'''
+
+[[term]]
+id = "affondo"
+check = "retry"
+kind = "translate"
+source = ["a fondo", "affondo", "spaccata"]
+never = ["to the bottom"]
+line = '''a fondo, affondo, spaccata → lunge ("a fondo" → with a lunge, "stando a fondo" → remaining in the lunge, "andare a fondo" → go into the lunge; never "to the bottom")'''
+
+[[term]]
+id = "allungo"
+kind = "translate"
+source = ["allungo"]
+line = '''allungo → extension'''
+
+[[term]]
+id = "pie-fermo"
+kind = "translate"
+source = ["piè fermo", "piede fermo"]
+line = '''piè fermo / piede fermo → firm-footed'''
+
+[[term]]
+id = "passo-avanti"
+kind = "translate"
+source = ["passo avanti", "passo indietro"]
+line = '''passo avanti / indietro → step forward / back'''
+
+[[term]]
+id = "salto-indietro"
+kind = "translate"
+source = ["salto indietro"]
+line = '''salto indietro → jump back'''
+
+[[term]]
+id = "parata"
+kind = "translate"
+source = ["parata"]
+line = '''parata → parry'''
+
+[[term]]
+id = "parata-di-contro"
+kind = "translate"
+source = ["contro"]
+line = '''parata di contro, contro di prima … → counter parry, counter of prima …'''
+
+[[term]]
+id = "mezza-contro"
+kind = "translate"
+source = ["mezza contro", "mezzo contro", "mezzo-contro"]
+line = '''mezza contro, mezzo contro, mezzo-contro → half-counter'''
+
+[[term]]
+id = "parata-di-ceduta"
+kind = "translate"
+source = ["parata di ceduta", "ceduta"]
+line = '''parata di ceduta, ceduta → yielding parry'''
+
+[[term]]
+id = "circolata"
+kind = "translate"
+source = ["circolata"]
+line = '''circolata → circular ("finta di punta circolata" → circular feint of the point)'''
+
+[[term]]
+id = "mezzo-cerchio"
+kind = "translate"
+source = ["mezzo cerchio", "mezzocerchio"]
+line = '''mezzo cerchio, mezzocerchio → half-circle'''
+
+[[term]]
+id = "finta"
+kind = "translate"
+source = ["finta"]
+line = '''finta → feint'''
+
+[[term]]
+id = "doppia-finta"
+kind = "translate"
+source = ["doppia finta"]
+line = '''doppia finta → double feint'''
+
+[[term]]
+id = "finta-dritta"
+kind = "translate"
+source = ["finta dritta"]
+line = '''finta dritta → straight feint'''
+
+[[term]]
+id = "accennare"
+kind = "translate"
+source = ["accenn*"]
+line = '''accennare → indicate (a feint or threat)'''
+
+[[term]]
+id = "battuta"
+kind = "translate"
+source = ["battuta"]
+line = '''battuta → beat (battuta del piede → stamp of the foot)'''
+
+[[term]]
+id = "picchio"
+kind = "translate"
+source = ["picchio", "picco"]
+line = '''picchio, picco → beat ("picchio semplice" → simple beat, "picchio di cambiamento" → change beat)'''
+
+[[term]]
+id = "cambiamento"
+kind = "translate"
+source = ["cambiamento"]
+line = '''cambiamento → change ("cambiamento di legamento" → change of engagement)'''
+
+[[term]]
+id = "legata"
+kind = "translate"
+source = ["legata", "legato"]
+line = '''legata (spada legata) → engaged'''
+
+[[term]]
+id = "ingannare"
+kind = "translate"
+source = ["ingann*"]
+line = '''ingannare, inganno → deceive, deception'''
+
+[[term]]
+id = "attacco"
+kind = "translate"
+source = ["attacc*"]
+line = '''attacco → attack'''
+
+[[term]]
+id = "offesa"
+kind = "translate"
+source = ["offesa"]
+line = '''offesa → offense ("azioni d'offesa" → offensive actions)'''
+
+[[term]]
+id = "vibrare"
+kind = "translate"
+source = ["vibr*"]
+line = '''vibrare → deliver ("vibrerà la sciabolata" → he will deliver the cut)'''
+
+[[term]]
+id = "invito"
+kind = "translate"
+source = ["invito"]
+line = '''invito → invitation'''
+
+[[term]]
+id = "presa-di-ferro"
+kind = "translate"
+source = ["presa di ferro"]
+line = '''presa di ferro → taking the blade'''
+
+[[term]]
+id = "disarmo"
+kind = "translate"
+source = ["disarmo"]
+line = '''disarmo → disarm'''
+
+[[term]]
+id = "opposizione"
+kind = "translate"
+source = ["opposizione"]
+line = '''opposizione → opposition'''
+
+[[term]]
+id = "tempo"
+kind = "translate"
+source = ["tempo"]
+line = '''tempo → tempo ("in tempo", "a tempo")'''
+
+[[term]]
+id = "contraria"
+kind = "translate"
+source = ["contraria"]
+line = '''contraria → contrary'''
+
+[[term]]
+id = "contrazione"
+kind = "translate"
+source = ["contrazione"]
+line = '''contrazione → contraction'''
+
+[[term]]
+id = "assalto"
+kind = "translate"
+source = ["assalto"]
+line = '''assalto → bout'''
+
+[[term]]
+id = "saluto"
+kind = "translate"
+source = ["saluto"]
+line = '''saluto → salute'''
+
+[[term]]
+id = "mancino"
+kind = "translate"
+source = ["mancino"]
+line = '''mancino → left-hander'''
+
+[[term]]
+id = "linea-direttrice"
+kind = "translate"
+source = ["linea direttrice"]
+line = '''linea direttrice → line of direction'''
+
+[[term]]
+id = "lezione"
+kind = "translate"
+source = ["lezione"]
+line = '''lezione → lesson'''
+
+[[term]]
+id = "allievo"
+kind = "translate"
+source = ["allievo"]
+line = '''allievo → student'''
+
+[[term]]
+id = "tiratore"
+kind = "translate"
+source = ["tiratore", "schermitore", "schermidore"]
+line = '''tiratore, schermitore → fencer'''
+
+[[term]]
+id = "avversario"
+kind = "translate"
+source = ["avversario", "nemico"]
+line = '''avversario, nemico → opponent'''
+
+[[term]]
+id = "spada"
+kind = "translate"
+source = ["spada"]
+line = '''spada → sword'''
+
+[[term]]
+id = "sciabola"
+kind = "translate"
+source = ["sciabola", "sciabla"]
+line = '''sciabola → saber'''
+
+[[term]]
+id = "fioretto"
+kind = "translate"
+source = ["fioretto"]
+line = '''fioretto → foil'''
+
+[[term]]
+id = "ferro"
+kind = "translate"
+source = ["ferro"]
+line = '''ferro (the opponent's steel) → the blade'''
+
+[[term]]
+id = "forte"
+kind = "translate"
+source = ["forte", "debole"]
+line = '''forte / debole → forte / foible'''
+
+[[term]]
+id = "testa"
+kind = "translate"
+source = ["testa"]
+line = '''targets: testa → head'''
+
+[[term]]
+id = "figura"
+kind = "translate"
+source = ["figura"]
+line = '''figura → face ("figura interna / esterna" → inside / outside face)'''
+
+[[term]]
+id = "guancia"
+kind = "translate"
+source = ["guancia"]
+line = '''guancia → cheek'''
+
+[[term]]
+id = "petto"
+kind = "translate"
+source = ["petto"]
+line = '''petto → chest'''
+
+[[term]]
+id = "pancia"
+kind = "translate"
+source = ["pancia"]
+line = '''pancia → belly'''
+
+[[term]]
+id = "fianco"
+kind = "translate"
+source = ["fianco"]
+line = '''fianco → flank'''
+
+[[term]]
+id = "addome"
+kind = "translate"
+source = ["addome"]
+line = '''addome → abdomen'''
+
+[[term]]
+id = "tronco"
+kind = "translate"
+source = ["tronco"]
+line = '''tronco → trunk'''
+
+[[term]]
+id = "braccio"
+kind = "translate"
+source = ["braccio"]
+line = '''braccio → arm'''
+
+[[term]]
+id = "coccia"
+kind = "translate"
+source = ["coccia"]
+never = ["pommel", "ricasso", "hilt", "skull"]
+line = '''parts of the weapon, as these books define them: coccia → bell guard (never "pommel", "ricasso", "hilt", "skull")'''
+
+[[term]]
+id = "gavigliano"
+kind = "translate"
+source = ["gavigliano"]
+line = '''gavigliano → crossbar'''
+
+[[term]]
+id = "pomo"
+kind = "translate"
+source = ["pomo"]
+line = '''pomo → pommel'''
+
+[[term]]
+id = "impugnatura"
+kind = "translate"
+source = ["impugnatura"]
+line = '''impugnatura → grip'''
+
+[[term]]
+id = "cuscinetto"
+kind = "translate"
+source = ["cuscinetto"]
+line = '''cuscinetto → cushion'''
+
+[[term]]
+id = "gradi"
+kind = "translate"
+source = ["gradi"]
+line = '''gradi (of the blade) → degrees'''
+
+[[term]]
+id = "incontro"
+kind = "translate"
+source = ["incontro"]
+line = '''incontro → double hit (both hit at once)'''
+
+[[term]]
+id = "sparita-di-corpo"
+kind = "translate"
+source = ["sparita di corpo"]
+line = '''sparita di corpo → body evasion (not a feint: it hits)'''
+
+[[term]]
+id = "controrisposta"
+kind = "translate"
+source = ["controrisposta"]
+line = '''controrisposta → counter-<i>riposte</i>'''
+
+[[term]]
+id = "ripresa-d-attacco"
+kind = "translate"
+source = ["ripresa d'attacco", "ripresa di attacco"]
+line = '''ripresa d'attacco → <i>ripresa</i> of attack'''
+
+[[term]]
+id = "sotto-misura"
+kind = "translate"
+source = ["sotto misura"]
+line = '''sotto misura → under measure'''
+
+[[term]]
+id = "giusta-misura"
+kind = "translate"
+source = ["giusta misura"]
+line = '''giusta misura → correct measure'''
+
+[[term]]
+id = "distacco"
+kind = "translate"
+source = ["distacc*"]
+line = '''distacco, distaccare → disengagement, disengage (leaving the opponent's blade)'''
+
+[[term]]
+id = "cavare"
+kind = "translate"
+source = ["cavare", "cavando", "cava", "caverà"]
+line = '''cavare → make a <i>cavazione</i>'''
+
+[[term]]
+id = "tempi-count"
+check = "retry"
+kind = "translate"
+source = ["tempo"]
+never = ["time", "time-hit"]
+# the check: only where the source counts tempi, and only a counted "time" / "time-hit" / "tempos"
+check_source_re = '''(?i)\b(?:(?:un|uno|due|tre|quattro|cinque|sei|primo|secondo|terzo|quarto|ultimo|solo|[1-6]|i{1,3}|iv|v)\.?\s+temp[oi]\b|temp[oi]\s+solo\b)'''
+never_re = '''(?i)\b(?:one|two|three|four|five|six|first|second|third|fourth|last|single|[1-6]|i{1,3}|iv|v)\.?\s+(?:time-hits?|times?|tempos)\b|\btempos\b'''
+line = '''tempi, the actions ("tempi semplici", "tempi al braccio") → time-hits; but tempo / tempi COUNTING the movements of an action ("in due tempi", "composte di tre tempi", "al primo tempo", "in un tempo solo", step labels "I. Tempo", "Primo tempo. —") → tempo / tempi ("in two tempi", "composed of three tempi", "on the first tempo", "I. TEMPO"), never "time" or "time-hit"'''
+
+[[term]]
+id = "finta-puntata-dritta"
+kind = "translate"
+source = ["finta puntata dritta"]
+line = '''finta puntata dritta → feint of straight thrust'''
+
+[[term]]
+id = "finta-di-sciabolata-dritta"
+kind = "translate"
+source = ["finta di sciabolata dritta"]
+line = '''finta di sciabolata dritta → feint of straight cut'''
+
+[[term]]
+id = "parata-di-appoggio"
+kind = "translate"
+source = ["parata di appoggio"]
+line = '''parata di appoggio → support parry'''
+
+[[term]]
+id = "pugno"
+kind = "translate"
+source = ["pugno"]
+line = '''pugno → fist'''
+
+[[term]]
+id = "mano-prona"
+kind = "translate"
+source = ["prona", "supina"]
+line = '''mano prona / supina → hand prone (palm down) / supine (palm up)'''
+
+[[term]]
+id = "sopra"
+kind = "translate"
+source = ["sopra", "sotto"]
+never = ["outside", "inside"]
+line = '''sopra / sotto, of a target or line ("petto sopra", "braccio sopra") → above / below (never "outside" / "inside", which are dentro / fuori)'''
+
+[[term]]
+id = "destramente"
+kind = "translate"
+source = ["destramente"]
+never = ["to the right"]
+line = '''destramente → deftly (never "to the right")'''
+
+[[term]]
+id = "line-numerals"
+kind = "translate"
+source_re = '''(?<![\w.])[1-8]\s?(?:\.?\s?[aª])(?!\w)'''
+never = ["1st", "4th"]
+line = '''1ª, 2ª … 8ª, 1.a … → the line name: <i>prima</i>, <i>seconda</i> … <i>ottava</i> (never "1st", "4th")'''
+
+[[term]]
+id = "legatura"
+check = "retry"
+kind = "translate"
+source = ["legatura", "arma legata", "legaccio", "spada legata"]
+never = ["binding"]
+line = '''legatura, arma legata, legaccio — the strap tying the sword to the wrist → strapping, tied (to the wrist), strap (never "binding": a bind is a blade action); spada legata all'avversa, the blades in contact → engaged'''
+
+[[term]]
+id = "giuoco"
+kind = "translate"
+source = ["giuoco", "giuochi"]
+never = ["game"]
+line = '''giuoco, giuochi, the fencing sense ("giuoco misto", "il giuoco della spada italiana") → play, plays (never "game")'''
+
+[[term]]
+id = "corrispondere"
+kind = "translate"
+source = ["corrispond*"]
+line = '''corrispondere (alla finta, con la parata), corrispondenza → respond, response'''
+
+[[term]]
+id = "la-finale"
+kind = "translate"
+source = ["finale"]
+line = '''la finale (del colpo, dell'azione), botta finale → the finish, the final thrust'''
+
+[[term]]
+id = "colpo-d-occhio"
+kind = "translate"
+source = ["colpo d'occhio"]
+line = '''colpo d'occhio → the quick eye'''
+
+[[term]]
+id = "tatto-di-ferro"
+kind = "translate"
+source = ["tatto di ferro"]
+line = '''tatto di ferro → feel of the blade'''
+
+[[term]]
+id = "graduazione-del-ferro"
+kind = "translate"
+source = ["graduazione"]
+line = '''graduazione del ferro, azioni di graduazione → the degrees of the blade, actions on the degrees'''
+
+[[term]]
+id = "aggredire"
+kind = "translate"
+source = ["aggred*"]
+line = '''aggredire → assail'''
+
+[[term]]
+id = "arma"
+kind = "translate"
+source = ["arma", "armi"]
+line = '''arma, armi of the army (infantry, cavalry, artillery) → arm, arms of the service ("l'arma di cavalleria" → the cavalry arm); armi as swords → weapons'''
+
+[[term]]
+id = "arma-bianca"
+kind = "translate"
+source = ["arma bianca", "armi bianche"]
+never = ["white weapon"]
+line = '''arma bianca, armi bianche → by context: edged weapon(s), bladed weapon(s), or "cold steel" in a set phrase; never "white weapon"'''
+
+[[term]]
+id = "col-destro"
+check = "retry"
+kind = "translate"
+source = ["col destro", "col mancino"]
+never = ["with the right hand"]
+line = '''col destro, col mancino (fencing against one) → against a right-hander, against a left-hander (never "with the right hand")'''
+
+[[term]]
+id = "pattinando"
+kind = "translate"
+source = ["pattin*"]
+line = '''pattinando, pattinare (the skating step) → keep in Italian: <i>pattinando</i>'''
+
+[[term]]
+id = "slancio"
+kind = "translate"
+source = ["slancio"]
+line = '''slancio (of the rear foot) → drive'''
+
+[[term]]
+id = "tempista"
+kind = "translate"
+source = ["tempista"]
+line = '''tempista → tempo-fencer'''
+
+[[term]]
+id = "cavalleria"
+kind = "translate"
+source = ["cavalleria"]
+line = '''cavalleria, the code of knights → chivalry (the mounted troops → cavalry)'''
+
+[[term]]
+id = "sala-d-armi"
+kind = "translate"
+source = ["sala d'armi"]
+line = '''sala d'armi → fencing hall'''
+
+[[term]]
+id = "padrini"
+kind = "translate"
+source = ["padrini"]
+line = '''padrini → seconds'''
+
+[[term]]
+id = "garetti"
+kind = "translate"
+source = ["garetti"]
+line = '''garetti → hamstrings'''
+
+[[term]]
+id = "piastrone"
+kind = "translate"
+source = ["piastrone"]
+line = '''piastrone → plastron'''
+
+[[term]]
+id = "minacciare"
+kind = "translate"
+source = ["minacc*"]
+line = '''minacciare → threaten'''
+
+[[term]]
+id = "a-piu-fermo"
+kind = "translate"
+source = ["più fermo"]
+line = '''"a più fermo", "più fermo" in a fencing sense is an OCR misreading of "a piè fermo" → firm-footed'''
+
+[[term]]
+id = "legamento"
+kind = "footnote"
+source = ["legamento"]
+forms = [["legamenti", "engagements", "legamento"], ["legamento", "engagement"]]
+line = '''legamento → engagement'''
+
+[[term]]
+id = "filo-action"
+kind = "footnote"
+source = ["filo"]
+model_notes = ["filo"]
+line = '''filo, when it is an ACTION along the opponent's blade ("colpo di filo", "accennare il filo", "filo di terza") → glide'''
+
+[[term]]
+id = "filo-sottomesso"
+kind = "footnote"
+source = ["filo sottomesso"]
+forms = [["filo sottomesso", "forced glide"]]
+line = '''filo sottomesso → forced glide'''
+
+[[term]]
+id = "trasporto"
+kind = "footnote"
+source = ["trasporto"]
+forms = [["trasporti", "transports", "trasporto"], ["trasporto", "transport"]]
+line = '''trasporto → transport (of the blade)'''
+
+[[term]]
+id = "uscita-in-tempo"
+kind = "footnote"
+source = ["uscita in tempo"]
+forms = [["uscita in tempo", "action in tempo"]]
+line = '''uscita in tempo → action in tempo'''
+
+[[term]]
+id = "deviamento"
+kind = "footnote"
+source = ["deviamento"]
+forms = [["deviamenti", "deviations", "deviamento"], ["deviamento", "deviation"]]
+line = '''deviamento → deviation'''
+
+[[term]]
+id = "parata-di-picco"
+kind = "footnote"
+source = ["parata di picco"]
+forms = [["parata di picco", "beat parry"]]
+line = '''parata di picco → beat parry'''
+
+[[term]]
+id = "controtempo"
+kind = "footnote"
+source = ["controtempo"]
+forms = [["controtempo", "countertime"]]
+line = '''controtempo → countertime'''
+
+[[term]]
+id = "controazione"
+kind = "footnote"
+source = ["controazione"]
+forms = [["controazioni", "counter-actions", "controazione"], ["controazione", "counter-action"]]
+line = '''controazione → counter-action'''
+
+[[term]]
+id = "circolazione"
+kind = "footnote"
+source = ["circolazione"]
+forms = [["circolazioni", "circlings", "circolazione"], ["circolazione", "circling"]]
+line = '''circolazione → circling (of the blade)'''
+
+[[term]]
+id = "striscio"
+kind = "footnote"
+source = ["striscio"]
+forms = [["di striscio", "grazing", "striscio"], ["striscio", "graze"]]
+line = '''striscio, di striscio → graze, grazing (along the opponent's blade — not filo, which is glide)'''
+
+[[term]]
+id = "volante"
+kind = "footnote"
+source = ["volante", "volanti"]
+forms = [["volanti", "off the blade", "volante"], ["volante", "off the blade"]]
+line = '''volante, volanti (an action made with no contact with the opponent's blade — "finta volante", "azioni volanti") → off the blade: "feint off the blade", "actions off the blade"; but "volanti sul ferro" (flying actions made on the blade) → flying actions on the blade; "punta volante" (the old French "pointe volante") → flying point'''
+
+[[term]]
+id = "spratico"
+kind = "footnote"
+source = ["spratico"]
+forms = [["spratico", "practice bout"]]
+line = '''spratico (a directed teaching bout) → practice bout'''
+
+[[term]]
+id = "camminando"
+kind = "footnote"
+source = ["camminando"]
+model_notes = ["camminando"]
+line = '''camminando (made while advancing: "botta dritta camminando", "battuta camminando", "misura camminando") → advancing: "straight thrust advancing", "beat advancing", "advancing measure"'''
+
+[[term]]
+id = "forconatore"
+kind = "footnote"
+source = ["forcon*"]
+forms = [["forconatori", "pitchforkers", "forconatore"], ["forconatore", "pitchforker"]]
+model_notes = ["forconare"]
+line = '''forconatore (a fencer who jabs about like a pitchfork), forconare → pitchforker, to pitchfork'''
+
+[[term]]
+id = "lezione-muta"
+kind = "footnote"
+source = ["lezione muta"]
+model_notes = ["lezione muta"]
+line = '''lezione muta → silent lesson'''
+
+[[term]]
+id = "parata-di-tasto"
+kind = "footnote"
+source = ["parata di tasto"]
+forms = [["parate di tasto", "opposition parries", "parata di tasto"], ["parata di tasto", "opposition parry"]]
+line = '''parata di tasto (the simple parry that keeps contact, as against parata di picco, the beat parry) → opposition parry'''
+
+[[term]]
+id = "note-1"
+kind = "note"
+with = "footnote"
+line = '''Example:  "… with an engagement<fn>It. legamento</fn> of <i>terza</i> he closed the line."'''
+
+[[term]]
+id = "note-2"
+kind = "note"
+with = "footnote"
+line = '''In a HEADING (rule 4) translate the term but omit the <fn> tag.'''

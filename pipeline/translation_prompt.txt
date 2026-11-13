@@ -13,7 +13,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
 1. Translate EVERYTHING into modern English. The output must be entirely English (Latin script only). Do not leave French / Italian / German / Spanish / Latin sentences, phrases, headings, or captions untranslated. Never write a note to yourself in any language.
 
 2. KEEP in the original language, wrapped in <i>…</i>, ONLY this small set — the terms English-language fencing literature itself retains:
-   - French: riposte, remise, reprise, croisé, corps à corps, volte, sentiment du fer, tac-au-tac, flanconnade (also spelled flanconade — write <i>flanconnade</i>), appel (the stamp of the foot: <i>appel</i>, plural <i>appels</i>), pointe d'arrêt (the pointed tip fixed to the épée's button — a device, never an action), doublé and dédoublé (a double, and a double in the reverse direction: <i>doublé</i>, <i>dédoublé</i>; the verbs "doubler", "dédoubler" → make a <i>doublé</i>, make a <i>dédoublé</i>; where the book DEFINES the word, keep the defined word itself: "dédoubler signifie doubler en sens inverse du premier doublé" → "<i>dédoubler</i> means to double in the direction opposite to the first <i>doublé</i>"), and the numbered lines/parries prime, seconde, tierce, quarte, quinte, sixte, septime, octave; belle (the deciding hit when the score is level: "le dernier, dénommé belle" → the last, called the <i>belle</i>).
+   - French: riposte, remise, reprise, croisé, corps à corps, volte, sentiment du fer, tac-au-tac ("du tac au tac" → <i>tac-au-tac</i>), flanconnade (also spelled flanconade — write <i>flanconnade</i>), appel (the stamp of the foot: <i>appel</i>, plural <i>appels</i>), pointe d'arrêt (the pointed tip fixed to the épée's button — a device, never an action), doublé and dédoublé (a double, and a double in the reverse direction: <i>doublé</i>, <i>dédoublé</i>; the verbs "doubler", "dédoubler" → make a <i>doublé</i>, make a <i>dédoublé</i>; where the book DEFINES the word, keep the defined word itself: "dédoubler signifie doubler en sens inverse du premier doublé" → "<i>dédoubler</i> means to double in the direction opposite to the first <i>doublé</i>"), and the numbered lines/parries prime, seconde, tierce, quarte, quinte, sixte, septime, octave; belle (the deciding hit when the score is level: "le dernier, dénommé belle" → the last, called the <i>belle</i>).
    - "parade de tierce" = "parry of tierce" — translate "parade" (rule 3), keep the number.
    - épée — keep as "épée" (it IS the English term), wrap in <i>épée</i>.
    - German: Ausfallen, Zornhau, Versetzung, Absetzen, Winden
@@ -25,7 +25,6 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - garde → guard   |   engagement → engagement   |   parade → parry (a parade is never a riposte)
    - fleuret → foil   |   sabre → saber   |   doublement → doubling
    - coup droit → straight thrust   (NOT "straight right"; "droit" here = straight)
-   - dérobement → evasion (of the blade)   |   déroulé → glide
    - une-deux → one-two   |   fente → lunge   |   demi-fente → half-lunge
    - assaut → bout   |   tireur → fencer   |   maître (d'armes) → fencing master   |   salle (d'armes) → fencing hall/room
    - "leçon d'assaut" → "bout lesson" (keep the word "lesson" — NOT the same as a bare "assaut")
@@ -40,10 +39,10 @@ CRITICAL RULES — FOLLOW EXACTLY:
      "cutting blow". A hit with the point is a thrust: "coup de pointe" → thrust ("coups de pointe" →
      thrusts), never "point cut". Only where coup is not a fencing action does ordinary English stay: "coups et
      blessures" → blows and wounds, "coup de marteau" → hammer blow. botte → thrust ("botte de quarte" → thrust in quarte). Named techniques
-     keep their own names: coup droit → straight thrust, coup de temps → time-hit, coup d'arrêt → stop-thrust.
+     keep their own names: coup droit → straight thrust, coup de temps → time-hit, coup d'arrêt → stop-hit.
      Where the text DEFINES or CONTRASTS the two words as terms ("le coup est … ; la botte est …", "on ne
      doit appeler botte que …"), keep them in French: <i>coup</i>, <i>botte</i>.
-   - coup d'arrêt → stop-thrust   |   temps d'arrêt → a pause ("marquer un temps d'arrêt" → pause, "sans temps d'arrêt" → without pausing, "précédée d'un temps d'arrêt" → preceded by a pause); never "stop-hit" — the stopping hit is the coup d'arrêt
+   - coup d'arrêt → stop-hit   |   temps d'arrêt → a pause ("marquer un temps d'arrêt" → pause, "sans temps d'arrêt" → without pausing, "précédée d'un temps d'arrêt" → preceded by a pause); never "stop-hit" — the stopping hit is the coup d'arrêt
    - fencing terms these books use — the standard English, never a guess:
      battement → beat ("double battement" → double beat; never "cut")   |   à fond → fully, with a full lunge ("contre-ripostez à fond" → counter-<i>riposte</i> with a full lunge; never "to the bottom")
      contre, the circular parry → counter ("contre de quarte" → counter of quarte, "double contre" → double counter; never "against")
@@ -91,7 +90,6 @@ CRITICAL RULES — FOLLOW EXACTLY:
      défendre (l'usage de …) → forbid   |   ne … plus que → now only (never "no longer")   |   ajuster (a hit) → aim
      grande force, de première force → great skill, first-rate   |   vicieux → faulty
      juste, justesse → correct, accuracy (never "just")   |   venir à bout de → get the better of   |   faire des armes → fence   |   Or (opening a sentence) → Now   |   arme blanche, armes blanches → by context: edged weapon(s), bladed weapon(s), or "cold steel" in a set phrase ("charger à l'arme blanche" → charge with cold steel); never "white weapon"
-   - du tac au tac → tac-au-tac   |   à temps perdu → at a lost tempo
    - divers (as a heading) → miscellaneous   |   avant-propos → foreword
    - première partie, deuxième partie … → First Part, Second Part … (ordinal first, never "Part One")
    - soie (of a blade) → tang   (NOT "silk" or "thread")
@@ -115,7 +113,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - tendre la perche, la perche tendue, tendre la broche (slang for sticking the arm out stiffly at an attack, hoping the attacker runs onto the point; no English saying) → stick the arm out stiffly, the arm stuck out stiffly
    - se loger, vous loger, se logeant (working one's way into striking distance) → lodge oneself, lodge yourself, lodging oneself
    - picoteur (a fencer who pricks at the wrist and forearm) → pricker
-   - au pied levé (a stop-thrust taken as the attacker lifts his foot) → with the foot raised
+   - au pied levé (a stop-hit taken as the attacker lifts his foot) → with the foot raised
    - tendeur à outrance, tension à outrance → extender to excess, extension to excess
    - se désunir, désuni (losing the unity of body and arm) → become disunited, disunited
    - s'enferrer (running oneself onto the opponent's point) → run oneself onto the point
@@ -127,6 +125,8 @@ CRITICAL RULES — FOLLOW EXACTLY:
    - rompre → to break ground, but "rompre la mesure" → break the measure   (a single deliberate step back, NOT "romp" -- and NOT "retreat"/"retraite", a different, more general backward movement; keep the two distinct if both appear)
    - plastron meaning a person, the master who gives the lesson ("un remarquable plastron") → lesson-giver
    - rassemblement / rassembler / rassemblant → gathering (of the feet)   (spell the French EXACTLY: "rassemblant", never "raassemblant")
+   - dérobement → evasion (of the blade)
+   - déroulé → glide
    Example:  "… and by a bind<fn>Fr. liement</fn> he carried the blade aside."
    In a HEADING (rule 4) translate the term but omit the <fn> tag.
 

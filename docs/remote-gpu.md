@@ -135,9 +135,14 @@ terminology). Its flags, and why:
   near 1.6 GB during a run is normal (transfer buffers); 3 GB is a spill —
   lower the number.
 - `--ctx-size 8192` (6144 until 2026-10-12): the window holds the prompt,
-  the source page and the translation together. The French prompt is ~4.9k
-  tokens, and at 6144 long pages (~500 words) stopped mid-sentence; step 2
-  now rejects a reply cut off this way (`finish_reason: length`).
+  the source page and the translation together. The French prompt was ~4.9k
+  tokens then, and at 6144 long pages (~500 words) stopped mid-sentence; step 2
+  rejects a reply cut off this way (`finish_reason: length`). By 2026-11 the
+  French prompt had grown to ~7.1k tokens and pages over ~250 words no longer
+  fitted 8192 either. A larger window costs video memory (fewer layers on the
+  GPU), so step 2 now sends a shorter prompt for the pages that would not fit
+  (the page prompt, `docs/STATUS.md`). If you do change the window, set
+  `TRANSLATION_CONTEXT_TOKENS` in `backend.env` to the same number.
 - `--parallel 1`: llama.cpp now defaults to 4 slots, i.e. 4× the context
   memory.
 - `--jinja --reasoning-budget 0`: use the model's own chat template, with
