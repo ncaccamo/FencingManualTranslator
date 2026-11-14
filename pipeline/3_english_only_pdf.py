@@ -579,9 +579,11 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
     CENTRE = _render.centres_headings(folder)
     import _layout
     TWO_PART = _layout.two_part_heads(folder, [parse_vlm_output(e).get("header", "") for e in extractions])
-    sides = _render.folio_sides(folder, [parse_vlm_output(e).get("page_num", "") for e in extractions])
-    if any(sides):
-        print("  page number / running head: in the book's places")
+    # page number and running head: one fixed place on every page (the
+    # number, then the head, at the left) -- this copy stands apart from the
+    # book, so the same place throughout reads more easily than the book's
+    # odd / even places (reviewer, 2026-11-14). The side-by-side keeps them.
+    sides = []
 
     src_doc = None
     ocr_pdf = next((os.path.join(int_dir, f) for f in os.listdir(int_dir)

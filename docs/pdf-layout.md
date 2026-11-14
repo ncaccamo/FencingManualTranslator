@@ -585,7 +585,7 @@ sidecars are git-ignored, like the rest of the private corpus.
 
 ### Page number and running head
 
-Both PDFs put the page number and running head where the book prints
+The side-by-side PDF puts the page number and running head where the book prints
 them (`_layout.folio_plan`, `_render.folio_sides`). Learned per book
 from the layout detector: on pages with a read folio, the narrowest box
 in the top or bottom margin is the number, the widest other top box the
@@ -598,9 +598,9 @@ with no read folio takes its side from the nearest one (pages alternate).
 - Side by side: number and head on one line in their places (stacked
   when they would collide); a number printed at the **bottom** is drawn
   at the foot of the English half; `(cont.)` stays at the top.
-- English-only: the text runs on across sheets, so the number stays at
-  its section's start -- only its left / centre / right place mirrors the
-  book.
+- English-only: not the book's places -- this copy stands apart from the
+  book, so every page has the same fixed layout (number, then head, at the
+  left above the rule; reviewer, 2026-11-14).
 - No clear plan (no layout.json, too few pages, disagreement): the old
   fixed layout. `[book] page_numbers = "outer" | "inner" | "centre" |
   "bottom-…"` sets it by hand for scans the detector can't read
