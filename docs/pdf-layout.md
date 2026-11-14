@@ -629,7 +629,7 @@ All near the top of each file:
 
 - **Page size / margins** — `PAGE_W`, `PAGE_H`, `MARGIN`, `COL`, `LEFT`,
   `RIGHT`, `DIVIDER_X`.
-- **Font sizes** — step 3 `FS = 10`; step 4 `SIZES = (9, 8, 7)`.
+- **Font sizes** — step 3 `FS = 10`; step 4 the book's `[book] text_size` (9 unset), then a point less at a time to 7 (`_render.size_ladder`: `(9, 8, 7)` for a book at 9); notes 7 pt × size / 9. Each text page's size goes to `intermediate/side_sizes.json`; `text_size_survey.py` compares sizes before one is set.
 - **Figure height cap** — step 3 `FIGURE_MAX_H = COL.height * 0.82`.
 - **Figure JPEG** — 150 dpi, `jpg_quality=72` (in `Flow.figure`). Raise
   for sharper plates at the cost of file size.

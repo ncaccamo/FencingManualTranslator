@@ -542,6 +542,30 @@ def page_left_open(tail, runs_on=False, centred=False):
             or bool(re.search(r"\([^()]*$", last))) and not toc_page(tail) and not centred
 
 
+def book_text_size(stem, books_dir="/data/books"):
+    """The side-by-side PDF's body size for this book ([book] text_size),
+    9 pt when unset. Env FMT_TEXT_SIZE overrides it (text_size_survey.py)."""
+    import _overrides
+    env = os.environ.get("FMT_TEXT_SIZE")
+    if env:
+        return float(env)
+    try:
+        return float(_overrides.load(stem, books_dir)["book"].get("text_size", 9))
+    except _overrides.OverridesError:
+        return 9.0
+
+
+def size_ladder(base):
+    """The sizes a page tries, largest first: the book's size, then a point
+    less at a time down to 7 -- (9, 8, 7) for a book left at 9 pt."""
+    out = [base]
+    s = float(int(base)) if base != int(base) else base - 1
+    while s >= 7:
+        out.append(s)
+        s -= 1
+    return tuple(out)
+
+
 def book_bold_headings(stem, books_dir="/data/books"):
     """Does the book set its section headings in bold ([book] bold_headings)?"""
     import _overrides

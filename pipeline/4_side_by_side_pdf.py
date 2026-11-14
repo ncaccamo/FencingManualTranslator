@@ -314,6 +314,12 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
     PARAS = _render.book_paragraphs(book)
     _render.BOLD_SECTIONS = _render.book_bold_headings(book)
     CENTRE = _render.centres_headings(folder)
+    # the book's body size ([book] text_size, 9 pt unset): every page tries
+    # it first and steps down only when it doesn't fit; notes in proportion
+    BASE = _render.book_text_size(book)
+    SIZES = _render.size_ladder(BASE)
+    FN = round(7 * BASE / 9 * 2) / 2
+    used = {}             # pdf page -> the size it was drawn at ("cont." spilled)
     TWO_PART = _layout.two_part_heads(folder, [parse_vlm_output(e).get("header", "") for e in extractions])
     sides = _render.folio_sides(folder, [parse_vlm_output(e).get("page_num", "") for e in extractions])
     sides += [None] * max(0, n - len(sides))
@@ -426,14 +432,14 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         if title_hdr:
             body_txt = title_hdr + "\n\n" + body_txt.strip()
         notes = [_render.english_quotes(n) for n in notes]
-        fn_lines = _render.footnote_lines(notes, RIGHT.width, 7) if notes else []
-        fn_h = _render.measure(fn_lines, 7) + 4 if fn_lines else 0.0
+        fn_lines = _render.footnote_lines(notes, RIGHT.width, FN) if notes else []
+        fn_h = _render.measure(fn_lines, FN) + 4 if fn_lines else 0.0
         body_bottom = RIGHT.y1 - fn_h
 
         def _footer(pg):
             if fn_lines:
                 _render.draw(pg, (RIGHT.x0, body_bottom, RIGHT.x1, RIGHT.y1),
-                             fn_lines, 7, color=(0.25, 0.25, 0.25))
+                             fn_lines, FN, color=(0.25, 0.25, 0.25))
 
         # Try paragraph-aligned layout first (needs a usable scan text
         # layer, and the whole page must still fit with the whitespace).
@@ -453,8 +459,8 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
                     and any(len(q.split()) >= 60 for q in re.split(r"\n\s*\n", rest))):
                 span0, span1 = displayed_scan_span(src[i])
                 yc = min(max(y, span0 + cb[0] * (span1 - span0)), body_bottom - 60)
-                lines = _render.centre_lines(_render.layout(re.sub("[\x03-\x05]", "", first), RIGHT.width, 9), RIGHT.width, 9)
-                _, yc = _render.draw(page, (RIGHT.x0, yc, RIGHT.x1, body_bottom), lines, 9)
+                lines = _render.centre_lines(_render.layout(re.sub("[\x03-\x05]", "", first), RIGHT.width, BASE), RIGHT.width, BASE)
+                _, yc = _render.draw(page, (RIGHT.x0, yc, RIGHT.x1, body_bottom), lines, BASE)
                 y, body_txt = yc + 8, rest
         n_paras = len([p for p in re.split(r"\n\s*\n", body_txt.strip()) if p.strip()])
         fracs = (None if (has_fig or not book_align or DISPLAY)
@@ -463,6 +469,7 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
             for s in SIZES:
                 if render_aligned(page, y, body_txt, s, fracs, src[i], body_bottom, toc=TOC):
                     aligned += 1
+                    used[page.number + 1] = s
                     break
             else:
                 fracs = None  # didn't fit at any size -> plain flow below
@@ -487,11 +494,11 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
             span0, span1 = displayed_scan_span(src[i])
             cur = y
             for q, (f, centred) in zip(paras_, places):
-                cur = min(max(cur, span0 + f * (span1 - span0)), body_bottom - 9 * LEADING)
-                lines = _render.layout(q, RIGHT.width, 9, paras=PARAS, centre=CENTRE, toc=TOC)
+                cur = min(max(cur, span0 + f * (span1 - span0)), body_bottom - BASE * LEADING)
+                lines = _render.layout(q, RIGHT.width, BASE, paras=PARAS, centre=CENTRE, toc=TOC)
                 if centred:
-                    lines = _render.centre_lines(lines, RIGHT.width, 9)
-                _, cur = _render.draw(page, (RIGHT.x0, cur, RIGHT.x1, body_bottom), lines, 9)
+                    lines = _render.centre_lines(lines, RIGHT.width, BASE)
+                _, cur = _render.draw(page, (RIGHT.x0, cur, RIGHT.x1, body_bottom), lines, BASE)
                 cur += PARA_GAP
             _footer(page)
             continue
@@ -517,6 +524,10 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
                 break
         if lines is None:
             lines = _render.layout(body_txt, RIGHT.width, SIZES[-1], paras=PARAS, centre=CENTRE, toc=TOC)
+            if body_txt.strip():
+                used[page.number + 1] = "cont."        # no size fits: it spills
+        elif body_txt.strip():
+            used[page.number + 1] = chosen
 
         # a table that does not fit below the text goes to the continuation
         # sheet, not skipped (two of Masiello sabre's synoptic tables); on a continuation
@@ -533,8 +544,17 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
 
     src.close()
     sheets = doc.page_count
-    out = f"{folder}/{book} — Side by Side (Landscape).pdf"
+    out = os.environ.get("FMT_SURVEY_OUT") or f"{folder}/{book} — Side by Side (Landscape).pdf"
     doc.save(out, garbage=4, deflate=True)
+    # the size each text page was drawn at (text_size_survey.py compares a
+    # book's sizes from these)
+    small = sorted(k for k, s in used.items() if s == "cont." or s < BASE)
+    json.dump({"text_size": BASE, "pages": {str(k): s for k, s in sorted(used.items())}},
+              open(os.environ.get("FMT_SURVEY_OUT", "")[:-4] + ".sizes.json" if os.environ.get("FMT_SURVEY_OUT")
+                   else f"{int_dir}/side_sizes.json", "w"), indent=0)
+    if BASE != 9 or small:
+        print(f"  text {BASE:g} pt: {len(used) - len(small)} of {len(used)} text pages"
+              + (f"; smaller on pdf {', '.join(map(str, small[:20]))}{' …' if len(small) > 20 else ''}" if small else ""))
     doc.close()
     extra = f", +{cont_pages} continuation" if cont_pages else ""
     print(f"✓ Created: {Path(out).name}  ({n} spreads{extra} → {sheets} sheets; "

@@ -100,7 +100,8 @@ _PAGE_KEYS = {"page_number", "header", "retranslate", "note", "caption", "captio
               "picture_after"}
 _TOP_KEYS = {"book", "headers", "terms", "pages", "fix", "book_fix", "table_fix", "ocr_fix"}
 _BOOK_KEYS = {"running_heads": bool, "final": bool, "paragraphs": str, "page_numbers": str,
-              "bold_headings": bool}
+              "bold_headings": bool, "text_size": (int, float)}
+TEXT_SIZES = (9, 13)        # [book] text_size: the side-by-side body size, points
 _PARAGRAPHS = ("indented", "spaced")
 _PAGE_NUMBERS = ("outer", "inner", "centre", "bottom-outer", "bottom-inner", "bottom-centre")
 
@@ -186,8 +187,12 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
     for k, v in book.items():
         if k not in _BOOK_KEYS:
             raise OverridesError(f"{p}: [book] unknown key {k!r}")
-        if not isinstance(v, _BOOK_KEYS[k]):
-            raise OverridesError(f"{p}: [book] {k} must be {_BOOK_KEYS[k].__name__}")
+        if not isinstance(v, _BOOK_KEYS[k]) or isinstance(v, bool) != (_BOOK_KEYS[k] is bool):
+            raise OverridesError(f"{p}: [book] {k} must be "
+                                 f"{'a number' if k == 'text_size' else _BOOK_KEYS[k].__name__}")
+        if k == "text_size" and not (TEXT_SIZES[0] <= v <= TEXT_SIZES[1] and v * 2 == int(v * 2)):
+            raise OverridesError(f"{p}: [book] text_size must be {TEXT_SIZES[0]} to {TEXT_SIZES[1]} "
+                                 f"in steps of 0.5")
         if k == "paragraphs" and v not in _PARAGRAPHS:
             raise OverridesError(f"{p}: [book] paragraphs must be one of {_PARAGRAPHS}")
         if k == "page_numbers" and v not in _PAGE_NUMBERS:

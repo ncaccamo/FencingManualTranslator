@@ -5415,6 +5415,34 @@ def test_table_from_scan_retries_askew_rules_and_missed_dashes():
     assert rows[0] == ["filo, cavazione al petto", "arresto al fianco", "inquartata"], rows[0]
 
 
+def test_book_text_size_ladder_and_setting():
+    """[book] text_size (2026-11-14): the side-by-side body size for a book,
+    every page trying it first and a point less at a time to 7 -- a book
+    left unset keeps 9, 8, 7 exactly; the setting is a number from 9 to 13
+    in half points."""
+    import _render, _overrides, tempfile, os, shutil
+    assert _render.size_ladder(9) == (9, 8, 7)
+    assert _render.size_ladder(12) == (12, 11, 10, 9, 8, 7)
+    assert _render.size_ladder(10.5) == (10.5, 10, 9, 8, 7)
+    d = tempfile.mkdtemp()
+    try:
+        for val, ok in (("12", True), ("10.5", True), ("8", False), ("14", False), ("10.3", False),
+                        ('"12"', False), ("true", False)):
+            open(os.path.join(d, "x_1900_t.overrides.toml"), "w").write(f"[book]\ntext_size = {val}\n")
+            try:
+                got = _overrides.load("x_1900_t", d)["book"].get("text_size")
+                assert ok and got == float(val), (val, got)
+            except _overrides.OverridesError:
+                assert not ok, val
+        os.environ.pop("FMT_TEXT_SIZE", None)
+        open(os.path.join(d, "x_1900_t.overrides.toml"), "w").write("[book]\ntext_size = 11\n")
+        assert _render.book_text_size("x_1900_t", d) == 11
+        os.remove(os.path.join(d, "x_1900_t.overrides.toml"))
+        assert _render.book_text_size("x_1900_t", d) == 9
+    finally:
+        shutil.rmtree(d)
+
+
 def test_table_heading_row_in_small_capitals_not_a_body_row():
     """table_from_scan.heading_band: the headings set in small capitals come
     through the text layer in lower case and misread («Risposte che tossono
