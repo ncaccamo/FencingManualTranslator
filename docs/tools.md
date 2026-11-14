@@ -49,7 +49,7 @@ The per-book files these write are described in [per-book-files.md](per-book-fil
 | `pipeline/review_sheet.py` | container | A checklist section or caption entries to fill in, as text. |
 | `pipeline/verify_captions.py` | container | A second reading of figure captions (model), for the report. |
 | `pipeline/read_folios.py` | container | A second look (model) at page numbers that had to be worked out. |
-| `pipeline/table_from_scan.py` | container | Rebuilds a ruled table's rows from the scan's own text layer and printed column rules, where the OCR lost or shifted rows (no model). Each page is checked against the row count expected (`<scan>:<rows>`) and must fill every cell, or it is left alone; `--write` replaces the table in `raw_ocr.txt` (backup kept), then reprocess and translate the tables. |
+| `pipeline/table_from_scan.py` | container | Rebuilds a ruled table's rows from the scan's own text layer and printed column rules, where the OCR lost or shifted rows (no model). Each page is checked against the row count expected (`<scan>:<rows>`) and must fill every cell, or it is left alone; a page that fails is tried again with rules that drift (an askew scan), the table's height from its longest rule, and a printed «—» the text layer missed -- a page that rebuilds as it is never changes; `--write` replaces the table in `raw_ocr.txt` (backup kept), then reprocess and translate the tables. |
 | `pipeline/reread_pages.py` | container | Re-read chosen pages with the OCR model and re-derive the book's text from them. |
 | `pipeline/layout_scan.py` | container | The page-layout detector → `intermediate/layout.json` (pictures, columns, margin notes, running heads). |
 

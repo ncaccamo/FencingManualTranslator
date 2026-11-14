@@ -95,6 +95,34 @@ def column_rules(gray: np.ndarray, top: int, bottom: int) -> list:
     return [int(sum(r) / len(r)) for r in rules]
 
 
+def column_rules_tilted(gray: np.ndarray, top: int, bottom: int) -> list:
+    """column_rules() for a page scanned a little askew, where a rule drifts
+    a few pixels across the table's height and so is dark in no single pixel
+    column for long enough (Masiello pdf 390: 9 px over the table). The
+    height is taken in four slices; a rule is one found in at least three
+    of them within 12 px, at its average place."""
+    n, h = 4, (bottom - top) // 4
+    found = [column_rules(gray, top + k * h, top + (k + 1) * h) for k in range(n)]
+    rules = []
+    for x in sorted(x for xs in found for x in xs):
+        if rules and x - rules[-1][-1] <= 12:
+            rules[-1].append(x)
+        else:
+            rules.append([x])
+    return [int(sum(r) / len(r)) for r in rules if len(r) >= 3]
+
+
+def is_dash(gray: np.ndarray, x0: int, y0: int, x1: int, y1: int, lh: float) -> bool:
+    """Does this empty cell hold only a printed dash («—», nothing to give)
+    that the page's text layer missed (Masiello pdf 420)? All its ink lies
+    in one short, thin horizontal stroke."""
+    cell = gray[int(y0):int(y1), int(x0) + 4:int(x1) - 4] < np.median(gray) - 35
+    if cell.size == 0 or cell.sum() < 8:
+        return False
+    ys, xs = np.where(cell)
+    return (ys.max() - ys.min() <= 0.4 * lh and 0.6 * lh <= xs.max() - xs.min() <= 3.5 * lh)
+
+
 def header_bottom(gray: np.ndarray, x0: int, x1: int, top: int, bottom: int) -> int:
     """y of the lowest horizontal rule in the table's upper third: the rule
     under the header."""
@@ -122,7 +150,24 @@ def rebuild(page, table_html: str, want: int = None) -> tuple:
     """(rows as [[cell html]], message). Empty rows with a message when the
     page can't be rebuilt safely. `want`: the row count the page must have;
     the blank band that breaks a row is then taken at the height that gives
-    it (rows sit closer on some pages than others)."""
+    it (rows sit closer on some pages than others). Only when the page
+    can't be rebuilt as it is, it is tried again: with rules that drift
+    (an askew scan), with the table's height from its longest rule (the
+    frame's own rule can stop short: Masiello pdf 382), and with a missed
+    printed dash taken as the cell's «—» -- each one only where it is
+    needed, so a page that rebuilds today comes out the same."""
+    first_why = ""
+    for tilted, tall, dash in ((False, False, False), (True, False, False), (False, True, False),
+                               (False, False, True), (True, True, False), (True, False, True),
+                               (False, True, True), (True, True, True)):
+        rows, why = _rebuild(page, table_html, want, tilted, tall, dash)
+        if rows:
+            return rows, why
+        first_why = first_why or why
+    return [], first_why
+
+
+def _rebuild(page, table_html, want, tilted, tall, dash):
     head, ncols = header_rows(table_html)
     if not ncols:
         return [], "no header row in the OCR's table"
@@ -139,7 +184,23 @@ def rebuild(page, table_html: str, want: int = None) -> tuple:
     if not len(ys):
         return [], "no table height found"
     top, bottom = int(ys.min()), int(ys.max())
-    rules = column_rules(gray, top, bottom)
+    rules = (column_rules_tilted if tilted else column_rules)(gray, top, bottom)
+    if tall and rules:          # the table's height from its longest rule instead
+        reach = 6 if tilted else 1
+
+        def run(x):      # the longest stretch dark but for gaps under 20 px
+            d = np.where(dark[:, max(0, x - reach):x + reach + 1].any(axis=1))[0]
+            best, start = (0, 0), 0
+            for k in range(1, len(d) + 1):
+                if k == len(d) or d[k] - d[k - 1] > 20:
+                    if d[k - 1] - d[start] > best[1] - best[0]:
+                        best = (int(d[start]), int(d[k - 1]))
+                    start = k
+            return best
+        # the rules between columns: the outer ones can be the scan's dark edge
+        a, b = max((run(x) for x in (rules[1:-1] or rules)), key=lambda r: r[1] - r[0])
+        if b > a:
+            top, bottom = a, b
     if len(rules) < 2:
         return [], "fewer than two column rules"
     # the outer frame may be ruled or not: columns are the gaps between rules,
@@ -213,13 +274,18 @@ def rebuild(page, table_html: str, want: int = None) -> tuple:
         if not spacings:
             # rows set too close for a blank band: a column with one line a
             # row gives them -- each line a row, the breaks halfway between
+            # the headings set in small capitals, found as a band by bands_at():
+            # not a row (Masiello pdf 426, where they had made the 11 rows)
+            first_band = (bands_at(0.9) or [(0, 0)])[0][0]
             for k in range(1, len(cols)):
                 lines = {}
                 for w in body:
                     if col_of(w) == k:
                         lines.setdefault(w[5], []).append(w)
                 tops = sorted((min(x[1] for x in g) + max(x[3] for x in g)) / 2 for g in lines.values()
-                              if not all(re.sub(r"[^\w]", "", x[4]).isupper() for x in g))   # header lines
+                              if not all(re.sub(r"[^\w]", "", x[4]).isupper() for x in g)    # header lines
+                              and not (first_band and max(x[3] for x in g) < first_band))
+                                                   # small capitals: above the first row
                 cells = []                         # a cell's lines (a phrase wrapped) sit a line apart
                 for m in tops:
                     if cells and m - cells[-1][-1] < 1.8 * lh:
@@ -230,20 +296,20 @@ def rebuild(page, table_html: str, want: int = None) -> tuple:
                 if len(mids) == want:
                     cuts = [(mids[n] + mids[n + 1]) / 2 for n in range(want - 1)]
                     first = max(y0, mids[0] - (cuts[0] - mids[0]) if cuts else y0)    # not the header above
-                    rows, why = _rows(list(zip([first] + cuts, cuts + [bottom + 5])), body, cols, col_of, lh)
+                    rows, why = _rows(list(zip([first] + cuts, cuts + [bottom + 5])), body, cols, col_of, lh, gray if dash else None)
                     if rows:
                         return rows, ""
             return [], f"no row spacing gives {want} rows (at the usual spacing {len(bands_at(0.9))})"
         spacings.sort(key=lambda g: abs(g - 0.9))   # nearest the usual spacing first
     why = ""
     for gap in spacings:
-        rows, why = _rows(bands_at(gap), body, cols, col_of, lh)
+        rows, why = _rows(bands_at(gap), body, cols, col_of, lh, gray if dash else None)
         if rows:
             return rows, ""
     return [], why
 
 
-def _rows(bands, body, cols, col_of, lh):
+def _rows(bands, body, cols, col_of, lh, gray=None):
     rows = []
     for a, b in bands:
         ws = [w for w in body if a <= (w[1] + w[3]) / 2 < b]
@@ -272,6 +338,9 @@ def _rows(bands, body, cols, col_of, lh):
                 else:
                     items.append(text)
             cells.append("<br>".join(items))
+        if gray is not None:      # a missed printed dash: the cell's «—»
+            cells = [c if c.strip() or not is_dash(gray, ca, a, cb, b, lh) else "—"
+                     for c, (ca, cb) in zip(cells, cols)]
         rows.append(cells)
     # every cell holds something (the book prints "—" for nothing): a row
     # with empty cells is a multi-line cell cut in two, or rows run together

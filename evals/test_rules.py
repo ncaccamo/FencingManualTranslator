@@ -5369,6 +5369,52 @@ def test_table_rows_rebuilt_from_the_scan():
         "botta dritta, filo, fianconata di quarta<br>botta dritta, filo"
 
 
+def test_table_from_scan_retries_askew_rules_and_missed_dashes():
+    """table_from_scan, tried again only when a page fails (2026-11-14,
+    Masiello pdf 382, 390, 420): column rules that drift a few pixels over
+    the table (an askew scan) are still found, slice by slice; a cell the
+    text layer left empty where the book prints «—» takes the dash; a cell
+    with words or nothing in it is not a dash."""
+    try:
+        import pymupdf as fitz, numpy as np
+    except ImportError:
+        return                                   # the image has them; the host may not
+    if not callable(getattr(fitz, "open", None)):
+        return
+    import table_from_scan as TS
+    g = np.full((400, 300), 220, dtype=np.uint8)
+    for y in range(400):                         # two rules, each drifting 9 px
+        for x0 in (100, 200):
+            g[y, x0 + y * 9 // 400] = 40
+    g[::7, 20:90] = 120                          # text-like stripes in the first column
+    assert len(TS.column_rules(g, 0, 400)) < 2   # no single pixel column dark long enough
+    assert [abs(a - b) <= 6 for a, b in zip(TS.column_rules_tilted(g, 0, 400), (104, 204))] == [True, True]
+    cell = np.full((40, 120), 220, dtype=np.uint8)
+    cell[20:22, 50:72] = 30                      # a printed dash
+    assert TS.is_dash(cell, 0, 0, 120, 40, 12.5)
+    words = cell.copy()
+    words[12:24, 10:100] = 30                    # a word, not a dash
+    assert not TS.is_dash(words, 0, 0, 120, 40, 12.5)
+    assert not TS.is_dash(np.full((40, 120), 220, dtype=np.uint8), 0, 0, 120, 40, 12.5)
+    # a whole page: the second row's last cell holds only a drawn dash
+    doc = fitz.open()
+    pg = doc.new_page(width=400, height=300)
+    for x in (150, 270):
+        pg.draw_line((x, 40), (x, 260), width=1.2)
+    pg.draw_line((20, 40), (380, 40), width=1.2)
+    pg.draw_line((20, 62), (380, 62), width=1.2)
+    for x, y, t in [(25, 55, "Risposte"), (160, 55, "Primo"), (280, 55, "Secondo"),
+                    (25, 90, "filo, cavazione al petto"), (160, 90, "arresto al fianco"), (280, 90, "inquartata"),
+                    (25, 160, "filo, o cavazione"), (160, 160, "inquartata")]:
+        pg.insert_text((x, y), t, fontsize=8)
+    pg.draw_line((285, 157), (297, 157), width=0.8)   # inside the column the words span
+    head = "<table><tr><th>R</th><th>P</th><th>S</th></tr><tr><td>x</td><td>y</td><td>z</td></tr></table>"
+    rows, why = TS.rebuild(pg, head, 2)
+    assert rows, why
+    assert rows[1][2] == "—", rows[1]
+    assert rows[0] == ["filo, cavazione al petto", "arresto al fianco", "inquartata"], rows[0]
+
+
 def test_table_heading_row_in_small_capitals_not_a_body_row():
     """table_from_scan.heading_band: the headings set in small capitals come
     through the text layer in lower case and misread («Risposte che tossono

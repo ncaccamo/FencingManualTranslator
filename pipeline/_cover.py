@@ -37,10 +37,6 @@ DISCLOSURE = (
     "A machine translation, created on local hardware and shared for open "
     "study. It is not a replacement for a scholarly human translation."
 )
-METHOD = (
-    "Each page was transcribed from the scan and translated separately; "
-    "figures and layout follow the original."
-)
 CONVENTIONS = (
     "Italic words are technical terms left in the original language. Where "
     "no English term fits exactly, a footnote gives the original."
@@ -314,7 +310,6 @@ def render(doc, stem, *, page_w, page_h, margin):
     block(f"PDF generated {today} with FencingManualTranslator {ver}" if ver
           else f"PDF generated {today}", 9, gap_after=10)
 
-    block(METHOD, 9, gap_after=8)
     block(CONVENTIONS, 9, gap_after=12)
 
     rule()
