@@ -32,6 +32,7 @@ import re
 import _render
 import _textlayer
 import _columns
+import _overrides
 import _layout
 import _pageio
 import _cover
@@ -312,6 +313,10 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
     src = fitz.open(ocr_pdf)
     n = min(len(src), len(translations))
     PARAS = _render.book_paragraphs(book)
+    try:
+        COLS = _overrides.list_columns(_overrides.load(book))
+    except Exception:
+        COLS = {}
     _render.BOLD_SECTIONS = _render.book_bold_headings(book)
     CENTRE = _render.centres_headings(folder)
     # the book's body size ([book] text_size, 9 pt unset): every page tries
@@ -417,6 +422,8 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         # at the bottom of the right column.
         body_txt, notes = _render.split_footnotes(tr)
         TOC = _render.toc_page(body_txt)     # decided once for the page
+        if i + 1 in COLS:                    # a word list printed in columns ([pages.N] columns)
+            body_txt = _columns.word_list(body_txt, COLS[i + 1])
         if not TOC:
             # a passage set in two columns (master | pupil): a table, rows as printed
             lay = _layout._lay(folder)

@@ -382,6 +382,8 @@ class Flow:
         "(fig. [picture] 24)", 2026-11-04). Held notes are normally drawn
         already, before this page's head (section_label, 2026-11-13)."""
         body_txt, notes = _render.split_footnotes(text)
+        if self.cur + 1 in COLS:              # a word list printed in columns ([pages.N] columns)
+            body_txt = _columns.word_list(body_txt, COLS[self.cur + 1])
         if not _render.toc_page(body_txt):
             # a passage set in two columns (master | pupil): a table, rows as printed
             lay = _layout._lay(folder)
@@ -552,8 +554,9 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         translations = _render.apply_left_out([p.strip() for p in _pageio.split_pages(f.read())], book)
     try:
         PLACES = _overrides.picture_places(_overrides.load(book))
+        COLS = _overrides.list_columns(_overrides.load(book))
     except Exception:
-        PLACES = {}
+        PLACES, COLS = {}, {}
     with open(f"{int_dir}/extracted.txt", "r", encoding="utf-8") as f:
         extractions = [p.strip() for p in _pageio.split_pages(f.read())]
 

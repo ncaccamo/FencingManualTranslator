@@ -501,3 +501,31 @@ def column_tables(body, src_body, page, boxes, notes=False, stored=None):
     if any(keep(l) and keep(l) not in flat for l in el):
         SKIP[0] = "a line would be lost"; return body
     return out
+
+
+def word_list(body, n):
+    """[pages.N] columns = n (reviewer, 2026-11-14: Gomard's list of fencing
+    terms, pdf 113-114): the page's closing list -- the last lines, each a
+    short entry, after its prose -- as an n-column table drawn without rules,
+    as the book prints it. Where the OCR kept the printed rows (entries
+    apart by 2+ spaces, pdf 113), each line is a row; else (one entry a line,
+    pdf 114) the entries fill the columns top to bottom, one column after the
+    other. `body` unchanged when there is no such list (under 2n entries) or
+    a row has more than n entries."""
+    raw = body.rstrip("\n").split("\n")
+    k = len(raw)
+    short = lambda l: len(re.sub(r"<[^>]+>", "", l).split()) <= 8
+    while k > 0 and raw[k - 1].strip() and (re.search(r"\S {2,}\S", raw[k - 1].strip()) or short(raw[k - 1])):
+        k -= 1
+    lines = [l.strip() for l in raw[k:]]
+    if any(re.search(r"\S {2,}\S", l) for l in lines):
+        rows = [re.split(r" {2,}", l) for l in lines]
+    else:
+        per = -(-len(lines) // n)
+        rows = [[lines[c * per + r] if c * per + r < len(lines) else "" for c in range(n)] for r in range(per)]
+    if sum(len([c for c in r if c]) for r in rows) < 2 * n or any(len(r) > n for r in rows):
+        return body
+    cell = lambda c: c if c else "&nbsp;"
+    table = "".join("<tr>" + "".join(f"<td>{cell(r[c] if c < len(r) else '')}</td>" for c in range(n)) + "</tr>"
+                    for r in rows)
+    return "\n".join((raw[:k] + [""] if k else []) + ['\x00TABLE<table data-plain="1">' + table + "</table>"])

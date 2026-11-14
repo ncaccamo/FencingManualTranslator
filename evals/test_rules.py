@@ -5448,6 +5448,37 @@ def test_book_text_size_ladder_and_setting():
         shutil.rmtree(d)
 
 
+def test_word_list_in_printed_columns():
+    """[pages.N] columns (2026-11-14, Gomard pdf 113-114): the page's closing
+    list of terms as an n-column table without rules -- the printed rows
+    where the OCR kept them (entries 2+ spaces apart), else the entries one
+    column after the other; the prose above stays as it is."""
+    import _columns, _overrides, tempfile, os, shutil
+    prose = "See the general table for the following technical terms, whose explanation is found in the course of the work."
+    rows = prose + "\n\nAbsence of blade.    Contraction.    Cut-over.\n<i>Appel</i>.      Counter.      <i>Croisé</i>.\nChange of <i>épée</i>.   Simple thrust."
+    out = _columns.word_list(rows, 3)
+    assert out.startswith(prose) and 'data-plain="1"' in out
+    assert "<tr><td>Absence of blade.</td><td>Contraction.</td><td>Cut-over.</td></tr>" in out
+    assert "<td>Simple thrust.</td><td>&nbsp;</td></tr>" in out
+    one = "\n".join(f"Term {k}." for k in range(1, 8))          # 7 entries: columns of 3, 3, 1
+    out = _columns.word_list(one, 3)
+    assert out.startswith("\x00TABLE") and "<tr><td>Term 1.</td><td>Term 4.</td><td>Term 7.</td></tr>" in out
+    assert "<tr><td>Term 3.</td><td>Term 6.</td><td>&nbsp;</td></tr>" in out
+    assert _columns.word_list(prose + "\n\nOne.\nTwo.", 3) == prose + "\n\nOne.\nTwo."     # too few: as it is
+    assert _columns.word_list("A.  B.  C.  D.\nE.\nF.", 3) == "A.  B.  C.  D.\nE.\nF."     # 4 in a row
+    d = tempfile.mkdtemp()
+    try:
+        for val, ok in (("3", True), ("2", True), ("5", False), ("true", False), ('"3"', False)):
+            open(os.path.join(d, "x_1900_t.overrides.toml"), "w").write(f"[pages.12]\ncolumns = {val}\n")
+            try:
+                got = _overrides.list_columns(_overrides.load("x_1900_t", d))
+                assert ok and got == {12: int(val)}, (val, got)
+            except _overrides.OverridesError:
+                assert not ok, val
+    finally:
+        shutil.rmtree(d)
+
+
 def test_table_heading_row_in_small_capitals_not_a_body_row():
     """table_from_scan.heading_band: the headings set in small capitals come
     through the text layer in lower case and misread («Risposte che tossono

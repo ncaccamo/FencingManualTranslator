@@ -1456,6 +1456,8 @@ def draw_table(page, rect, html_text, size=7.5, dry=False, min_size=5.5):
     rows, n_cols = parse_table(html_text)
     m = re.match(r'\s*<table\b[^>]*\bdata-split="([\d.]+)"', html_text or "", re.I)
     split = float(m.group(1)) if m else None
+    # a word list the book prints in columns (_columns.word_list): no rules
+    plain = bool(re.match(r'\s*<table\b[^>]*\bdata-plain=', html_text or "", re.I))
     if not rows or not n_cols:
         return None
     x0, y0, x1, y1 = rect
@@ -1529,7 +1531,8 @@ def draw_table(page, rect, html_text, size=7.5, dry=False, min_size=5.5):
     for c, lines in laid:
         cx0, cx1 = xs[c["col"]], xs[c["col"] + c["colspan"]]
         cy0, cy1 = ys[c["row"]], ys[min(c["row"] + c["rowspan"], n_rows)]
-        page.draw_rect(fitz.Rect(cx0, cy0, cx1, cy1), width=0.4, color=(0.45, 0.45, 0.45))
+        if not plain:
+            page.draw_rect(fitz.Rect(cx0, cy0, cx1, cy1), width=0.4, color=(0.45, 0.45, 0.45))
         ty = cy0 + pad
         for vl in lines:
             w = sum(_w(t, i, size) for t, i in vl)

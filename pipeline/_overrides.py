@@ -96,7 +96,7 @@ import os
 import re
 import tomllib
 
-_PAGE_KEYS = {"page_number", "header", "retranslate", "note", "caption", "caption_en", "figure", "leave_out",
+_PAGE_KEYS = {"columns", "page_number", "header", "retranslate", "note", "caption", "caption_en", "figure", "leave_out",
               "picture_after"}
 _TOP_KEYS = {"book", "headers", "terms", "pages", "fix", "book_fix", "table_fix", "ocr_fix"}
 _BOOK_KEYS = {"running_heads": bool, "final": bool, "paragraphs": str, "page_numbers": str,
@@ -148,6 +148,8 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
                                  f"{sorted(set(v) - _PAGE_KEYS) if isinstance(v, dict) else v}")
         if "leave_out" in v and not isinstance(v["leave_out"], bool):
             raise OverridesError(f"{p}: [pages.{k}] leave_out must be true or false")
+        if "columns" in v and (isinstance(v["columns"], bool) or v["columns"] not in (2, 3, 4)):
+            raise OverridesError(f"{p}: [pages.{k}] columns must be 2, 3 or 4")
         pages[int(k)] = v
     fixes = raw.get("fix") or []
     for n, f in enumerate(fixes, 1):
@@ -437,6 +439,13 @@ def left_out_pages(ov: dict) -> list:
     text (a bookplate, a date-due slip, Google's notice) whose English is
     left out of both PDFs; the side-by-side still shows the scan."""
     return sorted(s for s, v in ov["pages"].items() if v.get("leave_out"))
+
+
+def list_columns(ov: dict) -> dict:
+    """{scan page: n}: the page ends in a word list the book prints in n
+    columns ([pages.N] columns); the PDFs draw it so (_columns.word_list)
+    instead of one entry a line (Gomard pdf 113-114, 2026-11-14)."""
+    return {s: v["columns"] for s, v in ov["pages"].items() if v.get("columns")}
 
 
 def picture_places(ov: dict) -> dict:
