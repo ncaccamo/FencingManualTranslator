@@ -421,13 +421,21 @@ def folio_plan(folder: str, folios: list):
 
 def page_side(plan, folios: list, i: int):
     """The plan's side for page i: by its own folio, else by the nearest
-    page with a read one (pages alternate), else None."""
+    page with a read one (pages alternate), else None. A roman folio counts
+    too (reviewer, 2026-11-14: Jacob-André's long prefaces, "v" odd like 5,
+    fell back to the fixed layout more than 12 pages before page 1)."""
     if not plan:
         return None
+    from _ocr_folios import _roman_to_int
+
+    def num(s):
+        s = (s or "").strip()
+        return int(s) if re.fullmatch(r"\d+", s) else _roman_to_int(s)
+
     for d in range(0, 12):
         for k in ((i - d, i + d) if d else (i,)):
-            if 0 <= k < len(folios) and re.fullmatch(r"\d+", (folios[k] or "").strip()):
-                odd = (int(folios[k]) + (i - k)) % 2
+            if 0 <= k < len(folios) and num(folios[k]):
+                odd = (num(folios[k]) + (i - k)) % 2
                 return plan["odd" if odd else "even"]
     return None
 

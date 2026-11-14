@@ -4365,6 +4365,11 @@ def test_page_side_from_neighbours():
     assert L.page_side(plan, folios, 2)["folio"] == ("top", "L")     # [23] -> odd
     assert L.page_side(plan, folios, 4)["folio"] == ("top", "L")     # after 24 -> odd
     assert L.page_side(None, folios, 0) is None
+    # 2026-11-14: a roman folio sets the side too (Jacob-André preface "V")
+    roman = ["I", "II", "III", "IV", "V"] + [""] * 20 + ["1"]
+    assert L.page_side(plan, roman, 4)["folio"] == ("top", "L")      # V -> odd
+    assert L.page_side(plan, roman, 3)["folio"] == ("top", "R")      # IV -> even
+    assert L.page_side(plan, roman, 5)["folio"] == ("top", "R")      # after V -> even
     assert L._slot([0, 0, [0.12, 0, 0.15, 0]]) == "L" and L._slot([0, 0, [0.4, 0, 0.55, 0]]) == "C"
 
 
