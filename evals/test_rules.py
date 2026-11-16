@@ -5814,5 +5814,292 @@ def test_a_checked_term_rule_is_asked_again_once():
         T.BOOK_TERMS = keep[4]
 
 
+def _render_mod():
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        import pymupdf  # noqa: F401  (_render needs it)
+    except ImportError:
+        return None
+    return importlib.import_module("_render")
+
+
+def test_closing_signature_set_flush_right():
+    # owner, 2026-11-16: «signatures flush right as printed» -- a short line
+    # of names set well in from the margin and ending at the text's right,
+    # after a paragraph's end (Masiello pdf 179 «F. Corso.», Prévost-Jollivet
+    # pdf 205, Jacob-André's prefaces); a garbled layer is matched by
+    # likeness (Kirchhoffer «KWClillOFFEH.»); never a plate head, «Pag.» or
+    # a lesson's «I. TEMPO»
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    T = importlib.import_module("_textlayer")
+    nl = T._name_like
+    assert nl("F.  Corso.") and nl("PAUL DE CASSAGNAC.") and nl("L'ACADÉMIE D'ARMES .") and nl("L'Autore.")
+    assert not nl("Pag.") and not nl("PLATE XVII.") and not nl("I. TEMPO") and not nl("ciando filo sopra")
+    assert not nl("Il colpo vibrato immediatamente dopo")
+    long_ = "x" * 40
+    lines = [(100, 10 + 12 * k, f"{long_} riga {k} del testo,", 500) for k in range(5)]
+    lines += [(100, 70, "della  articolazione  del  polso.", 300), (400, 82, "F.  Corso.", 480),
+              (100, 94, "Del tocco e dello sforzo di spada nel testo seguente", 500)]
+    rows = [l[2] for l in lines]
+    assert T.signature_rows(rows, lines, 600) == {6}
+    lines[6] = (130, 82, "F.  Corso.", 210)                       # at the margin: a line of text
+    assert T.signature_rows(rows, lines, 600) == set()
+    lines[6] = (400, 82, "KWClillOFFEH.", 480)
+    rows[6] = "KIRCHHOFFER."
+    assert T.signature_rows(rows, lines, 600) == {6}
+    R = _render_mod()
+    if R is None:
+        return
+    out = [ln for ln in R.layout("He ended his letter.\n\x06F. Corso.", 400, 10, paras="indented") if not ln.gap]
+    w = R.line_width(out[-1], 10)
+    assert abs(out[-1].indent + w - 400) < 0.5 and out[0].indent < 50, [(l.indent, w) for l in out]
+
+
+def test_curly_apostrophes_and_whole_word_italics_at_draw_time():
+    # owner, 2026-11-16: ’ everywhere in the PDFs (not in translation.txt or
+    # the fixes); an ending glued to an italic word goes inside the italics
+    # («<i>épée</i>s» -> «<i>épées</i>», Jacob-André pdf 251)
+    R = _render_mod()
+    if R is None:
+        return
+    c = R.curly_apostrophes
+    assert c("l'arme") == "l’arme" and c("the fencers' guard") == "the fencers’ guard"
+    assert c("'tis said 'well'") == "‘tis said ‘well’" and c("<i>épée</i>'s point") == "<i>épée</i>’s point"
+    assert c('<table data-x="1"><td>d\'Alembert</td>') == '<table data-x="1"><td>d’Alembert</td>'
+    w = R.whole_word_italics
+    assert w("the <i>épée</i>s, nor") == "the <i>épées</i>, nor" and w("<i>riposte</i>d, sim") == "<i>riposted</i>, sim"
+    assert w("<i>coup</i> s") == "<i>coup</i> s" and w("<i>A</i>2") == "<i>A</i>2"
+    text = "".join(t for ln in R.layout("It is the <i>épée</i>s' point.", 400, 10) for t, _ in ln.spans)
+    assert "épées’" in text and "'" not in text, text
+
+
+def test_a_letters_opening_page_is_not_a_title_page():
+    # Jacob-André pdf 42: «MY DEAR JACOB,» and the letter under it -- set as
+    # text like the letter's other pages; a closing formula on a dedication
+    # («SIR, / OF YOUR IMPERIAL MAJESTY,», Grisier pdf 12) stays a display page
+    R = _render_mod()
+    if R is None:
+        return
+    letter = ("LETTER-PREFACE BY MR. A. DE LA FORGE\n\nMY DEAR JACOB,\n\nYou do me the honor of asking me for a preface "
+              "for the book you are about to publish on the game of the épée.\n\nThat is pushing humility a little far.")
+    assert R.display_page(letter, "[29]") is False
+    dedication = "With which I have the honor to be,\n\nSIR,\n\nOF YOUR IMPERIAL MAJESTY,\n\nThe very humble servant,\n\nA. GRISIER."
+    assert R.display_page(dedication, "[11]") is True
+
+
+def test_a_name_inside_a_block_of_capitals_is_set_with_it():
+    # Masiello pdf 10: «THE FRIEND AND MAESTRO Ferdinando Masiello» between
+    # centred capitals -- centred and bold like them (owner, 2026-11-16);
+    # not a catalogue line with words in lower case (Lafaugère pdf 379)
+    R = _render_mod()
+    if R is None:
+        return
+    rows = ["THIS TRIBUTE OF AFFECTION", "THE FRIEND AND <i>MAESTRO</i> Ferdinando Masiello", "WITH A SINCERE MIND CONSECRATES"]
+    assert R._in_caps_block(rows, 1)
+    assert not R._in_caps_block(["TREATISE ON FENCING.", "USE OF THE LOGARITHMIC RULE, or calculating rule. In-18. 25 c.",
+                                 "MANUAL OF GYMNASTICS."], 1)
+    out = [ln for ln in R.layout("\n".join(rows), 400, 10, paras="indented", centre=True) if not ln.gap]
+    # set as a heading like the lines round it: centred, same size (bold where
+    # the book's headings are, [book] bold_headings -- Masiello)
+    assert len(out) == 3 and out[1].indent > 20 and out[1].scale == out[0].scale, [(l.indent, l.scale) for l in out]
+    plain = [ln for ln in R.layout("Some running text of the page here that goes on.\n" + rows[1] + "\nMore text.", 400, 10,
+                                   paras="indented", centre=True) if not ln.gap]
+    assert all(ln.indent < 20 for ln in plain), [l.indent for l in plain]
+
+
+def test_an_indented_sentence_after_a_colon_is_a_quotation():
+    # Masiello pdf 67: «…the most feared offense:» then the indented verse
+    # «He would rather be dead than called a coward.» -- kept at its indent in
+    # body weight like the verse above, not a bold centred title (owner,
+    # 2026-11-16); a short head after a colon («Parry of seconde.») unchanged
+    R = _render_mod()
+    if R is None:
+        return
+    text = ("To be valiant and brave is the law of all knights; the stigma of coward is the most feared offense:\n\n"
+            "    He would rather be dead than called a coward.\n")
+    out = [ln for ln in R.layout(text, 400, 10, paras="indented", centre=True) if not ln.gap]
+    assert not out[-1].bold and out[-1].scale == 1.0 and out[-1].indent > 0, (out[-1].indent, out[-1].bold)
+
+
+def test_section_breaks_drawn_as_the_book_marks_them():
+    # owner, 2026-11-16: stars where the book prints a mark ([[DIVIDER]]),
+    # space only where it leaves space ([[BREAK]], Jacob-André pdf 56), a
+    # short rule where it prints one ([[RULE]], pdf 208)
+    R = _render_mod()
+    if R is None:
+        return
+    a = "He had reached the end of it. " * 3
+    b = "From all time, Jacob had had the idea. " * 3
+    def body(mark):
+        return R.layout(f"{a}\n\n{mark}\n\n{b}", 400, 10, paras="indented")
+    marks = lambda ls: [" ".join(t for t, _ in ln.spans) for ln in ls if not ln.gap and len(ln.spans) == 1 and len(ln.spans[0][0]) < 20]
+    assert marks(body("[[DIVIDER]]")) == ["*      *      *"]
+    assert marks(body("[[RULE]]")) == ["—————"]
+    brk = body("[[BREAK]]")
+    assert marks(brk) == [] and sum(ln.gap for ln in brk) >= 1
+    assert not any("[[" in t for ln in brk for t, _ in ln.spans)
+    # a text-layer row mark on the marker line (\x03, Jacob-André pdf 56 printed
+    # «[[BREAK]]» as text) is still the marker
+    assert not any("[[" in t for ln in R.layout(f"{a}\n\n\x03[[BREAK]]\n\x03{b}", 400, 10, paras="indented") for t, _ in ln.spans)
+    import importlib
+    T = importlib.import_module("_textlayer")
+    assert T.BREAK in T.MARKS and T.RULE in T.MARKS and T.DIVIDER in T.MARKS
+
+
+def test_a_picture_box_is_cut_at_a_printed_line_it_takes_in():
+    # owner, 2026-11-16: a picture's box that takes in a line of the text --
+    # the line runs across the box's top and on past its side -- is cut
+    # below it; words inside the drawing, or text beside a vignette
+    # (Prévost 1886 pdf 41), leave the box as it is
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    L = importlib.import_module("_layout")
+    class Rect:
+        width, height = 1000.0, 1000.0
+    class Page:
+        rect = Rect()
+        def __init__(self, words): self.words = words
+        def get_text(self, kind): return self.words
+    line = [(100, 300, 300, 312, "classement", 1, 0, 0), (310, 300, 900, 312, "des tireurs dans la poule", 1, 0, 1)]
+    box = (0.40, 0.30, 0.80, 0.50)
+    assert L.clip_at_text(box, Page(line))[1] > 0.312
+    inside = [(450, 302, 700, 312, "SOUS-OFFICIERS ESCRIME", 2, 0, 0)]
+    assert L.clip_at_text(box, Page(inside)) == box
+    beside = [(650, 300, 950, 312, "E goût des armes se transmet", 3, 0, 0)]
+    assert L.clip_at_text(box, Page(beside)) == box
+    assert L.clip_at_text(box, None) == box
+    # a line just above the box whose letters' feet the box takes in (the
+    # layer's line box stops short of them: Kirchhoffer pdf 103)
+    above = [(100, 285, 900, 299, "vainqueur. A la fin de chaque poule", 4, 0, 0)]
+    assert 0.299 < L.clip_at_text(box, Page(above))[1] < 0.31
+    far = [(100, 250, 900, 264, "a line well above the picture", 5, 0, 0)]
+    assert L.clip_at_text(box, Page(far)) == box
+
+
+def test_collapse_runs_keeps_a_row_of_identical_table_cells():
+    # Masiello 1887 pdf 412-434: a lesson table's row of «—» / «(2)» cells,
+    # one a line, was cut to two by the repeated-line rule and the cells
+    # after it moved into the wrong columns (page sweep 2026-11-15). A
+    # runaway loop (30+ identical lines) is still cut; plain text as before
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    c = importlib.import_module("_ocr_parse").collapse_runs
+    row = "<tr>\n" + "    <td>—</td>\n" * 6 + "</tr>\n"
+    assert c(row) == row
+    assert c("x line\n" * 6) == "x line\nx line\n"
+    assert c("  <td></td>\n" * 40).count("\n") == 2
+
+
+def test_a_running_heads_printed_stop_on_every_page():
+    # page sweep 2026-11-15: the OCR drops a head's closing full stop on some
+    # pages («LE JEU DE L'ÉPÉE» for «LE JEU DE L'ÉPÉE.», Jacob-André pdf 69;
+    # Gomard «INTRODUCTION»); where the stopped form is on 2+ pages and a
+    # quarter of them, every page gets it. A head never printed with a stop,
+    # or seen stopped once, is left alone
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    H = importlib.import_module("_ocr_heads")
+    pages = [{"header": h} for h in ["LE JEU DE L'ÉPÉE.", "LE JEU DE L'ÉPÉE", "LE JEU DE L'ÉPÉE.", "LE JEU DE L'ÉPÉE,",
+                                     "INTRODUCTION", "INTRODUCTION", "INTRODUCTION.", "PRÉFACE", ""]]
+    assert H.head_stops(pages) == 2
+    assert [p["header"] for p in pages] == ["LE JEU DE L'ÉPÉE."] * 4 + ["INTRODUCTION", "INTRODUCTION", "INTRODUCTION.", "PRÉFACE", ""]
+
+
+def test_a_word_split_over_spans_is_never_broken_at_the_span_edge():
+    # «<i>terza</i>-in-<i>quarta</i>», «(<i>seconda</i>», «“<i>flanconnade</i>”»:
+    # the pieces of one word in different spans go to the next line together
+    # (page sweep 2026-11-15: Barbasetti, Masiello pdf 46, Joseph-Renaud)
+    R = _render_mod()
+    if R is None:
+        return
+    for word in ("<i>terza</i>-in-<i>quarta</i>", "(<i>seconda</i>-in-<i>terza</i>)", "“<i>flanconnade</i>”"):
+        for n in range(30, 60):
+            text = "word " * n + word + " end"
+            for ln in R.layout(text, 300, 10):
+                joined = "".join(t for t, _ in ln.spans)
+                if not joined.strip():
+                    continue
+                assert not joined.rstrip().endswith(("(", "“", "terza")) or joined.rstrip().endswith("quarta"), joined
+                assert not joined.lstrip().startswith(("-in-", ")", "”", "flanconnade")), joined
+
+
+def test_a_row_the_book_centres_is_centred():
+    # page sweep 2026-11-15: headings the book centres were set as body lines
+    # where the text layer marked them as a paragraph start (Gomard, PJ, JA,
+    # JR). _textlayer.centred_rows finds rows whose printed lines all sit
+    # centred and start neither at the margin nor at the paragraph indent;
+    # the renderer centres them -- a heading if it reads as a title
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    T = importlib.import_module("_textlayer")
+    long_ = "x" * 60
+    lines = [(100, 10, "DE L'ENGAGEMENT.", 300)] if False else []
+    lines += [(100, 10 + 12 * k, f"{long_} ligne {k} du texte", 500) for k in range(4)]
+    lines += [(220, 70, "Parade de prime.", 380), (125, 82, "Placer la main vis-à-vis l'épaule gauche, les ongles", 500),
+              (100, 94, f"{long_} encore", 500), (125, 106, "Ne pas la confondre avec la septime !", 400)]
+    rows = [l[2] for l in lines]
+    assert T.centred_rows(rows, lines, 600) == {4}
+    R = _render_mod()
+    if R is None:
+        return
+    out = [ln for ln in R.layout("Some text of the page that runs on and on here.\n\x07Parry of prime.\n\x03Place the hand.",
+                                 400, 10, paras="indented") if not ln.gap]
+    w = R.line_width(out[1], 10, )
+    assert abs(out[1].indent - (400 - w) / 2) < 1, (out[1].indent, w)
+
+
+def test_items_of_one_list_are_set_alike():
+    # page sweep 2026-11-15 (Masiello pdf 93, 454; Prévost-Jollivet 1°-5°):
+    # list items of one run take the mark and indent most of them have
+    R = _render_mod()
+    if R is None:
+        return
+    rows = ["\x031° The arm.", "2° The leg.", "\x033° The body.", "\x034° The head.", "Plain text after."]
+    assert R.even_lists(rows) == ["\x031° The arm.", "\x032° The leg.", "\x033° The body.", "\x034° The head.", "Plain text after."]
+    two = ["1° a.", "\x032° b."]
+    assert R.even_lists(two) == two                      # too short a run to judge
+    split = ["\x031° a.", "2° b.", "\x043° c.", "4° d."]
+    assert R.even_lists(split) == split                  # no clear majority
+
+
+def test_each_paragraph_of_a_quotation_opens_with_a_mark():
+    # Joseph-Renaud's dialogues open every paragraph with «; English opens
+    # each paragraph of a quotation again (page sweep 2026-11-15). A verse
+    # line opened with « (old books, Gomard) stays without one
+    R = _render_mod()
+    if R is None:
+        return
+    prose = ("« Engage in high septime while advancing and press a little more than usual on my blade.\n"
+             "« You feel that I answer clearly in sixte: disengage inside at the biceps. »")
+    out = R.english_quotes(prose).split("\n")
+    assert out[0].startswith("“") and out[1].startswith("“") and out[1].endswith("”"), out
+    verse = "« In this treatise on arms the exercise;\n« All that of a fine art you would put to use, »"
+    assert not R.english_quotes(verse).split("\n")[1].startswith("“")
+
+
+def test_page_sweep_render_fixes_2026_11_16():
+    # page sweep 2026-11-15: hanging lines of notes and contents rows wrapped
+    # to the space they have (Gomard pdf 32, Jacob-André pdf 324); a heading
+    # the margin note repeats is kept (Gomard pdf 173); a line with a «;»
+    # clause or a «1°» item is not a title (Masiello pdf 736, Gomard pdf 67)
+    R = _render_mod()
+    if R is None:
+        return
+    ls = R.footnote_lines(["(1) " + "word " * 80], 300, 8)
+    assert max(l.indent + R.line_width(l, 8) for l in ls[1:]) <= 300
+    row = "    On-guard position. — Hold. — " + "Attacks on the nearest part. — " * 8
+    ls = R._layout_toc([row], 400, 10, False)
+    assert max(l.indent + R.line_width(l, 10) for l in ls if not l.gap) <= 400
+    text = "\nOf the engagement of quarte.\n\n⟦MARGIN: Of the engagement of quarte; how it is taken.⟧\n\nThe engagement is made thus."
+    assert "Of the engagement of quarte." in R.drop_margin_echoes(text).split("\n")
+    echo = "Some text here.\n⟦MARGIN: The gliding or glide.⟧\nThe gliding or glide.\nMore text."
+    assert "The gliding or glide." not in R.drop_margin_echoes(echo).split("\n")
+    assert not R._title_line("Azione (action); it indicates any operation, both offensive and defensive.")
+    assert not R._title_line("1° The straight thrust of quinte.")
+    assert R._title_line("2° The Sixte and Its Counter.") and R._title_line("Synoptic charts.")
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

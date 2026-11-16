@@ -53,7 +53,7 @@ from _ocr_folios import (
     apply_folio_witness, reconcile_page_numbers, strip_fieldless_folio, text_layer_folio_bands,
 )
 from _ocr_heads import (
-    apply_read_heads, known_headmatter, leaked_top_header, reconcile_headers,
+    apply_read_heads, head_stops, known_headmatter, leaked_top_header, reconcile_headers,
     salvage_leaked_folio_header, settle_disputed_heads, strip_leaked_headmatter,
     tail_catchwords,
 )
@@ -598,6 +598,7 @@ def main():
             fold_caption_header_into_figure(parsed)
             _no_head |= settle_disputed_heads(parsed, _disputed)
             reconcile_headers(parsed, _no_head)
+            head_stops(parsed)              # a head's printed stop on every page
             try:
                 import _margins
                 _margins.apply_to_book(work_dir, parsed)

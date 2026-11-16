@@ -31,7 +31,7 @@ from _ocr_folios import (
     apply_folio_witness, reconcile_page_numbers, strip_fieldless_folio, text_layer_folio_bands,
 )
 from _ocr_heads import (
-    apply_read_heads, known_headmatter, leaked_top_header, reconcile_headers, settle_disputed_heads,
+    apply_read_heads, head_stops, known_headmatter, leaked_top_header, reconcile_headers, settle_disputed_heads,
     strip_leaked_headmatter, tail_catchwords,
 )
 from _ocr_parse import _norm_head, collapse_runs, has_page_number_field, parse_vlm_response
@@ -81,6 +81,7 @@ for folder in targets:
     fold_caption_header_into_figure(parsed)
     _no_head |= settle_disputed_heads(parsed, _disputed)
     reconcile_headers(parsed, _no_head)
+    head_stops(parsed)              # a head's printed stop on every page
     # margin notes as ⟦MARGIN: …⟧ lines, each before its paragraph (_margins.py)
     _m_placed, _m_lost = _margins.apply_to_book(folder, parsed)
     # every sentence on one page, so it is translated whole (_ocr_text.py)

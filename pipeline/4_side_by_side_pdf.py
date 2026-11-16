@@ -156,11 +156,19 @@ def render_aligned(page, y_top, tr, size, fracs, src_page, bottom=RIGHT.y1, toc=
             return False
         scale = max(0.0, 1.0 - X / W)
 
-    cur = y_top
-    for k, L in enumerate(laid):
-        cur = min(cur + gaps[k] * scale, bottom - size)
-        _, cur = _render.draw(page, (RIGHT.x0, cur, RIGHT.x1, bottom), L, size)
-        cur += para_gap
+    # placed as planned, every line must fit: draw() hands back what does not,
+    # and that was dropped here -- the page's last line lost without a trace
+    # (page sweep 2026-11-15: Masiello pdf 14, Barbasetti pdf 179). A dry run
+    # first; a page that would lose a line takes the plain flow, which shrinks
+    # or spills it instead.
+    for dry in (True, False):
+        cur = y_top
+        for k, L in enumerate(laid):
+            cur = min(cur + gaps[k] * scale, bottom - size)
+            left, cur = _render.draw(page, (RIGHT.x0, cur, RIGHT.x1, bottom), L, size, dry=dry)
+            if dry and left:
+                return False
+            cur += para_gap
     return True
 
 
@@ -205,7 +213,7 @@ def new_spread(doc, src, src_idx, struct, *, cont=False, rotate=0, side=None):
     trusted = pn and not str(pn).startswith("[")
     tag = (f"Page {pn}{'  (cont.)' if cont else ''}" if trusted
            else "(cont.)" if cont else None)
-    hdr = (struct.get("header") or "").replace("\n", " ").strip()
+    hdr = _render.curly_apostrophes((struct.get("header") or "").replace("\n", " ").strip())
     if side and "\t" not in hdr and len(hdr.split()) <= 12:
         # the book's places (reviewer, 2026-10-18): number on its side, top
         # or bottom; the head where the book sets it. "(cont.)" stays on top.
@@ -466,7 +474,7 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
                     and any(len(q.split()) >= 60 for q in re.split(r"\n\s*\n", rest))):
                 span0, span1 = displayed_scan_span(src[i])
                 yc = min(max(y, span0 + cb[0] * (span1 - span0)), body_bottom - 60)
-                lines = _render.centre_lines(_render.layout(re.sub("[\x03-\x05]", "", first), RIGHT.width, BASE), RIGHT.width, BASE)
+                lines = _render.centre_lines(_render.layout(re.sub("[\x03-\x07]", "", first), RIGHT.width, BASE), RIGHT.width, BASE)
                 _, yc = _render.draw(page, (RIGHT.x0, yc, RIGHT.x1, body_bottom), lines, BASE)
                 y, body_txt = yc + 8, rest
         n_paras = len([p for p in re.split(r"\n\s*\n", body_txt.strip()) if p.strip()])

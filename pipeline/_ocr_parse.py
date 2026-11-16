@@ -19,8 +19,17 @@ def collapse_runs(text: str) -> str:
     text = re.sub(r'((?:[^\s\w]{1,2}\s+){4})(?:[^\s\w]{1,2}\s+){4,}', r'\1', text)
     # a single char repeated 12+ times (e.g. "..............") -> keep 6
     text = re.sub(r'(.)\1{11,}', lambda m: m.group(1) * 6, text)
-    # a whole line repeated 4+ times in a row -> keep 2
-    text = re.sub(r'(?m)^(.+)\n(?:\1\n){3,}', r'\1\n\1\n', text)
+    # a whole line repeated 4+ times in a row -> keep 2; but not a table's
+    # cells, one a line: a row of identical cells («—», «(2)») is the table
+    # as printed, and cutting it shifted the cells after it into the wrong
+    # columns (Masiello 1887 pdf 412-434, page sweep 2026-11-15) -- those only
+    # for a runaway loop, 30+ in a row
+    def lines(m):
+        cell = re.match(r'\s*<t[dh]\b', m.group(1))
+        if cell and m.group(0).count("\n") < 30:
+            return m.group(0)
+        return m.group(1) + "\n" + m.group(1) + "\n"
+    text = re.sub(r'(?m)^(.+)\n(?:\1\n){3,}', lines, text)
     return text
 
 

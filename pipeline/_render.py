@@ -381,10 +381,13 @@ def _wrap(spans, width, size, first_indent=0.0, bold=False):
                 # punctuation glued to the word before it (after an italic
                 # term: "<i>quarte</i>; diseng.") goes down with that word,
                 # never alone at the start of a line (Gomard scan 229)
+                # -- and so does any piece of the same word in another span,
+                # with no space between: «terza» / «-in-quarta», «(» /
+                # «seconda», «“» / «flanconnade» (page sweep 2026-11-15,
+                # Barbasetti, Masiello pdf 46, Joseph-Renaud)
                 carry = []
-                if (re.match(r"[;:,.!?)\]»”’]", tok) and len(cur) > 1
-                        and not cur[-1][0][-1:].isspace()):
-                    carry = [cur.pop()]
+                while len(cur) > 1 and not cur[-1][0][-1:].isspace():
+                    carry.insert(0, cur.pop())
                 lines.append(cur)
                 cur = carry                   # later lines: full width
                 cur_w = sum(_w(t, i, size, bold) for t, i in carry)
@@ -454,12 +457,22 @@ _SENT_END = re.compile(r"[.!?…»”\")](?:</i>)?\s*$")   # not ":" -- a list f
 # lines around it still leave the gap
 _STARS = re.compile(r"^\s*[★☆⁂✶✱]+(?:\s*[★☆⁂✶✱]+)*\s*$")
 DIVIDER = "[[DIVIDER]]"     # a section divider kept from the book (2_translate.restore_dividers)
+BREAK = "[[BREAK]]"         # a section break the book marks with space only (Jacob-André pdf 56)
+RULE = "[[RULE]]"           # a section break the book marks with a short rule (Jacob-André pdf 208)
 
 
 def _divider(width, size):
     """The book's section divider: centred stars with space around them
-    (reviewer, 2026-10-18; whatever the book's own ornament)."""
+    (reviewer, 2026-10-18), where the book prints a mark (⁂, stars, an
+    ornament). A break the book leaves as space only is [[BREAK]]: space,
+    no stars (owner, 2026-11-16)."""
     mark = "*      *      *"
+    return [Line(gap=True), Line(max(0.0, (width - _w(mark, 0, size)) / 2), [(mark, 0)]), Line(gap=True)]
+
+
+def _rule(width, size):
+    """A short centred rule, where the book marks a break with one."""
+    mark = "—————"
     return [Line(gap=True), Line(max(0.0, (width - _w(mark, 0, size)) / 2), [(mark, 0)]), Line(gap=True)]
 
 
@@ -603,6 +616,44 @@ def book_paragraphs(stem, books_dir="/data/books"):
         return "indented"
 
 
+_APOS_AFTER = set(".,!?;:’”)]")
+
+
+def curly_apostrophes(text):
+    """Straight ' as typeset (owner, 2026-11-16: «curly» everywhere in the
+    PDFs, as the “” rule): an apostrophe or closing single quote after a
+    letter, digit or closing mark -> ’ («l’arme», «fencers’»), any other ->
+    the opening ‘. HTML tags (<i>, a table's attributes) are left alone;
+    translation.txt and the [[fix]] texts keep the straight form -- this is
+    drawing only."""
+    if "'" not in (text or ""):
+        return text
+    out, in_tag, prev = [], False, ""
+    for ch in text:
+        if ch == "<":
+            in_tag = True
+        elif ch == ">" and in_tag:
+            in_tag = False
+            out.append(ch)
+            continue
+        if ch == "'" and not in_tag:
+            ch = "’" if prev and (prev.isalnum() or prev in _APOS_AFTER) else "‘"
+        out.append(ch)
+        if not in_tag:
+            prev = ch
+    return "".join(out)
+
+
+_GLUED = re.compile(r"(?<=[^\W\d_])</i>([^\W\d_]+)\b")
+
+
+def whole_word_italics(text):
+    """An ending glued to an italic word goes inside the italics: «<i>épée</i>s»
+    -> «<i>épées</i>», «<i>riposte</i>d» -> «<i>riposted</i>» (owner,
+    2026-11-16: the whole word italic, all books, at draw time)."""
+    return _GLUED.sub(lambda m: m.group(1) + "</i>", text) if "</i>" in (text or "") else text
+
+
 def layout(text, width, size, paras=None, centre=False, toc=None):
     """text -> list[Line], pre-wrapped to `width` pt at `size`.
 
@@ -621,16 +672,24 @@ def layout(text, width, size, paras=None, centre=False, toc=None):
     a page paragraph by paragraph decides once for the page). Text starting
     _textlayer.CONT opens mid-paragraph (the scan says so): no indent."""
     cont = (text or "").startswith("\x02")
-    text = (text or "").lstrip("\x02")
+    text = curly_apostrophes(whole_word_italics((text or "").lstrip("\x02")))
     if not paras or (toc if toc is not None else False):
-        text = re.sub("[\x03-\x05]", "", text)    # _textlayer's row marks: body text only
+        text = re.sub("[\x03-\x07]", "", text)    # _textlayer's row marks: body text only
     if paras:
         return _layout_paras(text, width, size, paras, centre, toc, cont)
     out = []
     para_end = False            # the line before ended a prose sentence
     text = italian_low_high(italian_line_numerals(line_name_italics(text)))
     for raw in (text or "").split("\n"):
-        if _STARS.match(raw) or raw.strip() == DIVIDER:
+        if raw.strip().strip("\x03\x04\x05\x06\x07") == BREAK:
+            out += [Line(gap=True), Line(gap=True)]
+            para_end = False
+            continue
+        if raw.strip().strip("\x03\x04\x05\x06\x07") == RULE:
+            out += _rule(width, size)
+            para_end = False
+            continue
+        if _STARS.match(raw) or raw.strip().strip("\x03\x04\x05\x06\x07") == DIVIDER:
             out += _divider(width, size)
             para_end = False
             continue
@@ -672,6 +731,69 @@ def _heading_line(plain):
     letters = [c for c in plain if c.isalpha()]
     return (len(letters) >= 3 and sum(c.isupper() for c in letters) > 0.7 * len(letters)
             and len(plain.split()) <= 15 and not _LEADERS.search(plain))
+
+
+def _in_caps_block(rows, at):
+    """Row `at` stands between two lines of capitals with no blank line
+    between, and opens with 2+ words in capitals itself."""
+    pl = lambda r: re.sub(r"<[^>]+>|[\x03-\x07]", "", r).strip()
+    a, b, c = pl(rows[at - 1]), pl(rows[at]), pl(rows[at + 1])
+    lead = re.match(r"(?:[A-ZÀ-Ý][A-ZÀ-Ý'’]+\s+){2,}", b + " ")
+    # the rest a name: capitalised words only (not a catalogue's «or
+    # calculating rule. In-18.», Lafaugère pdf 379)
+    rest = b[lead.end():].split() if lead else []
+    name = all(re.fullmatch(r"[A-ZÀ-Ý][\w'’.\-]*[.,]?", w) for w in rest)
+    return bool(a and c and lead and name and _heading_line(a) and _heading_line(c) and not _heading_line(b))
+
+
+_ITEM_KIND = [("num", re.compile(r"\d{1,2}\s*[°º.)]")), ("letter", re.compile(r"[a-z]\)")),
+              ("dash", re.compile(r"[—–]\s"))]
+
+
+def _item_kind(row):
+    body = re.sub(r"<[^>]+>", "", row.lstrip(" \x03\x04\x05")).lstrip()
+    return next((k for k, p in _ITEM_KIND if p.match(body)), None)
+
+
+def even_lists(rows):
+    """The items of one list set alike (page sweep 2026-11-15: Masiello pdf
+    93, 454; Prévost-Jollivet's 1°-5°; Joseph-Renaud): rows in a run -- blank
+    lines between allowed -- that open with the same kind of marker («1°»,
+    «2.º», «a)», «— ») take the text-layer mark and the leading spaces most
+    of them have; each was read line by line from the scan or the OCR's
+    spaces, and came out flush, indented and half-indented by turns. A run
+    needs 3+ items and a clear majority; else it is left as it is."""
+    from collections import Counter
+    out, k = list(rows), 0
+    while k < len(out):
+        kind = _item_kind(out[k]) if out[k].strip() else None
+        if not kind:
+            k += 1
+            continue
+        run, j = [k], k + 1
+        while j < len(out):
+            if not out[j].strip():
+                j += 1
+                continue
+            if _item_kind(out[j]) != kind:
+                break
+            run.append(j)
+            j += 1
+        if len(run) >= 3:
+            def form(r):
+                t = out[r]
+                mark = t[:1] if t[:1] in "\x03\x04\x05" else ""
+                rest = t[len(mark):]
+                return mark, len(rest) - len(rest.lstrip(" "))
+            forms = Counter(form(r) for r in run)
+            (mark, sp), n = forms.most_common(1)[0]
+            if n * 2 > len(run) and n < len(run):
+                for r in run:
+                    t = out[r]
+                    body = t[1:] if t[:1] in "\x03\x04\x05" else t
+                    out[r] = mark + " " * sp + body.lstrip(" ")
+        k = max(j, k + 1)
+    return out
 
 
 def _rejoin(text):
@@ -727,6 +849,11 @@ def heading_level(plain):
     return 3
 
 
+def _title_cased(plain):
+    words = [w for w in re.findall(r"[^\W\d_]{4,}", plain)]
+    return bool(words) and sum(w[0].isupper() for w in words) >= 0.6 * len(words)
+
+
 def _title_line(plain):
     """A heading in ordinary case standing alone between blank lines: short,
     one phrase, not a sentence of running text -- "52. Double Circling and
@@ -737,7 +864,13 @@ def _title_line(plain):
             and not re.search(r"[:;,]$", plain) and not _LEADERS.search(plain)
             and not re.search(r"[.!?…]\s+\S", re.sub(r"^(?:§\s*)?[\dIVXLC]+[.°]\s*(?:—\s*)?", "", plain))
             and plain[:1] not in "-—–•*" and bool(re.match(r"(?:§\s*)?[\w(]", plain))
-            and not plain[:1].islower())
+            and not plain[:1].islower()
+            # a clause after a semicolon is a sentence, not a title («Azione
+            # (action); it indicates …», Masiello pdf 736; Gomard pdf 67); a
+            # «1°» / «2.º» item is a list item unless title-cased («2° The
+            # Sixte and Its Counter.», Dubois) -- page sweep 2026-11-15
+            and ";" not in plain
+            and not (re.match(r"\d+\s*\.?\s*[°º]", plain) and not _title_cased(plain)))
 
 
 # a contents / index line: its page number at the end, after dot leaders, or
@@ -805,7 +938,13 @@ def _layout_toc(rows, width, size, centre):
         if not raw.strip():
             out.append(Line(gap=True))
             continue
-        if _STARS.match(raw) or raw.strip() == DIVIDER:
+        if raw.strip().strip("\x03\x04\x05\x06\x07") == BREAK:
+            out += [Line(gap=True), Line(gap=True)]
+            continue
+        if raw.strip().strip("\x03\x04\x05\x06\x07") == RULE:
+            out += _rule(width, size)
+            continue
+        if _STARS.match(raw) or raw.strip().strip("\x03\x04\x05\x06\x07") == DIVIDER:
             out += _divider(width, size)
             continue
         n = min(len(raw) - len(raw.lstrip(" ")), 8)
@@ -824,7 +963,7 @@ def _layout_toc(rows, width, size, centre):
             out.append(Line(max(0.0, width - _w(lab.group("lab"), 0, size)), _spans(lab.group("lab"))))
             if "text" in lab.groupdict():
                 entry = re.sub(r"\s*(?:(?:\.\s*){2,}|…+)\s*(?:Pages?|Pag|Pagine|Pagina)\.?\s*$", "", body)
-                for k, v in enumerate(_wrap(_spans(entry), max(width - n * _SPACE_PT, _MIN_WRAP), size)):
+                for k, v in enumerate(_wrap(_spans(entry), max(width - n * _SPACE_PT - 12, _MIN_WRAP), size, -12)):
                     out.append(Line(n * _SPACE_PT if k == 0 else n * _SPACE_PT + 12, v))
             continue
         m = _TOC_END.match(body)
@@ -832,7 +971,7 @@ def _layout_toc(rows, width, size, centre):
             tail = m.group("num")
             reserve = _w(tail, 0, size) + 24
             entry = re.sub(r"\s+\.$", "", m.group("text"))      # "Beat Parries . » 67"
-            vl = _wrap(_spans(entry), max(width - n * _SPACE_PT - reserve, _MIN_WRAP), size)
+            vl = _wrap(_spans(entry), max(width - n * _SPACE_PT - reserve - 12, _MIN_WRAP), size, -12)
             for k, v in enumerate(vl):
                 out.append(Line(n * _SPACE_PT if k == 0 else n * _SPACE_PT + 12, v,
                                 tail=tail if k == len(vl) - 1 else ""))
@@ -841,7 +980,9 @@ def _layout_toc(rows, width, size, centre):
             for v in _wrap(_spans(body), width, size):
                 out.append(Line(max(0.0, (width - sum(_w(t, i, size) for t, i in v)) / 2), v))
             continue
-        for k, v in enumerate(_wrap(_spans(body), max(width - n * _SPACE_PT, _MIN_WRAP), size)):
+        # (the lines after the first sit 12 pt further in: wrapped that much
+        # narrower, or they ran past the column -- Jacob-André pdf 324)
+        for k, v in enumerate(_wrap(_spans(body), max(width - n * _SPACE_PT - 12, _MIN_WRAP), size, -12)):
             out.append(Line(n * _SPACE_PT if k == 0 else n * _SPACE_PT + 12, v))
     return out
 
@@ -899,7 +1040,7 @@ def lesson_glue(text):
 
 def _unmarked(row):
     """A row without _textlayer's start marks (INDENTED / FLUSH), stripped."""
-    return row.strip().lstrip("\x03\x04\x05").strip()
+    return row.strip().lstrip("\x03\x04\x05\x06\x07").strip()
 
 
 def _pair_lesson(rows):
@@ -967,8 +1108,8 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
     head_above = 0                       # the heading line just above: its level (0: none)
     text = italian_low_high(italian_line_numerals(line_name_italics(text)))
     if toc if toc is not None else _toc_page((text or "").split("\n")):
-        return _layout_toc(re.sub("[\x03-\x05]", "", text or "").split("\n"), width, size, centre)
-    rows = _pair_lesson(_rejoin(text))
+        return _layout_toc(re.sub("[\x03-\x07]", "", text or "").split("\n"), width, size, centre)
+    rows = even_lists(_pair_lesson(_rejoin(text)))
     for at, raw in enumerate(rows):
         if raw.startswith("\x00TABLE"):
             # a full blank line before and after a table, never tight against
@@ -979,7 +1120,18 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
             out += [Line(gap=True)]
             gap, prev, prev_long = False, "other", False
             continue
-        if _STARS.match(raw) or raw.strip() == DIVIDER:
+        if raw.strip().strip("\x03\x04\x05\x06\x07") == BREAK:
+            # the book's space between two sections: a blank line in a book
+            # that indents its paragraphs, two where a blank line already
+            # parts them; the paragraph after it opens as a new one
+            out += [Line(gap=True)] * (2 if style == "spaced" else 1)
+            gap, prev, prev_long = False, "other", False
+            continue
+        if raw.strip().strip("\x03\x04\x05\x06\x07") == RULE:
+            out += _rule(width, size)
+            gap, prev, prev_long = False, "other", False
+            continue
+        if _STARS.match(raw) or raw.strip().strip("\x03\x04\x05\x06\x07") == DIVIDER:
             out += _divider(width, size)
             gap, prev, prev_long = False, "other", False
             continue
@@ -990,8 +1142,8 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
         # where the book starts this row (_textlayer): at the paragraph indent,
         # or flush -- what the print shows wins over the guesses below
         head = raw.lstrip(" ")[:1]
-        forced = {"\x03": "indent", "\x04": "flush", "\x05": "hanging"}.get(head)
-        raw = raw.replace("\x03", "").replace("\x04", "").replace("\x05", "")
+        forced = {"\x03": "indent", "\x04": "flush", "\x05": "hanging", "\x06": "right", "\x07": "centre"}.get(head)
+        raw = raw.replace("\x03", "").replace("\x04", "").replace("\x05", "").replace("\x06", "").replace("\x07", "")
         m = _MARGIN_RE.match(raw)
         if m:
             if gap:
@@ -1012,6 +1164,13 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
         numbered = bool(_LIST_START.match(body)) and long_ and not body.lstrip().startswith(("—", "-", "•", "*"))
         prose = (not brace and (n <= 4 or long_) and (_para_line(body) or numbered)
                  and (long_ or (ends and prev == "prose")))
+        # an indented sentence under a line ending ":" is a quotation, set
+        # like the verse above it, not a title (Masiello pdf 67 «He would
+        # rather be dead than called a coward.»; owner, 2026-11-16)
+        quote = (prev_colon and n >= 2 and len(plain.split()) >= 6 and "—" not in plain
+                 and (at == 0 or not rows[at - 1].strip()) and (at + 1 == len(rows) or not rows[at + 1].strip()))
+        if quote and not forced:
+            prose = False                 # kept at its indent, as the verse
         if forced and not brace:
             prose = True                  # the print says it's a paragraph of its own
         if prose:
@@ -1042,10 +1201,22 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
                and bool(re.search(r"[a-zà-ÿ,]$", plain)))
         # a row the text layer placed (indent, flush, hanging) is text, not a
         # heading (Prévost-Jollivet pdf 315: a glossary's last headword)
-        title = alone and not cut and not forced and _title_line(plain) and (
+        title = alone and not cut and not forced and not quote and _title_line(plain) and (
             not re.search(r"\.(?:</i>)?$", body) or prev in ("start", "other")
             or bool(re.match(r"(?:§\s*)?[\dIVXLC]+[.°]", plain)))
         is_head = not brace and not forced and (title or (not prose and _heading_line(plain)))
+        # a row the book centres (_textlayer.CENTRE): a heading when it reads
+        # as a title or is in capitals; else a centred line in body weight
+        # below (page sweep 2026-11-15: Gomard, Prévost-Jollivet, Jacob-André,
+        # Joseph-Renaud headings set as body lines)
+        if forced == "centre" and not brace:
+            is_head = _heading_line(plain) or _title_line(plain)
+        # a line of a block of capitals with a name in its own case («THE
+        # FRIEND AND MAESTRO Ferdinando Masiello», Masiello pdf 10): set like
+        # the capitals round it (owner, 2026-11-16)
+        if (not is_head and not brace and not forced and 0 < at < len(rows) - 1
+                and len(plain.split()) <= 12 and _in_caps_block(rows, at)):
+            is_head = True
         # a book that sets its numbered sections «§ 4. — Title.» in bold: such a
         # line is a heading even when long or with the text right under it
         # (Masiello 1887 «§ 54. — Straight feint on the outside, ...» was set
@@ -1069,7 +1240,7 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
             # its first numbered section (Barbasetti «14. Inviti»)
             level = head_above
         head_above = level if is_head else 0
-        if is_head and (centre or level in (1, 2)):
+        if is_head and (centre or level in (1, 2) or forced == "centre"):
             # a heading: centred (when the book centres them); a part or
             # chapter title larger and with more space before it
             if HEAD_LOG is not None:
@@ -1090,7 +1261,7 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
                 w = sum(_w(t, i, hs, hb) for t, i in vline)
                 # parts and chapters centred even in a book that sets its other
                 # headings flush left (Danet's «CHAPITRE II.»)
-                out.append(Line(max(0.0, (width - w) / 2) if centre or level in (1, 2) else 0.0, vline,
+                out.append(Line(max(0.0, (width - w) / 2) if centre or level in (1, 2) or forced == "centre" else 0.0, vline,
                                 scale=HEAD_SCALE[level], bold=hb))
             if level in (1, 2) and at + 1 < len(rows) and rows[at + 1].strip():
                 out.append(Line(gap=True))    # space under it (a blank line in the text gives its own)
@@ -1104,7 +1275,19 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
         first = size * PARA_INDENT_EM if (style == "indented" and new_para) else 0.0
         indent = n * _SPACE_PT
         avail = max(width - indent, _MIN_WRAP)
-        if forced == "hanging" and not brace:
+        if forced == "centre" and not brace:
+            for vline in _wrap(_spans(raw[n:]), width, size):
+                w = sum(_w(t, i, size) for t, i in vline)
+                out.append(Line(max(0.0, (width - w) / 2), vline))
+        elif forced == "right" and not brace:
+            # a closing signature, flush right as the book sets it; a title set
+            # so at the top of a page (the left half of a spread title,
+            # Masiello's synoptic tables) in bold where the book's headings are
+            hb = BOLD_SECTIONS and prev == "start" and _title_line(plain)
+            for vline in _wrap(_spans(raw[n:]), avail, size, bold=hb):
+                w = sum(_w(t, i, size, hb) for t, i in vline)
+                out.append(Line(max(indent, width - w), vline, bold=hb))
+        elif forced == "hanging" and not brace:
             # a glossary entry as the book sets it: first line flush, the rest in
             hang = size * PARA_INDENT_EM
             for k, vline in enumerate(_wrap(_spans(raw[n:]), max(avail - hang, _MIN_WRAP), size, -hang)):
@@ -1119,6 +1302,9 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
     return out
 
 
+_SALUTATION = re.compile(r"(?i)(?:my\s+)?(?:very\s+)?(?:dear|sir|madam|gentlemen|monsieur|madame|messieurs|cher|chère|caro|cara|egregio|gentile)\b[^.!?\n]{0,40},$")
+
+
 def display_page(text, page_num):
     """A display page -- title page, half-title, a plate's title leaf, a
     publisher's notice: no printed page number (none read, or reconcile's
@@ -1130,6 +1316,13 @@ def display_page(text, page_num):
         return False
     text = (text or "").strip()
     paras = [p for p in re.split(r"\n\s*\n", text) if p.strip()]
+    # a letter's opening («MY DEAR JACOB,», Jacob-André pdf 42): set as text,
+    # like the letter's other pages (owner, 2026-11-16)
+    # -- a salutation with the letter's text under it, not a closing formula
+    # («SIR, / OF YOUR IMPERIAL MAJESTY,», Grisier pdf 12)
+    if any(_SALUTATION.match(re.sub(r"<[^>]+>", "", p).strip()) and k + 1 < len(paras)
+           and len(paras[k + 1].split()) >= 15 for k, p in enumerate(paras[:3])):
+        return False
     return (bool(paras) and not text.startswith("[") and len(paras) <= 8
             and all(len(p.split()) <= 30 for p in paras)
             and not re.search(r"\[\[TABLE|\[table|<table", text) and not toc_page(text))
@@ -1156,8 +1349,19 @@ def fit_on_sheet(y, w, h, below, bottom):
     return None
 
 
+def _heading_like(ln, width):
+    """A line set apart as a heading: larger, bold, in capitals or centred.
+    draw(keep_heads=True) -- the English-only PDF, whose text runs on across
+    sheets -- sends such a line that opens a paragraph to the next sheet with
+    its text when no line of that text fits under it (page sweep 2026-11-14:
+    Gomard 7 sheets, Kirchhoffer and Jacob-André 1 each ended on a heading)."""
+    text = "".join(s for s, _ in ln.spans).strip()
+    return bool(text) and (ln.scale > 1 or ln.bold or ln.indent > width * 0.15
+                           or (text.isupper() and len(text) > 2))
+
+
 def draw(page, rect, lines, size, *, leading=1.28, gap_frac=0.55, fresh_top=None,
-         color=(0, 0, 0), dry=False):
+         color=(0, 0, 0), dry=False, keep_heads=False):
     """Draw as many `lines` as fit in `rect` (x0, y0, x1, y1).
 
     Returns (leftover_lines, y_end). `leftover_lines` is empty when everything
@@ -1211,6 +1415,16 @@ def draw(page, rect, lines, size, *, leading=1.28, gap_frac=0.55, fresh_top=None
         if y + llh > y1:
             leftover = lines[idx:]
             break
+        if (keep_heads and (idx == 0 or lines[idx - 1].gap) and not ln.note
+                and (fresh_top is None or y > fresh_top + 1)
+                and _heading_like(ln, x1 - x0)):
+            need, j = llh, idx + 1
+            while j < len(lines) and lines[j].gap:
+                need += lh * gap_frac
+                j += 1
+            if j < len(lines) and not lines[j].table and lines[j].indent >= 0 and y + need + lh > y1:
+                leftover = lines[idx:]
+                break
         if tw is not None:
             writer = tw_note if ln.note else tw
             pt = fitz.Point(x0 + ln.indent, y + lsz)
@@ -1267,6 +1481,9 @@ def split_footnotes(text):
     return body.rstrip(), [n for l in rest.strip().splitlines() if l.strip() for n in split_note_run(l)]
 
 
+ECHO_KEEP_HEADS = True    # drop_margin_echoes: keep a heading the note repeats (a switch for dry runs)
+
+
 def drop_margin_echoes(text):
     """A margin note the OCR also read into the running text (Gomard pdf
     310: "The gliding or glide." as a body line next to ⟦MARGIN: The
@@ -1278,6 +1495,10 @@ def drop_margin_echoes(text):
     notes = [(k, plain(m.group(1))) for k, l in enumerate(lines) for m in [_MARGIN_RE.match(l)] if m]
     if not notes:
         return text
+    # a line standing alone between blank lines that is only the start of a
+    # longer note is the book's own sub-heading, which the note repeats
+    # (Gomard pdf 173 «De l'engagement de quarte.»): kept
+    alone = lambda k: (k == 0 or not lines[k - 1].strip()) and (k + 1 == len(lines) or not lines[k + 1].strip())
     out = []
     for k, l in enumerate(lines):
         p = plain(l)
@@ -1285,13 +1506,17 @@ def drop_margin_echoes(text):
                 # further than 3 lines only a phrase of 4+ words (Gomard pdf 65, 6 apart):
                 # a short lesson cell the margin step mistook for a note is text (Masiello pdf 581)
                 any((abs(k - j) <= 3 or (abs(k - j) <= 8 and len(p.split()) >= 4))
-                    and n and (p == n or (len(p) > 8 and p in n)) for j, n in notes)):
+                    and n and (p == n or (len(p) > 8 and p in n and not (ECHO_KEEP_HEADS and alone(k))))
+                    for j, n in notes)):
             continue
         out.append(l)
     return "\n".join(out)
 
 
 _LINE_QUOTE = re.compile(r"^(\s*)(?:«|•)\s*")
+
+
+REOPEN_QUOTES = True      # english_quotes: open each paragraph of a quotation (a switch for dry runs)
 
 
 def english_quotes(text):
@@ -1319,17 +1544,35 @@ def english_quotes(text):
     # opens a line (or follows a split word) before a small letter -- the
     # per-line mark of a quotation opened earlier: "after the examination /
     # « approved", "out- « side"
-    out, open_ = [], False
+    out, open_, prev_text = [], False, ""
     for line in lines:
         if line.startswith("\x00TABLE"):
             out.append(line)
             continue
+        if out and out[-1].strip():
+            prev_text = out[-1]
         res, i = [], 0
         while i < len(line):
             c = line[i]
             if c == "«":
                 rest = line[i + 1:].lstrip(" \u00a0")
                 cont = bool(re.match(r"[a-zà-ÿ]", rest)) and (not line[:i].strip() or line[:i].rstrip().endswith("-"))
+                # a paragraph that opens with « inside a quotation running on
+                # from the paragraph before: English opens each paragraph of
+                # a quotation again (Joseph-Renaud's dialogues: every
+                # paragraph after the first had lost its mark)
+                # (only after a full line of prose ending a sentence: old books
+                # open every line of verse with «, which English doesn't)
+                before = re.sub(r"<[^>]+>", "", prev_text).strip()
+                reopen = (open_ and not cont and not line[:i].strip() and REOPEN_QUOTES
+                          and bool(re.match(r"[A-ZÀ-Ý“\"<]", rest))
+                          and len(before) >= 60 and bool(re.search(r"[.!?…:»”]$", before)))
+                if reopen:
+                    res.append("“")
+                    i += 1
+                    while i < len(line) and line[i] in " \u00a0":
+                        i += 1
+                    continue
                 if open_ or cont:
                     i += 1                                   # a continuation mark: gone
                     while i < len(line) and line[i] == " ":
@@ -1403,10 +1646,14 @@ def footnote_lines(notes, width, size):
     reference -- so no block label (it just wasted a line). Returns
     list[Line] (first is a rule sentinel: indent<0)."""
     out = [Line(indent=-1.0)]  # rule marker for draw()
+    hang = size * 0.9
     for n in notes:
-        wrapped = _wrap(_spans(n), width, size)
+        # the lines after the first are set in by the hanging indent: wrapped
+        # that much narrower, or they ran past the column (Gomard pdf 32)
+        n = curly_apostrophes(whole_word_italics(n))
+        wrapped = _wrap(_spans(n), max(width - hang, _MIN_WRAP), size, -hang)
         for j, vl in enumerate(wrapped):
-            out.append(Line(0.0 if j == 0 else size * 0.9, vl))
+            out.append(Line(0.0 if j == 0 else hang, vl))
     return out
 
 
@@ -1435,7 +1682,7 @@ def parse_table(html_text):
             rs = int((re.search(r'rowspan="?(\d+)', m.group(2)) or [0, 1])[1])
             cs = int((re.search(r'colspan="?(\d+)', m.group(2)) or [0, 1])[1])
             text = _html.unescape(re.sub(r"\s+", " ", re.sub(r"<(?!/?i>|br\s*/?>)[^>]+>", " ", m.group(3)))).strip()
-            text = re.sub(r"\s*<br\s*/?>\s*", "\n", text)
+            text = curly_apostrophes(whole_word_italics(re.sub(r"\s*<br\s*/?>\s*", "\n", text)))
             line.append({"text": text, "row": r, "col": c, "rowspan": rs, "colspan": cs,
                          "head": m.group(1).lower() == "th"})
             for dr in range(rs):

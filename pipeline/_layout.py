@@ -677,6 +677,45 @@ def pictures(folder: str, i: int, score: float = 0.8, whole: bool = True, sidewa
     return [bx for row in rows for bx in sorted(row, key=lambda r: r[0])]
 
 
+def clip_at_text(box, page):
+    """A picture box cut where it takes in a printed line of the text above
+    or below it (owner, 2026-11-16; Kirchhoffer pdf 103: the vignette's box
+    took in «de chaque poule, le classement des tireurs»). Only a line of the
+    scan's text layer that runs across the box's edge -- its middle inside
+    the box's top or foot fifth -- and on past the box's side by 3 % of the
+    page: the text column, not words inside the drawing (a stamp's own
+    lettering, Jacob-André pdf 195) and not a caption under it. Unchanged
+    without a text layer."""
+    if page is None:
+        return box
+    x0, y0, x1, y1 = box
+    W, H = page.rect.width, page.rect.height
+    try:
+        words = page.get_text("words")
+    except Exception:                       # noqa: BLE001 -- no usable layer
+        return box
+    lines = {}
+    for w in words:
+        lines.setdefault((w[5], w[6]), []).append(w)
+    h, top, foot = y1 - y0, y0, y1          # bands from the box as found: no cascade
+    for ws in lines.values():
+        lx0, ly0 = min(w[0] for w in ws) / W, min(w[1] for w in ws) / H
+        lx1, ly1 = max(w[2] for w in ws) / W, max(w[3] for w in ws) / H
+        if sum(len(w[4]) for w in ws) < 12 or ly1 - ly0 > 0.04:
+            continue                        # a scrap, or not one printed line
+        if min(x1, lx1) - max(x0, lx0) < 0.8 * (x1 - x0) or not (lx0 < x0 - 0.03 or lx1 > x1 + 0.03):
+            continue                        # beside the picture (text set round a vignette, Prévost 1886 pdf 41)
+        mid, lh = (ly0 + ly1) / 2, ly1 - ly0
+        # at the box's top -- inside its top fifth, across its edge, or just
+        # above it: the layer's line box stops short of the letters' feet
+        # (Kirchhoffer pdf 103, Barbasetti Fig. 29 pdf 73, the bottle pdf 192)
+        if mid < top + 0.2 * h and top - 0.8 * lh < ly1 < top + 0.2 * h:
+            y0 = max(y0, ly1 + 0.35 * lh)
+        elif foot - 0.2 * h < mid < foot and ly0 > foot - 0.2 * h:
+            y1 = min(y1, ly0 - 0.002)
+    return (x0, y0, x1, y1)
+
+
 def picture_captioned(folder: str, i: int, box) -> bool:
     """A caption box set right under (or just over) the picture: a numbered
     figure ("Fig. 25"), not a decoration."""

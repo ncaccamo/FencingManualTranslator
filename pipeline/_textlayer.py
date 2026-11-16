@@ -27,9 +27,14 @@ import unicodedata
 
 CONT = "\x02"            # in front of a page's English: it opens mid-paragraph
 DIVIDER = "[[DIVIDER]]"  # _render.DIVIDER: a section divider
+BREAK = "[[BREAK]]"      # _render.BREAK: a section break the book marks with space
+RULE = "[[RULE]]"        # _render.RULE: a break marked with a short rule
+MARKS = (DIVIDER, BREAK, RULE)
 INDENTED = "\x03"       # in front of a row: the book starts it at the paragraph indent
 FLUSH = "\x04"          # in front of a row: the book starts it at the margin, not indented
 HANGING = "\x05"        # in front of a row: first line at the margin, the rest indented (a glossary)
+RIGHT = "\x06"          # in front of a row: the book sets it flush right (a signature)
+CENTRE = "\x07"         # in front of a row: the book centres it (a heading, a sub-heading)
 
 INDENT = 0.012           # a paragraph indent: this much of the page width in from the margin
 FULL = 0.02              # a line ending this close to the right margin runs on to the next
@@ -306,6 +311,115 @@ _SPEAKER = re.compile(r"^(?:<i>)?(Maestro|Master|Maître|Allievo|Student|Pupil|�
 _STEP = re.compile(r"^(?:[IVX]+|\d+)\.?\s+(?:TIME|TEMPO|TEMPS)\b", re.I)
 
 
+_PARTICLE = {"de", "di", "da", "del", "della", "du", "des", "la", "le", "von", "van", "y", "e", "et"}
+
+
+def _name_like(t):
+    """A signature's words: initials, capitalised names and particles only
+    («F. Corso.», «PAUL DE CASSAGNAC.», «L'ACADÉMIE D'ARMES .», «L'Autore.»)."""
+    toks = [w.strip(".,;:") for w in t.split()]
+    toks = [w for w in toks if w]
+    if not 1 <= len(toks) <= 5 or not any(sum(c.isalpha() for c in w) >= 3 for w in toks):
+        return False
+    for w in toks:
+        if re.fullmatch(r"[A-ZÀ-Ý]", w) or w.lower() in _PARTICLE:
+            continue
+        w = re.sub(r"^[LDld][’']", "", w)
+        if not w[:1].isupper() or not re.fullmatch(r"[^\W\d_][\w’'\-]*", w):
+            return False
+    return not re.search(r"\b(?:TEMPO|TEMPS|TIME|ESERCIZIO|ESEMPIO|EXERCICE|FIG|PLATE|PLANCHE|TAVOLA|PAG|PAGE|PAGES|PAGINA)\b", t, re.I)
+
+
+def signature_rows(rows, lines, width):
+    """Rows the book sets flush right: a closing signature -- a short line of
+    names, set well in from the margin and ending at the right of the text,
+    right after a paragraph's last line or a closing salutation (owner,
+    2026-11-16: «signatures flush right as printed»; Masiello pdf 179
+    «F. Corso.», Prévost-Jollivet pdf 205, Jacob-André's prefaces,
+    Joseph-Renaud pdf 25, Barbasetti pdf 20, Kirchhoffer pdf 41). Matched
+    to the OCR row with the same words. A set of row indices. Pure."""
+    lines = [l for l in lines if len(norm(l[2])) >= 2]
+    long_ = [l for l in lines if len(norm(l[2])) >= 20]
+    if len(long_) < 3:
+        return set()
+    left = sorted(l[0] for l in long_)[len(long_) // 4]
+    right = sorted(l[3] for l in long_)[-1]
+    col = right - left
+    if col <= 0:
+        return set()
+    keys = {}
+    for r, row in enumerate(rows):
+        keys.setdefault(norm(row), []).append(r)
+    out = set()
+    for k in range(1, len(lines)):
+        x0, _, t, x1 = lines[k]
+        if not _name_like(t):
+            continue
+        if (x0 - left) / col < 0.3 or (right - x1) / col > 0.2 or x1 > right + 0.02 * col:
+            continue
+        if not re.search(r"[.,!?;:»”)]\s*$", lines[k - 1][2]):
+            continue                                  # mid-sentence above: not a closing line
+        hit = keys.get(norm(t), [])
+        if not hit:
+            # a garbled layer («KWClillOFFEH.» for «KIRCHHOFFER.», Kirchhoffer
+            # pdf 41): the one name-like row that reads nearly the same
+            near = [r for r, row in enumerate(rows) if _name_like(row) and difflib.SequenceMatcher(
+                None, norm(row), norm(t), autojunk=False).ratio() >= 0.5]
+            hit = near
+        if len(hit) == 1 and len(norm(t)) >= 4 and _name_like(rows[hit[0]]):
+            out.add(hit[0])
+    return out
+
+
+def centred_rows(rows, lines, width):
+    """Rows the book centres: every printed line of the row set in from both
+    sides of the text by about the same (within 5 % of the column, 6 %+ in, never from the margin or the paragraph indent),
+    at most three lines -- a heading or sub-heading the book centres (page
+    sweep 2026-11-15: Gomard «DE L'ENGAGEMENT.», Prévost-Jollivet «Parade de
+    prime.», Jacob-André «FACULTÉ DE REPRENDRE DU TERRAIN», Joseph-Renaud's
+    chapter titles). A row is found by its first words; its lines run to the
+    next row's. A set of row indices. Pure."""
+    body = _body(lines, rows)
+    long_ = [l for l in body if len(norm(l[2])) >= 20]
+    if len(body) < 3 or len(long_) < 3:
+        return set()
+    left = sorted(l[0] for l in long_)[len(long_) // 4]
+    right = sorted(l[3] for l in long_)[-1]
+    col = right - left
+    if col <= 0:
+        return set()
+    starts, at = [], 0
+    for r, row in enumerate(rows):
+        key = norm(row)[:15]
+        k = _find(key, body, at) if len(key) >= 6 else None
+        if k is not None:
+            at = k + 1
+        starts.append(k)
+    # a line starting at the margin or at the page's paragraph indent is not
+    # centred, however it sits (Joseph-Renaud pdf 133 «Ne pas la confondre …
+    # !», a short paragraph at the indent)
+    where = profile(body, width)[1]
+    out = set()
+    for r, k in enumerate(starts):
+        if k is None:
+            continue
+        nxt = next((starts[q] for q in range(r + 1, len(rows)) if starts[q] is not None), len(body))
+        span = body[k:nxt]
+        if any(where[q] in ("margin", "indent") for q in range(k, min(nxt, len(where)))):
+            continue
+        if not 1 <= len(span) <= 3 or len(re.sub(r"<[^>]+>", "", rows[r]).split()) > 30:
+            continue
+        ok = True
+        for x0, _, t, x1 in span:
+            li, ri = (x0 - left) / col, (right - x1) / col
+            if li < 0.06 or ri < 0.06 or abs(li - ri) > 0.05:
+                ok = False
+                break
+        if ok:
+            out.add(r)
+    return out
+
+
 def lesson_columns(rows, src, lines, width):
     """Lessons the book sets as tables of paragraphs -- Maestro | Allievo
     (| Allievo) side by side, each row level across (Masiello pdf 373 and
@@ -318,7 +432,7 @@ def lesson_columns(rows, src, lines, width):
     pieces start, its rows by their height, a speaker head as the column's
     title. Returns [(first_row, end_row, html)], possibly empty. A lesson
     with numbered steps ("I. TEMPO") is _render._pair_lesson's."""
-    plain = lambda k: re.sub(r"[\x02-\x05]", "", rows[k]).strip()
+    plain = lambda k: re.sub(r"[\x02-\x07]", "", rows[k]).strip()
     if any(_STEP.match(plain(k)) for k in range(len(rows))):
         return []
     full_w = max((l[3] - l[0] for l in lines), default=0)
@@ -472,11 +586,47 @@ def apply(english, src_body, page, prev_page=None, ornaments=()):
         prev_lines = None
     opens, joins = hints(src, lines, page.rect.width, prev_lines)
     rows = english.split("\n")
+    # a divider the English has and the OCR source does not (a [[fix]] put
+    # back the book's ⁂ the OCR never read): carried on the row after it,
+    # so the rows still pair one to one -- as its own row it cost the page
+    # every paragraph start (page sweep 2026-11-15, Joseph-Renaud pdf 37,
+    # 78, 183: 8-13 indents lost)
+    # A [[BREAK]] / [[RULE]] is never in the source (space, a rule: no OCR
+    # line), so it always rides on the next row
+    def fold(ks):
+        for k in reversed(ks):
+            mark = rows[k].strip()
+            nxt = next((n for n in range(k + 1, len(rows)) if rows[n].strip()), None)
+            prv = next((n for n in range(k - 1, -1, -1) if rows[n].strip()), None)
+            if nxt is not None:
+                rows[nxt] = "\n" + mark + "\n\n" + rows[nxt]
+            elif prv is not None:
+                rows[prv] = rows[prv] + "\n\n" + mark
+            else:
+                continue
+            rows[k] = ""
+    fold([k for k, r in enumerate(rows) if r.strip() in (BREAK, RULE)])
+    extra = sum(1 for r in rows if r.strip()) - len(src)
+    if extra > 0:
+        divs = [k for k, r in enumerate(rows) if r.strip() == DIVIDER][:extra]
+        if len(divs) == extra:
+            for k in reversed(divs):
+                mark = rows[k].strip()
+                nxt = next((n for n in range(k + 1, len(rows)) if rows[n].strip()), None)
+                prv = next((n for n in range(k - 1, -1, -1) if rows[n].strip()), None)
+                if nxt is not None:
+                    rows[nxt] = "\n" + mark + "\n\n" + rows[nxt]
+                elif prv is not None:
+                    rows[prv] = rows[prv] + "\n\n" + mark
+                else:
+                    continue
+                rows[k] = ""
     filled = [k for k, r in enumerate(rows) if r.strip()]
     if len(filled) == len(src):                      # row k of the English is row k of the source
         for r in range(len(src) - 1, 0, -1):
             a, b = filled[r - 1], filled[r]
             if (joins[r] and b == a + 1 and _prose(rows[a], 60) and _prose(rows[b])
+                    and not any(m in rows[b] for m in MARKS)
                     and not _ITEM.match(rows[b]) and not _ITEM.match(src[r]) and "⟦" not in rows[a]
                     and not rows[b].lstrip().startswith("<i>")       # an italic head: a glossary entry (Gomard pdf 110)
                     and not rows[a].rstrip().endswith(("-", "‐"))):  # a word split at the line end: left as it was
@@ -490,7 +640,7 @@ def apply(english, src_body, page, prev_page=None, ornaments=()):
             a, b = filled[r - 1], filled[r]
             # any row, not only a run-in title (Barbasetti pdf 84, 27, 32;
             # Masiello pdf 115: blank lines the book doesn't have)
-            if (rows[b] is not None and space[r] is False and DIVIDER not in rows[b]
+            if (rows[b] is not None and space[r] is False and not any(m in rows[b] for m in MARKS)
                     and not rows[b].startswith("\x00TABLE")):
                 for k in range(a + 1, b):
                     rows[k] = None                       # the blank lines in between
@@ -553,11 +703,15 @@ def apply(english, src_body, page, prev_page=None, ornaments=()):
         # dash -- Jacob-André pdf 112) get the indent the book gives them,
         # and an OCR indent the book doesn't have goes (Joseph-Renaud «2°»)
         place = row_places(src, lines, page.rect.width)
+        for r in centred_rows(src, lines, page.rect.width):
+            place[r] = "centre"
+        for r in signature_rows(src, lines, page.rect.width):
+            place[r] = "right"
         for r in range(len(src)):
             b = filled[r]
-            if rows[b] is None or not place[r] or re.search(r"[{}|⟦]|\x00TABLE", rows[b]):
-                continue
-            mark = {"indent": INDENTED, "margin": FLUSH, "hanging": HANGING}[place[r]]
+            if rows[b] is None or not place[r] or re.search(r"[{}|⟦]|\x00TABLE", rows[b]) or rows[b].strip() in MARKS:
+                continue                             # (a section mark is never a paragraph start)
+            mark = {"indent": INDENTED, "margin": FLUSH, "hanging": HANGING, "right": RIGHT, "centre": CENTRE}[place[r]]
             # on the row's own text -- a divider put back in front of it is
             # its own line (Joseph-Renaud pdf 141 printed "[[DIVIDER]]")
             head, _, own = rows[b].rpartition("\n")

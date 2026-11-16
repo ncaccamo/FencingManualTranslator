@@ -290,6 +290,7 @@ class Flow:
         self.held = []                     # its notes, drawn once the sentence ends
         self.cur = None                    # the book page being set
         self.on_sheet = set()              # the book pages whose text / pictures this sheet holds
+        self.label = None                  # the label just drawn, while nothing follows it yet
 
     def _newpage(self):
         self.page = self.doc.new_page(width=PAGE_W, height=PAGE_H)
@@ -316,12 +317,15 @@ class Flow:
             self._newpage()
         elif not compact:
             self.y += FS * 0.8  # breathing room above a new section
+        label_args = (page_num, header, reserve, compact, side)
+        label_top = self.y
         # Only show a folio we actually trust. reconcile_page_numbers()
         # brackets anything it inferred ("[5]") -- for front matter and
         # skipped-number pages that's a meaningless sheet ordinal, so drop
         # it and leave just the section rule.
         trusted = page_num and not str(page_num).startswith("[")
-        two_part = "\t" in (header or "")
+        header = _render.curly_apostrophes(header or "")
+        two_part = "\t" in header
         header_left, header_right = (
             [s.strip() for s in header.split("\t", 1)] if two_part
             else (header or "", ""))
@@ -355,13 +359,21 @@ class Flow:
             self.page.insert_text(
                 (COL.x1 - _render._w(header_right, 0, FS + 1), self.y + FS + 2),
                 header_right, fontsize=FS + 1, fontname=_render.BOLD)
-        self.y += FS * (1.0 if compact else 1.5)
+        # the rule under the label's baseline (FS + 2): compact once drew it at
+        # FS, through the head on every picture-only page (page sweep,
+        # Kirchhoffer, 2026-11-14)
+        self.y += (FS + 4) if compact else FS * 1.5
         self.page.draw_line((COL.x0, self.y), (COL.x1, self.y), width=0.4)
         self.y += FS * (0.4 if compact else 0.7)
+        self.label = (self.page, label_top, self.y, label_args, self._sig())
         if long_hdr:
             self._flow(_render.layout(f"<i>{header}</i>", COL.width, FS - 1),
                        FS - 1, color=(0.3, 0.3, 0.3))
             self.y += FS * 0.3
+
+    def _sig(self):
+        """What the sheet holds so far: words, pictures, lines drawn."""
+        return (len(self.page.get_text("words")), len(self.page.get_images()), len(self.page.get_drawings()))
 
     def _notes(self, notes):
         self.y += FS * 0.4
@@ -447,11 +459,24 @@ class Flow:
             if self.page is None or COL.y1 - self.y < size * 1.4:
                 self._newpage()
             before = len(lines)
+            label, self.label = self.label, None
             lines, self.y = _render.draw(
                 self.page, (COL.x0, self.y, COL.x1, COL.y1), lines, size, color=color,
-                fresh_top=COL.y0)
+                fresh_top=COL.y0, keep_heads=True)
             self.on_sheet.add(self.cur)
             if lines and len(lines) == before:
+                if label and label[0] is self.page and label[4] == self._sig():
+                    # nothing of the text fits under the label just drawn
+                    # (a table that moves whole to the next sheet: Masiello's
+                    # lessons, 59 sheets ended on a label -- page sweep
+                    # 2026-11-15): the label goes with its text
+                    page, top, bottom, args, _ = label
+                    page.add_redact_annot(fitz.Rect(COL.x0 - 2, top, COL.x1 + 2, bottom))
+                    page.apply_redactions(images=0)
+                    self._newpage()
+                    self.section_label(*args[:2], compact=args[3], side=args[4])
+                    self.label = None
+                    continue
                 self._newpage()  # guard against a zero-progress loop
 
     @staticmethod
@@ -584,6 +609,26 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
     # book, so the same place throughout reads more easily than the book's
     # odd / even places (reviewer, 2026-11-14). The side-by-side keeps them.
     sides = []
+    # a two-part head (a topic and a subtopic, Kirchhoffer "FOIL" / "ON-GUARD
+    # POSITION") on one line in one order, "FOIL · ON-GUARD POSITION": the
+    # book swaps the halves on facing pages, and the halves at the page's two
+    # sides struck the fixed layout above (page sweep, 2026-11-14). The half
+    # seen in more of the book's heads (the topic) comes first.
+    part_count = {}
+    if TWO_PART:
+        for e in extractions:
+            h = parse_vlm_output(e).get("header", "") or ""
+            if "\t" in h:
+                for part in re.sub(r"</?i>", "", header_map.get(h, h)).split("\t", 1):
+                    part_count[part.strip()] = part_count.get(part.strip(), 0) + 1
+
+    def one_line_head(h):
+        if "\t" not in h:
+            return h
+        a, b = [s.strip() for s in h.split("\t", 1)]
+        if part_count.get(b, 0) > part_count.get(a, 0):
+            a, b = b, a
+        return f"{a} · {b}" if a and b else (a or b)
 
     src_doc = None
     ocr_pdf = next((os.path.join(int_dir, f) for f in os.listdir(int_dir)
@@ -734,8 +779,9 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
             # scan: its box is not a cover's (Masiello 1887 pdf 194: the foil
             # plate was cut to its left half, the next-best box)
             decided_plate = any(f.get("decided") and f.get("kind") == "plate" for f in (figs_here if use_vlm_figs else []))
-            pics = [b for b in _layout.pictures(folder, i, 0.6 if (bare or recorded) else 0.8, whole=not bare or decided_plate,
-                                                sideways=bool(_rot) or i in _rot_pages)
+            pics = [_layout.clip_at_text(b, src_page) for b in _layout.pictures(
+                        folder, i, 0.6 if (bare or recorded) else 0.8, whole=not bare or decided_plate,
+                        sideways=bool(_rot) or i in _rot_pages)
                     if box_ink(src_page, b) >= 0.01]
             keep = []
             for k, b in enumerate(pics, 1):
@@ -902,17 +948,23 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         first_h = flow._fig_size(src_page, placements[0][0], rot, (frac[0] if frac else None) or 1.0)[1] if placements else 0.0
         hdr = st.get("header", "")
         hdr_en = re.sub(r"</?i>", "", header_map.get(hdr, hdr))
+        two_part_hdr = TWO_PART and "\t" in hdr_en
         if not TWO_PART:                 # one printed line, split by step 1
             hdr_en = hdr_en.replace("\t", " ")
+        else:
+            hdr_en = one_line_head(hdr_en)
         # a title page, half-title, plate title (_render.display_page): its
         # lines centred, and a line the OCR took for a running head is the
         # page's title, set first (Kirchhoffer pdf 10)
         display = _render.display_page(_render.split_footnotes(tr or "")[0], st.get("page_num"))
         title_hdr = ""
-        if display and hdr_en and "\t" not in hdr_en:
+        if display and hdr_en and not two_part_hdr:
             title_hdr, hdr_en = hdr_en, ""
         flow.section_label(st.get("page_num", ""), hdr_en,
-                           reserve=(first_h + FS * 1.6) if placements else 0.0,
+                           # a page of text: room for a heading and a line of text
+                           # too, so the label never ends a sheet alone (page sweep,
+                           # 2026-11-14: Jacob-André 8 sheets, Kirchhoffer 2, Gomard 6)
+                           reserve=(first_h + FS * 1.6) if placements else (0.0 if is_empty else FS * 5.5),
                            compact=bool(is_empty and placements),
                            side=sides[i] if i < len(sides) else None)
         def draw_figures(part=None):

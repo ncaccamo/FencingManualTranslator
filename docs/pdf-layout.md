@@ -172,9 +172,45 @@ centred, level with it, above the text (`_layout.picture_caption`).
 - **Section dividers**: a `[[DIVIDER]]` line (step 2 keeps the book's
   divider -- stars, ⁂, bullets, a tilde rule -- where the OCR read it;
   `restore_dividers` puts it back in an existing translation when the
-  English has the source's lines one for one) is drawn as centred
+  English has the source's lines one for one; a `[[fix]]` can add one
+  the OCR never read -- `_textlayer.apply` then carries it on the next row
+  so the rows still pair with the source's and the page keeps its
+  paragraph starts) is drawn as centred
   `*   *   *` with space around it. A divider the OCR missed can't be
   recovered.
+- **Section breaks as the book marks them** (owner, 2026-11-16): stars
+  only where the book prints a mark (⁂, stars, an ornament: `[[DIVIDER]]`);
+  `[[BREAK]]` where it leaves space only -- a blank line (two in a book
+  whose paragraphs are spaced), no stars (Jacob-André pdf 56); `[[RULE]]`
+  where it prints a short rule -- a short centred rule (Jacob-André pdf
+  208, Barbasetti pdf 97). Both are written by a `[[fix]]`; the text layer
+  carries them like a divider. A space-only break can't be found from the
+  OCR text; the text layer shows it as a gap of ~2 lines, but so are the
+  gaps before headings and footnotes, so it is not detected (a dry run over
+  the release books, 2026-11-16, was right on one book only).
+- **Closing signatures flush right** (`_textlayer.signature_rows`, mark
+  `RIGHT` = `\x06`): a short line of names (initials, capitalised names,
+  particles: «F. Corso.», «PAUL DE CASSAGNAC.», «L'ACADÉMIE D'ARMES.») set
+  well in from the margin and ending at the text's right, right after a
+  paragraph's end or a closing salutation, is set flush right. Found on the
+  scan's text layer, matched to the OCR row by its words (or, in a garbled
+  layer, the one name-like row that reads nearly the same: «KWClillOFFEH.»
+  for «KIRCHHOFFER.»); never «Pag.», a plate head or a lesson's «I. TEMPO».
+  A corpus dry run found only signatures and the attributions the books
+  set right (Tasso under a quotation).
+- **A name inside a block of capitals** («THE FRIEND AND MAESTRO
+  Ferdinando Masiello», Masiello pdf 10): a line opening with 2+ words in
+  capitals, the rest a name, between two lines in capitals is set as they
+  are (centred, bold where the book's headings are) (`_in_caps_block`).
+- **An indented sentence under a line ending ":"**, alone between blank
+  lines and 6+ words, is a quotation: kept at its indent in body weight,
+  like verse above it -- not a bold centred title (Masiello pdf 67).
+- **Drawing-time typography** (`layout()` and table cells, both PDFs;
+  `translation.txt` and the fixes keep the plain form): straight `'` ->
+  `’` after a letter, digit or closing mark, `‘` otherwise
+  (`curly_apostrophes`, owner 2026-11-16; tags left alone; running heads
+  too); an ending glued to an italic word goes inside the italics
+  (`whole_word_italics`: «<i>épée</i>s» -> «<i>épées</i>», «<i>riposte</i>d»).
 - **Two-column lessons** (Barbasetti: the master's actions left, the
   pupil's numbered steps "I. TEMPO …" right) arrive as two blocks; when
   the master has as many lines as the pupil has steps they are paired back
@@ -264,6 +300,13 @@ centred, level with it, above the text (`_layout.picture_caption`).
   3 both; `_face`). In such a book a «§ N. —» line is a heading even when
   long or followed directly by its text.
 
+- **A letter's opening page is not a title page** (`display_page`): a page
+  with no printed folio and only short blocks is centred as a display
+  page -- except when one of its first three blocks is a salutation («MY
+  DEAR JACOB,», «Monsieur,», «Caro …,») with 15+ words of the letter under
+  it (Jacob-André pdf 42); a closing formula («SIR, / OF YOUR IMPERIAL
+  MAJESTY,», Grisier pdf 12) stays one. One page in the corpus changed.
+
 Captions, notes and the old callers use `paras=None` -- the previous
 rules, unchanged.
 
@@ -288,10 +331,20 @@ the rest of the code never thinks about page breaks:
 - `section_label(page_num, header)` — draws `— [n] —   HEADER` + a rule.
   Starts a fresh sheet if the label (plus a reserved height for a figure
   that's about to follow) wouldn't fit — so a figure's label is never
-  orphaned at the bottom of a sheet. `header` is only a **genuine
-  repeated running head** by the time it gets here (`reconcile_headers()`
-  in step 1 sends one-off titles to the body); a `left\tright` value is
-  drawn as a two-part head.
+  orphaned at the bottom of a sheet; on a page of text it also keeps room
+  for a heading and a line of text, so a label never ends a sheet alone;
+  when what follows still makes no progress there (a table that moves whole
+  to the next sheet), `_flow` takes the label off the sheet and sets it
+  again above its text on the next.
+  `header` is only a **genuine repeated running head** by the time it gets
+  here (`reconcile_headers()` in step 1 sends one-off titles to the body);
+  a book's two-part heads (`left\tright`, Kirchhoffer) are joined on one
+  line, the half seen in more of the book's heads first ("FOIL · ON-GUARD
+  POSITION") -- the book swaps the halves on facing pages.
+- `_flow` passes `keep_heads` to `_render.draw`: a heading-like line
+  (larger, bold, centred or in capitals) that opens a paragraph moves to
+  the next sheet with its text when no line of that text fits under it.
+  The side-by-side doesn't use it (one scan page, one English page).
 - `body(text)` — `split_footnotes`, then `_flow(layout(body))`, then the
   footnote block smaller and grey. When the page's last sentence runs on
   to the next page, its notes are held (`Flow.held`) and drawn at the foot
@@ -333,7 +386,11 @@ the rest of the code never thinks about page breaks:
      fills a third of or more -- a plate's printed frame -- is not a
      second picture: Kirchhoffer pdf 17) → one
      placement per picture, cropped to its box (a printed caption inside
-     the box's foot cut off), drawn at its size against the text column.
+     the box's foot cut off; a printed line of the text the box takes in
+     at its top or foot cut off too -- `_layout.clip_at_text`: a line of
+     the scan's text layer that runs across 80 %+ of the box and on past
+     its side, never words inside the drawing or text set beside a
+     vignette; owner 2026-11-16), drawn at its size against the text column.
      Captions: a page's standalone "Fig. N" lines move under their
      pictures when the counts match, else the `figures.json` captions;
      a label read off the scan under the picture is drawn as printed,
@@ -518,6 +575,9 @@ the scan, so reading across lands in the right place.
     untrustworthy (patchy Google Books layer) → **plain flow**.
   - `0 < X ≤ 0.8·W` → compress every gap by `1 − X/W` so a bigger font
     still fits (better than shrinking to 7 pt with full gaps).
+  - The planned placement is dry-run first: a page that would lose a line
+    at the foot takes the plain flow (it lost the last line silently:
+    Masiello pdf 14, Barbasetti pdf 179, page sweep 2026-11-15).
   - otherwise → draw anchored as-is.
 
 Alignment rate is a rough scan-quality indicator: Gallica ~70–80 %,

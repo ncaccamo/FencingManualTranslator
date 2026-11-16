@@ -127,6 +127,15 @@ sets the replace to the page's wording; it leaves the rest for a person.
 For more than a sentence, use a page edit (below). **Rerun:**
 `apply_overrides.py`, then the PDFs.
 
+Marks a `[[fix]]` can put on a line of their own, between two paragraphs:
+`[[DIVIDER]]` (centred stars: the book prints ⁂, stars or an ornament),
+`[[BREAK]]` (space only, where the book leaves a blank line between
+sections: Jacob-André pdf 56), `[[RULE]]` (a short centred rule, where the
+book prints one: Jacob-André pdf 208). A list or short table the book sets
+in columns without rules: `<table data-plain="1">…</table>` on its own
+line (Barbasetti pdf 162, Masiello's errata pdf 752); with rules,
+`<table>…</table>` (Gomard pdf 90).
+
 ### `[[book_fix]]`: one wording change on every page
 
 ```toml

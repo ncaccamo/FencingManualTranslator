@@ -750,3 +750,25 @@ def reconcile_headers(parsed: list, no_head: set = frozenset()) -> None:
         stripped = _LEAKED_NUM_PREFIX_RE.sub("", head).strip()
         if stripped != head and _key(stripped) in confirmed:
             p["header"] = stripped
+
+
+def head_stops(parsed: list) -> int:
+    """A running head the book prints with a closing full stop on every page,
+    read without it on some («LE JEU DE L'ÉPÉE» for «LE JEU DE L'ÉPÉE.»,
+    Jacob-André pdf 69; «INTRODUCTION», pdf 41; Gomard's «DE LA PARADE»,
+    page sweep 2026-11-15): where the same head appears both ways and the
+    stopped form on 2+ pages and a quarter of them, every page gets the
+    stop. A two-part head is matched whole. Returns the pages changed."""
+    from collections import Counter
+    key = lambda h: re.sub(r"[\s.,:;]+$", "", h)
+    heads = [(p.get("header") or "").strip() for p in parsed]
+    stopped = Counter(key(h) for h in heads if h.endswith(".") and key(h))
+    total = Counter(key(h) for h in heads if key(h))
+    n = 0
+    for p, h in zip(parsed, heads):
+        k = key(h)
+        if k and not h.endswith(".") and stopped[k] >= 2 and stopped[k] * 4 >= total[k]:
+            p["header"] = k + "."
+            n += 1
+    return n
+

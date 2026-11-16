@@ -828,7 +828,7 @@ def check_book(folder: str) -> list:
     # fragment -- is listed so nothing is translated as two halves unseen.
     def _english(t):
         b = re.sub(r"\u27e6MARGIN:[^\u27e7]*\u27e7", "", _body(t or ""))
-        b = re.sub(r"\[\[(?:TABLE|DIVIDER)\]\]", "", b).strip()
+        b = re.sub(r"\[\[(?:TABLE|DIVIDER|BREAK|RULE)\]\]", "", b).strip()
         return "" if b in ("", "[Empty page]") else b
     eng = [_english(t) for t in tr]
     for i in range(len(eng) - 1):

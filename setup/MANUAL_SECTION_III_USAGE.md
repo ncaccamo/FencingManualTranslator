@@ -557,6 +557,8 @@ second sheet there). The review report lists pages as scan pages.
 |---|---|---|
 | A word or sentence in the English is wrong | `[[fix]]` find/replace in `<stem>.overrides.toml` | III.5b |
 | A table cell's English is wrong | `[[table_fix]]` find/replace in `<stem>.overrides.toml` | III.5b |
+| A section break is missing, or drawn wrong: stars where the book prints a mark, space where it leaves only space, a short rule where it prints one | a `[[fix]]` putting `[[DIVIDER]]` (stars), `[[BREAK]]` (space) or `[[RULE]]` (a short rule) on its own line between the two paragraphs | III.5b; `docs/pdf-layout.md` |
+| A list or table the book prints in columns without rules comes out as lines | a `[[fix]]` replacing the lines with `<table data-plain="1"><tr><td>…</td>…</tr>…</table>` on its own line (a list that closes the page: `[pages.N] columns`) | III.5b |
 | A paragraph or page needs rewriting, or a line is missing | `python3 pipeline/edit_page.py <stem> N` (on the host), edit `books/<stem>.edits/scan-NNNN.txt` | below |
 | A book is finished and must not change by accident | `[book] final = true` | III.1 |
 | A heading / running head is translated badly | `[headers]` in the overrides file | III.5b |

@@ -211,6 +211,20 @@ the operator's business and is not tracked here.)
    session, starting with a `scripts/dry_run.py` survey of what a
    note-aware sentence join would move in every book); reason / scope
    fields on fixes.
+15. **Section breaks marked with space only are not found by the code.**
+   `[[BREAK]]` / `[[RULE]]` draw them (2026-11-16), but each is written by a
+   `[[fix]]`. A text-layer gap of ~2 lines between paragraphs finds them in
+   Jacob-André, where they are common, and in other books mostly finds the
+   space before headings, footnotes and spaced paragraph styles. A detector
+   needs the book's own paragraph gap as the baseline, and a heading test
+   on the line after the gap.
+16. **Library stamps are left out by hand.** Owner, 2026-11-16: library
+   stamps and stickers are left out, as library text is. The decoration
+   sheet (`decoration_sheet.py` -> `.pictures` drop) does it per book. No
+   detector yet: the stamps are greyscale like the print (Gomard), and some
+   sit on a picture (Kirchhoffer pdf 103's vignette, so the stamp stays).
+   A stamp printed in every copy of a page across a book (same size, same
+   ink) is a likely signal.
 
 ## Not yet tested
 
