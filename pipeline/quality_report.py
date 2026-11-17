@@ -483,8 +483,20 @@ def fix_status(tr: list, ov: dict, french: bool, edited=()) -> list:
             out.append((s, what(f), "not found"))
         touched.add(s)
     hi = house_italics
+    # a second pass over the fixed text must change nothing; a page that
+    # changes again is two fixes in a chain that re-fire on every run (JR
+    # scan 172, 2026-11-17: a note fix ending on "will “", then a fix
+    # "will “" -> "will “lodge” you," -- one more notes block per run, 11
+    # in all; it showed only as "pending")
+    again = [hi(p, french) for p in pages]
+    _overrides.apply_fixes(again, dict(ov, fix=_overrides.book_worded(
+        _tx._house_fixes(ov, french)["fix"], bf), pages={}, table_fix=[]))
     for s in sorted(touched):
-        if hi(pages[s - 1], french) != tr[s - 1]:
+        if s in edited:
+            continue
+        if hi(again[s - 1], french) != hi(pages[s - 1], french):
+            out.append((s, "on this page", "loops"))
+        elif hi(pages[s - 1], french) != tr[s - 1]:
             out.append((s, "on this page", "pending"))
     for f in bf:                                  # a book-wide edit that matches nowhere
         if not any(f["find"] in t or f["replace"] in t for t in tr):
@@ -700,6 +712,34 @@ def repeated_notes(tr: list) -> list:
     return out
 
 
+def page_turn_splits(tr: list) -> list:
+    """A sentence still split across a page break in the English: the page
+    ends mid-sentence and the next page with text continues in lowercase.
+    Step 1 joins every split sentence onto one page (join_split_sentences);
+    what's left -- a table across the break, a margin note inside the
+    fragment -- is listed so nothing is translated as two halves unseen.
+    A page whose text ends on a flush-right line (\x06, set by a [[fix]])
+    is a title the book prints across a spread -- «II. — Azioni composte |
+    di due tempi.» over Masiello's synoptic tables -- split on purpose.
+    Returns (page index, end of the page, start of the next)."""
+    def _english(t):
+        b = re.sub(r"\u27e6MARGIN:[^\u27e7]*\u27e7", "", _body(t or ""))
+        b = re.sub(r"\[\[(?:TABLE|DIVIDER|BREAK|RULE)\]\]", "", b).strip()
+        return "" if b in ("", "[Empty page]") else b
+    eng = [_english(t) for t in tr]
+    out = []
+    for i in range(len(eng) - 1):
+        a = eng[i]
+        if not a or re.search(r"[.!?;:\u00bb\u201d\")\]\u2026*]\s*\Z", a):
+            continue
+        if a.rsplit("\n", 1)[-1].startswith("\x06"):
+            continue
+        j = i + 1 if eng[i + 1] or i + 2 >= len(eng) else i + 2
+        if re.match(r"[a-z]", eng[j] or ""):
+            out.append((i, a, eng[j]))
+    return out
+
+
 def check_book(folder: str) -> list:
     global _rules
     _rules = TERM_RULES_IT if _tx.book_language(
@@ -821,24 +861,9 @@ def check_book(folder: str) -> list:
         add(s_, CHECK, "note", f"note †{num} \"{label}: {term}\" repeats the one on scan "
             f"{first} -- remove it and its mark")
 
-    # a sentence still split across a page break in the English: the page
-    # ends mid-sentence and the next page with text continues in lowercase.
-    # Step 1 joins every split sentence onto one page (join_split_sentences);
-    # what's left -- a table across the break, a margin note inside the
-    # fragment -- is listed so nothing is translated as two halves unseen.
-    def _english(t):
-        b = re.sub(r"\u27e6MARGIN:[^\u27e7]*\u27e7", "", _body(t or ""))
-        b = re.sub(r"\[\[(?:TABLE|DIVIDER|BREAK|RULE)\]\]", "", b).strip()
-        return "" if b in ("", "[Empty page]") else b
-    eng = [_english(t) for t in tr]
-    for i in range(len(eng) - 1):
-        a = eng[i]
-        if not a or re.search(r"[.!?;:\u00bb\u201d\")\]\u2026*]\s*\Z", a):
-            continue
-        j = i + 1 if eng[i + 1] or i + 2 >= len(eng) else i + 2
-        if re.match(r"[a-z]", eng[j] or ""):
-            add(i + 1, CHECK, "split", f"sentence split across the page break: "
-                f"\u2026{a[-40:]!r} | {eng[j][:40]!r}\u2026")
+    for i, a, b in page_turn_splits(tr):
+        add(i + 1, CHECK, "split", f"sentence split across the page break: "
+            f"\u2026{a[-40:]!r} | {b[:40]!r}\u2026")
 
     # running heads vs. the layout detector (intermediate/layout.json)
     # (not in a book set to print none -- [book] running_heads = false: the
@@ -1108,6 +1133,11 @@ def check_book(folder: str) -> list:
             if status == "taken back":
                 add(s, NOTE, "override", f"[[fix]] {what} is taken back by a later fix on the "
                     "same page -- remove both, or the earlier one")
+                continue
+            if status == "loops":
+                add(s, CHECK, "override", "[[fix]] the page's fixes change it again on every run "
+                    "(one fix's result is another's find) -- fold them into one fix, then "
+                    "repair the page")
                 continue
             add(s, CHECK, "override", f"[[fix]] {what}: " + (
                 "not in the text yet -- run apply_overrides.py" if status == "pending" else

@@ -2931,6 +2931,44 @@ def test_review_report_italian_rules_only_on_italian_books():
                               "completed his action, in the line of the parry.")
 
 
+def test_split_check_skips_flush_right_spread_titles():
+    # Masiello 1887 synoptic tables (2026-11-17): «II. — Compound actions» is
+    # set flush right on the left page and «of two tempi.» opens the right
+    # one -- a title printed across the spread, not a split sentence. The
+    # check flagged all 72 such pages once the \x06 mark went in.
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        Q = importlib.import_module("quality_report")
+    except (OSError, ImportError, SystemExit):   # reads /app paths: runs in the image
+        return
+    spread = ["\n\x06II. — Compound actions\n\n[[TABLE]]\n", "\nof two tempi.\n\n[[TABLE]]\n"]
+    assert Q.page_turn_splits(spread) == []
+    prose = ["\nwould have the form of a wave 18 mm long\n", "\nand descends from the brain\n"]
+    assert [i for i, _, _ in Q.page_turn_splits(prose)] == [0]
+
+
+def test_fix_status_flags_fixes_that_refire_every_run():
+    # Joseph-Renaud scan 172 (2026-11-17): a note fix ending on "will “",
+    # then a fix "will “" -> "will “lodge” you,": each apply_overrides run
+    # added one more notes block (11 in all), reported only as "pending".
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        Q = importlib.import_module("quality_report")
+    except (OSError, ImportError, SystemExit):   # reads /app paths: runs in the image
+        return
+    base = {"book_fix": [], "pages": {}, "table_fix": [], "headers": {}, "terms": {}}
+    chained = dict(base, fix=[
+        {"scan": 1, "find": "will “", "replace": "will “\n\n___FOOTNOTES___\n†1 French: x"},
+        {"scan": 1, "find": "will “", "replace": "will “lodge” you,"}])
+    assert Q.fix_status(["A will “\n"], chained, True) == [(1, "on this page", "loops")]
+    folded = dict(base, fix=[
+        {"scan": 1, "find": "will “", "replace": "will “lodge” you,\n\n___FOOTNOTES___\n†1 French: x"}])
+    assert Q.fix_status(["A will “lodge” you,\n\n___FOOTNOTES___\n†1 French: x"], folded, True) == []
+    assert Q.fix_status(["A will “\n"], folded, True) == [(1, "on this page", "pending")]
+
+
 def test_page_context_off_by_default_and_body_only():
     # PAGE_CONTEXT (experimental): off unless asked for; when on, the
     # previous page's last words and the next page's first words, from

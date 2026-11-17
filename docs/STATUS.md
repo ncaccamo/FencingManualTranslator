@@ -49,7 +49,8 @@ the operator's business and is not tracked here.)
 - **Page breaks:** a sentence split across a page break is joined onto one
   page before translation (`join_split_sentences()`, the shorter fragment
   moves), so it is translated whole. The review report flags any split left
-  (tables across a break, mostly). A page-context alternative was tested
+  (tables across a break, mostly), but not a flush-right title the book
+  prints across a spread (Masiello's synoptic tables). A page-context alternative was tested
   and rejected: it leaked text between pages.
 - **Page numbers:** shown only when corroborated by the sequence; a hidden
   number is confirmed by a second, margin-only read

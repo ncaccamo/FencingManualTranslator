@@ -125,7 +125,11 @@ it. When the decision is still on the page and only a later change moved
 its words -- a later `[[fix]]` on the page, or a case rule raising a letter
 -- `python3 pipeline/repoint_fixes.py <stem>` (host; `--write` to save)
 sets the replace to the page's wording; it leaves the rest for a person.
-For more than a sentence, use a page edit (below). **Rerun:**
+Two fixes on one page must not feed each other: when one fix's result
+contains another's find, every run applies them again and the page grows
+(a notes block added on each run). The review report flags such a page
+("change it again on every run"). Fold the fixes into one, then remove the
+extra copies from the page. For more than a sentence, use a page edit (below). **Rerun:**
 `apply_overrides.py`, then the PDFs.
 
 Marks a `[[fix]]` can put on a line of their own, between two paragraphs:
