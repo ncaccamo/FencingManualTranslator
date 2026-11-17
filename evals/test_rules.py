@@ -6101,5 +6101,19 @@ def test_page_sweep_render_fixes_2026_11_16():
     assert R._title_line("2° The Sixte and Its Counter.") and R._title_line("Synoptic charts.")
 
 
+def test_column_passages_keep_reading_order_and_lists_stay_text():
+    # Masiello pdf 592: three identical «Si eseguisce in due tempi:» intros --
+    # each goes to the copy below the line placed before it in its column,
+    # not the first on the page; pdf 611: a list set to one side is not a
+    # two-column table (page sweep 2026-11-15)
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    C = importlib.import_module("_columns")
+    vis = [(0.10, "F", "Si eseguisce in due tempi:", 0.2, 0.8), (0.12, "L", "Ingaggerà di terza.", 0.1, 0.4),
+           (0.30, "F", "Si eseguisce in due tempi:", 0.2, 0.8), (0.32, "L", "Ingaggerà di quarta.", 0.1, 0.4)]
+    pos = C.place(["Ingaggerà di terza.", "Si eseguisce in due tempi:", "Ingaggerà di quarta."], vis, 0.0, 1.0)
+    assert pos[1][0] == 0.30, pos
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

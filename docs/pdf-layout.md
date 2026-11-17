@@ -198,6 +198,25 @@ centred, level with it, above the text (`_layout.picture_caption`).
   for «KIRCHHOFFER.»); never «Pag.», a plate head or a lesson's «I. TEMPO».
   A corpus dry run found only signatures and the attributions the books
   set right (Tasso under a quotation).
+- **Rows the book centres** (`_textlayer.centred_rows`, mark `CENTRE` =
+  `\x07`): a source row whose printed lines (at most three) all sit in
+  from both sides of the text by about the same (6 %+ in, within 5 %), and
+  start neither at the margin nor at the paragraph indent, is set centred
+  -- as a heading where it reads as a title or is in capitals, else in body
+  weight. Headings the book centres had been set as body lines wherever
+  the text layer marked them as a paragraph start (page sweep 2026-11-15;
+  six of the seven release books).
+- **Items of one list set alike** (`even_lists`): 3+ rows opening with
+  the same kind of marker («1°», «2.º», «a)», «— ») take the mark and
+  indent most of them have.
+- **Not titles**: a line with a «;» clause (Masiello pdf 736), or a «1°» /
+  «2.º» item unless title-cased (Gomard pdf 240; «2° The Sixte and Its
+  Counter.» stays one).
+- **Lines kept apart**: two lines opening with the same word (not a common
+  article or pronoun) and the second ending as a list item does are a
+  list, not one sentence broken at a line end (`_parallel`, Barbasetti
+  scan 71); a display page's lines are kept as printed (`as_printed`,
+  Joseph-Renaud pdf 17).
 - **A name inside a block of capitals** («THE FRIEND AND MAESTRO
   Ferdinando Masiello», Masiello pdf 10): a line opening with 2+ words in
   capitals, the rest a name, between two lines in capitals is set as they
@@ -205,6 +224,15 @@ centred, level with it, above the text (`_layout.picture_caption`).
 - **An indented sentence under a line ending ":"**, alone between blank
   lines and 6+ words, is a quotation: kept at its indent in body weight,
   like verse above it -- not a bold centred title (Masiello pdf 67).
+- **Quotations**: each paragraph of a quotation opens with “ again, as
+  English sets it (Joseph-Renaud's dialogues); a line of verse the old
+  book opens with « does not (the line before must be a full line of
+  prose ending a sentence).
+- **Margin-note echoes**: a body line the margin note repeats goes, but a
+  line standing alone that is only the start of a longer note is the
+  book's own sub-heading and stays (Gomard pdf 173).
+- **Hanging lines** of notes and contents rows are wrapped to the width
+  they have after the hanging indent (Gomard pdf 32, Jacob-André pdf 324).
 - **Drawing-time typography** (`layout()` and table cells, both PDFs;
   `translation.txt` and the fixes keep the plain form): straight `'` ->
   `’` after a letter, digit or closing mark, `‘` otherwise
@@ -553,6 +581,14 @@ for free (this is why figures were easy here and hard in step 3).
   picture.
 
 ### Paragraph alignment
+
+Since 2026-11-16: a heading stays with its text -- the space the
+anchoring puts under a heading goes above it -- and a table is not
+anchored (no text in the scan's layer to place it by: it follows the text
+above). Passages in two columns (`_columns.place`) keep a repeated line in
+reading order within its column («It is executed in two tempi:» under each
+§, Masiello pdf 592), and a "table" with one column empty goes back to
+text (a list set to one side, Masiello pdf 611).
 
 When it works, each translated paragraph on the right is top-anchored to
 roughly the same fraction down the page as its source paragraph sits on

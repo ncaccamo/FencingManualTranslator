@@ -654,7 +654,7 @@ def whole_word_italics(text):
     return _GLUED.sub(lambda m: m.group(1) + "</i>", text) if "</i>" in (text or "") else text
 
 
-def layout(text, width, size, paras=None, centre=False, toc=None):
+def layout(text, width, size, paras=None, centre=False, toc=None, as_printed=False):
     """text -> list[Line], pre-wrapped to `width` pt at `size`.
 
     `paras` -- body text only: the book's paragraph style (reviewer,
@@ -676,7 +676,7 @@ def layout(text, width, size, paras=None, centre=False, toc=None):
     if not paras or (toc if toc is not None else False):
         text = re.sub("[\x03-\x07]", "", text)    # _textlayer's row marks: body text only
     if paras:
-        return _layout_paras(text, width, size, paras, centre, toc, cont)
+        return _layout_paras(text, width, size, paras, centre, toc, cont, as_printed)
     out = []
     para_end = False            # the line before ended a prose sentence
     text = italian_low_high(italian_line_numerals(line_name_italics(text)))
@@ -796,6 +796,24 @@ def even_lists(rows):
     return out
 
 
+REJOIN_LISTS = True       # _rejoin: keep a parallel list's lines apart (a switch for dry runs)
+
+
+_COMMON = {"the", "a", "an", "and", "on", "it", "he", "she", "they", "this", "that", "to", "in", "is", "one", "but", "which", "who"}
+
+
+def _parallel(a, b):
+    """Two lines of one list, not one sentence broken at a line end: they
+    open with the same two words and the second ends as a list item does («from
+    one's own invitations, / from one's own engagements,», Barbasetti scan
+    71 -- page sweep 2026-11-15)."""
+    w = lambda t: re.findall(r"[^\W\d_]+", re.sub(r"<[^>]+>", "", t).lower())[:2]
+    plain_b = re.sub(r"<[^>]+>", "", b).strip()
+    wa, wb = w(a), w(b)
+    same = (len(wa) == 2 and wa == wb) or (wa[:1] == wb[:1] and wa[:1] and wa[0] not in _COMMON)
+    return bool(same) and len(plain_b) < 80 and bool(re.search(r"[,;.:]$", plain_b))
+
+
 def _rejoin(text):
     """The text's lines, with a sentence the OCR broke at a printed line end
     put back together ("Saber bouts, in the fencing hall," / "are less
@@ -810,7 +828,8 @@ def _rejoin(text):
                 and re.match(r" {0,4}(?:<i>)?[a-zà-ÿ]", line)
                 and "{" not in last and "{" not in line and "}" not in line
                 and not _heading_line(re.sub(r"<[^>]+>", "", last).strip())
-                and not _MARGIN_RE.match(last) and not _MARGIN_RE.match(line)):
+                and not _MARGIN_RE.match(last) and not _MARGIN_RE.match(line)
+                and not (REJOIN_LISTS and _parallel(last, line))):
             out[-1] = last.rstrip() + " " + line.strip()
         else:
             out.append(line)
@@ -1091,7 +1110,7 @@ def _pair_lesson(rows):
     return out
 
 
-def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
+def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False, as_printed=False):
     """layout() with a paragraph style. A line is a paragraph of running
     text only when it reads as one: long (60+ letters), or ending a sentence
     or list item right after another paragraph (Kirchhoffer's "The thumb
@@ -1109,7 +1128,9 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False):
     text = italian_low_high(italian_line_numerals(line_name_italics(text)))
     if toc if toc is not None else _toc_page((text or "").split("\n")):
         return _layout_toc(re.sub("[\x03-\x07]", "", text or "").split("\n"), width, size, centre)
-    rows = even_lists(_pair_lesson(_rejoin(text)))
+    # `as_printed`: a title page's lines as the book breaks them, never joined
+    # (Joseph-Renaud pdf 17: «were printed / on Holland paper» ran together)
+    rows = even_lists(_pair_lesson((text or "").split("\n") if as_printed else _rejoin(text)))
     for at, raw in enumerate(rows):
         if raw.startswith("\x00TABLE"):
             # a full blank line before and after a table, never tight against
@@ -1787,7 +1808,7 @@ def draw_table(page, rect, html_text, size=7.5, dry=False, min_size=5.5):
             pt = fitz.Point(tx, ty + size)
             for t, ital in vl:
                 if t:
-                    res = tw.append(pt, t, font=_font(BOLD if c["head"] and not ital else ITALIC if ital else ROMAN),
+                    res = tw.append(pt, t, font=_font((BOLD_ITALIC if ital else BOLD) if c["head"] else ITALIC if ital else ROMAN),
                                     fontsize=size)
                     pt = res[1] if isinstance(res, (tuple, list)) else res
             ty += lh

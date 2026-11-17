@@ -140,9 +140,24 @@ def render_aligned(page, y_top, tr, size, fracs, src_page, bottom=RIGHT.y1, toc=
     gaps = []
     for k, h in enumerate(line_h):
         anchor = (span0 + fracs[k] * span_h) if k < len(fracs) else None
+        if any(ln.table for ln in laid[k]):
+            # a table has no text in the scan's layer to place it by: it
+            # follows the text above it (Kirchhoffer pdf 75: the scoring grid
+            # was set level with the page's second table, 250 pt too low)
+            anchor = None
         want = max(cur, anchor) if anchor is not None else cur
         gaps.append(want - cur)
         cur = want + h + para_gap
+    # a heading stays with its text: the space the anchoring puts under a
+    # heading goes above it (page sweep 2026-11-15: Masiello pdf 201, 213,
+    # Prévost-Jollivet, Barbasetti -- headings tight under the text above and
+    # a large gap under them)
+    head = lambda L: 0 < len([l for l in L if not l.gap]) <= 2 and all(
+        _render._heading_like(l, RIGHT.width) for l in L if not l.gap)
+    for k in range(1, len(laid)):
+        if head(laid[k - 1]) and not head(laid[k]) and gaps[k] > 0:
+            gaps[k - 1] += gaps[k]
+            gaps[k] = 0.0
     W = sum(gaps)
     Gmax = max(gaps) if gaps else 0.0
     X = cur - bottom                                    # overflow (<=0 fits)
@@ -510,7 +525,7 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
             cur = y
             for q, (f, centred) in zip(paras_, places):
                 cur = min(max(cur, span0 + f * (span1 - span0)), body_bottom - BASE * LEADING)
-                lines = _render.layout(q, RIGHT.width, BASE, paras=PARAS, centre=CENTRE, toc=TOC)
+                lines = _render.layout(q, RIGHT.width, BASE, paras=PARAS, centre=CENTRE, toc=TOC, as_printed=DISPLAY)
                 if centred:
                     lines = _render.centre_lines(lines, RIGHT.width, BASE)
                 _, cur = _render.draw(page, (RIGHT.x0, cur, RIGHT.x1, body_bottom), lines, BASE)

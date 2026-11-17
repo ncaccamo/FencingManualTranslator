@@ -410,7 +410,7 @@ class Flow:
             body_txt = title + "\n\n" + body_txt.strip()
         notes = [_render.english_quotes(n) for n in notes]
         def lay(t):
-            ls = _render.layout(t, COL.width, FS, paras=PARAS, centre=CENTRE)
+            ls = _render.layout(t, COL.width, FS, paras=PARAS, centre=CENTRE, as_printed=centred)
             return _render.centre_lines(ls, COL.width, FS) if centred else ls  # a title page: every line centred
         waiting = bool(self.held) or interject is not None
         head, sep, rest = body_txt.partition("\n\n") if (waiting and self.open) else ("", "", "")
@@ -532,10 +532,28 @@ class Flow:
         # an earlier page's (Vauresmont's cover, alone on its page)
         fit = self.page is not None and (self.y + h + below <= COL.y1 or self.cur in self.on_sheet) \
             and _render.fit_on_sheet(self.y, w, h, below, COL.y1)
+        label, self.label = self.label, None
         if fit:
             w, h = fit
         else:
-            self._newpage()
+            if label and label[0] is self.page and label[4] == self._sig():
+                # nothing but its page label on this sheet (Masiello 1887 pdf
+                # 194: English-only sheet 70 kept the plate's label and rule
+                # alone, page sweep 2026-11-15): the label goes with the picture
+                page, top, bottom, args, _ = label
+                page.add_redact_annot(fitz.Rect(COL.x0 - 2, top, COL.x1 + 2, bottom))
+                page.apply_redactions(images=0)
+                if top <= COL.y0 + FS * 3:
+                    # the label opened this sheet: the sheet stays, the label
+                    # is set again at its top and the picture made to fit under
+                    # it (moving on left the sheet blank)
+                    self.y = top
+                else:
+                    self._newpage()
+                self.section_label(*args[:2], compact=args[3], side=args[4])
+                self.label = None
+            else:
+                self._newpage()
             # alone on a fresh sheet: smaller, so its whole caption fits under
             # it (Masiello 1887 pdf 194, 462: a full-page plate's twelve label
             # lines ran onto the next sheet)

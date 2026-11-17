@@ -27,6 +27,8 @@ import math
 import re
 from difflib import SequenceMatcher
 
+LIST_BACK = True                # column_tables: a one-sided "table" back to text (a switch for dry runs)
+IN_ORDER = True                 # place(): repeated lines in reading order (a switch for dry runs)
 SKIP = [""]                     # why the last page was left as it is (for dry runs)
 EDGES = [None]                  # box_positions: the column boxes' (left x0, left x1, right x0, right x1)
 
@@ -137,11 +139,23 @@ def place(src_lines, vis, y0, y1):
         if not key:
             out.append(None); continue
         free = [k for k in range(len(starts)) if k not in used]
+        last_y = next((p[0] for p in reversed(out) if p is not None), None)
         exact = [k for k in free if (starts[k][2] == key if len(key) < 12 else starts[k][3].startswith(key))]
+        if len(exact) > 1 and len(key) >= 12 and IN_ORDER:
+            # a line repeated on the page («It is executed in two tempi:»
+            # under each § of Masiello pdf 592): in reading order within its
+            # column -- the first below the last line placed on that side
+            # (the OCR reads one column, then the other: the order is per side)
+            def after(k):
+                side = starts[k][1]
+                ys = [p[0] for p in out if p is not None and len(p) >= 2 and p[1] == side] \
+                    or [p[0] for p in out if p is not None]
+                return not ys or starts[k][0] >= max(ys) - 0.003
+            ordered = [k for k in exact if after(k)]
+            exact = ordered + [k for k in exact if k not in ordered]
         if exact:
             # a short label («A.») can occur twice on a page: the one nearest
             # the line placed before it (Barbasetti pdf 129)
-            last_y = next((p[0] for p in reversed(out) if p is not None), None)
             bi = min(exact, key=lambda k: abs(starts[k][0] - last_y)) if len(key) < 12 and last_y is not None else exact[0]
         else:
             bi, best = None, 0
@@ -493,6 +507,24 @@ def column_tables(body, src_body, page, boxes, notes=False, stored=None):
     if res is None:
         return body
     first, last, block = res
+    # a "table" with one column empty is a list set to one side (Masiello pdf
+    # 611: «a) deviamento di prima; …» under a centred intro): its lines go
+    # back as text
+    def one_sided(b):
+        rows = re.findall(r"<tr>(.*?)</tr>", b, re.S)
+        cells = [re.findall(r"<td[^>]*>(.*?)</td>", r, re.S) for r in rows]
+        cells = [c for c in cells if len(c) == 2]
+        if not cells or len(cells) != len(rows):
+            return None
+        for side in (0, 1):
+            if all(not re.sub(r"<[^>]+>|&nbsp;", "", c[side]).strip() for c in cells):
+                return [c[1 - side] for c in cells]
+        return None
+    fixed = []
+    for b in block:
+        lines = one_sided(b) if ("<table" in b and LIST_BACK) else None
+        fixed.append("\n".join(lines) if lines else b)
+    block = fixed
     out = "\n".join(raw[:nz[first]] + [""] + ["\n\n".join(block)] + [""] + raw[nz[last] + 1:])
     # every line of the English is still there, once (a heading the OCR
     # repeated may go): otherwise the page is left as it is
