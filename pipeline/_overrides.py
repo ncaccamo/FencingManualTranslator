@@ -100,7 +100,7 @@ import os
 import re
 import tomllib
 
-_PAGE_KEYS = {"columns", "page_number", "header", "retranslate", "note", "caption", "caption_en", "figure", "leave_out",
+_PAGE_KEYS = {"display", "columns", "page_number", "header", "retranslate", "note", "caption", "caption_en", "figure", "leave_out",
               "picture_after"}
 _TOP_KEYS = {"book", "headers", "terms", "pages", "fix", "book_fix", "table_fix", "ocr_fix"}
 _BOOK_KEYS = {"running_heads": bool, "final": bool, "paragraphs": str, "page_numbers": str,
@@ -152,6 +152,8 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
                                  f"{sorted(set(v) - _PAGE_KEYS) if isinstance(v, dict) else v}")
         if "leave_out" in v and not isinstance(v["leave_out"], bool):
             raise OverridesError(f"{p}: [pages.{k}] leave_out must be true or false")
+        if "display" in v and not isinstance(v["display"], bool):
+            raise OverridesError(f"{p}: [pages.{k}] display must be true or false")
         if "columns" in v and (isinstance(v["columns"], bool) or v["columns"] not in (2, 3, 4)):
             raise OverridesError(f"{p}: [pages.{k}] columns must be 2, 3 or 4")
         pages[int(k)] = v
@@ -450,6 +452,14 @@ def list_columns(ov: dict) -> dict:
     columns ([pages.N] columns); the PDFs draw it so (_columns.word_list)
     instead of one entry a line (Gomard pdf 113-114, 2026-11-14)."""
     return {s: v["columns"] for s, v in ov["pages"].items() if v.get("columns")}
+
+
+def display_pages(ov: dict) -> set:
+    """Scan pages set as a title page ([pages.N] display = true): every line
+    centred as printed, where _render.display_page's own test (short blocks)
+    does not see it -- Gomard pdf 12, a title page with a 33-word block of the
+    author's titles (2026-11-17)."""
+    return {s for s, v in ov["pages"].items() if v.get("display")}
 
 
 def picture_places(ov: dict) -> dict:

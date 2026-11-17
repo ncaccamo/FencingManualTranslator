@@ -117,6 +117,14 @@ loses an OCR indent (`_textlayer.INDENTED` / `FLUSH` in front of the row;
 (the OCR's first rows), so a running head in capitals or a number in the
 margin is never mistaken for it; when the first row began at the foot of
 the page before, the line there decides whether it opened a paragraph.
+A **margin note the OCR also read as a body row** (Gomard: «⟦MARGIN: Elles
+ne conviennent …⟧» then «Elles ne conviennent …») is dropped from the
+source rows when the English has it once, so the rows pair (pdf 195); and
+a row's printed line that begins with its margin note («Du salut du mur.
+Le salut du mur est celui …», pdf 281) or starts far out in the margin (a
+note the layer garbles, pdf 295) gives no start -- read as flush, the
+paragraph lost its indent. A mark a `[[fix]]` puts on a row stands: the
+layer adds none in front of it.
 **Dividers** the OCR never reads (Joseph-Renaud's ⁂) come back from the
 layout detector (`_layout.ornaments`): a small mark centred in the column,
 in a gap between paragraphs (or under the page's last line: a section's
@@ -127,7 +135,9 @@ end), with no line of text through it and no title right above.
 mark and stays; old books' per-line « -- read by the OCR as • on
 Prévost-Jollivet pdf 237 -- is one quotation); `drop_margin_echoes` -- a
 margin note the OCR also read into the running text (Gomard) is drawn
-once, as the note; `split_note_run` -- "(1) … (2) …" run together in one
+once, as the note -- but the same note twice on one page is a lesson's
+label column the margin step misread (Masiello pdf 581): the notes go and
+the labels stay in the text; `split_note_run` -- "(1) … (2) …" run together in one
 line are separate notes; `<sup>2</sup>` is drawn as ², not as the tag.
 
 **Columns and hanging indents** (format review, 2026-10-22). A page the
@@ -140,7 +150,21 @@ after the other (Masiello) -- is rebuilt as a table from where each
 paragraph's first line sits on the scan (`_textlayer.lesson_columns`, on
 the layer's unmerged pieces): 2+ columns beside each other, at least two
 rows pairing an action with a reply of 8+ words; an intro ending ":" or
-a § heading ends it. A lesson with numbered steps keeps `_pair_lesson`,
+a § heading ends it. Each row finds its printed piece by its whole
+opening (up to 40 letters), the best pairs first: by the first 15 alone a
+row moved from the page before took a look-alike's place and the rows
+below it moved up one (Masiello pdf 292); on a tie, a line printed once goes
+to the row it is the whole of (pdf 292 §49), lines printed alike to their
+rows top to bottom (pdf 313). The OCR's margin copies of a label inside
+the run are passed over (pdf 581), and "narrow" is measured against the
+text's full span, not its widest line -- a page of lessons only may have
+no full-width line (pdf 582). A reply the OCR broke into two
+rows, the second in lowercase, is one cell -- here and in the side-by-side's
+column tables (`_columns.build`; never into a column's head, «A. | B.»). A
+line the page repeats («Si eseguisce in due tempi:» under each §), printed
+as often as the source has it, goes to its copies top to bottom (`_columns.place`;
+it had shown twice under one § and rows under several §§ had swapped).
+A lesson with numbered steps keeps `_pair_lesson`,
 and the side-by-side no longer splits it at the blank line between its
 halves (`lesson_glue`). A two-column contents ("49. … | 53. …") is read
 column by column. **Captions:** on a plate page the caption is centred
@@ -198,6 +222,11 @@ centred, level with it, above the text (`_layout.picture_caption`).
   for «KIRCHHOFFER.»); never «Pag.», a plate head or a lesson's «I. TEMPO».
   A corpus dry run found only signatures and the attributions the books
   set right (Tasso under a quotation).
+- **A sentence in the future tense is never a title** (`_title_line`): a
+  short line alone between blank lines, with «will» / «shall», is text --
+  a lesson's label at a page's foot («He will engage in terza.», Masiello
+  pdf 291) and a paragraph after a divider (Joseph-Renaud pdf 142) had
+  been set bold or centred as headings.
 - **Rows the book centres** (`_textlayer.centred_rows`, mark `CENTRE` =
   `\x07`): a source row whose printed lines (at most three) all sit in
   from both sides of the text by about the same (6 %+ in, within 5 %), and
@@ -205,7 +234,14 @@ centred, level with it, above the text (`_layout.picture_caption`).
   -- as a heading where it reads as a title or is in capitals, else in body
   weight. Headings the book centres had been set as body lines wherever
   the text layer marked them as a paragraph start (page sweep 2026-11-15;
-  six of the seven release books).
+  six of the seven release books). An item of a lettered list («c) le
+  parate …;») that only happens to sit midway is not centred when another
+  item starts at the same place uncentred (Masiello pdf 374, 628); a
+  lettered heading the book centres has no such neighbour. On a chapter's
+  first page the running head repeats the heading below it («110 DU
+  DÉVELOPPEMENT.» / «DU DÉVELOPPEMENT.»): the second capitals line is the
+  heading, set centred where it sits so, else unmarked as before (Gomard
+  pdf 127; it had taken the first paragraph's indent).
 - **Items of one list set alike** (`even_lists`): 3+ rows opening with
   the same kind of marker («1°», «2.º», «a)», «— ») take the mark and
   indent most of them have.
@@ -573,7 +609,10 @@ for free (this is why figures were easy here and hard in step 3).
   geometry can't tell centring on a page of two or three short lines; the
   blocks still go level with the scan's when they pair up. A line the OCR
   filed as the page's running head is the page's title there, drawn first,
-  not as a head (Kirchhoffer pdf 10). Display type sizes are not
+  not as a head (Kirchhoffer pdf 10). A block in capitals counts however
+  long (a colophon, a dedication: Joseph-Renaud pdf 311, Masiello pdf 10);
+  a title page with a long block in ordinary case is set with `[pages.N]
+  display = true` (Gomard pdf 12). Display type sizes are not
   reproduced: everything is body size.
 - **Tables**: step 2 translates each table's cells (`translate_tables`,
   `intermediate/tables.json`); the grid is drawn in the text where the

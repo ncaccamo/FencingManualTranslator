@@ -909,6 +909,12 @@ def _title_line(plain):
             # «1°» / «2.º» item is a list item unless title-cased («2° The
             # Sixte and Its Counter.», Dubois) -- page sweep 2026-11-15
             and ";" not in plain
+            # a future tense is a sentence, never a title: a lesson's label
+            # alone at a page's foot («He will engage in terza.», Masiello
+            # pdf 291) or a paragraph after a divider («The professor will
+            # show the pupil all these times.», Joseph-Renaud pdf 142) was
+            # set bold / centred as a heading
+            and not re.search(r"\b(?:will|shall)\b", plain)
             and not (re.match(r"\d+\s*\.?\s*[°º]", plain) and not _title_cased(plain)))
 
 
@@ -1362,6 +1368,13 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False, 
 _SALUTATION = re.compile(r"(?i)(?:my\s+)?(?:very\s+)?(?:dear|sir|madam|gentlemen|monsieur|madame|messieurs|cher|chère|caro|cara|egregio|gentile)\b[^.!?\n]{0,40},$")
 
 
+def _all_caps(p):
+    """A block in capitals: a title page's long subtitle (Gomard pdf 12,
+    «LA THÉORIE DE L'ESCRIME … PRÉCÉDÉE D'UNE INTRODUCTION …», 50 words)."""
+    letters = [c for c in re.sub(r"<[^>]+>", "", p) if c.isalpha()]
+    return bool(letters) and sum(c.isupper() for c in letters) > 0.9 * len(letters)
+
+
 def display_page(text, page_num):
     """A display page -- title page, half-title, a plate's title leaf, a
     publisher's notice: no printed page number (none read, or reconcile's
@@ -1381,7 +1394,7 @@ def display_page(text, page_num):
            and len(paras[k + 1].split()) >= 15 for k, p in enumerate(paras[:3])):
         return False
     return (bool(paras) and not text.startswith("[") and len(paras) <= 8
-            and all(len(p.split()) <= 30 for p in paras)
+            and all(len(p.split()) <= 30 or _all_caps(p) for p in paras)
             and not re.search(r"\[\[TABLE|\[table|<table", text) and not toc_page(text))
 
 
@@ -1552,6 +1565,17 @@ def drop_margin_echoes(text):
     notes = [(k, plain(m.group(1))) for k, l in enumerate(lines) for m in [_MARGIN_RE.match(l)] if m]
     if not notes:
         return text
+    # the same note twice on one page is no margin note: the margin step
+    # read a lesson's label column (Masiello pdf 581, «Parerà seconda.»
+    # beside §56 and §57) -- the notes go, the labels stay in the text
+    twice = {n for _, n in notes if sum(n == m for _, m in notes) > 1}
+    if twice:
+        gone = {j for j, n in notes if n in twice}
+        gone |= {j + 1 for j in gone if j + 1 < len(lines) and not lines[j + 1].strip()}
+        lines = [l for k, l in enumerate(lines) if k not in gone]
+        notes = [(k, plain(m.group(1))) for k, l in enumerate(lines) for m in [_MARGIN_RE.match(l)] if m]
+        if not notes:
+            return "\n".join(lines)
     # a line standing alone between blank lines that is only the start of a
     # longer note is the book's own sub-heading, which the note repeats
     # (Gomard pdf 173 «De l'engagement de quarte.»): kept

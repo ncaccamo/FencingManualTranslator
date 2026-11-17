@@ -370,8 +370,9 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
     PARAS = _render.book_paragraphs(book)
     try:
         COLS = _overrides.list_columns(_overrides.load(book))
+        SHOWN = _overrides.display_pages(_overrides.load(book))
     except Exception:
-        COLS = {}
+        COLS, SHOWN = {}, set()
     _render.BOLD_SECTIONS = _render.book_bold_headings(book)
     _render.CENTRED_SUMMARIES = _render.book_chapter_summaries(book)
     CENTRE = _render.centres_headings(folder)
@@ -439,7 +440,7 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         # a title page, half-title, plate title (_render.display_page): its
         # lines centred, and a line the OCR took for a running head is the
         # page's title, drawn first (Kirchhoffer pdf 10)
-        DISPLAY = _render.display_page(_render.split_footnotes(tr)[0], struct.get("page_num"))
+        DISPLAY = i + 1 in SHOWN or _render.display_page(_render.split_footnotes(tr)[0], struct.get("page_num"))
         title_hdr = ""
         if DISPLAY and struct.get("header") and "\t" not in struct["header"]:
             title_hdr, struct["header"] = struct["header"], ""

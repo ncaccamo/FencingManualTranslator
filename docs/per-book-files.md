@@ -73,6 +73,7 @@ the header back into the text), then the PDFs.
 | `retranslate = true` | retranslate this page with `2_translate.py --pages <stem>` (once per version of its source text, so the flag can stay) | |
 | `leave_out = true` | the page is library or digitiser text, not the book's: its English is left out of both PDFs (the side-by-side shows the scan with "[library / digitiser notice, not translated]"); `translation.txt` is untouched, so removing the setting brings it back | Masiello scan 2 (the library bookplate); Prévost-Jollivet scan 1 (Google's notice). A page that mixes such text with the book's own: `[[fix]]` the lines out instead. |
 | `columns = 3` | the page ends in a list of short entries (terms, names) the book prints in 2, 3 or 4 columns: both PDFs draw it as a table without rules, as printed, instead of one entry a line. Where the OCR kept the printed rows (entries 2+ spaces apart) each line is a row; else the entries fill the columns top to bottom. A row missing its spaces: a `[[fix]]` adding them. PDFs only. | Gomard scans 112-113 (pdf 113-114, the list of fencing terms). |
+| `display = true` | the page is a title page, dedication or colophon: every line centred as the book prints it. The PDFs find most such pages themselves (no printed page number, a few short blocks, or one block in capitals); this is for one with a long block in ordinary case. PDFs only. | Gomard scan 11 (pdf 12, the title page). |
 | `picture_after = "<words>"` | the page's picture goes after the paragraph of its English holding these words, where the book prints it inside the text and no caption line marks the place (Prévost-Jollivet pdf 53, 290). English-only PDF; rebuild it. | |
 | `note = "…"` | free text, ignored by the pipeline: why you decided it | `"prints 7 between ornaments; the OCR read 1"` |
 
@@ -145,8 +146,9 @@ Marks a `[[fix]]` can put at the start of a line, for a one-page
 exception the scan's text layer misreads: `\u0003` (start a paragraph at
 the indent: Kirchhoffer pdf 38, Joseph-Renaud pdf 169), `\u0006` (flush
 right: Masiello's spread-title halves), `\u0007` (centred: Kirchhoffer pdf
-52 «Diagram A.»). Write them as TOML escapes; the PDFs read them, the text
-keeps them out of sight. When the same misreading shows on a second book,
+52 «Diagram A.»; Gomard pdf 195's three centred lines). Write them as TOML
+escapes; the PDFs read them, the text keeps them out of sight. The text
+layer never adds a second mark in front of one. When the same misreading shows on a second book,
 it becomes a rule instead.
 
 ### `[[book_fix]]`: one wording change on every page

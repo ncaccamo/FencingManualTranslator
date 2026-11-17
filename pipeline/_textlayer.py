@@ -109,11 +109,22 @@ def _body(lines, rows=None):
         right = sorted(l[3] for l in lines if len(norm(l[2])) >= 20)[-1]
         lines = [l for l in lines if l[3] > left + 0.02 * (right - left) and l[0] < right - 0.02 * (right - left)]
     keys = [norm(r) for r in (rows or [])[:2] if len(norm(r)) >= 12]
+    first = norm(rows[0]) if rows else ""
+    head_seen = False
     for k, l in enumerate(lines[:20]):     # lines above the first row went to the page before
         t = norm(l[2])
         letters = [c for c in l[2] if c.isalpha()]
         if sum(c.isupper() for c in letters) > 0.7 * len(letters):
-            continue                        # a running head in capitals, never the text («CONTRE LE BRAS TENDU»)
+            # a running head in capitals, never the text («CONTRE LE BRAS
+            # TENDU») -- but on a chapter's first page the head repeats the
+            # heading the page opens with: the second such line is the
+            # heading itself (Gomard pdf 127 «110 DU DÉVELOPPEMENT.», then
+            # «DU DÉVELOPPEMENT.» -- it took the first paragraph's indent)
+            if len(first) >= 6 and difflib.SequenceMatcher(None, t[-len(first):], first).ratio() >= 0.8:
+                if head_seen:
+                    return lines[k:]
+                head_seen = True
+            continue
         if len(t) >= 12 and any(difflib.SequenceMatcher(None, t, key, autojunk=False)
                                 .find_longest_match(0, len(t), 0, len(key)).size >= 12 for key in keys):
             return lines[k:]
@@ -293,6 +304,12 @@ def row_places(rows, lines, width):
     kind, where = profile(body, width)
     if kind is None:
         return out
+    # a line the text layer runs on from the page's margin note (Gomard pdf
+    # 281 «Du salut du mur. Le salut du mur est celui …»): it starts in the
+    # margin, so where it starts says nothing of the paragraph's indent
+    notes = [norm(m.group(1)) for m in (re.fullmatch(r"\s*⟦MARGIN:\s*(.+?)⟧\s*", x) for x in rows) if m]
+    notes = [n[:12] for n in notes if len(n) >= 6]
+    usual = sorted(l[0] for l in body)[len(body) // 2]
     at = 0
     for r, row in enumerate(rows):
         key = norm(row)[:15]
@@ -302,6 +319,10 @@ def row_places(rows, lines, width):
         if k is None:
             continue
         at = k + 1
+        if any(norm(body[k][2]).startswith(n) for n in notes) and not key.startswith(tuple(notes)):
+            continue
+        if body[k][0] < usual - 0.08 * width:          # (pdf 295: the note unreadable in the layer)
+            continue
         if kind[k] == "start" and where[k] in ("indent", "margin", "hanging") and (k or where[k] != "margin"):
             out[r] = where[k]
     return out
@@ -417,6 +438,16 @@ def centred_rows(rows, lines, width):
                 break
         if ok:
             out.add(r)
+    # an item of a lettered list ("c) le parate, …;") that only happens to
+    # sit midway: another item starts at the same place and is not centred
+    # (Masiello pdf 374, 607, 628; Barbasetti pdf 114 «f) Finta di filo.»).
+    # A lettered heading the book centres (Barbasetti «a) Cambiamento da
+    # prima in seconda») has no such neighbour.
+    item = re.compile(r"\s*\(?[a-z]\)\s")
+    marked = [(r, body[k][0]) for r, k in enumerate(starts) if k is not None and item.match(rows[r])]
+    for r, x in marked:
+        if r in out and any(q not in out and abs(x - y) <= 0.01 * col for q, y in marked if q != r):
+            out.discard(r)
     return out
 
 
@@ -435,39 +466,64 @@ def lesson_columns(rows, src, lines, width):
     plain = lambda k: re.sub(r"[\x02-\x07]", "", rows[k]).strip()
     if any(_STEP.match(plain(k)) for k in range(len(rows))):
         return []
+    # the text's width: from the leftmost start to the rightmost end -- a
+    # page of lessons only may have no line running the full width (Masiello
+    # pdf 582: the widest line, a § heading, made the replies too wide)
     full_w = max((l[3] - l[0] for l in lines), default=0)
     if not full_w:
         return []
-    used, info = set(), {}
+    full_w = max(full_w, max(l[3] for l in lines) - min(l[0] for l in lines))
+    # each row to its printed piece: the first 15 letters find the
+    # candidates, the longer opening (up to 40, as far as both run) ranks
+    # them, and the best pairs are taken first. Masiello pdf 292: the
+    # page's first row «Fingerà una cavazione al petto, …» (moved here from
+    # the page before, so not printed here) took §48's «Fingerà una
+    # cavazione al fianco,» on the first 15 letters, and every row after it
+    # moved up one. Two openings alike as far as both run go to the row
+    # the printed line is the whole of (pdf 292: the carried-over «Fingerà
+    # una cavazione al petto, in dentro, …» tied with §49's own «Fingerà
+    # una cavazione al petto,» and took its line; §49 lost its table) --
+    # only a line printed once: lines alike (pdf 313's three «Come seconda
+    # finta, accennerà») go to their rows top to bottom
+    normed = [norm(l[2]) for l in lines]
+    whole = lambda full, piece, m: (len(full) <= m + 3 and sum(p[:m] == piece[:m] for p in normed) == 1)
+    pairs = []
     for k in range(len(rows)):
         if not plain(k):
             continue
-        key = norm(src[k])[:15]
+        full = norm(src[k])
+        key = full[:15]
         if len(key) < 5:
             continue
-        best, at = 0.0, None
         for n, l in enumerate(lines):
-            if n in used:
-                continue
-            r = difflib.SequenceMatcher(None, key, norm(l[2])[:len(key)]).ratio()
-            if r > best:
-                best, at = r, n
-        if at is not None and best >= 0.8:
-            used.add(at)
-            info[k] = lines[at]
+            piece = norm(l[2])
+            r = difflib.SequenceMatcher(None, key, piece[:len(key)]).ratio()
+            if r >= 0.8:
+                m = max(len(key), min(40, len(full), len(piece)))
+                pairs.append((difflib.SequenceMatcher(None, full[:m], piece[:m]).ratio(), whole(full, piece, m), r, -k, -n, k, n))
+    used, info = set(), {}
+    for *_, k, n in sorted(pairs, reverse=True):
+        if k not in info and n not in used:
+            used.add(n)
+            info[k] = lines[n]
     head = lambda k: bool(_SPEAKER.match(plain(k)))
     # an intro ("It is executed in two tempi:"), a § heading or a row of a
     # table the OCR wrote with | is never a cell: it ends a run
     breaker = lambda k: bool(re.search(r":$", plain(k)) or re.match(r"§|\d+\.\s*[—–-]", plain(k)) or " | " in rows[k])
     narrow = lambda k: not breaker(k) and (head(k) or (k in info and info[k][3] - info[k][0] < 0.55 * full_w))
+    # the OCR's margin copy of a row on the page (Masiello pdf 581 «⟦MARGIN:
+    # Parerà seconda.⟧» twice, under the label it repeats) is no row of
+    # its own: passed over inside a run (the render drops it anyway)
+    texts = {plain(k) for k in range(len(rows))}
+    echo = lambda k: bool(re.fullmatch(r"⟦MARGIN:\s*(.+?)⟧", plain(k))) and re.fullmatch(r"⟦MARGIN:\s*(.+?)⟧", plain(k)).group(1).strip() in texts
     found, k, n = [], 0, len(rows)
     while k < n:
         if not plain(k) or not narrow(k):
             k += 1
             continue
         run, j = [], k
-        while j < n and (not plain(j) or narrow(j)):
-            if plain(j):
+        while j < n and (not plain(j) or narrow(j) or echo(j)):
+            if plain(j) and not echo(j):
                 run.append(j)
             j += 1
         k = j
@@ -513,6 +569,17 @@ def lesson_columns(rows, src, lines, width):
         if sum(1 for row in table if 0 in row[1] and last in row[1]
                and len(" ".join(plain(r) for r in row[1][last]).split()) >= 8) < 2:
             continue
+        # a row holding only the reply's next line, in lowercase -- the OCR
+        # broke one paragraph into two rows (Masiello pdf 292 «Fingerà una
+        # cavazione al fianco, / inclinando …») -- goes on with the cell above
+        merged = []
+        for row in table:
+            only = list(row[1]) == [last] and merged and last in merged[-1][1]
+            if only and re.match(r"[a-zà-ý]", plain(row[1][last][0])):
+                merged[-1][1][last] += row[1][last]
+            else:
+                merged.append(row)
+        table = merged
         title = ("<tr>" + "".join(f"<th>{plain(heads[c][0]) if heads[c] else ''}</th>" for c in order) + "</tr>"
                  if any(heads.values()) else "")
         body = "".join("<tr>" + "".join(f"<td>{' '.join(plain(r) for r in row[1].get(i, []))}</td>"
@@ -632,6 +699,16 @@ def apply(english, src_body, page, prev_page=None, ornaments=()):
                 rows[k] = ""
     filled = [k for k, r in enumerate(rows) if r.strip()]
     if len(filled) < len(src):
+        # a margin note the OCR also read into the body (Gomard pdf 195
+        # «⟦MARGIN: Elles ne conviennent …⟧» then «Elles ne conviennent …»):
+        # the English has it once, as the note -- the body copy goes, or the
+        # rows pair one off (pdf 195's centred heading lost its marks)
+        notes = {m.group(1).strip() for m in (re.fullmatch(r"\s*⟦MARGIN:\s*(.+?)⟧\s*", r) for r in src) if m}
+        dup = [k for k, r in enumerate(src) if r.strip() in notes]
+        if dup and len(src) - len(dup) >= len(filled):
+            src = [r for k, r in enumerate(src) if k not in dup]
+            opens, joins = hints(src, lines, page.rect.width, prev_lines)
+    if len(filled) < len(src):
         # a source sentence the OCR broke over two lines that the English
         # keeps as one row (Prévost-Jollivet pdf 319: «… qui sert à pe- /
         # qu'elles se confondent …»): rejoined, only when that makes the
@@ -724,6 +801,11 @@ def apply(english, src_body, page, prev_page=None, ornaments=()):
         # dash -- Jacob-André pdf 112) get the indent the book gives them,
         # and an OCR indent the book doesn't have goes (Joseph-Renaud «2°»)
         place = row_places(src, lines, page.rect.width)
+        # the text starts at a heading in capitals (a chapter's first page,
+        # _body): the heading is centred or right, never a paragraph
+        top = _body(lines, src)[:1]
+        caps = [c for c in (top[0][2] if top else "") if c.isalpha()]
+        heading_top = bool(caps) and sum(c.isupper() for c in caps) > 0.7 * len(caps)
         for r in centred_rows(src, lines, page.rect.width):
             place[r] = "centre"
         for r in signature_rows(src, lines, page.rect.width):
@@ -732,10 +814,14 @@ def apply(english, src_body, page, prev_page=None, ornaments=()):
             b = filled[r]
             if rows[b] is None or not place[r] or re.search(r"[{}|⟦]|\x00TABLE", rows[b]) or rows[b].strip() in MARKS:
                 continue                             # (a section mark is never a paragraph start)
+            if r == 0 and heading_top and place[r] in ("indent", "margin", "hanging"):
+                continue                             # the page's heading in capitals, unmarked as before (Gomard pdf 277)
             mark = {"indent": INDENTED, "margin": FLUSH, "hanging": HANGING, "right": RIGHT, "centre": CENTRE}[place[r]]
             # on the row's own text -- a divider put back in front of it is
             # its own line (Joseph-Renaud pdf 141 printed "[[DIVIDER]]")
             head, _, own = rows[b].rpartition("\n")
+            if re.match(r"[\x02-\x07]", own):
+                continue                             # a [[fix]]'s own mark stands (Gomard pdf 195's centred heading)
             rows[b] = (head + "\n" if _ else "") + mark + own
         english = "\n".join(r for r in rows if r is not None)
     if opens:

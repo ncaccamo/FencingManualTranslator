@@ -134,10 +134,41 @@ def place(src_lines, vis, y0, y1):
         nxt = [u for (yy, ss, u, *_) in vis[k + 1:] if ss == s][:2]
         starts.append((y, s, _norm(t), _norm(" ".join([t] + nxt))))
     used, out, keys = {}, [], {}
+    keyof = lambda line: _norm(re.sub(r"⟦MARGIN:\s*(.*?)⟧", r"\1", line))[:28]
+    # a line the page repeats («Si eseguisce in due tempi:» under each § of
+    # Masiello pdf 592), printed as often as the source has it -- some
+    # copies across the page, some spaced over both columns («Si eseguisce
+    # in due | tempi:») -- goes to its copies top to bottom, n-th to n-th
+    want = {}
     for line in src_lines:
-        key = _norm(re.sub(r"⟦MARGIN:\s*(.*?)⟧", r"\1", line))[:28]
+        kk = keyof(line)
+        if len(kk) >= 12:
+            want[kk] = want.get(kk, 0) + 1
+    fixed = {}
+    for kk, n in want.items():
+        if n < 2:
+            continue
+        cand = [(starts[k][0], k, None) for k in range(len(starts)) if starts[k][3].startswith(kk)]
+        for k in range(len(starts)):
+            if starts[k][1] != "L":
+                continue
+            rk = next((j for j in range(len(starts)) if starts[j][1] == "R" and abs(starts[j][0] - starts[k][0]) < 0.003), None)
+            if rk is not None and not starts[k][3].startswith(kk) and (starts[k][2] + " " + starts[rk][2]).startswith(kk):
+                cand.append((starts[k][0], k, rk))
+        if len(cand) == n:
+            fixed[kk] = sorted(cand)
+    for line in src_lines:
+        key = keyof(line)
         if not key:
             out.append(None); continue
+        if key in fixed and fixed[key]:
+            _, k, rk = fixed[key].pop(0)
+            used[k] = True
+            if rk is not None:
+                used[rk] = True
+            keys.setdefault(key, starts[k][:2])
+            out.append(starts[k][:2])
+            continue
         free = [k for k in range(len(starts)) if k not in used]
         last_y = next((p[0] for p in reversed(out) if p is not None), None)
         exact = [k for k in free if (starts[k][2] == key if len(key) < 12 else starts[k][3].startswith(key))]
@@ -267,6 +298,13 @@ def build(en_lines, pos, g, y0, y1, one_side_short=False, split=None):
             flush(); block.append(t); continue
         if rows and side not in rows[-1]["cells"] and abs(y - rows[-1]["y"]) < 0.012:
             rows[-1]["cells"][side] = t
+        elif rows and side == "R" and len(_norm(rows[-1]["cells"].get("R", ""))) > 12 and re.match(r"[a-zà-ý]", re.sub(r"<[^>]+>", "", t).strip()) \
+                and not any(s2 == "L" and abs(y2 - y) < 0.012 for y2, _, s2, _ in items):
+            # the reply's next line, in lowercase, the OCR's own row (Masiello
+            # pdf 312 «Come seconda finta, accennerà … dalla parte opposta, /
+            # cioè al petto, in dentro.»): the same cell -- never a column's
+            # head («B.», Barbasetti pdf 148)
+            rows[-1]["cells"]["R"] += " " + t
         else:
             rows.append({"y": y, "cells": {side: t}})
     flush()

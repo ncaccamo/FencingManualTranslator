@@ -1796,6 +1796,287 @@ def test_contents_page_column_label_set_over_the_numbers():
     assert not any(text(l) == "page." for l in out)                  # Tiboldi's inline «pag.» stays in its line
 
 
+def test_a_lettered_list_item_is_not_centred_by_chance():
+    # Masiello pdf 374 / 628 «c) le parate, che essa azione potrà ingannare;»
+    # and Barbasetti pdf 114 «f) Finta di filo. …» sat midway by chance; the
+    # other items start at the same place, flush. A lettered heading the
+    # book centres (Barbasetti pdf 66 «a) Cambiamento da prima in seconda»)
+    # stays centred.
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    T = importlib.import_module("_textlayer")
+    long_ = "x" * 60
+    lines = [(100, 10 + 12 * k, f"{long_} ligne {k} du texte", 500) for k in range(4)]
+    lines += [(160, 60, "a) la posizione in cui si possono trovare le due spade", 500),
+              (160, 72, "b) l'azione che converrà eseguire;", 380),
+              (160, 84, "c) le parate, che essa azione potrà ingannare;", 440),
+              (100, 96, f"{long_} fine", 500)]
+    rows = [l[2] for l in lines]
+    assert T.centred_rows(rows, lines, 600) == set()
+    lines = [(100, 10 + 12 * k, f"{long_} ligne {k} du texte", 500) for k in range(4)]
+    lines += [(220, 60, "a) Cambiamento da prima", 380), (100, 72, f"{long_} fine", 500)]
+    rows = [l[2] for l in lines]
+    assert T.centred_rows(rows, lines, 600) == {4}
+
+
+def test_lesson_rows_matched_on_their_whole_opening():
+    # Masiello pdf 292: the page's first row «Fingerà una cavazione al petto,
+    # in dentro, …» (moved here from the page before: not printed here) took
+    # §48's printed «Fingerà una cavazione al fianco,» on its first 15
+    # letters and every row after it moved up one; the OCR's two rows of one
+    # reply («… al fianco, / inclinando …») made two table rows.
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    T = importlib.import_module("_textlayer")
+    src = ["Fingerà una cavazione al petto, in dentro, inclinando leggermente",
+           "Legherà di mezzocerchio.", "Fingerà una cavazione al fianco,",
+           "inclinando leggermente il corpo in avanti, battendo il piede destro.",
+           "Parerà seconda.", "Eseguirà immediatamente la cavazione al petto, evitando la parata di seconda."]
+    rows = ["He will feint a cavazione to the chest, on the inside, inclining slightly",
+            "He will engage in half-circle.", "He will feint a cavazione to the flank,",
+            "inclining the body slightly forward, stamping the right foot.",
+            "He will parry seconda.", "He will immediately execute the cavazione to the chest, avoiding the parry of seconda."]
+    lines = [(100, 60, "Si eseguisce in due tempi dal legamento di mezzocerchio dell'avversario:", 500),
+             (100, 100, "Legherà di mezzocerchio.", 200), (260, 100, "Fingerà una cavazione al fianco,", 450),
+             (260, 112, "inclinando leggermente il corpo in avanti, battendo", 450),
+             (100, 136, "Parerà seconda.", 180), (260, 136, "Eseguirà immediatamente la cavazione al petto, evitando", 450)]
+    found = T.lesson_columns(rows, src, lines, 600)
+    assert len(found) == 1 and found[0][:2] == (1, 6), found
+    html = found[0][2]
+    assert html.count("<tr>") == 2, html
+    assert "<td>He will engage in half-circle.</td><td>He will feint a cavazione to the flank, inclining the body" in html, html
+
+
+def test_lesson_row_tie_goes_to_the_whole_line():
+    # Masiello pdf 292: the carried-over «Fingerà una cavazione al petto, in
+    # dentro, …» (not printed here) tied with §49's own one-line «Fingerà una
+    # cavazione al petto,» and took its line: §49 was no table. A line
+    # printed more than once still goes to its rows top to bottom (pdf 313:
+    # three «Come seconda finta, accennerà»).
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    T = importlib.import_module("_textlayer")
+    src = ["Fingerà una cavazione al petto, in dentro, inclinando leggermente il corpo",
+           "Legherà di seconda.", "Fingerà una cavazione al petto,",
+           "inclinando leggermente il corpo in avanti, battendo il piede destro.",
+           "Parerà mezzocerchio o terza.", "Eseguirà immediatamente la cavazione al fianco, evitando la parata."]
+    rows = ["He will feint a cavazione to the chest, on the inside, inclining the body",
+            "He will engage in seconda.", "He will feint a cavazione to the chest,",
+            "inclining the body slightly forward, stamping the right foot.",
+            "He will parry half-circle or terza.", "He will immediately execute the cavazione to the flank, avoiding the parry."]
+    lines = [(100, 60, "Si eseguisce in due tempi dal legamento di seconda dell'avversario:", 500),
+             (100, 100, "Legherà di seconda.", 190), (260, 100, "Fingerà una cavazione al petto,", 450),
+             (260, 112, "inclinando leggermente il corpo in avanti, battendo", 450),
+             (100, 136, "Parerà mezzocerchio o terza.", 220), (260, 136, "Eseguirà immediatamente la cavazione al fianco,", 450)]
+    found = T.lesson_columns(rows, src, lines, 600)
+    assert len(found) == 1 and found[0][:2] == (1, 6), found
+    assert "<td>He will engage in seconda.</td><td>He will feint a cavazione to the chest, inclining" in found[0][2], found
+    src = ["Inviterà di terza.", "Parerà quarta semplice.", "Accennerà la botta dritta al petto, come prima finta.",
+           "Come seconda finta, accennerà la cavazione dalla parte opposta, cioè al petto in fuori.",
+           "§ 90. — Finta dritta al fianco.",
+           "Inviterà di seconda.", "Parerà mezzocerchio semplice.", "Accennerà la botta dritta al fianco, come prima finta.",
+           "Come seconda finta, accennerà"]
+    rows = ["He will invite in terza.", "He will parry simple quarta.", "He will indicate the straight thrust to the chest, as the first feint.",
+            "As the second feint, he will indicate the cavazione from the opposite side, to the chest on the outside.",
+            "§ 90. — Straight feint to the flank.",
+            "He will invite in seconda.", "He will parry simple half-circle.", "He will indicate the straight thrust to the flank, as the first feint.",
+            "As the second feint, he will indicate"]
+    lines = [(100, 100, "Inviterà di terza.", 180), (260, 100, "Accennerà la botta dritta al petto,", 450),
+             (100, 130, "Parerà quarta semplice.", 200), (260, 130, "Come seconda finta, accennerà", 450),
+             (100, 170, "§ 90. — Finta dritta al fianco.", 500),
+             (100, 200, "Inviterà di seconda.", 185), (260, 200, "Accennerà la botta dritta al fianco,", 450),
+             (100, 230, "Parerà mezzocerchio semplice.", 230), (260, 230, "Come seconda finta, accennerà", 450)]
+    found = T.lesson_columns(rows, src, lines, 600)
+    assert found and "<td>He will parry simple quarta.</td><td>As the second feint" in found[0][2], found
+
+
+def test_margin_note_copied_into_the_body_and_lines_started_in_the_margin():
+    # Gomard pdf 195: the OCR read the margin note twice (⟦MARGIN: Elles ne
+    # conviennent …⟧ and a body row); the English has it once, so the rows
+    # never paired (or paired one off). Gomard pdf 281 / 295: a paragraph's
+    # first line run on from its margin note («Du salut du mur. Le salut …»)
+    # starts in the margin -- not a flush paragraph.
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    T = importlib.import_module("_textlayer")
+    A = [(108, 100, "Le mur est un exercice qui consiste à tirer une", 340),
+         (95, 113, "certaine quantité de dégagements sur son adver", 340),
+         (95, 126, "saire. Ces dégagements doivent être parés.", 250),
+         (70, 139, "Du salut du mur. Le salut du mur est celui qui précède le mur", 340),
+         (95, 152, "tiré par chacun des deux adversaires, et ainsi de suite jusqu'au", 340),
+         (95, 165, "bout de la ligne qui continue encore un peu.", 260),
+         (108, 178, "Les deux premiers se nomment saluts du mur, le dernier", 340),
+         (95, 191, "salut de l'assaut, un peu plus compliqué.", 230)]
+    rows = ["Le mur est un exercice qui consiste à tirer", "⟦MARGIN: Du salut du mur.⟧",
+            "Le salut du mur est celui qui précède le mur", "Les deux premiers se nomment saluts"]
+    assert T.row_places(rows, A, 380) == ["indent", None, None, "indent"], T.row_places(rows, A, 380)
+    B = A[:3] + [(32, 139, "Quelques tireurs ont une telle habitude du re", 340),
+                 (95, 152, "doublement, que leur attaque n'est pas sérieuse", 340),
+                 (95, 165, "et qu'ils ne la font que pour arriver.", 230)] + A[6:]
+    rows = ["Le mur est un exercice qui consiste à tirer", "Quelques tireurs ont une telle habitude",
+            "Les deux premiers se nomment saluts"]
+    assert T.row_places(rows, B, 380) == ["indent", None, "indent"], T.row_places(rows, B, 380)
+    try:
+        import fitz
+        doc = fitz.open()
+        pg = doc.new_page(width=380, height=600)
+    except Exception:                                # noqa: BLE001 -- no PyMuPDF here (host)
+        return
+    for x, y, t in [(45, 100, "Beaucoup de maîtres ont proscrit cette manière de parer"),
+                    (30, 113, "comme moins sûre que l'autre. Il est certain que cette parade"),
+                    (30, 126, "ne convient que sur un coup jugé; car, si elle est trompée, elle"),
+                    (30, 139, "donne plus de difficulté pour revenir à une autre parade."),
+                    (45, 152, "Les moyens de parade dans chacune des quatre lignes se présentent"),
+                    (30, 165, "sous deux formes différentes: la pronation et la supination de la"),
+                    (30, 178, "main, que nous allons maintenant décrire."),
+                    (45, 191, "Les deux parades affectées à chaque ligne, et dont la première"),
+                    (30, 204, "est la plus simple, se nomment parades simples.")]:
+        pg.insert_text((x, y), t, fontsize=9)
+    src = "\n".join(["⟦MARGIN: Elles ne conviennent que sur des coups jugés.⟧", "Elles ne conviennent que sur des coups jugés.",
+                     "Beaucoup de maîtres ont proscrit cette manière de parer comme moins sûre que l'autre. Il est certain que cette parade ne convient que sur un coup jugé; car, si elle est trompée, elle donne plus de difficulté pour revenir à une autre parade.",
+                     "Les moyens de parade dans chacune des quatre lignes se présentent sous deux formes différentes: la pronation et la supination de la main, que nous allons maintenant décrire.",
+                     "Les deux parades affectées à chaque ligne, et dont la première est la plus simple, se nomment parades simples."])
+    en = "\n\n".join(["⟦MARGIN: They are suitable only against judged thrusts.⟧",
+                      "Many masters have proscribed this manner of parrying as less sure than the other.",
+                      "The means of parrying in each of the four lines present themselves in two different forms.",
+                      "The two parries assigned to each line are named simple parries."])
+    out = T.apply(en, src, pg)
+    assert "\x03The means of parrying" in out and "\x03The two parries" in out, repr(out)
+
+
+def test_lesson_table_past_margin_copies_and_without_a_full_line():
+    # Masiello pdf 581: the OCR's two margin copies «⟦MARGIN: Parerà
+    # seconda.⟧» cut §56's run; pdf 582: no line runs the full width (the
+    # widest is a § heading), so the replies were never narrow. Both: tables.
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    T = importlib.import_module("_textlayer")
+    src = ["§ 56. — Finta puntata dritta al fianco.", "Inviterà di prima o di quinta.", "Parerà seconda.",
+           "Dalla guardia di seconda inclinerà leggermente ma energicamente il tronco in avanti.",
+           "⟦MARGIN: Parerà seconda.⟧", "⟦MARGIN: Parerà seconda.⟧",
+           "Evitando il contatto della sciabola dell'avversario vibrerà istantaneamente una puntata."]
+    rows = ["§ 56. — Feint of straight thrust to the flank.", "He will invite in prima or quinta.", "He will parry seconda.",
+            "From the guard of seconda he will incline the trunk slightly but energetically forward.",
+            "⟦MARGIN: He will parry seconda.⟧", "⟦MARGIN: He will parry seconda.⟧",
+            "Avoiding the contact of the opponent's saber he will deliver instantaneously a thrust."]
+    lines = [(90, 80, "§ 56. — Finta puntata dritta al fianco.", 290),
+             (44, 120, "Inviterà di prima o di quinta.", 170), (200, 122, "Dalla guardia di seconda in-", 325),
+             (200, 135, "clinerà leggermente ma ener-", 325),
+             (43, 209, "Parerà seconda.", 108), (200, 211, "Evitando il contatto della scia-", 325)]
+    found = T.lesson_columns(rows, src, lines, 380)
+    assert len(found) == 1 and found[0][:2] == (1, 7), found
+    assert "<td>He will parry seconda.</td><td>Avoiding the contact" in found[0][2], found
+    assert "MARGIN" not in found[0][2], found
+
+
+def test_chapter_heading_under_a_matching_running_head_is_text():
+    # Gomard pdf 127: the running head «110 DU DÉVELOPPEMENT.» repeats the
+    # heading the page opens with; both lines in capitals were skipped as
+    # heads, and the heading row took the first paragraph's indent. The
+    # second such line is the heading itself.
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    T = importlib.import_module("_textlayer")
+    para = [(112, 143, "Le développement est l’extension donnée à la", 347),
+            (99, 157, "garde pour porter un coup à l’adversaire, et l’at", 343),
+            (100, 172, "teindre aussi loin que le permet la taille du tireur", 347)]
+    rows = ["DU DÉVELOPPEMENT.", "Le développement est l’extension donnée à la garde pour porter un coup"]
+    lines = [(100, 55, "110 DU DÉVELOPPEMENT.", 270), (163, 98, "nu DÉVELOPPEMENT.", 285)] + para
+    assert T._body(lines, rows)[0][2] == "nu DÉVELOPPEMENT."
+    # a running head alone, the page opening on text: skipped as before
+    lines = [(100, 55, "110 DU DÉVELOPPEMENT.", 270)] + para
+    assert T._body(lines, rows[1:])[0][2].startswith("Le développement")
+
+
+def test_a_margin_note_repeated_on_its_page_is_a_misread_label():
+    # Masiello pdf 581: the margin step read «Parerà seconda.» -- the label of
+    # §56's and §57's second rows -- as two margin notes; the labels went
+    # from the text as their echoes and the notes were drawn in the margin
+    R = _render_mod()
+    if R is None:
+        return
+    t = ("He will invite in <i>prima</i>.\nHe will parry <i>seconda</i>.\n\nFrom the guard.\n\n"
+         "⟦MARGIN: He will parry <i>seconda</i>.⟧\n\n⟦MARGIN: He will parry <i>seconda</i>.⟧\n\nAvoiding the contact.")
+    assert R.drop_margin_echoes(t) == ("He will invite in <i>prima</i>.\nHe will parry <i>seconda</i>.\n\n"
+                                       "From the guard.\n\nAvoiding the contact.")
+    # one note, its words also a body line close by: the body copy goes, as before
+    t = "The gliding or glide.\n⟦MARGIN: The gliding or glide.⟧\nIt is done thus."
+    assert R.drop_margin_echoes(t) == "⟦MARGIN: The gliding or glide.⟧\nIt is done thus."
+
+
+def test_a_line_the_page_repeats_goes_to_its_copies_in_order():
+    # Masiello pdf 592: «Si eseguisce in due tempi:» under each of three §§,
+    # printed once across the page and twice spaced over both columns
+    # («Si eseguisce in due | tempi:»): the first copy went to the second
+    # §, the others to wrong lines -- the line showed twice under § 83.
+    # Rows repeated under several §§ had the same fault (Masiello pdf 313:
+    # §89's first feint was §91's; Barbasetti pdf 119 above / below swapped)
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        C = importlib.import_module("_columns")
+    except ImportError:
+        return
+    vis = [(0.15, "F", "§ 83. — Finta cavazione in dentro e coupé", 0.1, 0.9),
+           (0.19, "L", "Si eseguisce in due", 0.1, 0.4), (0.19, "R", "tempi:", 0.5, 0.6),
+           (0.22, "L", "Legherà di terza.", 0.1, 0.3),
+           (0.36, "F", "§ 84. — Finta cavazione in fuori e cavazione", 0.1, 0.9),
+           (0.42, "F", "Si eseguisce in due tempi:", 0.1, 0.5),
+           (0.45, "L", "Legherà di quarta.", 0.1, 0.3),
+           (0.67, "F", "§ 85. — Finta cavazione in fuori e coupé in dentro", 0.1, 0.9),
+           (0.70, "L", "Si eseguisce in due", 0.1, 0.4), (0.70, "R", "tempi", 0.5, 0.6),
+           (0.74, "L", "Legherà di quarta.", 0.1, 0.3)]
+    src = ["§ 83. — Finta cavazione in dentro e coupé in fuori.", "Si eseguisce in due tempi:", "Legherà di terza.",
+           "§ 84. — Finta cavazione in fuori e cavazione in dentro.", "Si eseguisce in due tempi:", "Legherà di quarta.",
+           "§ 85. — Finta cavazione in fuori e coupé in dentro.", "Si eseguisce in due tempi:", "Legherà di quarta."]
+    pos = C.place(src, vis, 0.0, 1.0)
+    assert [round(pos[k][0], 2) for k in (1, 4, 7)] == [0.19, 0.42, 0.70], pos
+
+
+def test_a_reply_line_in_lowercase_continues_its_cell():
+    # Masiello pdf 312: «Come seconda finta, accennerà la cavazion dalla parte
+    # opposta, / cioè al petto, in dentro.» -- the OCR's two rows of one
+    # reply were two table rows, the second with an empty label. A column's
+    # head («A. | B.», Barbasetti pdf 148) takes nothing.
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        C = importlib.import_module("_columns")
+    except ImportError:
+        return
+    en = ["He will invite in quarta.", "He will parry simple terza.",
+          "He will indicate the straight thrust to the chest, as first feint.",
+          "As second feint, he will indicate the cavazione from the opposite side,",
+          "that is to the chest, on the inside."]
+    pos = [(0.20, "L"), (0.30, "L"), (0.20, "R"), (0.30, "R"), (0.32, "R")]
+    res = C.build(en, pos, 0.5, 0.0, 1.0)
+    assert res is not None
+    html = "".join(res[2])
+    assert html.count("<tr>") == 2, html
+    assert "opposite side, that is to the chest, on the inside." in html, html
+
+
+def test_title_page_in_capitals_and_the_display_key():
+    # Joseph-Renaud's colophon (pdf 311) and Masiello's dedication (pdf 10):
+    # one block in capitals of 30+ words, centred line by line in print, was
+    # set as text. Gomard's title page (pdf 12) has a 33-word block of the
+    # author's titles in ordinary case: [pages.11] display = true.
+    R = _render_mod()
+    if R is None:
+        return
+    colophon = "\n".join(["FINISHED PRINTING", "ON THE TWENTY-FIRST OF JULY NINETEEN HUNDRED TWENTY-EIGHT",
+                          "ON THE PRESSES OF A. DESVAGES", "MASTER-PRINTER IN ROUEN", "FOR LÉON DELEVOYE",
+                          "PUBLISHER", "DIRECTOR OF THE INTERNATIONAL REVIEW", "“FENCING AND SHOOTING”",
+                          "104, RUE JEANNE-D'ARC", "ROUEN"])
+    assert R.display_page(colophon, "[284]")
+    prose = "Heading\n\n" + " ".join(["The text of an ordinary page goes on."] * 6)
+    assert not R.display_page(prose, "[5]")
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    O = importlib.import_module("_overrides")
+    assert O.display_pages({"pages": {11: {"display": True}, 12: {"note": "x"}}}) == {11}
+
+
 def test_contents_title_in_ordinary_case_centred():
     # Kirchhoffer pdf 104: «Table of Contents.» (the book's «Table des
     # Matières.», centred) was set flush left -- only capitals counted as a
@@ -4736,7 +5017,10 @@ def test_margin_note_echoes_dropped():
     assert out.count("He speaks of the riposte") == 1 and out.count("The reprise named") == 1
     m = ("Invites in prima or quinta.\nParries seconda.\n\nFrom the guard of seconda he will incline the trunk.\n\n"
          "⟦MARGIN: Parries seconda.⟧\n\n⟦MARGIN: Parries seconda.⟧\n\nAvoiding the contact he will deliver.")
-    assert R.drop_margin_echoes(m).count("Parries seconda.") == 3
+    # the text keeps the cell; the note repeated on the page is a misread
+    # label and goes (2026-11-17: the cell had become "He will parry
+    # seconda.", 4 words, and went as the notes' echo)
+    assert R.drop_margin_echoes(m).count("Parries seconda.") == 1 and "MARGIN" not in R.drop_margin_echoes(m)
 
 
 def test_footnote_runs_split():
@@ -6137,6 +6421,9 @@ def test_page_sweep_render_fixes_2026_11_16():
     assert not R._title_line("Azione (action); it indicates any operation, both offensive and defensive.")
     assert not R._title_line("1° The straight thrust of quinte.")
     assert R._title_line("2° The Sixte and Its Counter.") and R._title_line("Synoptic charts.")
+    # a future tense is a sentence: Masiello pdf 291, Joseph-Renaud pdf 142
+    assert not R._title_line("He will engage in terza.")
+    assert not R._title_line("The professor will show the pupil all these times.")
 
 
 def test_column_passages_keep_reading_order_and_lists_stay_text():

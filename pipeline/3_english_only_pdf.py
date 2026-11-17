@@ -637,8 +637,9 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
     try:
         PLACES = _overrides.picture_places(_overrides.load(book))
         COLS = _overrides.list_columns(_overrides.load(book))
+        SHOWN = _overrides.display_pages(_overrides.load(book))
     except Exception:
-        PLACES, COLS = {}, {}
+        PLACES, COLS, SHOWN = {}, {}, set()
     with open(f"{int_dir}/extracted.txt", "r", encoding="utf-8") as f:
         extractions = [p.strip() for p in _pageio.split_pages(f.read())]
 
@@ -1014,7 +1015,7 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         # a title page, half-title, plate title (_render.display_page): its
         # lines centred, and a line the OCR took for a running head is the
         # page's title, set first (Kirchhoffer pdf 10)
-        display = _render.display_page(_render.split_footnotes(tr or "")[0], st.get("page_num"))
+        display = i + 1 in SHOWN or _render.display_page(_render.split_footnotes(tr or "")[0], st.get("page_num"))
         title_hdr = ""
         if display and hdr_en and not two_part_hdr:
             title_hdr, hdr_en = hdr_en, ""
