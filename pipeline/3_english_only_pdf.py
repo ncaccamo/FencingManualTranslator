@@ -288,6 +288,7 @@ class Flow:
         self.y = COL.y1  # forces a new page on first write
         self.open = False                  # the last page's text stopped mid-sentence
         self.held = []                     # its notes, drawn once the sentence ends
+        self.page_num = ""                 # the page whose label was drawn last (its notes' page)
         self.cur = None                    # the book page being set
         self.on_sheet = set()              # the book pages whose text / pictures this sheet holds
         self.label = None                  # the label just drawn, while nothing follows it yet
@@ -318,6 +319,7 @@ class Flow:
         elif not compact:
             self.y += FS * 0.8  # breathing room above a new section
         label_args = (page_num, header, reserve, compact, side)
+        self.page_num = page_num
         label_top = self.y
         # Only show a folio we actually trust. reconcile_page_numbers()
         # brackets anything it inferred ("[5]") -- for front matter and
@@ -377,8 +379,24 @@ class Flow:
 
     def _notes(self, notes):
         self.y += FS * 0.4
-        self._flow(_render.footnote_lines(notes, COL.width, FS - 2), FS - 2,
-                   color=(0.25, 0.25, 0.25))
+        size = FS - 2
+        lines = _render.footnote_lines(notes, COL.width, size)
+        room = COL.y1 - self.y if self.page is not None else 0
+        if _render.measure(lines, size) > room:
+            # at the foot of their page, as the book prints them: a size
+            # smaller when that fits; else on the next sheet under a line
+            # naming their page -- alone at its top they read as the next
+            # page's (Masiello sheets 50, 143; page sweep 2026-11-15)
+            small = _render.footnote_lines(notes, COL.width, size - 1)
+            if _render.measure(small, size - 1) <= room:
+                lines, size = small, size - 1
+            else:
+                self._newpage()
+                pn = str(self.page_num or "")
+                if pn and not pn.startswith("["):
+                    self._flow(_render.layout(f"<i>Notes to page {pn}</i>", COL.width, size), size,
+                               color=(0.25, 0.25, 0.25))
+        self._flow(lines, size, color=(0.25, 0.25, 0.25))
 
     def release(self):
         """Draw notes held back from a page whose sentence ran on."""
@@ -619,6 +637,7 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
 
     PARAS = _render.book_paragraphs(book)
     _render.BOLD_SECTIONS = _render.book_bold_headings(book)
+    _render.CENTRED_SUMMARIES = _render.book_chapter_summaries(book)
     CENTRE = _render.centres_headings(folder)
     import _layout
     TWO_PART = _layout.two_part_heads(folder, [parse_vlm_output(e).get("header", "") for e in extractions])

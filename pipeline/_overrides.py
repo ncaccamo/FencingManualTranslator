@@ -34,6 +34,10 @@ continuation sheet, so it can't key anything durable.)
                          heading that is not a part or chapter is set in
                          bold, a leading number label («§ 4. —») in roman
                          as printed (_render.bold_title).
+        chapter_summaries "centred" -> the line of topics under a chapter
+                         heading («Esercizi convenzionali. — Spratico. —
+                         Assalto.», Masiello 1887) is set centred in small
+                         type, as the book prints it (_render.layout).
         final            true -> the book is finished: scripts that would
                          change it skip it unless run with --unlock
                          (_books.py). The review report still runs.
@@ -100,7 +104,7 @@ _PAGE_KEYS = {"columns", "page_number", "header", "retranslate", "note", "captio
               "picture_after"}
 _TOP_KEYS = {"book", "headers", "terms", "pages", "fix", "book_fix", "table_fix", "ocr_fix"}
 _BOOK_KEYS = {"running_heads": bool, "final": bool, "paragraphs": str, "page_numbers": str,
-              "bold_headings": bool, "text_size": (int, float)}
+              "bold_headings": bool, "text_size": (int, float), "chapter_summaries": str}
 TEXT_SIZES = (9, 13)        # [book] text_size: the side-by-side body size, points
 _PARAGRAPHS = ("indented", "spaced")
 _PAGE_NUMBERS = ("outer", "inner", "centre", "bottom-outer", "bottom-inner", "bottom-centre")

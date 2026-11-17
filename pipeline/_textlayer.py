@@ -622,6 +622,18 @@ def apply(english, src_body, page, prev_page=None, ornaments=()):
                     continue
                 rows[k] = ""
     filled = [k for k, r in enumerate(rows) if r.strip()]
+    if len(filled) < len(src):
+        # a source sentence the OCR broke over two lines that the English
+        # keeps as one row (Prévost-Jollivet pdf 319: «… qui sert à pe- /
+        # qu'elles se confondent …»): rejoined, only when that makes the
+        # rows pair exactly
+        broken = [k for k in range(len(src) - 1)
+                  if not re.search(r"[.!?:;»”)]\s*$", src[k]) and re.match(r"\s*[a-zà-ÿ]", src[k + 1])]
+        if len(src) - len(broken) == len(filled):
+            for k in reversed(broken):
+                src[k] = src[k].rstrip() + " " + src[k + 1].lstrip()
+                del src[k + 1]
+            opens, joins = hints(src, lines, page.rect.width, prev_lines)
     if len(filled) == len(src):                      # row k of the English is row k of the source
         for r in range(len(src) - 1, 0, -1):
             a, b = filled[r - 1], filled[r]

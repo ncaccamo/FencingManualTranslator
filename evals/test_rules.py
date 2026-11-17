@@ -6115,5 +6115,25 @@ def test_column_passages_keep_reading_order_and_lists_stay_text():
     assert pos[1][0] == 0.30, pos
 
 
+def test_chapter_summary_centred_where_the_book_sets_it():
+    # [book] chapter_summaries = "centred" (Masiello 1887 pdf 435): the topics
+    # under a chapter heading centred in small type; off, as before
+    R = _render_mod()
+    if R is None:
+        return
+    text = "NINTH CHAPTER\n\nConventional exercises. — Practice bout. — Bout.\n\n§ 164. — Conventional exercises."
+    keep = R.CENTRED_SUMMARIES
+    try:
+        R.CENTRED_SUMMARIES = True
+        ls = [l for l in R.layout(text, 400, 10, paras="indented", centre=True) if not l.gap]
+        assert ls[1].scale < 1 and ls[1].indent > 20, [(l.scale, l.indent) for l in ls]
+        R.CENTRED_SUMMARIES = False
+        ls = [l for l in R.layout(text, 400, 10, paras="indented", centre=True) if not l.gap]
+        assert ls[1].scale == 1.0
+    finally:
+        R.CENTRED_SUMMARIES = keep
+    assert not R._summary_row("1. — NOMENCLATURE OF THE ITALIAN FOIL.") and R._summary_row("Invitations. — Engagements. — Parries.")
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

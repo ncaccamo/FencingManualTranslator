@@ -231,6 +231,18 @@ centred, level with it, above the text (`_layout.picture_caption`).
 - **Margin-note echoes**: a body line the margin note repeats goes, but a
   line standing alone that is only the start of a longer note is the
   book's own sub-heading and stays (Gomard pdf 173).
+- **Source rows rejoined for pairing**: where the English has fewer rows
+  than the OCR source, source lines that break a sentence (no closing
+  punctuation, the next in lower case) are rejoined when that makes the
+  rows pair exactly (Prévost-Jollivet pdf 319); a glossary entry run on
+  from the page before keeps the hanging indent on a hanging page.
+- **Chapter summaries** (`[book] chapter_summaries = "centred"`): the
+  topics under a chapter heading centred in small type (Masiello 1887).
+- **Caption-only plate pages** (side-by-side): a page with a plate whose
+  only text is short (45 words, no table) has it drawn as the recorded
+  captions are -- small and grey -- not at body size or bold.
+- **Notes that do not fit at their page's foot** (English-only): a size
+  smaller when that fits, else on the next sheet under «Notes to page N».
 - **Hanging lines** of notes and contents rows are wrapped to the width
   they have after the hanging indent (Gomard pdf 32, Jacob-André pdf 324).
 - **Drawing-time typography** (`layout()` and table cells, both PDFs;

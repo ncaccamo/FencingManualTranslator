@@ -341,6 +341,7 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
     except Exception:
         COLS = {}
     _render.BOLD_SECTIONS = _render.book_bold_headings(book)
+    _render.CENTRED_SUMMARIES = _render.book_chapter_summaries(book)
     CENTRE = _render.centres_headings(folder)
     # the book's body size ([book] text_size, 9 pt unset): every page tries
     # it first and steps down only when it doesn't fit; notes in proportion
@@ -543,6 +544,21 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
                                     CAPTION_SIZE, color=CAPTION_COLOR)
             y += 6
 
+        # a plate page whose only text is its caption, which the OCR gave as
+        # the page's text: drawn as the recorded captions are, small and grey,
+        # not at body size and bold by turns (Masiello 1887 pdf 444-564, page
+        # sweep 2026-11-15)
+        plain_words = len(re.sub(r"<[^>]+>|[\x02-\x07]", "", body_txt).split())
+        plate_here = has_fig or any((b[2] - b[0]) * (b[3] - b[1]) >= 0.25
+                                    for b in _layout.pictures(folder, i, 0.6, whole=False))
+        if (plate_here and not DISPLAY and 0 < plain_words <= 45 and not re.search(r"\x00TABLE|\[table|\[\[TABLE|<table", body_txt)
+                and len([q for q in re.split(r"\n\s*\n", body_txt.strip()) if q.strip()]) <= 3
+                and not body_txt.strip().startswith("[")):
+            for vl in _render.layout(re.sub("[\x02-\x07]", "", body_txt.strip()), RIGHT.width, CAPTION_SIZE, as_printed=True):
+                vl.bold, vl.scale = False, 1.0
+                _, y = _render.draw(page, (RIGHT.x0, y, RIGHT.x1, body_bottom), [vl],
+                                    CAPTION_SIZE, color=CAPTION_COLOR)
+            body_txt = ""
         # pick the largest size that fits; fall back to the smallest + spill
         chosen, lines = SIZES[-1], None
         for s in SIZES:

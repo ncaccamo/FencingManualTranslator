@@ -588,6 +588,26 @@ def book_bold_headings(stem, books_dir="/data/books"):
         return False
 
 
+CENTRED_SUMMARIES = False   # [book] chapter_summaries = "centred" (set by the PDF steps)
+
+
+def book_chapter_summaries(stem, books_dir="/data/books"):
+    """Does the book centre its chapter summaries ([book] chapter_summaries)?"""
+    import _overrides
+    try:
+        return _overrides.load(stem, books_dir)["book"].get("chapter_summaries", "") == "centred"
+    except _overrides.OverridesError:
+        return False
+
+
+def _summary_row(plain):
+    """A chapter summary's line: topics apart by « — », each short, ending
+    with a full stop; not a numbered or capitalised section title."""
+    segs = [x.strip() for x in re.split(r"\s+[—–]\s+", plain) if x.strip()]
+    return (len(segs) >= 2 and all(len(x.split()) <= 12 for x in segs) and plain.rstrip().endswith(".")
+            and not re.match(r"(?:§\s*)?\d", plain) and not _heading_line(plain))
+
+
 _LABEL = re.compile(r"\s*(?:§\s*)?[\dIVXLC]+[.°]?\s*[—–-]\s*")
 
 
@@ -1225,6 +1245,14 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False, 
         title = alone and not cut and not forced and not quote and _title_line(plain) and (
             not re.search(r"\.(?:</i>)?$", body) or prev in ("start", "other")
             or bool(re.match(r"(?:§\s*)?[\dIVXLC]+[.°]", plain)))
+        if CENTRED_SUMMARIES and head_above == 2 and not brace and _summary_row(plain):
+            # a chapter's summary, centred in small type under its heading
+            # (Masiello 1887 pdf 435, 482; page sweep 2026-11-15)
+            for vline in _wrap(_spans(body), width, size * 0.85):
+                w = sum(_w(t, i, size * 0.85) for t, i in vline)
+                out.append(Line(max(0.0, (width - w) / 2), vline, scale=0.85))
+            gap, prev = False, "other"
+            continue
         is_head = not brace and not forced and (title or (not prose and _heading_line(plain)))
         # a row the book centres (_textlayer.CENTRE): a heading when it reads
         # as a title or is in capitals; else a centred line in body weight
@@ -1308,6 +1336,14 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False, 
             for vline in _wrap(_spans(raw[n:]), avail, size, bold=hb):
                 w = sum(_w(t, i, size, hb) for t, i in vline)
                 out.append(Line(max(indent, width - w), vline, bold=hb))
+        elif (not forced and not brace and cont and not any(r.strip() for r in rows[:at])
+              and any(r.lstrip(" ").startswith("\x05") for r in rows)):
+            # a glossary entry run on from the page before, on a page set with
+            # hanging indents: its lines at the indent, as the rest of the
+            # entry (Prévost-Jollivet pdf 316, 319; page sweep 2026-11-15)
+            hang = size * PARA_INDENT_EM
+            for vline in _wrap(_spans(raw[n:]), max(avail - hang, _MIN_WRAP), size):
+                out.append(Line(indent + hang, vline))
         elif forced == "hanging" and not brace:
             # a glossary entry as the book sets it: first line flush, the rest in
             hang = size * PARA_INDENT_EM
