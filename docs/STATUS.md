@@ -79,6 +79,20 @@ the operator's business and is not tracked here.)
   (`decoration_sheet.py` → `books/<stem>.pictures`). Both render through
   `pipeline/_render.py`: italics, drill/brace indentation, footnote blocks,
   margin notes. Details: `docs/pdf-layout.md`.
+- **Layout as the book sets it (2026-11-16/17):** read from the scan where
+  it can be -- rows the book centres are centred (headings), closing
+  signatures flush right, a letter's first page set as text; section breaks
+  drawn as marked (`[[DIVIDER]]` stars, `[[BREAK]]` space, `[[RULE]]` a
+  short rule); lists' items set alike; a two-column passage kept in reading
+  order; a plate page's caption-only text drawn as a caption (level with it
+  on a turned scan); notes kept with their page (a short page and its notes
+  move to the next sheet together; else «Notes to page N»). At drawing time
+  only: curly apostrophes, whole-word italics, each quoted paragraph opened.
+  All in `docs/pdf-layout.md`; per-book settings and marks in
+  `docs/per-book-files.md`.
+- **Step 1 repairs (2026-11-16):** a row of identical table cells is no
+  longer cut short (`collapse_runs`), and a running head keeps its printed
+  full stop on every page (`head_stops`); `docs/model-quirks.md` 1.18-1.19.
 - **Backends:** `backend.env` switches local (`vulkan` | `rocm7` | `rocm714`)
   vs. remote (LAN llama-server / llama-swap, keys `fmt-ocr` /
   `fmt-translate`, old `bt-*` names kept as aliases). See
@@ -238,6 +252,21 @@ the operator's business and is not tracked here.)
   the side-by-side falls back to plain flow for the whole book.
 
 ## Non-obvious decisions / don't-retry-this
+
+- **Space-only section breaks and library stamps are marked by hand**
+  (2026-11-16): dry runs of a detector for each were wrong more often than
+  right outside one book (open items 15-16).
+- **Stamps on a picture stay** (Kirchhoffer pdf 103, Masiello's plates):
+  the stamp shares the picture's ink colour; whitening it would damage the
+  engraving. Labels engraved on a plate stay inside its crop (owner,
+  2026-11-17).
+- **Chapter summaries are a per-book setting** (`[book]
+  chapter_summaries`): books print them differently (Masiello centred and
+  small, André bold with a hanging indent), and the scan gives no reliable
+  signal.
+- **Marks written by a fix** (`\u0003` indent, `\u0006` flush right,
+  `\u0007` centred, at a line's start) are for one-page exceptions the text
+  layer misreads; a pattern seen on two books gets a rule instead.
 
 - **The prompt outgrew the window; long pages get a shorter prompt, not a
   larger window (2026-11-12).** The French prompt had grown to ~7,100

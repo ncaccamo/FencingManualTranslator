@@ -6135,5 +6135,15 @@ def test_chapter_summary_centred_where_the_book_sets_it():
     assert not R._summary_row("1. — NOMENCLATURE OF THE ITALIAN FOIL.") and R._summary_row("Invitations. — Engagements. — Parries.")
 
 
+def test_a_capital_heading_keeps_its_space_above():
+    # Joseph-Renaud «SECOND EXERCISE»: the text layer's spacing step never
+    # takes away the blank line above a heading in capitals
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    T = importlib.import_module("_textlayer")
+    assert T._caps_head("SECOND EXERCISE") and T._caps_head("\x03ONE-TWO DECEIVED <i>DISENGAGED</i>")
+    assert not T._caps_head("He extends the arm.") and not T._caps_head("§ 4.")
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

@@ -554,6 +554,15 @@ _ITEM = re.compile(r"\s*(?:<[^>]+>)*\s*(?:[—–\-•*«“\"]|\d+\s*[°.)]|[a-
 _RUN_IN = re.compile(r"[^\W\d][^.!?—]{0,40}?[.:]\s*[—–]\s")
 
 
+def _caps_head(row):
+    """A heading in capitals («SECOND EXERCISE», «ONE-TWO DECEIVED …»): the
+    blank line above it stays, however the print's gap measured
+    (Joseph-Renaud, page sweep 2026-11-15)."""
+    plain = re.sub(r"<[^>]+>|[\x02-\x07]", "", row or "").strip()
+    letters = [c for c in plain if c.isalpha()]
+    return len(letters) >= 4 and sum(c.isupper() for c in letters) > 0.8 * len(letters) and len(plain.split()) <= 15
+
+
 def _prose(row, least=30):
     """Running text, not a heading: a flush-left title the text layer can't
     tell from a running-on line must never swallow the paragraph below."""
@@ -653,7 +662,7 @@ def apply(english, src_body, page, prev_page=None, ornaments=()):
             # any row, not only a run-in title (Barbasetti pdf 84, 27, 32;
             # Masiello pdf 115: blank lines the book doesn't have)
             if (rows[b] is not None and space[r] is False and not any(m in rows[b] for m in MARKS)
-                    and not rows[b].startswith("\x00TABLE")):
+                    and not rows[b].startswith("\x00TABLE") and not _caps_head(rows[b])):
                 for k in range(a + 1, b):
                     rows[k] = None                       # the blank lines in between
         # a divider the OCR never read, where the detector saw one between

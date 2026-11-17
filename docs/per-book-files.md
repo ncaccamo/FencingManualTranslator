@@ -137,6 +137,14 @@ in columns without rules: `<table data-plain="1">…</table>` on its own
 line (Barbasetti pdf 162, Masiello's errata pdf 752); with rules,
 `<table>…</table>` (Gomard pdf 90).
 
+Marks a `[[fix]]` can put at the start of a line, for a one-page
+exception the scan's text layer misreads: `\u0003` (start a paragraph at
+the indent: Kirchhoffer pdf 38, Joseph-Renaud pdf 169), `\u0006` (flush
+right: Masiello's spread-title halves), `\u0007` (centred: Kirchhoffer pdf
+52 «Diagram A.»). Write them as TOML escapes; the PDFs read them, the text
+keeps them out of sight. When the same misreading shows on a second book,
+it becomes a rule instead.
+
 ### `[[book_fix]]`: one wording change on every page
 
 ```toml

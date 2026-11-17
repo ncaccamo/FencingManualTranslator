@@ -456,7 +456,28 @@ class Flow:
             self.release()
             body_txt = ""
         if body_txt:
-            self._flow(lay(body_txt), FS)
+            body_lines = lay(body_txt)
+            if notes and self.page is not None and not after and not self.held:
+                # a short page -- a title, a few lines -- whose notes would not
+                # fit under it: it starts the next sheet, title and notes
+                # together (Masiello 1887: the second synoptic table's title at
+                # one sheet's foot, its note «(1) All the actions …» atop the
+                # next, over page 304's head -- page sweep 2026-11-15)
+                nl = _render.footnote_lines(notes, COL.width, FS - 2)
+                need = _render.measure(body_lines, FS) + FS * 0.4 + _render.measure(nl, FS - 2)
+                if (len([l for l in body_lines if not l.gap]) <= 6 and need > COL.y1 - self.y
+                        and need <= COL.y1 - COL.y0 - FS * 4):
+                    label, self.label = self.label, None
+                    if label and label[0] is self.page and label[4] == self._sig():
+                        page, top, bottom, args, _ = label
+                        page.add_redact_annot(fitz.Rect(COL.x0 - 2, top, COL.x1 + 2, bottom))
+                        page.apply_redactions(images=0)
+                        self._newpage()
+                        self.section_label(*args[:2], compact=args[3], side=args[4])
+                        self.label = None
+                    else:
+                        self._newpage()
+            self._flow(body_lines, FS)
         if after:                        # pictures printed below the page's text
             after()
         tail = re.sub(r"</?i>|\s+$", "", body_txt or head or "")

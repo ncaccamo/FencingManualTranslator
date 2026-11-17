@@ -1116,6 +1116,32 @@ rule would break the real word, and it is one book's column. Fixed with
 `docs/per-book-files.md`), so the source is right and only the corrected
 cells were translated again.
 
+### 1.18 A row of identical table cells cut short (2026-11-16)
+
+A lesson table whose cells are one a line («<td>—</td>» six times, «(2)»
+in a row: Masiello 1887 pdf 412-434) met the repetition-loop guard (1.1):
+a line repeated 4+ times was cut to two, and the cells after it moved into
+the wrong columns. `collapse_runs` now leaves table-cell lines alone unless
+the run is 30+ (a real loop). Only Masiello changed in a corpus dry run.
+
+### 1.19 A running head's full stop dropped on some pages (2026-11-16)
+
+The OCR reads «LE JEU DE L'ÉPÉE.» on some pages and «LE JEU DE L'ÉPÉE»
+(or «…ÉPÉE,» / «…:») on others, though the book prints the stop every time
+(Jacob-André 55 pages, Gomard 50, Prévost-Jollivet 10). `head_stops`
+(step 1, after `reconcile_headers`): where the stopped form is on 2+ pages
+and a quarter of them, every page gets it.
+
+### 1.20 Two lines run together; both halves of a spread head (2026-11-17)
+
+Two one-off misreadings, fixed as data: two pupil lines of a lesson read as
+one (Masiello pdf 601: the second line then had no row; `[[ocr_fix]]`
+splitting them), and a left page given both halves of the spread's head
+(«PARTE TERZA» + «TRATTATO DELLA SPADA», Masiello pdf 455, 739: `[pages.N]
+header`). A source sentence broken over two OCR lines that the English
+keeps as one is rejoined by the text layer when that pairs the rows
+(`docs/pdf-layout.md`).
+
 ## Part 2 — Translation (Qwen3.8-27B i1-Q4_K_S, port 11434)
 
 Qwen3.8-27B is the default since 2026-09-25 (translation model selection

@@ -56,6 +56,38 @@ PARAS = "indented"      # the book's paragraph style, set per book below
 CENTRE = False          # the book centres its headings, set per book below
 
 
+def turned_caption_spots(folder, i, rot, src_page):
+    """On a scan the side-by-side shows turned (rot 90 / 270): where its
+    caption boxes land on the turned page, top to bottom then left to right,
+    as [(y on the sheet, x0, x1 as column fractions)] -- the captions under
+    the turned pictures (Masiello 1887's sideways plates, Kirchhoffer pdf
+    59; page sweep 2026-11-15). None on an upright page or with no box."""
+    if rot not in (90, 270):
+        return None
+    lay = (_layout._lay(folder) or {}).get("pages", {}).get(str(i)) or {}
+    boxes = [b[2] for b in lay.get("boxes", []) if b[0] in ("caption", "text", "page_header", "title") and b[1] >= 0.3]
+    pics = [b[2] for b in lay.get("boxes", []) if b[0] == "picture" and b[1] >= 0.5]
+    if not boxes or not pics:
+        return None
+    turn = (lambda x0, y0, x1, y1: (x0, x1, 1 - y1, 1 - y0)) if rot == 270 else \
+           (lambda x0, y0, x1, y1: (1 - x1, 1 - x0, y0, y1))     # -> (y0, y1, x0, x1) on the turned page
+    tp = [turn(*b) for b in pics]
+    foot = max(t[1] for t in tp)
+    caps = []
+    for b in boxes:
+        t = turn(*b)
+        if t[0] >= foot - 0.03 and not any(abs(t[0] - c[0]) < 0.01 and abs(t[2] - c[2]) < 0.02 for c in caps):
+            caps.append(t)
+    if not caps:
+        return None
+    r = src_page.rect
+    disp_h = min(LEFT.height, LEFT.width * r.width / r.height)
+    top = LEFT.y0 + (LEFT.height - disp_h) / 2
+    row = min(c[0] for c in caps)
+    level = sorted((c for c in caps if c[0] <= row + 0.03), key=lambda c: c[2])
+    return [(top + c[0] * disp_h, c[2], c[3]) for c in level]
+
+
 def displayed_scan_span(src_page):
     """Vertical extent (y0, y1) that show_pdf_page(LEFT, ...) actually paints
     the scan into, given it fits-and-centres preserving aspect."""
@@ -554,11 +586,32 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
         if (plate_here and not DISPLAY and 0 < plain_words <= 45 and not re.search(r"\x00TABLE|\[table|\[\[TABLE|<table", body_txt)
                 and len([q for q in re.split(r"\n\s*\n", body_txt.strip()) if q.strip()]) <= 3
                 and not body_txt.strip().startswith("[")):
-            for vl in _render.layout(re.sub("[\x02-\x07]", "", body_txt.strip()), RIGHT.width, CAPTION_SIZE, as_printed=True):
-                vl.bold, vl.scale = False, 1.0
-                _, y = _render.draw(page, (RIGHT.x0, y, RIGHT.x1, body_bottom), [vl],
-                                    CAPTION_SIZE, color=CAPTION_COLOR)
-            body_txt = ""
+            capt = re.sub("[\x02-\x07]", "", body_txt.strip())
+            spots = turned_caption_spots(folder, i, rot, src[i])
+            paras_c = [q for q in re.split(r"\n\s*\n", capt) if q.strip()]
+            if spots and len(spots) == len(paras_c) and len(spots) > 1:
+                # captions side by side under side-by-side pictures, each in
+                # its part of the column (Kirchhoffer pdf 59)
+                for q, (yy, fx0, fx1) in zip(paras_c, spots):
+                    x0c = RIGHT.x0 + fx0 * RIGHT.width
+                    x1c = RIGHT.x0 + fx1 * RIGHT.width
+                    ls = _render.centre_lines(_render.layout(q, x1c - x0c, CAPTION_SIZE, as_printed=True), x1c - x0c, CAPTION_SIZE)
+                    for vl in ls:
+                        vl.bold, vl.scale = False, 1.0
+                    _render.draw(page, (x0c, max(y, yy), x1c, body_bottom), ls, CAPTION_SIZE, color=CAPTION_COLOR)
+                body_txt = ""
+            else:
+                if spots:
+                    # under the turned picture, level with the scan's caption
+                    y = min(max(y, spots[0][0]), body_bottom - 40)
+                ls = _render.layout(capt, RIGHT.width, CAPTION_SIZE, as_printed=True)
+                if spots:
+                    ls = _render.centre_lines(ls, RIGHT.width, CAPTION_SIZE)
+                for vl in ls:
+                    vl.bold, vl.scale = False, 1.0
+                    _, y = _render.draw(page, (RIGHT.x0, y, RIGHT.x1, body_bottom), [vl],
+                                        CAPTION_SIZE, color=CAPTION_COLOR)
+                body_txt = ""
         # pick the largest size that fits; fall back to the smallest + spill
         chosen, lines = SIZES[-1], None
         for s in SIZES:

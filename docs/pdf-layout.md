@@ -241,6 +241,21 @@ centred, level with it, above the text (`_layout.picture_caption`).
 - **Caption-only plate pages** (side-by-side): a page with a plate whose
   only text is short (45 words, no table) has it drawn as the recorded
   captions are -- small and grey -- not at body size or bold.
+- **A short page keeps its notes** (English-only): a page of a few lines
+  (a title: Masiello's synoptic table titles) whose notes would not fit
+  under it at a sheet's foot starts the next sheet, its page label with it.
+- **A page label alone on a sheet moves with its picture**, as with its
+  text (Masiello 1887 sheet 70).
+- **Line breaks**: the pieces of one word in different spans («<i>terza</i>-in-<i>quarta</i>»,
+  «(<i>seconda</i>», «“<i>flanconnade</i>”») go to the next line together;
+  a table's header cell in italics is set in bold italics.
+- **Captions on turned plates** (side-by-side, `turned_caption_spots`): on
+  a scan shown turned (90° / 270°), the caption boxes are mapped through
+  the turn, and a caption-only page's text is set level with them, under
+  the picture; two captions side by side are set side by side (Masiello's
+  sideways plates, Kirchhoffer pdf 59).
+- **Space above a heading in capitals** is never taken away by the text
+  layer's spacing step (Joseph-Renaud «SECOND EXERCISE»).
 - **Notes that do not fit at their page's foot** (English-only): a size
   smaller when that fits, else on the next sheet under «Notes to page N».
 - **Hanging lines** of notes and contents rows are wrapped to the width
