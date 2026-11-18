@@ -514,7 +514,7 @@ def fix_status(tr: list, ov: dict, french: bool, edited=()) -> list:
 
 def accept_answered(issues: list, answers: dict) -> None:
     """Items answered "fine as is" on the review page become ACCEPTED: left
-    out of the report, counted as marked fine. Book-wide items too (a
+    out of the report (settled: archived in books/<stem>.review). Book-wide items too (a
     first-use note left out on purpose, a terminology split that is two
     French words): decided once, not listed again on every run (Kirchhoffer
     «dérobement», 2026-11-18)."""
@@ -1212,7 +1212,6 @@ def write_report(folder: str, stem: str, issues: list) -> str:
     for x in issues:
         if x["level"] != ACCEPTED:
             by_page[x["scan"]].append(x)
-    n_ok = sum(1 for x in issues if x["level"] == ACCEPTED)
     n_check = sum(1 for x in issues if x["level"] == CHECK)
     pages_check = sorted({x["scan"] for x in issues if x["level"] == CHECK})
     kinds = Counter(x["kind"] for x in issues if x["level"] == CHECK)
@@ -1225,10 +1224,12 @@ def write_report(folder: str, stem: str, issues: list) -> str:
 
     L = [f"# Review report — {stem}", "",
          f"{ex_n} pages. **{len(pages_check)} page(s) to check** "
-         f"({n_check} issue(s)); {sum(1 for x in issues if x['level'] == NOTE)} note(s)."
-         + (f" {n_ok} more marked fine as is on the review page (`books/{stem}.review`)." if n_ok else ""),
-         "", "Record decisions in `books/" + stem + ".overrides.toml` (manual III.5b); "
-         "retranslate with `2_translate.py --pages " + stem + " <scan pages>`.", ""]
+         f"({n_check} issue(s)); {sum(1 for x in issues if x['level'] == NOTE)} note(s).",
+         # settled answers are an archive, not report content (owner, 2026-11-18)
+         ""]
+    if pages_check or book or terms or any(x["level"] == NOTE for x in issues):
+        L += ["Record decisions in `books/" + stem + ".overrides.toml` (manual III.5b); "
+              "retranslate with `2_translate.py --pages " + stem + " <scan pages>`.", ""]
     if not pmap:
         L += ["*The side-by-side PDF is missing or out of date, so pdf page numbers "
               "are not shown — rebuild it and rerun this report.*", ""]
@@ -1247,7 +1248,8 @@ def write_report(folder: str, stem: str, issues: list) -> str:
                 f"*{k}* on {len(v)} page(s) (scan {', '.join(map(str, v))})"
                 for k, v in parts))
         L.append("")
-    L += ["## Pages to check", ""]
+    if pages_check:
+        L += ["## Pages to check", ""]
     for s in sorted(by_page):
         items = sorted(by_page[s], key=lambda x: x["level"] != CHECK)
         if items[0]["level"] != CHECK:

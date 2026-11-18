@@ -309,6 +309,12 @@ cards you haven't answered are marked New. Until `apply_review.py` has run,
 the report lists each Fix answer not yet in the overrides file. A Fix with
 only a note stays listed until the item itself is resolved.
 
+Settled decisions -- answered *fine as is*, or fixed so the report no longer
+lists the item -- are archived: they leave the report and the page's cards,
+and the saved file keeps them in an archive section at its end. The report
+reads that section, so a settled item stays closed. A finished book's report
+and page are empty.
+
 Using another review tool instead: `review_page.py` also writes the same
 cards as `<stem> — Review cards.json`. Answers from such a tool come back as
 a JSON list of `{"stem", "id", "answer", "find", "replace", "note", "scan",

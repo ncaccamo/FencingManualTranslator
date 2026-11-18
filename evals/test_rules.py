@@ -6490,5 +6490,20 @@ def test_book_wide_report_items_take_a_fine_answer():
     assert other["level"] == "BOOK"                          # unanswered: still listed
 
 
+def test_review_file_keeps_its_pointer_to_earlier_reviews():
+    # books/<stem>.review [history]: where the book's reviews before the
+    # review page are (Markdown checklists, the Decisions page's history);
+    # read for the page, which writes it back on every save (2026-11-18)
+    import importlib, tempfile, os
+    sys.path.insert(0, str(_PIPELINE))
+    O = importlib.import_module("_overrides")
+    with tempfile.TemporaryDirectory() as d:
+        open(os.path.join(d, "x.review"), "w", encoding="utf-8").write(
+            '[history]\nearlier = ["a.md -- ## X"]\n\n[[card]]\nid = "1"\nanswer = "fine"\n')
+        assert O.load_review_history("x", d) == ["a.md -- ## X"]
+        assert list(O.load_review("x", d)) == ["1"]          # cards read as before
+        assert O.load_review_history("y", d) == []
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

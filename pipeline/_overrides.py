@@ -569,6 +569,23 @@ def load_review(stem: str, books_dir: str = "/data/books") -> dict:
     return out
 
 
+def load_review_history(stem: str, books_dir: str = "/data/books") -> list:
+    """books/<stem>.review [history] earlier: where the book's reviews before
+    the review page are kept ("file -- section"). Missing -> []."""
+    p = _here_or_skip(books_dir, f"{stem}.review")
+    if not os.path.exists(p):
+        return []
+    try:
+        with open(p, "rb") as fh:
+            h = tomllib.load(fh).get("history") or {}
+    except tomllib.TOMLDecodeError as e:
+        raise OverridesError(f"{p}: {e}") from None
+    earlier = h.get("earlier") or []
+    if not (isinstance(earlier, list) and all(isinstance(x, str) for x in earlier)):
+        raise OverridesError(f"{p}: [history] earlier must be a list of strings")
+    return earlier
+
+
 def review_fixes_missing(answers: dict, ov: dict) -> list:
     """Answers "fix" with a find/replace that has no [[fix]] in the overrides
     file yet: [(scan, card id, find)] -- run apply_review.py."""

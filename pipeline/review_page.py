@@ -30,8 +30,10 @@ old one). Then:
     python3 /app/apply_overrides.py <stem>    in the container; rebuild the PDFs
 
 Your earlier answers are filled in from books/<stem>.review; cards you
-haven't answered are marked New. An answer whose item the report no longer
-lists (fixed, or the text changed) is kept in the file, shown at the end.
+haven't answered are marked New. Settled decisions -- answered "fine as is",
+or fixed so the report no longer lists the item -- are not shown as cards:
+they are kept in the file's archive section at the end, which the report
+reads so those items stay closed.
 Rebuild the PDFs before making the page: the pictures and pdf page numbers
 are read from them.
 """
@@ -105,6 +107,8 @@ def build(stem: str) -> bool:
     eo_text = [p.get_text() for p in eo] if eo else []
     cards = []
     for x in issues:
+        if x["level"] == Q.ACCEPTED:     # settled: archived in the file, not a card (owner, 2026-11-18)
+            continue
         detail = x["detail"] if isinstance(x["detail"], str) else "; ".join(
             f"{k} on scan {', '.join(map(str, v))}" for k, v in x["detail"].items())
         s = x["scan"]
@@ -143,7 +147,10 @@ def build(stem: str) -> bool:
             break
     name = f"{meta.get('author_short') or stem.split('_')[0].replace('-', ' ').title()} " \
            f"{stem.split('_')[1] if '_' in stem else ''}".strip()
-    payload = {"stem": stem, "name": name, "cards": cards, "gone": gone}
+    # where this book's earlier reviews are (the Markdown checklists, the
+    # Decisions page's history): kept at the top of the file on every save
+    history = _overrides.load_review_history(stem)
+    payload = {"stem": stem, "name": name, "cards": cards, "gone": gone, "history": history}
     page = TEMPLATE.replace("__TITLE__", html.escape(name)).replace(
         "__DATA__", json.dumps(payload, ensure_ascii=False).replace("</", "<\\/"))
     out = f"{F}/{stem} — Review.html"
@@ -248,6 +255,11 @@ for (const k of kinds) { const o = document.createElement("option"); o.value = o
 function fileText() {
   const L = [`# Review answers for ${D.name} (books/${D.stem}.review), from the review page (review_page.py).`,
     "# answer: fix / fine (as is) / later. find + replace on a fix: apply_review.py writes it as a [[fix]].", ""];
+  if (D.history && D.history.length) {
+    L.push("# earlier reviews of this book, before this file (file -- section)", "[history]", "earlier = [");
+    for (const h of D.history) L.push(`  ${tq(h)},`);
+    L.push("]", "");
+  }
   const one = (a, c) => {
     L.push("[[card]]", `id = ${tq(c.id)}`);
     if (c.scan) L.push(`scan = ${c.scan}`);
@@ -257,7 +269,7 @@ function fileText() {
     L.push("");
   };
   for (const c of D.cards) if (ans[c.id] && ans[c.id].answer) one(ans[c.id], c);
-  if (D.gone.length) L.push("# answers to items the report no longer lists (kept for the record)", "");
+  if (D.gone.length) L.push("# archive: settled decisions (answered fine, or fixed). Not shown as cards;", "# the report reads them so the items stay closed.", "");
   for (const g of D.gone) one(g, g);
   return L.join("\n");
 }
