@@ -200,6 +200,11 @@ side-by-side PDF. What it checks:
   phrase rendered several ways across the book (e.g. *coups composés* as
   "blows" on some pages and "thrusts" on others). Choose one, put it under
   `[terms]` (III.5b), and retranslate the other pages with `--pages`.
+  When the split is right (two different source words, e.g. Gomard's
+  *coup* → thrust beside *botte* → finish), answer the entry "fine as is"
+  on the review page; book-wide entries (this section and *About this
+  book*) take that answer like page items and leave the report. Their
+  text holds counts, so an entry whose count changes is a new item.
 - **Consistency:** a short line (a heading, a lesson label) whose identical
   source text is translated two or more ways in the book: "I. TEMPO" as
   "I. TIME" and "I. TEMPO", a lesson numbered "forty-third" in one place and

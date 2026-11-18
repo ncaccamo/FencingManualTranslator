@@ -6470,5 +6470,25 @@ def test_a_capital_heading_keeps_its_space_above():
     assert not T._caps_head("He extends the arm.") and not T._caps_head("§ 4.")
 
 
+def test_book_wide_report_items_take_a_fine_answer():
+    # Kirchhoffer «dérobement»: a book-wide item answered "fine" on the
+    # review page was listed again on every report; Gomard's «botte» split
+    # (coup → thrust is a different word) likewise
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    try:
+        Q = importlib.import_module("quality_report")
+    except (OSError, ImportError, SystemExit):   # reads /app paths: runs in the image
+        return
+    book = {"scan": 0, "level": "BOOK", "kind": "first-use note", "detail": "«dérobement» is on 4 pages"}
+    terms = {"scan": 0, "level": "TERMS", "kind": "botte (de quarte …)", "detail": {"finish": [53], "thrust": [81]}}
+    page = {"scan": 5, "level": Q.CHECK, "kind": "split", "detail": "x"}
+    other = {"scan": 0, "level": "BOOK", "kind": "kept term", "detail": "3 words"}
+    answers = {Q.card_id(x): {"answer": "fine"} for x in (book, terms, page)}
+    Q.accept_answered([book, terms, page, other], answers)
+    assert [x["level"] for x in (book, terms, page)] == [Q.ACCEPTED] * 3
+    assert other["level"] == "BOOK"                          # unanswered: still listed
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

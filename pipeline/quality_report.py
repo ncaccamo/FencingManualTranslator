@@ -512,6 +512,17 @@ def fix_status(tr: list, ov: dict, french: bool, edited=()) -> list:
     return out
 
 
+def accept_answered(issues: list, answers: dict) -> None:
+    """Items answered "fine as is" on the review page become ACCEPTED: left
+    out of the report, counted as marked fine. Book-wide items too (a
+    first-use note left out on purpose, a terminology split that is two
+    French words): decided once, not listed again on every run (Kirchhoffer
+    «dérobement», 2026-11-18)."""
+    for x in issues:
+        if answers.get(card_id(x), {}).get("answer") == "fine" and x["level"] in (CHECK, NOTE, "BOOK", "TERMS"):
+            x["level"] = ACCEPTED
+
+
 def card_id(x: dict) -> str:
     """A report item's id on the review page (review_page.py) and in
     books/<stem>.review: the same item keeps its id from run to run."""
@@ -1180,9 +1191,7 @@ def check_book(folder: str) -> list:
     except _overrides.OverridesError as e:
         add(0, "BOOK", "review answers", str(e))
         answers = {}
-    for x in issues:
-        if answers.get(card_id(x), {}).get("answer") == "fine" and x["level"] in (CHECK, NOTE):
-            x["level"] = ACCEPTED
+    accept_answered(issues, answers)
     if answers and _ov:
         for s, k, find in _overrides.review_fixes_missing(answers, _ov):
             add(s, CHECK, "review", f"answered Fix on the review page (card {k}), not in the "
