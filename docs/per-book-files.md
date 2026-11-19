@@ -71,7 +71,7 @@ the header back into the text), then the PDFs.
 | `caption_en = "…"` | your own English for that caption (wins over the model's) | |
 | `figure = "inset"` | only if the OCR missed the figure entirely: `"plate"` (default) or `"inset"` (a small picture on a text page) | |
 | `retranslate = true` | retranslate this page with `2_translate.py --pages <stem>` (once per version of its source text, so the flag can stay) | |
-| `leave_out = true` | the page is library or digitiser text, not the book's: its English is left out of both PDFs (the side-by-side shows the scan with "[library / digitiser notice, not translated]"); `translation.txt` is untouched, so removing the setting brings it back | Masiello scan 2 (the library bookplate); Prévost-Jollivet scan 1 (Google's notice). A page that mixes such text with the book's own: `[[fix]]` the lines out instead. |
+| `leave_out = true` or `leave_out = "<what the page is>"` | the page is not the book's text (a bookplate, a library stamp, a digitiser's notice, a handwritten inscription): its English is left out of both PDFs. The side-by-side shows the scan with "[<what the page is>, not translated]" -- give the description, e.g. `leave_out = "handwritten inscription"` (Gomard pdf 8); `true` alone labels it "[library / digitiser notice, not translated]". `translation.txt` is untouched, so removing the setting brings it back | Masiello scan 2 (the library bookplate); Prévost-Jollivet scan 1 (Google's notice). A page that mixes such text with the book's own: `[[fix]]` the lines out instead. |
 | `columns = 3` | the page ends in a list of short entries (terms, names) the book prints in 2, 3 or 4 columns: both PDFs draw it as a table without rules, as printed, instead of one entry a line. Where the OCR kept the printed rows (entries 2+ spaces apart) each line is a row; else the entries fill the columns top to bottom. A row missing its spaces: a `[[fix]]` adding them. PDFs only. | Gomard scans 112-113 (pdf 113-114, the list of fencing terms). |
 | `display = true` | the page is a title page, dedication or colophon: every line centred as the book prints it. The PDFs find most such pages themselves (no printed page number, a few short blocks, or one block in capitals); this is for one with a long block in ordinary case. PDFs only. | Gomard scan 11 (pdf 12, the title page). |
 | `picture_after = "<words>"` | the page's picture goes after the paragraph of its English holding these words, where the book prints it inside the text and no caption line marks the place (Prévost-Jollivet pdf 53, 290). English-only PDF; rebuild it. | |
@@ -341,7 +341,7 @@ III.5a). The original is kept in `books/_alt/`.
 | A paragraph or page needs rewriting, or a line is missing | `edit_page.py` (`<stem>.edits/`) |
 | A page's translation is poor and a retranslation may fix it | `2_translate.py --pages <stem> N` or `[pages.N] retranslate` |
 | A plate caption is misread | `[pages.N] caption` (+ `caption_en`) |
-| A page is a bookplate, a library label or a digitiser's notice | `[pages.N] leave_out = true` |
+| A page is a bookplate, a library label, a digitiser's notice or a handwritten inscription | `[pages.N] leave_out = "<what it is>"` |
 | Plates are sideways | `<stem>.rotate` |
 | A border or shadow is transcribed as text | `<stem>.crop` (before the first run) |
 | A page is missing or damaged in this copy | `patch_scan.py` |

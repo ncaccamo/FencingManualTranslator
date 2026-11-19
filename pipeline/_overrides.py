@@ -150,8 +150,10 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
         if not isinstance(v, dict) or set(v) - _PAGE_KEYS:
             raise OverridesError(f"{p}: [pages.{k}] unknown key(s) "
                                  f"{sorted(set(v) - _PAGE_KEYS) if isinstance(v, dict) else v}")
-        if "leave_out" in v and not isinstance(v["leave_out"], bool):
-            raise OverridesError(f"{p}: [pages.{k}] leave_out must be true or false")
+        if "leave_out" in v and not (isinstance(v["leave_out"], bool)
+                                     or (isinstance(v["leave_out"], str) and v["leave_out"].strip())):
+            raise OverridesError(f"{p}: [pages.{k}] leave_out must be true, false, or what the "
+                                 "page is (\"handwritten inscription\")")
         if "display" in v and not isinstance(v["display"], bool):
             raise OverridesError(f"{p}: [pages.{k}] display must be true or false")
         if "columns" in v and (isinstance(v["columns"], bool) or v["columns"] not in (2, 3, 4)):
@@ -445,6 +447,14 @@ def left_out_pages(ov: dict) -> list:
     text (a bookplate, a date-due slip, Google's notice) whose English is
     left out of both PDFs; the side-by-side still shows the scan."""
     return sorted(s for s, v in ov["pages"].items() if v.get("leave_out"))
+
+
+def left_out_labels(ov: dict) -> dict:
+    """{scan page: what the page is} for leave_out given as text
+    (leave_out = "handwritten inscription"): the side-by-side's label
+    says what was left out instead of calling every page a library or
+    digitiser notice (Gomard pdf 8, the author's inscription)."""
+    return {s: v["leave_out"].strip() for s, v in ov["pages"].items() if isinstance(v.get("leave_out"), str)}
 
 
 def list_columns(ov: dict) -> dict:

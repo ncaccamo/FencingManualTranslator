@@ -5378,10 +5378,10 @@ def test_leave_out_setting():
         tr = ["title", "BOSTON PUBLIC LIBRARY", "text"]
         assert _render.apply_left_out(tr, "b", d) == ["title", _render.LEFT_OUT, "text"]
         assert tr[1] == "BOSTON PUBLIC LIBRARY"
-        open(f"{d}/c.overrides.toml", "w").write('[pages.2]\nleave_out = "yes"\n')
+        open(f"{d}/c.overrides.toml", "w").write('[pages.2]\nleave_out = 1\n')   # text is allowed since 2026-11-19
         try:
             _overrides.load("c", d)
-            assert False, "a non-boolean leave_out must be refused"
+            assert False, "a leave_out that is neither true/false nor text must be refused"
         except _overrides.OverridesError:
             pass
 
@@ -6503,6 +6503,30 @@ def test_review_file_keeps_its_pointer_to_earlier_reviews():
         assert O.load_review_history("x", d) == ["a.md -- ## X"]
         assert list(O.load_review("x", d)) == ["1"]          # cards read as before
         assert O.load_review_history("y", d) == []
+
+
+def test_left_out_page_says_what_it_is():
+    # Gomard pdf 8: the author's handwritten inscription was labelled a
+    # library / digitiser notice; leave_out may say what the page is
+    import importlib, tempfile, os
+    sys.path.insert(0, str(_PIPELINE))
+    O = importlib.import_module("_overrides")
+    R = importlib.import_module("_render")
+    assert R.left_out_label("handwritten inscription") == "[handwritten inscription, not translated]"
+    assert R.left_out_label("bookseller's stamp") == "[bookseller’s stamp, not translated]"
+    assert R.left_out_label(None) == R.LEFT_OUT
+    with tempfile.TemporaryDirectory() as d:
+        open(os.path.join(d, "x.overrides.toml"), "w", encoding="utf-8").write(
+            '[pages.7]\nleave_out = "handwritten inscription"\n\n[pages.2]\nleave_out = true\n')
+        ov = O.load("x", d)
+        assert O.left_out_pages(ov) == [2, 7]
+        assert O.left_out_labels(ov) == {7: "handwritten inscription"}
+        open(os.path.join(d, "y.overrides.toml"), "w", encoding="utf-8").write('[pages.7]\nleave_out = ""\n')
+        try:
+            O.load("y", d)
+            assert False, "an empty leave_out passed"
+        except O.OverridesError:
+            pass
 
 
 if __name__ == "__main__":

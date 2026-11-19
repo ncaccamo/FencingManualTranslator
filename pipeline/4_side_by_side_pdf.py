@@ -371,8 +371,9 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
     try:
         COLS = _overrides.list_columns(_overrides.load(book))
         SHOWN = _overrides.display_pages(_overrides.load(book))
+        LEFT_OUT_WHAT = _overrides.left_out_labels(_overrides.load(book))
     except Exception:
-        COLS, SHOWN = {}, set()
+        COLS, SHOWN, LEFT_OUT_WHAT = {}, set(), {}
     _render.BOLD_SECTIONS = _render.book_bold_headings(book)
     _render.CENTRED_SUMMARIES = _render.book_chapter_summaries(book)
     CENTRE = _render.centres_headings(folder)
@@ -456,7 +457,11 @@ for folder in [_books.folder_of(n) for n in _books.select(sys.argv[1:],
             # cleaned; a description of the picture is not a caption (_render)
             caps = [c for c in (_render.figure_caption(f) for f in fig_map.get(str(i), [])) if c]
             if tr == _render.LEFT_OUT:       # the reviewer left this page's English out
-                page.insert_text((RIGHT.x0, y + 4), _render.LEFT_OUT, fontsize=9, fontname=_render.ITALIC)
+                # a full font, as the body text: the built-in one has no ’
+                tw = fitz.TextWriter(page.rect)
+                tw.append((RIGHT.x0, y + 4), _render.left_out_label(LEFT_OUT_WHAT.get(i + 1)),
+                          font=_render._font(_render.ITALIC), fontsize=9)
+                tw.write_text(page)
             elif caps:
                 # level with the caption on the scan when the detector found
                 # it (Kirchhoffer pdf 92), else at the top

@@ -524,6 +524,13 @@ def centres_headings(folder):
 LEFT_OUT = "[library / digitiser notice, not translated]"
 
 
+def left_out_label(what=None):
+    """The side-by-side's line for a left-out page: what the page is, when
+    the overrides say ("[handwritten inscription, not translated]"), else
+    LEFT_OUT."""
+    return f"[{what.replace(chr(39), '’')}, not translated]" if what else LEFT_OUT
+
+
 def apply_left_out(translations, stem, books_dir="/data/books"):
     """The translations with each left-out page's English replaced by
     LEFT_OUT. translation.txt is not changed, so taking the setting out
