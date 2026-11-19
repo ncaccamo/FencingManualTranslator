@@ -27,6 +27,9 @@ have not yet received a translator's attention.
   date behind the translation.
 - **A review report** listing the pages worth checking, and why.
 
+Sample pages and short PDF excerpts from two translated books are in
+[samples/](samples/README.md).
+
 Pages the model struggled with are marked in the output
 (`[low-confidence translation — review]`), and `†` footnotes give the
 original wording of terms whose English is only an approximation.
@@ -133,7 +136,8 @@ state and open items: [`docs/STATUS.md`](docs/STATUS.md).
 
 ## Source scans
 
-No books are included. Put your own scans in `books/`; public-domain
+No books are included (only the few sample pages in
+[samples/](samples/README.md)). Put your own scans in `books/`; public-domain
 sources such as Gallica, Google Books and archive.org work well. The
 `books/` and `processed/` folders are excluded from git, so your scans
 and their translations are never committed.
