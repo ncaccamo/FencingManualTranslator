@@ -47,6 +47,11 @@ PAGE_W, PAGE_H = 612, 792
 MARGIN = 56
 COL = fitz.Rect(MARGIN, MARGIN, PAGE_W - MARGIN, PAGE_H - MARGIN)
 FS = 10
+# The book's page numbers in the left margin, beside the line where each
+# printed page begins; no running head or rule between pages, so the text
+# reads on as one (user, 2026-11-20: the alternating running heads only make
+# sense beside the print). False: the old label line, `— 26 —  HEAD` + rule.
+MARGIN_FOLIOS = True
 FIGURE_MAX_H = COL.height * 0.82
 
 SKIP_MARKERS = ("[Empty page]", "[Empty page after cleaning]", _render.LEFT_OUT)
@@ -292,6 +297,8 @@ class Flow:
         self.cur = None                    # the book page being set
         self.on_sheet = set()              # the book pages whose text / pictures this sheet holds
         self.label = None                  # the label just drawn, while nothing follows it yet
+        self.folio = ""                    # MARGIN_FOLIOS: the page number to set beside the next line drawn
+        self.tail = None                   # MARGIN_FOLIOS: the last line of running text drawn (page, top, bottom, x end)
 
     def _newpage(self):
         self.page = self.doc.new_page(width=PAGE_W, height=PAGE_H)
@@ -300,7 +307,67 @@ class Flow:
 
     LABEL_H = FS * 2.4
 
+    def margin_folio(self, page_num, header, compact=False):
+        """MARGIN_FOLIOS: the page number waits for the page's first line
+        (`_mark`). A paragraph running on from the page before goes on with
+        no break (`_join`), that page's notes after it; a page opening a new
+        paragraph has the notes first, then starts on a new line (`body`). A
+        picture comes after the notes (`figure`)."""
+        self.page_num = page_num
+        trusted = page_num and not str(page_num).startswith("[")
+        self.folio = str(page_num) if trusted else ""
+        if self.page is not None and not self.open and self.y > COL.y0 + 1 and compact:
+            self.y += FS * 0.7
+        header = _render.curly_apostrophes(header or "")
+        if "\t" not in header and len(header.split()) > 12:   # a title, not a running head
+            self.release()
+            self._flow(_render.layout(f"<i>{header}</i>", COL.width, FS - 1),
+                       FS - 1, color=(0.3, 0.3, 0.3))
+            self.y += FS * 0.3
+
+    def _join(self, lines, cont):
+        """MARGIN_FOLIOS: a page that opens mid-paragraph goes on from the
+        last line of the page before, on that same line, as one paragraph
+        (the print's page break is no break in the text). Only plain prose
+        joins, and only when nothing was drawn after that line; a thin bar
+        marks where the printed page turns. Otherwise the lines as they are."""
+        tl = self.tail
+        if not (MARGIN_FOLIOS and cont and tl and tl[0] is self.page and abs(self.y - tl[2]) < 0.01):
+            return lines
+        lines = _render.strip_leading_gaps(lines)
+        run = []
+        for ln in lines:
+            if ln.gap or ln.table or ln.note or ln.tail or ln.scale != 1.0 or ln.bold or ln.indent < 0 \
+                    or (run and ln.indent):
+                break
+            run.append(ln)
+        if not run or run[0].indent:
+            return lines
+        space = _render._w(" ", 0, FS)
+        off = tl[3] - COL.x0 + space
+        spans = [s for ln in run for s in ln.spans]
+        if spans and not spans[0][0][:1].isalnum() and spans[0][0][:1] in ",.;:)":
+            off -= space                  # a stop that ends the sentence: no space before it
+        if off > COL.width * 0.92:        # the line before is full: no room
+            return lines
+        wrapped = _render._wrap(spans, COL.width, FS, first_indent=off)
+        new = [_render.Line(off if k == 0 else 0.0, w) for k, w in enumerate(wrapped)]
+        self.y = tl[1]
+        bar = COL.x0 + off - space / 2
+        self.page.draw_line((bar, tl[1] + FS * 0.05), (bar, tl[1] + FS * 1.1), width=0.4, color=(0.55, 0.55, 0.55))
+        return new + lines[len(run):]
+
+    def _mark(self, page, y):
+        """Set the waiting page number in the margin, baseline `y`."""
+        if self.folio and page is not None:
+            txt, size = self.folio, FS - 2
+            page.insert_text((COL.x0 - 10 - _render._w(txt, 0, size), y), txt,
+                             fontsize=size, fontname=_render.ROMAN, color=(0.45, 0.45, 0.45))
+        self.folio = ""
+
     def section_label(self, page_num, header, reserve=0.0, compact=False, side=None):
+        if MARGIN_FOLIOS:
+            return self.margin_folio(page_num, header, compact)
         # `reserve` = extra height the caller will use right after the label;
         # if the label + that reserve won't fit, start a fresh sheet so the
         # label is never orphaned from its content (e.g. a figure).
@@ -402,7 +469,13 @@ class Flow:
         """Draw notes held back from a page whose sentence ran on."""
         if self.held:
             held, self.held = self.held, []
+            # their own page's number over them if they move to the next sheet
+            pn, self.page_num = self.page_num, getattr(self, "held_pn", self.page_num)
             self._notes(held)
+            self.page_num = pn
+            if MARGIN_FOLIOS:
+                self.y += FS * 0.8        # the text goes on under them: space, as the label left
+                self.tail = None
 
     def body(self, text, src_body="", src_page=None, prev_page=None, ornaments=(), title="", centred=False,
              interject=None, after=None, runs_on=False, after_para=None):
@@ -430,8 +503,20 @@ class Flow:
         def lay(t):
             ls = _render.layout(t, COL.width, FS, paras=PARAS, centre=CENTRE, as_printed=centred)
             return _render.centre_lines(ls, COL.width, FS) if centred else ls  # a title page: every line centred
+        # MARGIN_FOLIOS: a page opening mid-paragraph (its sentence ran on, or
+        # the scan's text layer says so) goes on from the last line (_join)
+        cont = [bool(self.open or body_txt.startswith("\x02")) and not title]
+        cont0 = MARGIN_FOLIOS and cont[0]
+        if MARGIN_FOLIOS and not cont[0]:
+            self.release()                # a new paragraph: the page before's notes first
+        if MARGIN_FOLIOS and not cont[0] and PARAS != "indented" and self.page is not None \
+                and self.y > COL.y0 + 1 and body_txt.strip():
+            self.y += FS * 0.7            # a new paragraph where the book spaces them
+        def first(ls):
+            ls, cont[0] = self._join(ls, cont[0]), False
+            return ls
         waiting = bool(self.held) or interject is not None
-        head, sep, rest = body_txt.partition("\n\n") if (waiting and self.open) else ("", "", "")
+        head, sep, rest = body_txt.partition("\n\n") if (waiting and (self.open or cont0)) else ("", "", "")
         if interject is not None and after_para:
             # the picture's place is after a given paragraph (its caption
             # line's place in the text): split at the end of that paragraph
@@ -440,23 +525,23 @@ class Flow:
             if m:
                 end = body_txt.find("\n\n", m.end())
                 head, sep, rest = (body_txt[:end], "\n\n", body_txt[end + 2:]) if end >= 0 else (body_txt, "", "")
-            elif not self.open:          # not found: the picture first, as before
+            elif not (self.open or cont0):   # not found: the picture first, as before
                 interject()
                 interject, waiting = None, bool(self.held)
         if sep and rest.strip():         # the run-on sentence's paragraph first
-            self._flow(lay(head), FS)
+            self._flow(first(lay(head)), FS)
             if interject:
                 interject()
             self.release()
             body_txt = rest
         elif waiting:                    # one paragraph: things that waited go after it
-            self._flow(lay(body_txt), FS)
+            self._flow(first(lay(body_txt)), FS)
             if interject:
                 interject()
             self.release()
             body_txt = ""
         if body_txt:
-            body_lines = lay(body_txt)
+            body_lines = first(lay(body_txt))
             if notes and self.page is not None and not after and not self.held:
                 # a short page -- a title, a few lines -- whose notes would not
                 # fit under it: it starts the next sheet, title and notes
@@ -485,8 +570,11 @@ class Flow:
         if notes:
             # end-of-section glossary block, smaller type; held while the
             # page's last sentence runs on to the next page
-            if self.open:
+            if self.open or MARGIN_FOLIOS:
+                # MARGIN_FOLIOS: held until the next page shows whether its
+                # paragraph runs on (body, figure)
                 self.held += notes
+                self.held_pn = self.page_num
             else:
                 self._notes(notes)
 
@@ -499,9 +587,21 @@ class Flow:
                 self._newpage()
             before = len(lines)
             label, self.label = self.label, None
+            y_top, first, given = self.y, lines[0], lines
             lines, self.y = _render.draw(
                 self.page, (COL.x0, self.y, COL.x1, COL.y1), lines, size, color=color,
                 fresh_top=COL.y0, keep_heads=True)
+            drawn = given[:before - len(lines)]
+            last = drawn[-1] if drawn else None
+            self.tail = None
+            if (last is not None and size == FS and color == (0, 0, 0) and not last.gap and not last.table
+                    and not last.note and not last.tail and last.indent >= 0 and last.scale == 1.0):
+                self.tail = (self.page, self.y - FS * 1.28, self.y,
+                             COL.x0 + last.indent + _render.line_width(last, FS))
+            # the page's own text takes its number, not the page before's notes
+            # drawn above it (Kirchhoffer pdf 11 had "11" by page 10's note)
+            if self.folio and len(lines) < before and color == (0, 0, 0):
+                self._mark(self.page, y_top + (size * first.scale if not first.table else size + 2))
             self.on_sheet.add(self.cur)
             if lines and len(lines) == before:
                 if label and label[0] is self.page and label[4] == self._sig():
@@ -544,6 +644,8 @@ class Flow:
         unreliable (a landscape photo leaf reads fine wide; a sideways
         fold-out engraving on a portrait leaf can't be told apart from
         page geometry)."""
+        if MARGIN_FOLIOS:
+            self.release()                # the page before's notes, before the picture
         r = src_page.rect
         if band:
             y0f, y1f, x0f, x1f = band
@@ -604,6 +706,7 @@ class Flow:
         self.page.insert_image(fitz.Rect(x0, self.y, x0 + w, self.y + h),
                                stream=pix.tobytes("jpeg", jpg_quality=72),
                                rotate=rotate)
+        self._mark(self.page, self.y + FS)
         self.y += h + 4
         self.on_sheet.add(self.cur)
         if cl:

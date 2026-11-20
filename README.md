@@ -22,7 +22,8 @@ have not yet received a translator's attention.
   right. Running heads, chapter titles, page numbers, the author's
   footnotes and margin notes, and plate captions are carried over.
 - **English Only (Portrait) PDF**: a flowing reading copy with figures
-  inline.
+  inline; the book's page numbers in the margin, so a passage can be
+  cited and found in the original.
 - **A cover page** naming the models used and the pipeline revision and
   date behind the translation.
 - **A review report** listing the pages worth checking, and why.

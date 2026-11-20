@@ -184,9 +184,12 @@ boxes and placed in reading order, each with its English caption; covers,
 endpapers, blank leaves and library stamps are left out, and decorative
 pictures (ornaments, tailpieces) are kept unless the book's `.pictures`
 file drops them — chosen on the decoration review page (manual III.5d).
-Footnote blocks are rendered at the end of their page's text in small grey
-type under a rule; when a sentence runs on to the next page, the notes and
-figures wait until it ends. Opens with the disclosure cover page.
+The book's page numbers stand small and grey in the left margin, beside
+the line where each printed page begins; there are no running heads, and a
+paragraph that runs over a printed page goes on without a break (a thin
+bar marks the page turn). Footnote blocks are rendered in small grey type
+under a rule, after the paragraph that ends their page; figures follow
+them. Opens with the disclosure cover page.
 
 ### Step 4 — `4_side_by_side_pdf.py`
 

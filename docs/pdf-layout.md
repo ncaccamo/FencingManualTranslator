@@ -419,7 +419,26 @@ column `COL`. Body text 10 pt.
 **The `Flow` class** owns "the current output page and the y cursor" so
 the rest of the code never thinks about page breaks:
 
-- `section_label(page_num, header)` — draws `— [n] —   HEADER` + a rule.
+- **Page numbers in the margin** (`MARGIN_FOLIOS = True`, the default;
+  user, 2026-11-20): the book's running heads alternate by printed page,
+  which only makes sense beside the print, so the English-only copy draws
+  none. `section_label` → `margin_folio`: the page's number (a trusted
+  folio only, not a bracketed "[5]") waits and is set small and grey in
+  the left margin beside the page's first line of its own text or the top
+  of its first picture (`_mark`; not beside the page before's notes,
+  Kirchhoffer pdf 11). No rule, no head. A page opening mid-paragraph
+  (its sentence ran on, `page_left_open`, or the scan's text layer starts
+  it with `\x02`) goes on **on the same line** as the page before's last
+  line, with a thin grey bar where the printed page turns (`_join`: plain
+  prose only, and only when nothing was drawn after that line); when that
+  line is full it goes on flush on the next line. Each page's notes are
+  held (`Flow.held`) until the next page shows whether its paragraph runs
+  on: then after that paragraph, else before the new page's text; a
+  picture comes after them. A page starting a new paragraph is indented
+  (a blank line before it in a `spaced` book). Kirchhoffer 74 → 67 sheets,
+  Masiello 1887 369 → 342.
+- `MARGIN_FOLIOS = False`: the old label line,
+  `section_label(page_num, header)` — draws `— [n] —   HEADER` + a rule.
   Starts a fresh sheet if the label (plus a reserved height for a figure
   that's about to follow) wouldn't fit — so a figure's label is never
   orphaned at the bottom of a sheet; on a page of text it also keeps room
@@ -760,9 +779,9 @@ with no read folio takes its side from the nearest one (pages alternate).
 - Side by side: number and head on one line in their places (stacked
   when they would collide); a number printed at the **bottom** is drawn
   at the foot of the English half; `(cont.)` stays at the top.
-- English-only: not the book's places -- this copy stands apart from the
-  book, so every page has the same fixed layout (number, then head, at the
-  left above the rule; reviewer, 2026-11-14).
+- English-only: no running heads; the page number in the left margin
+  where the printed page begins (see Step 3, `MARGIN_FOLIOS`; 2026-11-20,
+  replacing the fixed number-and-head line above a rule of 2026-11-14).
 - No clear plan (no layout.json, too few pages, disagreement): the old
   fixed layout. `[book] page_numbers = "outer" | "inner" | "centre" |
   "bottom-…"` sets it by hand for scans the detector can't read
