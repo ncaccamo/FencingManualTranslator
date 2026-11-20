@@ -6,7 +6,10 @@ produces. Each book gives two PDFs: a **Side by Side (Landscape)** copy
 (Portrait)** reading copy. Every PDF opens with a cover page naming the
 models and the pipeline revision behind it.
 
-Page numbers below ("pdf N") are positions in the full PDF.
+Page numbers below ("pdf N") are positions in the full PDF. The English
+Only copy reads as continuous text: the book's own page numbers stand in
+the left margin where each printed page begins, so a passage can be
+found in the original.
 
 ## Masiello, *La scherma italiana di spada e di sciabola* (1887), Italian
 
@@ -21,20 +24,24 @@ the page.
 
 ![Masiello side-by-side, chapter opening](masiello-1887_side-by-side_pdf200.png)
 
-**Lesson tables** (Side by Side, pdf 342): the book's three-column
-lessons (*Allievo* / *Maestro*) drawn as ruled tables.
+**Lesson tables** (Side by Side, pdf 342): the book's two-column
+lessons, the master's action beside the pupil's, drawn as ruled tables
+as on the printed page.
 
 ![Masiello side-by-side, lesson tables](masiello-1887_side-by-side_pdf342.png)
 
-**Plate** (English Only, pdf 95): a photographic plate with its caption,
-Italian technical terms kept in italics (*seconda*, *quarta*, *terza*), a
-† note giving the original word where the English is approximate
-("graze†1" → Italian *striscio*), and the author's own numbered notes.
+**Reading copy** (English Only, pdf 83): printed pages 201–203, their
+numbers in the margin. A sentence that runs over a printed page goes on
+along the same line, a thin bar marking the page turn ("the left│leg").
+Italian technical terms stay in italics (*quarta*, *seconda*, *terza*); a
+† note gives the original word where the English is approximate
+("graze†1" → Italian *striscio*); the author's own numbered notes follow
+the paragraph that ends their page.
 
-![Masiello English-only, plate](masiello-1887_english-only_pdf95.png)
+![Masiello English-only, reading copy](masiello-1887_english-only_pdf83.png)
 
 Excerpts: [English Only](masiello-1887_english-only_excerpt.pdf) (cover,
-pdf 94–96) · [Side by Side](masiello-1887_side-by-side_excerpt.pdf)
+pdf 81–83, with two photographic plates) · [Side by Side](masiello-1887_side-by-side_excerpt.pdf)
 (cover, pdf 200, 201, 342).
 
 ## Kirchhoffer, Joseph-Renaud, Lécuyer, *L'Escrime : fleuret, épée, sabre* (1911), French
@@ -45,19 +52,19 @@ translation side carries only its caption; French terms (*sixte*,
 
 ![Kirchhoffer side-by-side, diagram](kirchhoffer-1911_side-by-side_pdf52.png)
 
-**The same diagram** (English Only, pdf 35): in the reading copy the
-figure is placed with the text.
+**The same diagram** (English Only, pdf 32): in the reading copy the
+figure is placed with the text, beside printed page 29.
 
-![Kirchhoffer English-only, diagram](kirchhoffer-1911_english-only_pdf35.png)
+![Kirchhoffer English-only, diagram](kirchhoffer-1911_english-only_pdf32.png)
 
-**Running text** (English Only, pdf 33): the reading copy marks where
-each printed page begins (· 26 ·) with its running title, and puts each
-page's † notes under it.
+**Photograph and text** (English Only, pdf 30): a plate with its caption,
+then printed pages 25 and 26 marked in the margin, with page 25's † notes
+after its last paragraph.
 
-![Kirchhoffer English-only, text page](kirchhoffer-1911_english-only_pdf33.png)
+![Kirchhoffer English-only, photograph and text](kirchhoffer-1911_english-only_pdf30.png)
 
 Excerpts: [English Only](kirchhoffer-1911_english-only_excerpt.pdf)
-(cover, pdf 33–35) · [Side by Side](kirchhoffer-1911_side-by-side_excerpt.pdf)
+(cover, pdf 30–32) · [Side by Side](kirchhoffer-1911_side-by-side_excerpt.pdf)
 (cover, pdf 52–54).
 
 ## Sources and terms
