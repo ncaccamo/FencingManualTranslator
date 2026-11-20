@@ -426,7 +426,11 @@ the rest of the code never thinks about page breaks:
   folio only, not a bracketed "[5]") waits and is set small and grey in
   the left margin beside the page's first line of its own text or the top
   of its first picture (`_mark`; not beside the page before's notes,
-  Kirchhoffer pdf 11). No rule, no head. A page opening mid-paragraph
+  Kirchhoffer pdf 11). A margin note opening the page is that page's
+  first line and takes the number (Gomard pdf 15: «37» by "First attempt
+  at the lunge…"; owner, 2026-11-20). The first number in the PDF reads
+  «page 6», so a reader knows the numbers count pages, not lines or
+  paragraphs. No rule, no head. A page opening mid-paragraph
   (its sentence ran on, `page_left_open`, or the scan's text layer starts
   it with `\x02`) goes on **on the same line** as the page before's last
   line, with a thin grey bar where the printed page turns (`_join`: plain
@@ -437,6 +441,16 @@ the rest of the code never thinks about page breaks:
   picture comes after them. A page starting a new paragraph is indented
   (a blank line before it in a `spaced` book). Kirchhoffer 74 → 67 sheets,
   Masiello 1887 369 → 342.
+  **Author's margin notes** here (`_render.NOTES_SNUG`, `NOTE_BAR`):
+  a grey italic label over its paragraph, with a small space above it,
+  none below, and no bar (the bar means a page turn here). The paragraph
+  under it is indented, as printed: every Gomard note stands beside a
+  paragraph's indented first line, which the text layer reads as flush.
+  A page whose English opens with a note opens a paragraph (Gomard
+  page 37: the paragraph the print starts at the foot of 36 is translated
+  whole on 37). The side-by-side copy keeps its notes as they were
+  (bar, the text's own blank lines). Gomard 128 → 126 sheets; Masiello
+  and Barbasetti (their few notes) are unchanged.
 - `MARGIN_FOLIOS = False`: the old label line,
   `section_label(page_num, header)` — draws `— [n] —   HEADER` + a rule.
   Starts a fresh sheet if the label (plus a reserved height for a figure

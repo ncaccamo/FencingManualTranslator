@@ -52,6 +52,8 @@ FS = 10
 # reads on as one (user, 2026-11-20: the alternating running heads only make
 # sense beside the print). False: the old label line, `— 26 —  HEAD` + rule.
 MARGIN_FOLIOS = True
+_render.NOTE_BAR = not MARGIN_FOLIOS   # the bar marks a page turn here (_join)
+_render.NOTES_SNUG = MARGIN_FOLIOS
 FIGURE_MAX_H = COL.height * 0.82
 
 SKIP_MARKERS = ("[Empty page]", "[Empty page after cleaning]", _render.LEFT_OUT)
@@ -361,6 +363,10 @@ class Flow:
         """Set the waiting page number in the margin, baseline `y`."""
         if self.folio and page is not None:
             txt, size = self.folio, FS - 2
+            if not getattr(self, "marked", False):
+                # the first one says what the numbers count: pages, not lines
+                # or paragraphs as in other editions (user, 2026-11-20)
+                txt, self.marked = f"page {txt}", True
             page.insert_text((COL.x0 - 10 - _render._w(txt, 0, size), y), txt,
                              fontsize=size, fontname=_render.ROMAN, color=(0.45, 0.45, 0.45))
         self.folio = ""
@@ -505,11 +511,15 @@ class Flow:
             return _render.centre_lines(ls, COL.width, FS) if centred else ls  # a title page: every line centred
         # MARGIN_FOLIOS: a page opening mid-paragraph (its sentence ran on, or
         # the scan's text layer says so) goes on from the last line (_join)
-        cont = [bool(self.open or body_txt.startswith("\x02")) and not title]
+        # a page whose English opens with a margin note opens a paragraph: the
+        # note stands over it (Gomard pdf 15, page 37: the paragraph the print
+        # starts on page 36 is translated whole on 37)
+        opens_note = bool(_render._MARGIN_RE.match(body_txt.lstrip("\n\x02").split("\n", 1)[0].strip("\x03\x04")))
+        cont = [bool(self.open or body_txt.startswith("\x02")) and not title and not opens_note]
         cont0 = MARGIN_FOLIOS and cont[0]
         if MARGIN_FOLIOS and not cont[0]:
             self.release()                # a new paragraph: the page before's notes first
-        if MARGIN_FOLIOS and not cont[0] and PARAS != "indented" and self.page is not None \
+        if MARGIN_FOLIOS and not cont[0] and (PARAS != "indented" or opens_note) and self.page is not None \
                 and self.y > COL.y0 + 1 and body_txt.strip():
             self.y += FS * 0.7            # a new paragraph where the book spaces them
         def first(ls):

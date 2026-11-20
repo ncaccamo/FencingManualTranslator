@@ -434,6 +434,13 @@ def line_width(ln, size):
 _MARGIN_RE = re.compile(r"^\s*⟦MARGIN:\s*(.*?)\s*⟧\s*$")
 NOTE_INDENT = 10.0
 NOTE_COLOR = (0.38, 0.38, 0.38)
+# The English-only copy (step 3) sets a note as a label over its paragraph:
+# a blank line above it, none between it and the paragraph, the paragraph
+# indented as the book prints it (every Gomard note stands beside a
+# paragraph's first line; the text layer reads that line flush, the note
+# beside it), and no bar -- the bar there marks a page turn (MARGIN_FOLIOS).
+NOTE_BAR = True
+NOTES_SNUG = False
 
 
 # Leading spaces are kept as indentation for structure -- drills, braced
@@ -1156,7 +1163,7 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False, 
     text layer, _textlayer): its first paragraph gets no indent."""
     out = []
     prev, prev_long = "start", False    # start | prose | prose-open | other
-    gap = brace = prev_colon = False
+    gap = brace = prev_colon = after_note = False
     head_above = 0                       # the heading line just above: its level (0: none)
     text = italian_low_high(italian_line_numerals(line_name_italics(text)))
     if toc if toc is not None else _toc_page((text or "").split("\n")):
@@ -1190,7 +1197,7 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False, 
             gap, prev, prev_long = False, "other", False
             continue
         if not raw.strip():
-            gap = prev != "start"
+            gap = prev != "start" and not after_note
             brace = False
             continue
         # where the book starts this row (_textlayer): at the paragraph indent,
@@ -1200,13 +1207,18 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False, 
         raw = raw.replace("\x03", "").replace("\x04", "").replace("\x05", "").replace("\x06", "").replace("\x07", "")
         m = _MARGIN_RE.match(raw)
         if m:
-            if gap:
+            if NOTES_SNUG:
+                if out and not out[-1].gap and not out[-1].note:
+                    out.append(Line(gap=True))
+                after_note = True
+            elif gap:
                 out.append(Line(gap=True))
             gap, prev = False, "other"
             note = re.sub(r"</?i>", "", m.group(1))
             for vline in _wrap([(note, 1)], max(width - NOTE_INDENT, _MIN_WRAP), size):
                 out.append(Line(NOTE_INDENT, vline, note=True))
             continue
+        under_note, after_note = after_note, False
         brace = brace or "{" in raw
         n = len(raw) - len(raw.lstrip(" "))
         body = raw[n:]
@@ -1235,6 +1247,8 @@ def _layout_paras(text, width, size, style, centre=False, toc=None, cont=False, 
             new_para = True
         elif forced in ("flush", "hanging"):
             new_para = False
+        if NOTES_SNUG and under_note and prose and forced in (None, "flush"):
+            new_para = True               # the paragraph a note stands beside (see NOTES_SNUG)
         # ... but not before a run-in section title ("L'épée. — Tous les
         # assauts", "Tactique générale. — "): the book leaves space there
         run_in = bool(_RUN_IN.match(plain))
@@ -1527,7 +1541,7 @@ def draw(page, rect, lines, size, *, leading=1.28, gap_frac=0.55, fresh_top=None
                 writer.append(fitz.Point(x1 - tail_w, y + size), ln.tail,
                               font=_font(ROMAN), fontsize=size)
                 wrote = wrote or not ln.note
-            if ln.note:
+            if ln.note and NOTE_BAR:
                 bx = x0 + ln.indent - 5
                 page.draw_line((bx, y + size * 0.15), (bx, y + lh * 0.95),
                                width=0.8, color=NOTE_COLOR)
