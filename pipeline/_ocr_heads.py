@@ -335,7 +335,7 @@ def _title_key(s: str) -> str:
     return " ".join(re.sub(r"[^a-z]+", " ", _norm_head(s.split("\t", 1)[0])).split())
 
 
-def title_head_verdicts(heads: list, bodies: list) -> dict:
+def title_head_verdicts(heads: list, bodies: list, any_line: bool = False) -> dict:
     """Pages whose HEADER is a chapter / part / section title printed once in
     the book: the OCR model filed the page's title in the running-head field
     and it is in no body -- so it is in no translation either (Danet scan 153
@@ -357,13 +357,23 @@ def title_head_verdicts(heads: list, bodies: list) -> dict:
       "move":   neither -- the page's own title, to go into its text.
 
     Only pages a "move" or "run" applies to are returned; a head printed
-    on two or more pages is a running head and never listed."""
+    on two or more pages is a running head and never listed.
+
+    `any_line`: the book prints no running heads (`[book] running_heads =
+    false`), so a one-off head need not start like a title -- any line of
+    4+ letters counts: Girard's «DEUXIE'ME COUP DE QUARTE COUPE'.» and plate
+    captions, Blengini's and Enrichetti's section titles, Lambertini's
+    dedication, Robaglia's title page (2026-11-21). A short token stays put
+    -- a misread page number («6S», Lambertini 78), a stray letter --, and
+    so does a head printed on several pages (Bruno's «(Segue Primo Quadro
+    Sinottico)» over each page of a long table)."""
     keys = [_title_key(h or "") for h in heads]
     count = Counter(k for k, h in zip(keys, heads) if (h or "").strip())
     out = {}
     for i, h in enumerate(heads):
         h = (h or "").strip()
-        if not h or not _TITLE_HEAD.match(h) or count[keys[i]] > 1:
+        titled = len(keys[i].replace(" ", "")) >= 4 if any_line else _TITLE_HEAD.match(h)
+        if not h or not titled or count[keys[i]] > 1:
             continue
         if any(_title_key(line) == keys[i]
                for j in range(max(0, i - 4), i)
@@ -378,7 +388,7 @@ def title_head_verdicts(heads: list, bodies: list) -> dict:
     return out
 
 
-def title_heads_to_body(parsed: list, decided: dict = None, skip=frozenset()) -> set:
+def title_heads_to_body(parsed: list, decided: dict = None, skip=frozenset(), any_line: bool = False) -> set:
     """Step 1: a title filed as the running head goes back into the page's
     text, as its first lines (title_head_verdicts "move"; a two-part one,
     «CHAPITRE IX.⇥DE L'APPEL.», as two lines). `decided`: {page index: True
@@ -389,9 +399,9 @@ def title_heads_to_body(parsed: list, decided: dict = None, skip=frozenset()) ->
     names it too (Danet 153: the title into the text, the printed head set). Runs after
     reconcile_headers(), whose lift of a short capitals line into HEADER
     is how most of these titles got there (Marchionni 42, Rossi «CAPO I»).
-    Returns the pages changed."""
+    `any_line`: see title_head_verdicts. Returns the pages changed."""
     decided = decided or {}
-    verdicts = title_head_verdicts([p.get("header") for p in parsed], [p.get("body") for p in parsed])
+    verdicts = title_head_verdicts([p.get("header") for p in parsed], [p.get("body") for p in parsed], any_line)
     done = set()
     for i, p in enumerate(parsed):
         head = (p.get("header") or "").strip()

@@ -137,7 +137,7 @@ def _capital_runs_on(main: str, rest: str) -> bool:
     return True
 
 
-def join_split_sentences(parsed: list) -> int:
+def join_split_sentences(parsed: list, moved: frozenset = frozenset()) -> int:
     """A sentence split across a page break is otherwise translated as two
     unrelated fragments, and a short fragment often comes out wrong: "Bien"
     / "fermer alors la ligne" -> "Well" / "then close" (Spinnewyn 101/102),
@@ -154,7 +154,14 @@ def join_split_sentences(parsed: list) -> int:
     would leave a page with no text goes the other way, or not at all (an
     emptied page changes how its page number is worked out). Contents lines,
     tables and fragments holding a margin note are left alone. Run after
-    margin notes are placed. Returns how many splits were joined."""
+    margin notes are placed. Returns how many splits were joined.
+
+    `moved`: pages whose running head title_heads_to_body() put into the
+    text. One with no page number, or that the OCR marks as a plate, is a
+    plate leaf whose only text is its caption, and is stepped over like a
+    blank page (Girard scan 14: «1re planche.» between «… le talon
+    regarde» | «l'œil du soulier …»; scan 49 is a plate the OCR gave the
+    next page's number)."""
     def text(p):
         b = p.get("body") or ""
         return "" if b.strip().lower() in ("", "none") else b
@@ -194,7 +201,10 @@ def join_split_sentences(parsed: list) -> int:
         if re.search(r"(?:\.\s*){3,}\s*[0-9ivxlcIVXLC]+\s*\Z|\u2026\s*\d+\s*\Z|<t[dhr]|</table", last_line):
             continue
         j = i + 1
-        if not text(parsed[j]).strip() and j + 1 < len(parsed):
+        caption_leaf = j in moved and (
+            (parsed[j].get("page_raw") or "").strip().lower() in ("", "none")
+            or any(f.get("kind") == "plate" for f in (parsed[j].get("figures") or [])))
+        if (not text(parsed[j]).strip() or caption_leaf) and j + 1 < len(parsed):
             j += 1                                   # across one blank / plate page
         b = text(parsed[j])
         lead = re.match(r"(?:\s*\u27e6MARGIN:[^\u27e7]*\u27e7)*\s*", b).group(0)

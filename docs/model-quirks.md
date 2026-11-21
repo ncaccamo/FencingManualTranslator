@@ -1173,6 +1173,21 @@ asks ("title head" card; the answer is `[pages.N] head_is_title`). 31 of
 the 32 decided right; Marchionni 344 «SEZIONE SECONDA» (a section's
 opening among «SEZIONE PRIMA» heads) is kept and asked about.
 
+In a book set to print no running heads (`[book] running_heads = false`)
+a one-off head need not start like a title: any line of 4+ letters printed
+as the head on one page only moves (Girard's technique titles «DEUXIE'ME
+COUP DE QUARTE COUPE'.», Blengini's and Enrichetti's section titles,
+Lambertini's dedication, Robaglia's and Florio's title pages; 34 pages in
+7 books checked on the scans, 2026-11-21). A short token stays a head
+(Lambertini 78 «6S», a misread page number), and so does a line on several
+pages (Bruno's «(Segue Primo Quadro Sinottico)» over a long table); the
+reviewer sets the rest with `head_is_title` (Girard's plate numbers «7e
+planche.», which differ only in their digits).
+A plate whose only text is a caption moved this way is stepped over by the
+split-sentence join, like a blank page (`join_split_sentences(…, moved)`):
+otherwise the sentence running around the plate stays split (Girard scans
+13 | 15 around plate 14, 48 | 50 around plate 49, which the OCR numbered).
+
 ## Part 2 — Translation (Qwen3.8-27B i1-Q4_K_S, port 11434)
 
 Qwen3.8-27B is the default since 2026-09-25 (translation model selection

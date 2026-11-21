@@ -85,14 +85,15 @@ for folder in targets:
     # above put there) goes into the text; a head the reviewer set stays
     _ov = _overrides.load(_stem)
     _moved = title_heads_to_body(parsed, _overrides.head_decisions(_ov),
-                                 {n - 1 for n, v in _ov["pages"].items() if "header" in v})
+                                 {n - 1 for n, v in _ov["pages"].items() if "header" in v},
+                                 any_line=_layout.no_running_heads(folder))
     with open(os.path.join(f"{folder}/intermediate", "title_heads.json"), "w", encoding="utf-8") as fh:
         json.dump(sorted(_moved), fh)       # for the review report's layout check
     head_stops(parsed)              # a head's printed stop on every page
     # margin notes as ⟦MARGIN: …⟧ lines, each before its paragraph (_margins.py)
     _m_placed, _m_lost = _margins.apply_to_book(folder, parsed)
     # every sentence on one page, so it is translated whole (_ocr_text.py)
-    _joined = join_split_sentences(parsed)
+    _joined = join_split_sentences(parsed, frozenset(_moved))
     _is_plate = [any(f.get("kind") == "plate" for f in (p.get("figures") or []))
                  or is_plate_leaf(p.get("body"))
                  for p in parsed]

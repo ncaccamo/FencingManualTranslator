@@ -16,7 +16,9 @@ continuation sheet, so it can't key anything durable.)
                          the layout detector takes for one is the page
                          number (Florio, Bruno, Lambertini). Only the
                          OCR's own HEADER counts; no head is carried onto
-                         a page from its neighbours.
+                         a page from its neighbours, and a one-off HEADER
+                         line goes into the page's text (title_head_verdicts
+                         any_line).
         paragraphs       "indented" (default) -> each paragraph opens with
                          a first-line indent and no blank line between
                          paragraphs, as most of these books print them;

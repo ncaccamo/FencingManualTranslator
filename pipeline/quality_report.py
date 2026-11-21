@@ -829,7 +829,8 @@ def check_book(folder: str) -> list:
     except _overrides.OverridesError:
         _asked = set()
     _heads = [("" if _hd(e).lower() == "none" else _hd(e)) for e in ex]
-    for i, v in _ocr_heads.title_head_verdicts(_heads, [_bd(e) for e in ex]).items():
+    for i, v in _ocr_heads.title_head_verdicts(_heads, [_bd(e) for e in ex],
+                                                         _layout.no_running_heads(folder)).items():
         if v == "run" and i not in _asked:
             add(i + 1, CHECK, "title head", f"running head {_heads[i].replace(chr(9), ' ')!r} is printed "
                 f"only here -- the page's own chapter or section title (then it belongs in the text), "

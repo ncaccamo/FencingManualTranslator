@@ -601,8 +601,10 @@ def main():
             # a chapter title the OCR filed as the running head (or that the lift
             # above put there) goes into the text; a head the reviewer set stays
             _ov = _overrides.load(stem)
+            import _layout
             _moved = title_heads_to_body(parsed, _overrides.head_decisions(_ov),
-                                         {n - 1 for n, v in _ov["pages"].items() if "header" in v})
+                                         {n - 1 for n, v in _ov["pages"].items() if "header" in v},
+                                 any_line=_layout.no_running_heads(work_dir))
             with open(os.path.join(int_dir, "title_heads.json"), "w", encoding="utf-8") as fh:
                 json.dump(sorted(_moved), fh)       # for the review report's layout check
             head_stops(parsed)              # a head's printed stop on every page
@@ -611,7 +613,7 @@ def main():
                 _margins.apply_to_book(work_dir, parsed)
             except Exception as e:
                 print(f"⚠ margin notes not inserted ({type(e).__name__}: {e})")
-            join_split_sentences(parsed)
+            join_split_sentences(parsed, frozenset(_moved))
             _is_plate = [any(f.get("kind") == "plate" for f in (p.get("figures") or []))
                          or is_plate_leaf(p.get("body"))
                          for p in parsed]

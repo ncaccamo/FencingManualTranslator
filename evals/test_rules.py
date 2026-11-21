@@ -6625,5 +6625,54 @@ def test_heading_number_kept_as_printed():
     assert H("In the second chapter we saw", "Nel capitolo secondo vedemmo") == "In the second chapter we saw"
 
 
+def test_one_off_head_moved_in_book_without_running_heads():
+    # [book] running_heads = false (2026-11-21, 34 pages in 7 books checked
+    # on the scans): any one-off line the OCR filed as the head is the
+    # page's own -- Girard «DEUXIE'ME COUP DE QUARTE COUPE'.», Enrichetti
+    # «Prefazione», Lambertini's dedication. Not a short token (Lambertini
+    # 78 «6S», a misread page number; Enrichetti's glossary letters), nor a
+    # head on several pages (Bruno «(Segue Primo Quadro Sinottico)»).
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    V = importlib.import_module("_ocr_heads").title_head_verdicts
+    heads = ["", "DEUXIE'ME COUP DE QUARTE COUPE'.", "", "Prefazione", "", "6S", "", "E"]
+    bodies = ["a", "Epée engagée de quarte", "b", "Ora che volgono", "c", "in guardia", "d", "Effetto"]
+    assert V(heads, bodies) == {}                                       # title words only
+    assert V(heads, bodies, any_line=True) == {1: "move", 3: "move"}
+    seg = ["(Segue Primo Quadro Sinottico)"] * 3
+    assert V(seg, ["x", "y", "z"], any_line=True) == {}
+
+
+def test_sentence_joined_across_plate_caption_moved_from_head():
+    # Girard (prints no running heads; head_is_title on its plates): scan
+    # 14's caption «… 1re planche.» moved from HEADER into the text, so the
+    # plate was no longer an empty page and the sentence «… & que le talon
+    # regarde» | «l'œil du soulier …» (scans 13/15) was left split. Scan 49
+    # is a plate the OCR gave the next page's number (29). A text page with
+    # a moved title (scan 38, numbered) is not stepped over.
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    X = importlib.import_module("_ocr_text")
+
+    def pages(mid):
+        return [{"page_raw": "6", "header": "", "body": "X.\nQue le bout du pied droit soit en ligne, & que le talon regarde"},
+                mid,
+                {"page_raw": "7", "header": "", "body": "l'œil du soulier en dedans du pied gauche.\n\nXI.\nEnfin le pied gauche."}]
+    caption = {"page_raw": "", "header": "", "body": "Figure de deux hommes dans la Garde Expliquée.\n1re planche."}
+    p = pages(dict(caption))
+    assert X.join_split_sentences(p, frozenset({1})) == 1
+    assert p[0]["body"].endswith("& que le talon regarde l'œil du soulier en dedans du pied gauche.")
+    assert p[2]["body"].startswith("XI.") and p[1]["body"] == caption["body"]
+    # numbered by the OCR, but marked a plate
+    p = pages(dict(caption, page_raw="29", figures=[{"kind": "plate"}]))
+    assert X.join_split_sentences(p, frozenset({1})) == 1
+    # not a moved head: unchanged behaviour (no join over a page with text)
+    p = pages(dict(caption))
+    assert X.join_split_sentences(p) == 0
+    # a numbered text page whose title was moved is not stepped over
+    p = pages({"page_raw": "22", "header": "", "body": "DEUXIE'ME COUP DE QUARTE COUPE'.\n\nEpée engagée de quarte."})
+    assert X.join_split_sentences(p, frozenset({1})) == 0
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())
