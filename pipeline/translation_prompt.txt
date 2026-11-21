@@ -86,6 +86,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
      chasser le fer, chasser l'épée, chasser la lame → drive the blade aside (never "chase")   |   fuyard (a fencer who keeps breaking ground) → runaway   |   tireur d'allonge → long-reach fencer
      tireur de tête / tireur de tempérament → thinking fencer / impulsive fencer   |   à mains contraires / à mains pareilles → opposite-handed / same-handed   |   départs d'ensemble → simultaneous starts   |   se coucher (dropping the body under the opponent's point) → duck
      "parer tierce" → parry tierce   |   "de quarte en seconde" → from quarte to seconde   |   septime enveloppée → septime enveloped
+     frapper du pied → stamp ("en frappant du pied droit" → stamping with the right foot; never "strike with the foot")   |   saisissement d'épée (the left hand grabbing the opponent's sword) → seizing of the épée (never "taking of the blade", which is prise de fer)
    - ordinary words these books use in a sense the model misreads:
      défendre (l'usage de …) → forbid   |   ne … plus que → now only (never "no longer")   |   ajuster (a hit) → aim
      grande force, de première force → great skill, first-rate   |   vicieux → faulty

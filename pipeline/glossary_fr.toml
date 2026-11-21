@@ -1016,6 +1016,18 @@ source = ["septime enveloppée"]
 line = '''septime enveloppée → septime enveloped'''
 
 [[term]]
+id = "frapper-du-pied"
+kind = "translate"
+source = ["frapper du pied", "frappant du pied", "frappez du pied"]
+line = '''frapper du pied → stamp ("en frappant du pied droit" → stamping with the right foot; never "strike with the foot")'''
+
+[[term]]
+id = "saisissement-d-epee"
+kind = "translate"
+source = ["saisissement d'épée", "saisissements d'épée", "saisissement d'Epée"]
+line = '''saisissement d'épée (the left hand grabbing the opponent's sword) → seizing of the épée (never "taking of the blade", which is prise de fer)'''
+
+[[term]]
 id = "note-2"
 kind = "note"
 with = "translate"
