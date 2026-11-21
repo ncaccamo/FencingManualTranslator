@@ -6552,6 +6552,11 @@ def test_chapter_title_filed_as_running_head():
     # the reviewer's answer wins: a running head after all
     parsed = [{"header": h, "body": b} for h, b in zip(heads, bodies)]
     assert H.title_heads_to_body(parsed, {5: False}) == set() and parsed[5]["header"].startswith("CHAPITRE IX.")
+    # a head the reviewer set is left alone, unless the page is also answered
+    # (Danet 153: head_is_title = true and header = "DES ARMES.")
+    parsed = [{"header": h, "body": b} for h, b in zip(heads, bodies)]
+    assert H.title_heads_to_body(parsed, {}, {5}) == set()
+    assert H.title_heads_to_body(parsed, {5: True}, {5}) == {5} and parsed[5]["body"].startswith("CHAPITRE IX.")
     # Marchionni 42: no running head on the page; a mention 11 pages back
     # (contents) is not the chapter's opening
     heads = ["", "CENNI STORICI DELLA SCHERMA."] * 3 + ["", "CAPITOLO III", ""]

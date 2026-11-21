@@ -917,6 +917,8 @@ def check_book(folder: str) -> list:
                        ["pages"].items() if "header" in v}
         except _overrides.OverridesError:
             decided = set()
+        _tp = f"{I}/title_heads.json"
+        _moved = set(json.load(open(_tp, encoding="utf-8"))) if os.path.exists(_tp) else set()
         for i, e in enumerate(ex):
             if i + 1 in decided:
                 continue
@@ -932,9 +934,13 @@ def check_book(folder: str) -> list:
             elif printed and not shown:
                 # a plate's printed plate number ("Pl. 6.") reads as a page
                 # head to the detector; a plate page shows no running head
-                # (La Boëssière's 18 plates)
+                # (La Boëssière's 18 plates). A chapter title the OCR read as
+                # the head and step 1 moved into the text (title_heads_to_body,
+                # intermediate/title_heads.json) is that box -- not a lost head
+                # (Masiello 1902 fioretto scans 22, 30, 62, 92, 110; Grisier 125)
+                moved = i in _moved
                 if not any(f.get("kind") == "plate" for f in figs.get(str(i), [])) \
-                        and not folio_heads:
+                        and not folio_heads and not moved:
                     add(i + 1, CHECK, "layout", "the page prints a running head, but none is shown")
             elif shown and not printed:
                 add(i + 1, CHECK, "layout", f"running head {h.replace(chr(9), ' / ')!r} is "

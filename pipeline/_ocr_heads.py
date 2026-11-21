@@ -385,7 +385,8 @@ def title_heads_to_body(parsed: list, decided: dict = None, skip=frozenset()) ->
     (it is the title) / False (it is a running head)} from the book's
     `[pages.N] head_is_title` -- the reviewer's answer wins. `skip`: pages
     whose running head the reviewer set (`[pages.N] header`): left alone
-    (Masiello 1887 scan 454: «PARTE TERZA» set by hand). Runs after
+    (Masiello 1887 scan 454: «PARTE TERZA» set by hand) -- unless `decided`
+    names it too (Danet 153: the title into the text, the printed head set). Runs after
     reconcile_headers(), whose lift of a short capitals line into HEADER
     is how most of these titles got there (Marchionni 42, Rossi «CAPO I»).
     Returns the pages changed."""
@@ -394,7 +395,7 @@ def title_heads_to_body(parsed: list, decided: dict = None, skip=frozenset()) ->
     done = set()
     for i, p in enumerate(parsed):
         head = (p.get("header") or "").strip()
-        if not head or i in skip:
+        if not head or (i in skip and i not in decided):   # an explicit answer wins (Danet 153: both set)
             continue
         move = decided[i] if i in decided else verdicts.get(i) == "move"
         if not move:

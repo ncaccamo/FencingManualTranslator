@@ -601,8 +601,10 @@ def main():
             # a chapter title the OCR filed as the running head (or that the lift
             # above put there) goes into the text; a head the reviewer set stays
             _ov = _overrides.load(stem)
-            title_heads_to_body(parsed, _overrides.head_decisions(_ov),
-                                {n - 1 for n, v in _ov["pages"].items() if "header" in v})
+            _moved = title_heads_to_body(parsed, _overrides.head_decisions(_ov),
+                                         {n - 1 for n, v in _ov["pages"].items() if "header" in v})
+            with open(os.path.join(int_dir, "title_heads.json"), "w", encoding="utf-8") as fh:
+                json.dump(sorted(_moved), fh)       # for the review report's layout check
             head_stops(parsed)              # a head's printed stop on every page
             try:
                 import _margins
