@@ -825,13 +825,17 @@ def check_book(folder: str) -> list:
     _hd = lambda e: (re.search(r"(?m)^HEADER: ?(.*)$", e) or [None, ""])[1].strip()
     _bd = lambda e: e.split("BODY_TEXT:", 1)[1] if "BODY_TEXT:" in e else ""
     try:
-        _asked = set(_overrides.head_decisions(_overrides.load(os.path.basename(folder)[:-len("_translated")])))
+        _ovh = _overrides.load(os.path.basename(folder)[:-len("_translated")])
+        _asked = set(_overrides.head_decisions(_ovh)) | {n - 1 for n, v in _ovh["pages"].items() if "header" in v}
     except _overrides.OverridesError:
         _asked = set()
     _heads = [("" if _hd(e).lower() == "none" else _hd(e)) for e in ex]
     for i, v in _ocr_heads.title_head_verdicts(_heads, [_bd(e) for e in ex],
                                                          _layout.no_running_heads(folder)).items():
-        if v == "run" and i not in _asked:
+        # "move" still a head here: step 1 kept it as one of a run whose
+        # other heads it then moved (Florio 35 «N.º III.º Stoccate» between
+        # 34 and 36) -- as unsure as a run
+        if i not in _asked:
             add(i + 1, CHECK, "title head", f"running head {_heads[i].replace(chr(9), ' ')!r} is printed "
                 f"only here -- the page's own chapter or section title (then it belongs in the text), "
                 f"or a running head? Set [pages.{i + 1}] head_is_title = true / false")
