@@ -35,7 +35,7 @@ from _tx_checks import (
 from _tx_common import _LANG_REF, _strip_accents
 from _tx_notes import extract_source_footnotes, pull_footnotes
 from _tx_structure import (
-    _capitalize_definition_entries, _clean_caption, fix_subheading_spacing,
+    _capitalize_definition_entries, _clean_caption, fix_subheading_spacing, heading_numbers,
     match_boundary_punctuation, restore_dividers, restore_dropped_part_title,
     restore_table_markers,
 )
@@ -1054,6 +1054,14 @@ def apply_book_overrides(folder: str, fixes: bool = True) -> None:
     ov = _overrides.load(stem)
     I = f"{folder}/intermediate"
     hp, tp = f"{I}/headers.json", f"{I}/translation.txt"
+    # a heading's number as the book prints it: ordinal, cardinal or numeral
+    # (heading_numbers; owner 2026-11-21) -- running heads and page text
+    if os.path.exists(hp):
+        hmap = json.load(open(hp, encoding="utf-8"))
+        fixed = {k: heading_numbers(v, k) if isinstance(v, str) else v for k, v in hmap.items()}
+        if fixed != hmap:
+            with open(hp, "w", encoding="utf-8") as fh:
+                json.dump(fixed, fh, ensure_ascii=False, indent=1)
     if ov["headers"] and os.path.exists(hp):
         hmap = json.load(open(hp, encoding="utf-8"))
         if _overrides.apply_headers(hmap, ov):
@@ -1081,6 +1089,18 @@ def apply_book_overrides(folder: str, fixes: bool = True) -> None:
         if missing:
             print(f"  ⚠ overrides: [[fix]] text not found on scan page(s) {missing} (0: a [[book_fix]]) "
                   f"-- obsolete after a retranslation? Review {_overrides.path_for(stem)}")
+    # page headings' numbers, after the [[fix]]es (whose finds were written
+    # against the model's text: Masiello 1887 "CHAPTER THREE" -> "THIRD CHAPTER")
+    ep = f"{I}/extracted.txt"
+    if fixes and os.path.exists(tp) and os.path.exists(ep):
+        ex = _pageio.split_pages(open(ep, encoding="utf-8").read())
+        tr = _pageio.split_pages(open(tp, encoding="utf-8").read())
+        if len(ex) == len(tr):
+            tr2 = [heading_numbers(t, e.split("BODY_TEXT:", 1)[1] if "BODY_TEXT:" in e else "")
+                   for e, t in zip(ex, tr)]
+            if tr2 != tr:
+                with open(tp, "w", encoding="utf-8") as fh:
+                    fh.write(_pageio.join_pages(tr2))
     # hand edits of whole pages (books/<stem>.edits/) win over everything above
     edits = _overrides.load_edits(stem)
     if fixes and edits and os.path.exists(tp):

@@ -978,6 +978,12 @@ source = ["più fermo"]
 line = '''"a più fermo", "più fermo" in a fencing sense is an OCR misreading of "a piè fermo" → firm-footed'''
 
 [[term]]
+id = "heading-numbers"
+kind = "translate"
+source_re = '''(?i)\b(?:capitolo|parte|lezione|libro|titolo|articolo|sezione|capo)\s+(?:prim|second|terz|quart|quint|sest|settim|ottav|non|decim|[IVXLC]+\b|\d)|\b(?:prim|second|terz|quart|quint)[oa]\s+(?:parte|capitolo|lezione)\b'''
+line = '''numbered headings keep the book's kind of number: an ordinal word stays an ordinal, before the noun ("CAPITOLO SECONDO" → SECOND CHAPTER, "PARTE PRIMA" → FIRST PART, "Articolo terzo" → Third Article), a numeral stays that numeral ("PARTE III." → PART III., never THIRD PART or PART THREE), a cardinal word stays a cardinal ("Lezione due" → Lesson Two)'''
+
+[[term]]
 id = "legamento"
 kind = "footnote"
 source = ["legamento"]

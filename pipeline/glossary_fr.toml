@@ -1113,7 +1113,7 @@ check = "retry"
 kind = "translate"
 source_re = '''(?i)\b(?:premi[eè]re|deuxi[eè]me|seconde|troisi[eè]me|quatri[eè]me|cinqui[eè]me|sixi[eè]me)\s+partie\b'''
 never = ["Part One"]
-line = '''première partie, deuxième partie … → First Part, Second Part … (ordinal first, never "Part One")'''
+line = '''première partie, deuxième partie … → First Part, Second Part … (ordinal first, never "Part One"). Any numbered heading keeps the book's kind of number: an ordinal word stays an ordinal, before the noun ("CHAPITRE PREMIER" → FIRST CHAPTER), a numeral stays that numeral ("CHAPITRE IX" → CHAPTER IX, never NINTH CHAPTER), a cardinal word stays a cardinal ("Leçon deux" → Lesson Two)'''
 
 [[term]]
 id = "soie"

@@ -267,3 +267,88 @@ def restore_table_markers(text: str, src: str) -> str:
                 n_text += 1
         out.insert(at, "[[TABLE]]")
     return "\n\n".join(out)
+
+
+# A heading that is only a noun and its number («CAPITOLO SECONDO»,
+# «CHAPITRE PREMIER», «PARTE III.»): the English keeps the kind of number
+# the book prints -- an ordinal word an ordinal ("SECOND CHAPTER", before
+# the noun, as "First Part" / "FIFTH CHAPTER"), a numeral the numeral
+# ("PART III"), a cardinal word a cardinal ("CHAPTER TWO"). Owner,
+# 2026-11-21: "a straight translation in every case". The model mixed them
+# (Masiello 1902 «CAPITOLO PRIMO» "FIRST CHAPTER", «CAPITOLO SECONDO»
+# "CHAPTER TWO"; Barbasetti «PARTE III.» "PART THREE"; 43 headings in 9 books).
+_ORD_SRC = {
+    1: r"premi[eè]re?|prim[oa]", 2: r"deuxi[eè]me|seconde?|second[oa]", 3: r"troisi[eè]me|terz[oa]",
+    4: r"quatri[eè]me|quart[oa]", 5: r"cinqui[eè]me|quint[oa]", 6: r"sixi[eè]me|sest[oa]",
+    7: r"septi[eè]me|settim[oa]", 8: r"huiti[eè]me|ottav[oa]", 9: r"neuvi[eè]me|non[oa]",
+    10: r"dixi[eè]me|decim[oa]", 11: r"onzi[eè]me|undicesim[oa]", 12: r"douzi[eè]me|dodicesim[oa]"}
+_CARD_SRC = {
+    1: r"une?|uno", 2: r"deux|due", 3: r"trois|tre", 4: r"quatre|quattro", 5: r"cinq|cinque",
+    6: r"six|sei", 7: r"sept|sette", 8: r"huit|otto", 9: r"neuf|nove", 10: r"dix|dieci"}
+_ORD_EN = ["", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth",
+           "ninth", "tenth", "eleventh", "twelfth"]
+_CARD_EN = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+            "eleven", "twelve"]
+_NOUN_SRC = (r"chapitre|partie|le[çc]on|livre|titre|article|section|capitolo|parte|lezione|libro|"
+             r"titolo|articolo|sezione|capo")
+_NUM = r"[IVXLC]+|\d+"
+_HEAD_NUM_SRC = re.compile(
+    rf"(?i)^\W*(?:(?:{_NOUN_SRC})\s+(?:(?P<ord>{'|'.join(_ORD_SRC.values())})|(?P<card>{'|'.join(_CARD_SRC.values())})"
+    rf"|(?P<num>{_NUM}))|(?P<ord2>{'|'.join(_ORD_SRC.values())})\s+(?:{_NOUN_SRC}))\W*$")
+_NOUN_EN = r"chapter|part|lesson|book|title|article|section|head"
+_ORDW = "|".join(_ORD_EN[1:])
+_CARDW = "|".join(_CARD_EN[1:])
+_HEAD_NUM_EN = re.compile(
+    rf"(?i)^(\W*)(?:(?P<o>{_ORDW})\s+(?P<n1>{_NOUN_EN})|(?P<n2>{_NOUN_EN})\s+(?:(?P<o2>{_ORDW})|(?P<c>{_CARDW})|(?P<num>{_NUM})))\b")
+
+
+def _value(word: str, table: dict) -> int:
+    return next((k for k, v in table.items() if re.fullmatch(v, word, re.I)), 0)
+
+
+def heading_numbers(text: str, src: str) -> str:
+    """Set each noun-and-number heading of the English to the source's kind
+    of number (see above). Only where the source and the English have the
+    same count of such heading lines, paired in order; the English noun,
+    letter case and anything after the number are kept."""
+    if not text or not src:
+        return text
+    want = []
+    for line in re.sub(r"<[^>]+>", "", src).split("\n"):
+        m = _HEAD_NUM_SRC.match(line.strip())
+        if not m:
+            continue
+        if m.group("ord") or m.group("ord2"):
+            want.append(("o", _value(m.group("ord") or m.group("ord2"), _ORD_SRC)))
+        elif m.group("card"):
+            want.append(("c", _value(m.group("card"), _CARD_SRC)))
+        else:
+            want.append(("n", m.group("num")))
+    lines = text.split("\n")
+    at = [k for k, l in enumerate(lines) if _HEAD_NUM_EN.match(l.strip())]
+    if not want or len(want) != len(at):
+        return text
+    for (kind, val), k in zip(want, at):
+        line = lines[k]
+        lead = line[:len(line) - len(line.lstrip())]
+        m = _HEAD_NUM_EN.match(line.strip())
+        noun = m.group("n1") or m.group("n2")
+        if kind == "o" and val:
+            new = f"{_ORD_EN[val]} {noun}"
+        elif kind == "c" and val:
+            new = f"{noun} {_CARD_EN[val]}"
+        elif kind == "n":
+            new = f"{noun} {val}"
+        else:
+            continue
+        old = m.group(0)[len(m.group(1)):]
+        letters = re.sub(r"[^A-Za-z]", "", old)
+        if letters.isupper():
+            new = new.upper()
+        elif letters[:1].isupper():
+            new = " ".join(w if re.fullmatch(_NUM, w) else w[:1].upper() + w[1:] for w in new.split())
+        if kind == "n":                       # the numeral exactly as printed
+            new = re.sub(rf"(?i)\b{re.escape(val)}$", val, new)
+        rest = line.strip()[len(m.group(0)):]
+        lines[k] = lead + m.group(1) + new + rest
+    return "\n".join(lines)

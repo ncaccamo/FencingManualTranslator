@@ -41,6 +41,7 @@
    - arma, armi of the army (infantry, cavalry, artillery) → arm, arms of the service ("l'arma di cavalleria" → the cavalry arm); armi as swords → weapons   |   arma bianca, armi bianche → by context: edged weapon(s), bladed weapon(s), or "cold steel" in a set phrase; never "white weapon"   |   col destro, col mancino (fencing against one) → against a right-hander, against a left-hander (never "with the right hand")
    - pattinando, pattinare (the skating step) → keep in Italian: <i>pattinando</i>   |   slancio (of the rear foot) → drive   |   tempista → tempo-fencer   |   cavalleria, the code of knights → chivalry (the mounted troops → cavalry)   |   sala d'armi → fencing hall   |   padrini → seconds   |   garetti → hamstrings   |   piastrone → plastron   |   minacciare → threaten
    - "a più fermo", "più fermo" in a fencing sense is an OCR misreading of "a piè fermo" → firm-footed
+   - numbered headings keep the book's kind of number: an ordinal word stays an ordinal, before the noun ("CAPITOLO SECONDO" → SECOND CHAPTER, "PARTE PRIMA" → FIRST PART, "Articolo terzo" → Third Article), a numeral stays that numeral ("PARTE III." → PART III., never THIRD PART or PART THREE), a cardinal word stays a cardinal ("Lezione due" → Lesson Two)
 
 3b. TRANSLATE these too, and the FIRST time each one appears in the text you are given, write it as  English<fn>It. original</fn>  — a bare source reference, NOT an explanation, nothing added. Later occurrences: just the English.
    - legamento → engagement

@@ -2043,6 +2043,26 @@ the book's `[terms]`, which reached the prompt only.
 language is skipped by that correction. When a rule seems ignored, check
 what the code did to the reply before blaming the model.
 
+### 2.26 A heading's number changed kind: "CHAPTER TWO" for «CAPITOLO SECONDO» (2026-11-21)
+
+The model mixed ordinal, cardinal and numeral in numbered headings, even in
+one book: Masiello 1902 «CAPITOLO PRIMO» → "FIRST CHAPTER" but «CAPITOLO
+SECONDO» → "CHAPTER TWO"; «CHAPITRE PREMIER» → "CHAPTER ONE" (Danet,
+Joseph-Renaud, Baudry); «PARTE III.» → "PART THREE" or "THIRD PART"
+(Barbasetti, Enrichetti); «Articolo Terzo» → "Article Three" (Descalzi).
+43 headings in 9 books. Owner: a straight translation in every case -- an
+ordinal stays an ordinal (before the noun: "SECOND CHAPTER", as "First
+Part" and "FIFTH CHAPTER" before), a numeral stays the numeral ("PART
+III"), a cardinal stays a cardinal ("Lesson Two").
+
+**Fix:** a prompt line in each language (term tables: `premiere-partie`,
+`heading-numbers`), and the code sets it whatever the model wrote:
+`_tx_structure.heading_numbers`, run by `apply_book_overrides` after the
+`[[fix]]`es, on page text (a line that is only a noun and its number,
+paired in order with the English's, only when the counts match) and on
+running heads (`headers.json`). Existing books: `apply_overrides.py`, no
+model.
+
 ## Part 3 — shared / architectural
 
 - **What a correction retranslates** (2026-11-10). A page's fingerprint

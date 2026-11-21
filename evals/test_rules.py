@@ -6595,5 +6595,30 @@ def test_title_head_answer_written_as_page_setting():
         assert A.plan("x_1900_y", books, proc)[0] == []             # written once
 
 
+def test_heading_number_kept_as_printed():
+    # owner 2026-11-21: a numbered heading is a straight translation -- an
+    # ordinal stays ordinal (before the noun), a numeral stays the numeral,
+    # a cardinal stays cardinal. Masiello 1902 fioretto scan 30 «CAPITOLO
+    # SECONDO» came out "CHAPTER TWO"; Barbasetti scan 108 «PARTE III.»
+    # "PART THREE."; scan 152 «PARTE V.» "FIFTH PART."; Descalzi 76
+    # «Articolo Terzo» "Article Three"
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    H = importlib.import_module("_tx_structure").heading_numbers
+    assert H("CHAPTER TWO\n\nNormal position. — Line of direction.",
+             "CAPITOLO SECONDO\n\nPosizione normale. — Linea di direzione.") \
+        == "SECOND CHAPTER\n\nNormal position. — Line of direction."
+    assert H("PART THREE.\n\nOF THE SWORD", "PARTE III.\n\nDELLA SPADA") == "PART III.\n\nOF THE SWORD"
+    assert H("FIFTH PART.", "PARTE V.") == "PART V."
+    assert H("Article Three\nStraight thrust.", "Articolo Terzo\nBotta diritta.") == "Third Article\nStraight thrust."
+    assert H("CHAPTER ONE.", "CHAPITRE PREMIER.") == "FIRST CHAPTER."
+    assert H("Lesson Two", "Leçon deux") == "Lesson Two"                       # cardinal kept
+    assert H("CHAPTER IX.\nOF THE APPEL.", "CHAPITRE IX.\nDE L'APPEL.") == "CHAPTER IX.\nOF THE APPEL."
+    # left alone: the counts differ (a contents page), or no such heading
+    assert H("CHAPTER TWO ... 12\nCHAPTER THREE ... 30", "CAPITOLO SECONDO ... 12") \
+        == "CHAPTER TWO ... 12\nCHAPTER THREE ... 30"
+    assert H("In the second chapter we saw", "Nel capitolo secondo vedemmo") == "In the second chapter we saw"
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())
