@@ -54,7 +54,7 @@ from _ocr_folios import (
 )
 from _ocr_heads import (
     apply_read_heads, head_stops, known_headmatter, leaked_top_header, reconcile_headers,
-    salvage_leaked_folio_header, settle_disputed_heads, strip_leaked_headmatter,
+    salvage_leaked_folio_header, settle_disputed_heads, title_heads_to_body, strip_leaked_headmatter,
     tail_catchwords,
 )
 from _ocr_parse import _norm_head, collapse_runs, has_page_number_field, parse_vlm_response
@@ -598,6 +598,11 @@ def main():
             fold_caption_header_into_figure(parsed)
             _no_head |= settle_disputed_heads(parsed, _disputed)
             reconcile_headers(parsed, _no_head)
+            # a chapter title the OCR filed as the running head (or that the lift
+            # above put there) goes into the text; a head the reviewer set stays
+            _ov = _overrides.load(stem)
+            title_heads_to_body(parsed, _overrides.head_decisions(_ov),
+                                {n - 1 for n, v in _ov["pages"].items() if "header" in v})
             head_stops(parsed)              # a head's printed stop on every page
             try:
                 import _margins

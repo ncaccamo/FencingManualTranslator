@@ -67,6 +67,7 @@ the header back into the text), then the PDFs.
 |---|---|---|
 | `page_number = "7"` | the page number to show (`""` = none) | Florio scan 17 prints 7; the OCR read 1. |
 | `header = "…"` | the running head, in the source language, as in `extracted.txt` (`""` = none) | Jacob scan 49: a title, not a running head → `header = ""`. |
+| `head_is_title = true` | the running head the OCR read is this page's chapter / section title: it goes into the text (and is translated); `false`: it is a running head. The review report asks ("title head" card) when step 1 can't tell; the review page writes the answer. | Marchionni scan 344 «SEZIONE SECONDA». |
 | `caption = "…"` | the printed caption of the page's plate or figure, corrected (source language). Step 2 translates it. | La Boëssière's engraved captions the OCR can't read. |
 | `caption_en = "…"` | your own English for that caption (wins over the model's) | |
 | `figure = "inset"` | only if the OCR missed the figure entirely: `"plate"` (default) or `"inset"` (a small picture on a text page) | |
@@ -79,7 +80,8 @@ the header back into the text), then the PDFs.
 
 **Rerun:** `page_number` and `header`: `apply_overrides.py <stem>`, then the
 PDFs. `leave_out`: the PDFs only. `caption`: also `2_translate.py --pages <stem> N`. `retranslate`:
-`2_translate.py --pages <stem>`, then the PDFs.
+`2_translate.py --pages <stem>`, then the PDFs. `head_is_title`: `reprocess_extracted.py <stem>`, then
+`2_translate.py <stem>` (only the page whose text changed), then the PDFs.
 
 ### `[headers]`: a running head's English
 

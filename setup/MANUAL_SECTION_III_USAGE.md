@@ -255,6 +255,12 @@ side-by-side PDF. What it checks:
 - **Notes:** things worth a glance but often fine. For example, a paragraph
   moved to the notes as a margin note, which is a heuristic and is sometimes wrong.
 
+- **Title head:** a chapter or section title the OCR read as the page's
+  running head, printed only there, among running heads of its kind. Step
+  1 moves a title like this into the text by itself when it can tell
+  (`docs/model-quirks.md` 1.21); this card is the case it can't. Answer
+  "It is the page's title: put it in the text" or "It is a running head:
+  leave it", after looking at the scan.
 - **Layout:** a running head shown on a page that prints none (title page,
   plate, chapter opener), or one missing from a page that prints one. This
   comes from a page-layout detection model (`pipeline/_layout.py`, CPU only)
@@ -420,6 +426,7 @@ running_heads = false            # the book prints none: the line the layout det
 [pages.314]                      # scan page 314
 page_number = "298"              # folio to show ("" = none)
 header = ""                      # French running head ("" = none)
+head_is_title = true             # the "running head" is this page's chapter title: into the text
 note = "free text"
 
 [pages.346]                      # a plate whose engraved caption the OCR misread
@@ -578,6 +585,7 @@ second sheet there). The review report lists pages as scan pages.
 | A term should always be rendered a certain way in this book | `[terms]` in the overrides file (then retranslate the pages that use it) | III.5b |
 | A page number is misread, or shown where none is printed | `[pages.N] page_number = "…"` | III.5b |
 | A running head is wrong, or shouldn't be there | `[pages.N] header = "…"` | III.5b |
+| A chapter or section title is missing from a page's text: the OCR read it as the running head (a "title head" card) | `[pages.N] head_is_title = true` (the card's "It is the page's title" answer writes it), then `reprocess_extracted.py`, `2_translate.py`, the PDFs | III.5b |
 | The report says "probably the page number" under *About this book* (the book prints no running heads) | `[book] running_heads = false`, then `reprocess_extracted.py` | III.5b |
 | A plate caption is misread (engraved script, damage) | `[pages.N] caption = "…"` (the printed text, corrected), optionally `caption_en` | III.5b |
 | A page's translation is poor and should be redone | `2_translate.py --pages <stem> N` or `[pages.N] retranslate = true` | III.5b |

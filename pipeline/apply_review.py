@@ -26,6 +26,7 @@ the item until it's resolved.
 """
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -87,7 +88,13 @@ def plan(stem: str, books_dir: str = BOOKS, processed: str = PROCESSED) -> tuple
     tr = _pageio.split_pages(open(tp, encoding="utf-8").read()) if os.path.exists(tp) else []
     todo, skipped = [], []
     missing = {k for s, k, f in _overrides.review_fixes_missing(answers, ov)}
+    decided = _overrides.head_decisions(ov)
     for k, a in answers.items():
+        if a.get("kind") == "title head":
+            # "It's the page's title": [pages.N] head_is_title = true (no find / replace)
+            if a.get("answer") == "fix" and a["scan"] - 1 not in decided:
+                todo.append((k, a))
+            continue
         if k not in missing:
             continue
         s = a["scan"]
@@ -103,12 +110,21 @@ def write(stem: str, todo: list, books_dir: str = BOOKS) -> None:
     from datetime import date
     p = _overrides.path_for(stem, books_dir)
     old = open(p, encoding="utf-8").read() if os.path.exists(p) else ""
+    for k, a in [t for t in todo if t[1].get("kind") == "title head"]:
+        # into the page's own [pages.N] table if it has one (TOML: one table per page)
+        line = f"head_is_title = true   # review card {k}: the running head is the page's title"
+        m = re.search(rf"(?m)^\[pages\.{a['scan']}\][ \t]*\n", old)
+        old = (old[:m.end()] + line + "\n" + old[m.end():]) if m else \
+            (old.rstrip("\n") + f"\n\n[pages.{a['scan']}]\n{line}\n")
+    todo = [t for t in todo if t[1].get("kind") != "title head"]
     L = ["", f"# review page answers (books/{stem}.review), applied {date.today().isoformat()}"]
     for k, a in sorted(todo, key=lambda t: t[1]["scan"]):
         where = f"pdf {a['pdf']}" if a.get("pdf") else f"scan {a['scan']}"
         L += ["[[fix]]", f"# {where} -- review card {k}: {' '.join(str(a.get('issue', '')).split())[:90]}",
               f"scan = {a['scan']}", f"find = {toml_str(a['find'])}",
               f"replace = {toml_str(a.get('replace', ''))}"]
+    if not todo:
+        L = []
     text = (old.rstrip("\n") + "\n" + "\n".join(L)) if old.strip() else "\n".join(L[1:])
     with open(p, "w", encoding="utf-8") as fh:
         fh.write(text + "\n")

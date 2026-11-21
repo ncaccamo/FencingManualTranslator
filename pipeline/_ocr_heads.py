@@ -322,6 +322,95 @@ def apply_read_heads(parsed: list, raw_pages: list, read: dict) -> int:
     return n
 
 
+# A chapter, part or section title: the word that names it ("CHAPITRE IX.",
+# "CAPITOLO PRIMO", "TITOLO SESTO", "SECONDA CATEGORIA", "PARTE STORICA …")
+_TITLE_HEAD = re.compile(
+    r"^\s*(?:CHAPITRE|CHAP\.|CHAPTER|CAPITOLO|CAPO|PARTIE|PARTE|PART|LE[ÇC]ON|LEZIONE|"
+    r"ARTICLE|ARTICOLO|SECTION|SEZIONE|TITRE|TITOLO|LIVRE|LIBRO|PREMI[ÈE]RE|DEUXI[ÈE]ME|"
+    r"SECONDE|TROISI[ÈE]ME|PRIMA|SECONDA|TERZA)\b", re.I)
+
+
+def _title_key(s: str) -> str:
+    """Letters only, lower case, no accents: «CHAPITRE IX.» == «Chapitre IX»."""
+    return " ".join(re.sub(r"[^a-z]+", " ", _norm_head(s.split("\t", 1)[0])).split())
+
+
+def title_head_verdicts(heads: list, bodies: list) -> dict:
+    """Pages whose HEADER is a chapter / part / section title printed once in
+    the book: the OCR model filed the page's title in the running-head field
+    and it is in no body -- so it is in no translation either (Danet scan 153
+    «CHAPITRE IX. DE L'APPEL.» over the real head «DES ARMES.»; Marchionni
+    42, Masiello 1902 fioretto 22, Descalzi 61: chapter openings with no
+    head at all; 2026-11-21 sweep, 32 pages in 9 books checked on the scans).
+    But some books print the chapter as their running head, and a short
+    chapter shows it once (André «CHAPITRE X», scan 133). Per page:
+
+      "opener": one of the 4 pages before opens with that title (its first
+                two lines) -- the chapter's opening page; this is its running
+                head (André 133). Not a line further down: Marchionni reuses
+                «SEZIONE SECONDA» as a subheading (scan 341).
+      "run":    a page 1-2 before and a page 1-2 after carry a head of the
+                same kind -- one head in a run of heads (André 479: the book
+                misprints «CHAPITRE XXVIII» among «CHAPITRE XXV»). Unsure:
+                the review report asks (Marchionni 344 «SEZIONE SECONDA» is
+                a section's opening among «SEZIONE PRIMA» heads).
+      "move":   neither -- the page's own title, to go into its text.
+
+    Only pages a "move" or "run" applies to are returned; a head printed
+    on two or more pages is a running head and never listed."""
+    keys = [_title_key(h or "") for h in heads]
+    count = Counter(k for k, h in zip(keys, heads) if (h or "").strip())
+    out = {}
+    for i, h in enumerate(heads):
+        h = (h or "").strip()
+        if not h or not _TITLE_HEAD.match(h) or count[keys[i]] > 1:
+            continue
+        if any(_title_key(line) == keys[i]
+               for j in range(max(0, i - 4), i)
+               for line in [l for l in (bodies[j] or "").strip().split("\n") if l.strip()][:2]):
+            continue                                       # "opener"
+        kind = keys[i].split()[:1]
+
+        def same_kind(j):
+            return 0 <= j < len(heads) and (heads[j] or "").strip() and keys[j].split()[:1] == kind
+        run = any(same_kind(i - d) for d in (1, 2)) and any(same_kind(i + d) for d in (1, 2))
+        out[i] = "run" if run else "move"
+    return out
+
+
+def title_heads_to_body(parsed: list, decided: dict = None, skip=frozenset()) -> set:
+    """Step 1: a title filed as the running head goes back into the page's
+    text, as its first lines (title_head_verdicts "move"; a two-part one,
+    «CHAPITRE IX.⇥DE L'APPEL.», as two lines). `decided`: {page index: True
+    (it is the title) / False (it is a running head)} from the book's
+    `[pages.N] head_is_title` -- the reviewer's answer wins. `skip`: pages
+    whose running head the reviewer set (`[pages.N] header`): left alone
+    (Masiello 1887 scan 454: «PARTE TERZA» set by hand). Runs after
+    reconcile_headers(), whose lift of a short capitals line into HEADER
+    is how most of these titles got there (Marchionni 42, Rossi «CAPO I»).
+    Returns the pages changed."""
+    decided = decided or {}
+    verdicts = title_head_verdicts([p.get("header") for p in parsed], [p.get("body") for p in parsed])
+    done = set()
+    for i, p in enumerate(parsed):
+        head = (p.get("header") or "").strip()
+        if not head or i in skip:
+            continue
+        move = decided[i] if i in decided else verdicts.get(i) == "move"
+        if not move:
+            continue
+        body = (p.get("body") or "").strip()
+        title = "\n".join(part.strip() for part in head.split("\t") if part.strip())
+        if body.lower() == "none":
+            body = ""
+        first = [l for l in body.split("\n") if l.strip()][:2]
+        if not any(_title_key(l) == _title_key(head) for l in first):
+            p["body"] = f"{title}\n\n{body}" if body else title
+        p["header"] = ""
+        done.add(i)
+    return done
+
+
 def settle_disputed_heads(parsed: list, disputed: set) -> set:
     """The OCR reported a running head the layout detector doesn't see
     (`disputed`). In these books a section's running head starts on its

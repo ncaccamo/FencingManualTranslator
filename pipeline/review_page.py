@@ -289,7 +289,9 @@ function card(c) {
     <div class="shots">${c.shots.map(s => shot(s, s.src.includes("/eo-"))).join("")}</div>
     ${c.english ? `<details><summary>The page's English text (copy the words to fix from here)</summary><pre>${esc(c.english)}</pre></details>` : ""}
     <div class="ans"><span class="seg" role="group" aria-label="Answer">
-        <button data-v="fix">Change the English</button><button data-v="fine">Leave it as it is</button><button data-v="later">Later</button></span>
+        ${c.kind === "title head"
+          ? '<button data-v="fix">It is the page\'s title: put it in the text</button><button data-v="fine">It is a running head: leave it</button>'
+          : '<button data-v="fix">Change the English</button><button data-v="fine">Leave it as it is</button>'}<button data-v="later">Later</button></span>
       <div class="fixbox" hidden>
         <div class="fr"><label>Find (exact words on this page's English)<input class="find" spellcheck="false"></label>
           <label>Replace with<input class="replace" spellcheck="false"></label></div>
@@ -300,7 +302,7 @@ function card(c) {
     b.onclick = () => { const v = ans[c.id] && ans[c.id].answer === b.dataset.v ? "" : b.dataset.v;
       ans[c.id] = Object.assign(ans[c.id] || {}, { answer: v }); if (!v) delete ans[c.id]; save(); redraw(el, c); };
   }
-  const fb = el.querySelector(".fixbox"); fb.hidden = a.answer !== "fix";
+  const fb = el.querySelector(".fixbox"); fb.hidden = a.answer !== "fix" || c.kind === "title head";   // the answer is the whole decision
   const f = el.querySelector(".find"), r = el.querySelector(".replace"), n = el.querySelector(".note"), w = el.querySelector(".warn");
   f.value = a.find || ""; r.value = a.replace || ""; n.value = a.note || "";
   const check = () => { const ok = !f.value || !c.english || c.english.includes(f.value);

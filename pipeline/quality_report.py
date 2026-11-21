@@ -818,6 +818,23 @@ def check_book(folder: str) -> list:
             elif cap and not (f.get("caption_en") or "").strip():
                 add(s, CHECK, "caption", f"plate caption not translated: {cap[:50]!r}")
 
+    # a chapter / section title the OCR filed as the running head, kept as a
+    # head because it sits in a run of heads of its kind (_ocr_heads.
+    # title_head_verdicts "run"): the reviewer says which it is
+    import _ocr_heads
+    _hd = lambda e: (re.search(r"(?m)^HEADER: ?(.*)$", e) or [None, ""])[1].strip()
+    _bd = lambda e: e.split("BODY_TEXT:", 1)[1] if "BODY_TEXT:" in e else ""
+    try:
+        _asked = set(_overrides.head_decisions(_overrides.load(os.path.basename(folder)[:-len("_translated")])))
+    except _overrides.OverridesError:
+        _asked = set()
+    _heads = [("" if _hd(e).lower() == "none" else _hd(e)) for e in ex]
+    for i, v in _ocr_heads.title_head_verdicts(_heads, [_bd(e) for e in ex]).items():
+        if v == "run" and i not in _asked:
+            add(i + 1, CHECK, "title head", f"running head {_heads[i].replace(chr(9), ' ')!r} is printed "
+                f"only here -- the page's own chapter or section title (then it belongs in the text), "
+                f"or a running head? Set [pages.{i + 1}] head_is_title = true / false")
+
     # the second, caption-only reading of the page (verify_captions.py):
     # a printed caption step 1 didn't record, or recorded differently
     _cr = f"{I}/caption_read.json"

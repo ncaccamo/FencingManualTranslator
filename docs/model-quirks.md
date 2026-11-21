@@ -1142,6 +1142,37 @@ header`). A source sentence broken over two OCR lines that the English
 keeps as one is rejoined by the text layer when that pairs the rows
 (`docs/pdf-layout.md`).
 
+### 1.21 A chapter title filed as the running head (2026-11-21)
+
+The model puts a page's chapter, part or section title in `HEADER:` and
+leaves it out of the body, so the title is in no translation. Two layouts:
+a chapter opening with no running head, the big centred title taken for
+one (Marchionni scan 42 «CAPITOLO III», Masiello 1902 fioretto 22,
+Descalzi 61, Rossi «CAPO I–VI»); and a page whose real head («DES ARMES.»,
+Danet 153) the model drops, putting «CHAPITRE IX. / DE L'APPEL.» in its
+place. Sweep of every book: 32 one-off title-shaped heads in 9 books,
+checked on the scans. Since 2026-11-20 the English-only PDF shows no
+running heads, so a title left there is invisible.
+
+Not every one-off one is a title: André prints the chapter as its running
+head, and a short chapter shows it once («CHAPITRE X», scan 133); scan 479
+is the book's own misprint «CHAPITRE XXVIII» among «CHAPITRE XXV» heads.
+A rule on the body ("the page starts mid-sentence") or on the book ("its
+chapter heads repeat") failed on real pages (Marchionni's running heads
+are «SEZIONE PRIMA» / «PRIMA CATEGORIA», so its «SECONDA CATEGORIA»
+opening, scan 295, would have stayed a head).
+
+**Fix** (`_ocr_heads.title_head_verdicts` / `title_heads_to_body`, step 1):
+a one-off head that starts like a title («CHAPITRE», «CAPITOLO», «TITOLO»,
+«SEZIONE», «PARTE», «PRIMA» …) stays a running head when one of the 4 pages
+before opens with the same title (its first two lines: the chapter's
+opening page, André 133), or when it sits in a run of heads of its kind (a page 1–2
+before and 1–2 after: André 479). Otherwise it moves into the text as the
+page's first lines. In a run it is unsure: kept, and the review report
+asks ("title head" card; the answer is `[pages.N] head_is_title`). 31 of
+the 32 decided right; Marchionni 344 «SEZIONE SECONDA» (a section's
+opening among «SEZIONE PRIMA» heads) is kept and asked about.
+
 ## Part 2 — Translation (Qwen3.8-27B i1-Q4_K_S, port 11434)
 
 Qwen3.8-27B is the default since 2026-09-25 (translation model selection

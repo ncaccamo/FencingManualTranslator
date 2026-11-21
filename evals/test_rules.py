@@ -6529,5 +6529,71 @@ def test_left_out_page_says_what_it_is():
             pass
 
 
+def test_chapter_title_filed_as_running_head():
+    # 2026-11-21 sweep (32 pages, 9 books, checked on the scans): the OCR
+    # model filed a page's chapter title in HEADER, so it was in no
+    # translation. Danet scan 153 «CHAPITRE IX. DE L'APPEL.» (the real head
+    # «DES ARMES.» dropped); Marchionni 42 «CAPITOLO III» opens a chapter.
+    # But André prints the chapter as its running head: scan 133's
+    # «CHAPITRE X» heads the page after the chapter's opening (132), and 479
+    # is a misprinted «CHAPITRE XXVIII» among «CHAPITRE XXV» heads.
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    H = importlib.import_module("_ocr_heads")
+    V = H.title_head_verdicts
+    # Danet: alternating «L'ART» / «DES ARMES.», the chapter title in HEADER
+    heads = ["L'ART", "DES ARMES.", "L'ART", "", "", "CHAPITRE IX.\tDE L'APPEL.", "L'ART", "DES ARMES."]
+    bodies = ["5° Engagez l'épée de Tierce ; je tire Quarte", "En marchant, la même chose.", "x", "",
+              "VILLE DE LYON", "FAIRE un appel à son Adversaire , c'est tâcher", "3. Appel de Quarte", "y"]
+    assert V(heads, bodies) == {5: "move"}
+    parsed = [{"header": h, "body": b} for h, b in zip(heads, bodies)]
+    assert H.title_heads_to_body(parsed) == {5}
+    assert parsed[5]["header"] == "" and parsed[5]["body"].startswith("CHAPITRE IX.\nDE L'APPEL.\n\nFAIRE un appel")
+    # the reviewer's answer wins: a running head after all
+    parsed = [{"header": h, "body": b} for h, b in zip(heads, bodies)]
+    assert H.title_heads_to_body(parsed, {5: False}) == set() and parsed[5]["header"].startswith("CHAPITRE IX.")
+    # Marchionni 42: no running head on the page; a mention 11 pages back
+    # (contents) is not the chapter's opening
+    heads = ["", "CENNI STORICI DELLA SCHERMA."] * 3 + ["", "CAPITOLO III", ""]
+    bodies = ["x"] * 6 + ["fine del capitolo", "CENNI STORICI SU' MODERNI TRATTATISTI DI SCHERMA\n\n§. 1. Io non credo", "y"]
+    assert V(heads, bodies) == {7: "move"}
+    # André 133: the chapter's opening page (132) prints the title in its text
+    heads = ["CHAPITRE IX", "MANUEL D'ESCRIME", "CHAPITRE IX", "", "CHAPITRE X", "MANUEL D'ESCRIME", ""]
+    bodies = ["a", "b", "Malgré la connaissance", "CHAPITRE X\n\nLA REMISE", "Tout en étant plus pratique", "c", "CHAPITRE XI"]
+    assert V(heads, bodies) == {}
+    # André 479: inside a run of «CHAPITRE XXV» heads -- unsure, left as the head
+    heads = ["CHAPITRE XXV", "MANUEL D'ESCRIME", "CHAPITRE XXVIII", "MANUEL D'ESCRIME", "CHAPITRE XXV"]
+    bodies = ["a", "b", "— Le concurrent qui ne se trouve pas", "c", "d"]
+    assert V(heads, bodies) == {2: "run"}
+    parsed = [{"header": h, "body": b} for h, b in zip(heads, bodies)]
+    assert H.title_heads_to_body(parsed) == set() and parsed[2]["header"] == "CHAPITRE XXVIII"
+
+
+def test_title_head_answer_written_as_page_setting():
+    # a "title head" card (quality_report: a chapter title kept as a running
+    # head, unsure) answered "It is the page's title" -> [pages.N]
+    # head_is_title = true, into the page's own table when it has one
+    import importlib, os, tempfile
+    sys.path.insert(0, str(_PIPELINE))
+    A = importlib.import_module("apply_review")
+    O = _load_overrides_module()
+    with tempfile.TemporaryDirectory() as d:
+        books, proc = f"{d}/books", f"{d}/processed"
+        os.makedirs(books)
+        with open(f"{books}/x_1900_y.overrides.toml", "w") as fh:
+            fh.write('[pages.344]\npage_number = "328"\n\n[pages.12]\nheader = ""\n')
+        with open(f"{books}/x_1900_y.review", "w") as fh:
+            fh.write('[[card]]\nid = "aaaaaaaaaa"\nscan = 344\nkind = "title head"\nissue = "x"\nanswer = "fix"\n\n'
+                     '[[card]]\nid = "bbbbbbbbbb"\nscan = 479\nkind = "title head"\nissue = "x"\nanswer = "fix"\n\n'
+                     '[[card]]\nid = "cccccccccc"\nscan = 133\nkind = "title head"\nissue = "x"\nanswer = "fine"\n')
+        todo, skipped = A.plan("x_1900_y", books, proc)
+        assert sorted(k for k, a in todo) == ["aaaaaaaaaa", "bbbbbbbbbb"] and skipped == []
+        A.write("x_1900_y", todo, books)
+        ov = O.load("x_1900_y", books)
+        assert O.head_decisions(ov) == {343: True, 478: True}
+        assert ov["pages"][344]["page_number"] == "328"
+        assert A.plan("x_1900_y", books, proc)[0] == []             # written once
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

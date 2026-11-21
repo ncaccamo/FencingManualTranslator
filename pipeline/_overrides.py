@@ -48,6 +48,9 @@ continuation sheet, so it can't key anything durable.)
     [pages.N]            per-scan-page settings:
         page_number      folio to show ("" = none)
         header           French running head ("" = none)
+        head_is_title    true -> the HEADER the OCR read is this page's chapter /
+                         section title: it goes into the text; false -> it is
+                         a running head (_ocr_heads.title_heads_to_body)
         retranslate      true -> retranslated by `2_translate.py --pages <stem>`
                          (once per version of the page's source text)
         caption          the printed caption of the page's plate/figure,
@@ -101,7 +104,7 @@ import re
 import tomllib
 
 _PAGE_KEYS = {"display", "columns", "page_number", "header", "retranslate", "note", "caption", "caption_en", "figure", "leave_out",
-              "picture_after"}
+              "picture_after", "head_is_title"}
 _TOP_KEYS = {"book", "headers", "terms", "pages", "fix", "book_fix", "table_fix", "ocr_fix"}
 _BOOK_KEYS = {"running_heads": bool, "final": bool, "paragraphs": str, "page_numbers": str,
               "bold_headings": bool, "text_size": (int, float), "chapter_summaries": str}
@@ -222,6 +225,11 @@ def _check_range(ov: dict, n_pages: int, where: str) -> None:
         if s > n_pages:
             raise OverridesError(f"{where}: scan page {s} is past the end of the book "
                                  f"({n_pages} pages)")
+
+
+def head_decisions(ov: dict) -> dict:
+    """{page index: bool} from `[pages.N] head_is_title` (title_heads_to_body)."""
+    return {scan - 1: bool(v["head_is_title"]) for scan, v in ov["pages"].items() if "head_is_title" in v}
 
 
 def apply_extraction(parsed: list, nums: list, ov: dict) -> list:
