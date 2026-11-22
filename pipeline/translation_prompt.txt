@@ -85,7 +85,7 @@ CRITICAL RULES — FOLLOW EXACTLY:
      riposteur (the fencer who ripostes) → riposter   |   martingale → martingale   |   prévôt → provost   |   salut, salut des armes (the formal salute before a bout) → salute, salute of arms   |   tantôt … tantôt → sometimes … sometimes
      chasser le fer, chasser l'épée, chasser la lame → drive the blade aside (never "chase")   |   fuyard (a fencer who keeps breaking ground) → runaway   |   tireur d'allonge → long-reach fencer
      tireur de tête / tireur de tempérament → thinking fencer / impulsive fencer   |   à mains contraires / à mains pareilles → opposite-handed / same-handed   |   départs d'ensemble → simultaneous starts   |   se coucher (dropping the body under the opponent's point) → duck
-     "parer tierce" → parry tierce   |   "de quarte en seconde" → from quarte to seconde   |   septime enveloppée → septime enveloped
+     "parer tierce" → parry tierce   |   "de quarte en seconde" → from quarte to seconde   |   "la main tournée de quarte", "en tournant la main de tierce" → the hand turned in quarte, turning the hand to tierce (the position the hand ends in; never "from" -- only «de X en Y» is from X to Y)   |   septime enveloppée → septime enveloped
      frapper du pied → stamp ("en frappant du pied droit" → stamping with the right foot; never "strike with the foot")   |   saisissement d'épée (the left hand grabbing the opponent's sword) → seizing of the épée (never "taking of the blade", which is prise de fer)
    - ordinary words these books use in a sense the model misreads:
      défendre (l'usage de …) → forbid   |   ne … plus que → now only (never "no longer")   |   ajuster (a hit) → aim

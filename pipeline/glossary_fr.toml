@@ -1010,6 +1010,12 @@ source = ["de quarte en seconde"]
 line = '''"de quarte en seconde" → from quarte to seconde'''
 
 [[term]]
+id = "main-tournee-de"
+kind = "translate"
+source = ["tournée de", "tournées de", "tourné de", "tourner la main de", "tournant la main de", "tournez la main de", "retourner la main de", "retournant la main de", "ongles de"]
+line = '''"la main tournée de quarte", "en tournant la main de tierce" → the hand turned in quarte, turning the hand to tierce (the position the hand ends in; never "from" -- only «de X en Y» is from X to Y)'''
+
+[[term]]
 id = "septime-enveloppee"
 kind = "translate"
 source = ["septime enveloppée"]
