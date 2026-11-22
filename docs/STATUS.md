@@ -257,13 +257,6 @@ the operator's business and is not tracked here.)
 
 ## Not yet tested
 
-- **Page context (`PAGE_CONTEXT=1`) for actor and subject reversals
-  (2026-11-22).** The Girard review found sentences whose subject is on
-  the page before («venant à la parade» read as the author's action). The
-  experimental neighbour context (end of the previous page, start of the
-  next) is off by default; worth a test on a set of pages with such
-  findings, before and after.
-
 - The local-mode launch of the 46-layer Qwen3.8 split under Linux (all
   Qwen3.8 runs so far were remote).
 - NVIDIA GPUs (`docs/remote-gpu.md` §5 outlines both routes).
@@ -284,7 +277,15 @@ the operator's business and is not tracked here.)
   checked in code after translation (term checks, `[[term_check]]`, the
   italics gate). Text sent on its own (captions, running heads, tables)
   uses the page prompt when the whole one does not fit (`prompt_for`).
-  Still to test: the page prompt for every page, not only long ones.
+  Tested and not adopted (2026-11-22, `evals/translation_model_test.py`):
+  the page prompt for every page (47 pages that fit the whole prompt: 40%
+  shorter, no faster, slightly worse -- fixes written wrong again 36 vs
+  33, term checks 32 vs 31), and the neighbour context `PAGE_CONTEXT=1` (30
+  Girard pages: no text leaked from the context, but no gain -- meaning
+  errors 14 vs 16, none of the difference from the context; the subject
+  errors it was meant for sit inside one page, and step 1 already joins
+  most sentences split by a page break). Untested: context only on pages
+  that start or end mid-sentence.
 
 - **The early reading guide stops at 1800 and is French only
   (2026-11-22).** A 12-page sample of Danet 1766, Saint-Martin 1804, La

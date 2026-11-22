@@ -24,8 +24,8 @@ import _overrides
 import _pagekind
 import _progress
 from _tx_case import (
-    _shout_ratio, caps_kept_terms, deshout, match_case, match_dash_caps, source_caps_lines,
-    source_case_kept_terms,
+    _shout_ratio, caps_kept_terms, deshout, match_case, match_dash_caps, match_word_case,
+    source_caps_lines, source_case_kept_terms,
 )
 from _tx_checks import (
     _french_token_count, _line_name_counts, contains_too_much_non_english, has_wrong_script,
@@ -235,6 +235,25 @@ def reading_block(text: str) -> tuple:
     """(text to put before the page, note ids): the early reading guide's
     notes that apply to this page; ("", []) for a modern book."""
     return _reading.block(READING_NOTES, text, BOOK_LANG) if READING_NOTES else ("", [])
+
+
+def book_check_repair(text: str, clean_text: str) -> str:
+    """A [[term_check]] with `replace`: where the model keeps writing a
+    forbidden form after the retry naming the rule, put the book's word in
+    its place (case and a plural -s as written): «Esponton» → "Sponton" →
+    "Spontoon". Only for a check whose `never` forms have no other sense in
+    the book -- the replacement is mechanical."""
+    src_l = clean_text.lower()
+    for c in BOOK_CHECKS:
+        if not c.get("replace") or not any(w.lower() in src_l for w in c["source"]):
+            continue
+        for w in c["never"]:
+            def _sub(m, r=c["replace"]):
+                g = m.group(0)
+                plural = g.lower().endswith("s") and not w.lower().endswith("s") and not r.endswith("s")
+                return match_word_case(r + ("s" if plural else ""), g)
+            text = re.sub(r"(?<![\w-])" + re.escape(w) + r"s?(?![\w-])", _sub, text, flags=re.IGNORECASE)
+    return text
 
 
 def book_check_findings(candidate: str, clean_text: str) -> list:
@@ -1841,15 +1860,16 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
             # (a hotter try that mends nothing is no gain), and the page is
             # recorded for the review report
             print(" (term rule not mended: first try kept)", end="")
-            st["term_left"] = [m for m, _ in term_found]
-            candidate = term_first
+            candidate = book_check_repair(term_first, clean_text)
+            st["term_left"] = [m for m, _ in term_findings(candidate, clean_text)]
         return accept(candidate)
 
     if term_first is not None:
         # the first try failed only a term rule and no retry passed the other
         # checks: it is a usable page, not a low-confidence one
         print(" (retries failed: first try kept)", end="")
-        st["term_left"] = [m for m, _ in term_found]
+        term_first = book_check_repair(term_first, clean_text)
+        st["term_left"] = [m for m, _ in term_findings(term_first, clean_text)]
         return accept(term_first)
     st["page_cut"] = bool(best_candidate) and best_is_cut
     return _fallback(best_candidate, clean_text, src_words, fn_seen)

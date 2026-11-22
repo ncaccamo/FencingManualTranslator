@@ -218,10 +218,10 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
     checks = raw.get("term_check") or []
     for n, c in enumerate(checks, 1):
         src, never = c.get("source"), c.get("never")
-        if set(c) - {"source", "never", "term"} \
+        if set(c) - {"source", "never", "term", "replace"} \
                 or not (isinstance(src, list) and src and all(isinstance(x, str) and x for x in src)) \
                 or not (isinstance(never, list) and never and all(isinstance(x, str) and x for x in never)) \
-                or not isinstance(c.get("term", ""), str):
+                or not isinstance(c.get("term", ""), str) or not isinstance(c.get("replace", ""), str):
             raise OverridesError(f"{p}: [[term_check]] #{n} needs source = [...] and never = [...] "
                                  f"(lists of words; optional term = the [terms] key it enforces)")
         if c.get("term") and c["term"] not in (raw.get("terms") or {}):

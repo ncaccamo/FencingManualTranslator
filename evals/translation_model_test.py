@@ -161,6 +161,16 @@ if os.environ.get("PAGE_SET") == "italian":        # the Italian pages of the re
 if os.environ.get("PAGE_SET") == "retranslation":
     PAGES = RETRANSLATION_PAGES
     OUT = OUT + "/retranslation"
+# PAGE_LIST=<file>: the pages named in a file, one "book-prefix:scan" a line
+# (a set made for one question, kept with the operator's book data)
+if os.environ.get("PAGE_LIST"):
+    PAGES = [(k.split(":")[0], int(k.split(":")[1]), "listed")
+             for k in open(os.environ["PAGE_LIST"], encoding="utf-8").read().split() if ":" in k]
+    OUT = OUT + "/" + os.path.splitext(os.path.basename(os.environ["PAGE_LIST"]))[0]
+# PAGE_ONLY=prefix:scan,...: of the set, only these pages
+if os.environ.get("PAGE_ONLY"):
+    _only = set(os.environ["PAGE_ONLY"].split(","))
+    PAGES = [p for p in PAGES if f"{p[0]}:{p[1]}" in _only]
 
 
 def _folder(prefix):
@@ -174,10 +184,14 @@ def _load_tx():
     return vars(_translate)
 
 
+_BOOK_PAGES = {}
+
+
 def _pages():
     for prefix, scan, why in PAGES:
         folder = _folder(prefix)
         ex = _pageio.split_pages(open(f"{folder}/intermediate/extracted.txt", encoding="utf-8").read())
+        _BOOK_PAGES[folder] = ex
         if scan <= len(ex):
             yield prefix, folder, scan, why, ex[scan - 1].strip()
 
@@ -241,6 +255,12 @@ def run(label, current=False):
             ns["PROMPT_TEMPLATE"] = _glossary_table.page_prompt(full, ns["BOOK_LANG"], page, at_end=at_end)
             extra = {"prompt_chars": len(ns["PROMPT_TEMPLATE"]), "full_prompt_chars": len(full)}
         st = {"fn_seen": set(), "footnoted_seen": set(), "fn_state": {}}
+        if os.environ.get("PAGE_CONTEXT", "").lower() in ("1", "true", "yes", "on"):
+            # the end of the page before and the start of the next, as step 2
+            # gives them with PAGE_CONTEXT=1
+            ns["PAGE_CONTEXT"] = True
+            st["context"] = ns["neighbour_context"](_BOOK_PAGES[folder], scan - 1)
+            extra["context"] = True
         del calls[:]
         t0 = time.time()
         out = ns["translate_page"](page, scan, 0, st)

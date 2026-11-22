@@ -6821,5 +6821,24 @@ def test_book_terms_sent_only_on_pages_that_have_them():
         TX["BOOK_TERMS"], TX["BOOK_ADDENDUM"] = keep
 
 
+def test_book_term_check_replace_mends_what_the_retry_did_not():
+    # Girard 1740 (2026-11-22): «Esponton» → "Sponton" on 12 pages despite
+    # the term and a retry naming it. A [[term_check]] with `replace` puts
+    # the book's word in, case and plural as written, after the retry.
+    from _rules import TX
+    keep = (TX["BOOK_CHECKS"], TX["BOOK_TERMS"])
+    try:
+        TX["BOOK_CHECKS"] = [{"source": ["Esponton"], "never": ["Sponton"], "replace": "spontoon"}]
+        TX["BOOK_TERMS"] = {}
+        r = TX["book_check_repair"]
+        assert r("The Sponton held high. THE SPONTONS. sponton.", "l'Esponton") == \
+            "The Spontoon held high. THE SPONTOONS. spontoon."
+        assert r("The Sponton", "le fusil") == "The Sponton"                 # source word absent: untouched
+        TX["BOOK_CHECKS"] = [{"source": ["Esponton"], "never": ["Sponton"]}]
+        assert r("The Sponton", "l'Esponton") == "The Sponton"               # no replace: check only
+    finally:
+        TX["BOOK_CHECKS"], TX["BOOK_TERMS"] = keep
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

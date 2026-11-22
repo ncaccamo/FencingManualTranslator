@@ -240,6 +240,17 @@ are free translations, so chrF++ rewards paraphrase.
   therefore sends the whole prompt where it fits and the page prompt
   (entries at the end) where it does not: the same 97 pages then ran with
   no cut-off and no low-confidence page.
+- **Page prompt always; neighbour context (2026-11-22).** `PAGE_ONLY` runs
+  part of a set, `PAGE_LIST=<file>` a set of one's own ("book:scan" a
+  line), `PAGE_CONTEXT=1` gives each page the end of the one before and
+  the start of the next, as step 2 can. On the 47 retranslation pages
+  that still fit the whole prompt, `PAGE_PROMPT=end` sent 3,874 prompt
+  tokens a call against 6,458, at the same speed, and did slightly worse
+  (fixes wrong again 36 vs 33, right unaided 17 vs 18, term checks 32 vs
+  31): the general rules the page prompt drops earn their place. On 30
+  Girard 1740 pages the neighbour context leaked nothing and gained
+  nothing a reviewer could trace to it (meaning errors 14 vs 16, same
+  errors otherwise). Neither adopted.
 - **The term tables' checks (2026-11-12).** `evals/glossary_score.py`
   runs each table entry's check over the reviewed books: how many
   `[[fix]]` entries it would have flagged, and on how many reviewed pages

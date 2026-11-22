@@ -122,6 +122,7 @@ retranslate the pages that use the term (`2_translate.py --pages <stem>
 source = ["Pointeur", "POINTEUR"]          # on a page whose French has one of these
 never = ["Pointer", "Thruster"]            # the English must not have any of these
 term = "Pointeur"                          # optional: the [terms] key it enforces
+replace = "pointeur"                       # optional: write this instead, if the retry fails too
 ```
 
 A `[terms]` line asks the model; this checks the answer. After a page is
@@ -129,7 +130,11 @@ translated, step 2 looks for each `never` word (whole word, any case,
 italics ignored) on pages whose source has a `source` word; if one is
 there, the model is asked once more with the book's rule named (the
 `term` line), like the term tables' `check = "retry"`. If the retry breaks
-it too, the first try is kept and the page is listed in the review report.
+it too, the first try is kept and the page is listed in the review report --
+unless the check has `replace`: then each `never` word is replaced by it
+(case and a plural -s as written) and the page is not listed. Give
+`replace` only where every `never` form can mean nothing else in the book
+(Girard: "Sponton" → "Spontoon"); the replacement is mechanical.
 Use it for a rendering the review found against a decision (Girard:
 "Pointer" for *pointeur*, *épée* in a smallsword book), not for a word the
 English can rightly contain for other reasons. **Rerun:** retranslate the
