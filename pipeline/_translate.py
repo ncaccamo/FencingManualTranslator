@@ -259,6 +259,18 @@ def prompt_fits(prompt: str, text: str) -> bool:
     return need <= CONTEXT_TOKENS
 
 
+def prompt_for(text: str) -> str:
+    """The prompt for a piece of text sent on its own -- a caption, a
+    heading, a running head, a table's cells: the whole prompt where it fits
+    the window with the text, else the page prompt cut down to the text's
+    own term entries. A book's [terms] can push the whole prompt past the
+    window (Girard 1740, 49 terms: 9,093 tokens of 8,192, 2026-11-22): every
+    caption was refused by the server and kept in French."""
+    if prompt_fits(PROMPT_TEMPLATE, text):
+        return PROMPT_TEMPLATE
+    return page_prompt(text) or PROMPT_TEMPLATE
+
+
 def page_prompt(text: str):
     """The book's prompt cut down to this page's term entries, or None when
     it cannot be built (a language without a term table, a prompt variant
@@ -343,7 +355,7 @@ def retranslate_stray_french_headings(text: str) -> str:
         if not is_heading or not looks_french:
             out.append(line)
             continue
-        en = translate_with_llama(f"{PROMPT_TEMPLATE}\n\nText to translate:\n{s}")
+        en = translate_with_llama(f"{prompt_for(s)}\n\nText to translate:\n{s}")
         en = strip_model_preamble((en or "").strip()).strip()
         en = re.sub(r"(?m)^\s*#{1,6}\s+", "", en)
         en = re.sub(r"</?i>", "", en).splitlines()[0].strip() if en else ""
@@ -598,7 +610,7 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
     # the reviewer's caption decisions first, so a corrected caption is
     # translated in this same pass
     _overrides.apply_captions(fig_map, _overrides.load(Path(folder).name.replace("_translated", "")))
-    n = 0
+    n = failed = 0
     for figs in fig_map.values():
         for fig in figs:
             raw = (fig.get("caption") or "").strip()
@@ -621,7 +633,7 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
             fallback = ""
             for attempt in range(3):
                 en = translate_with_llama(
-                    f"{PROMPT_TEMPLATE}\n\n{reading_block(cap)[0]}Text to translate:\n{cap}",
+                    f"{prompt_for(cap)}\n\n{reading_block(cap)[0]}Text to translate:\n{cap}",
                     temperature=0.3 + 0.25 * attempt)
                 en = strip_model_preamble((en or "").strip()).strip()
                 en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
@@ -651,13 +663,22 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
                 fig["caption_en"] = caps_kept_terms(source_case_kept_terms(match_case(cap, one) or cap, cap), cap)
             elif fallback:
                 fig["caption_en"] = caps_kept_terms(source_case_kept_terms(match_case(cap, fallback) or cap, cap), cap)
+            elif fig.get("caption_en") and fig["caption_en"].strip() != cap:
+                # no reply at all (the server refused or was away): keep the
+                # earlier English rather than put the source text in its place
+                failed += 1
+                continue
             else:
                 fig["caption_en"] = cap
+                failed += 1
             n += 1
     with open(fig_path, "w", encoding="utf-8") as fh:
         json.dump(fig_map, fh, ensure_ascii=False, indent=1)
     if n:
         print(f"  translated {n} figure caption(s)")
+    if failed:
+        print(f"  ⚠ {failed} figure caption(s) got no translation from the model "
+              f"(kept the earlier English where there was one, else the source text)")
     return n
 
 
@@ -756,7 +777,7 @@ def translate_tables(folder: str, force: bool = False) -> int:
                 keep = (" A <br> in a line marks a line break in the printed cell: keep every <br> where "
                         "it falls, the same number in each line.") if brs else ""
                 reply = translate_with_llama(
-                    f"{PROMPT_TEMPLATE}\n\nThe text below is the cells of a TABLE, one per numbered line. "
+                    f"{prompt_for(listing)}\n\nThe text below is the cells of a TABLE, one per numbered line. "
                     f"Translate each line on its own, keeping its number; answer with exactly {len(chunk)} "
                     f"numbered lines and nothing else.{keep}\n\nText to translate:\n{listing}")
                 got = dict(re.findall(r"(?m)^\s*(\d+)\.\s*(.*\S)", strip_model_preamble(reply or "")))
@@ -930,7 +951,7 @@ def translate_headers(folder: str, force: bool = False) -> int:
         # instead of trusting the first.
         candidates = []
         for attempt in range(3):
-            en = translate_with_llama(f"{PROMPT_TEMPLATE}\n\nText to translate:\n{h}",
+            en = translate_with_llama(f"{prompt_for(h)}\n\nText to translate:\n{h}",
                                        temperature=0.2 + 0.3 * attempt)
             en = strip_model_preamble((en or "").strip()).strip()
             en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
@@ -1401,7 +1422,7 @@ def _translate_without_retries(clean_text: str, i: int, n: int, page_had_table: 
             cap = ""
             if residue:
                 raw = translate_with_llama(
-                    f"{PROMPT_TEMPLATE}\n\nText to translate:\n{residue}")
+                    f"{prompt_for(residue)}\n\nText to translate:\n{residue}")
                 cap = re.sub(r'(?m)^\s*#{1,6}\s+', '',
                              strip_model_preamble((raw or residue).strip())).strip()
                 cap = apply_always_translate(cap)
@@ -1426,7 +1447,7 @@ def _translate_without_retries(clean_text: str, i: int, n: int, page_had_table: 
     if src_words > 2500:
         head = " ".join(clean_text.split()[:2500])
         cand = translate_with_llama(
-            f"{PROMPT_TEMPLATE}\n\nText to translate:\n{head}")
+            f"{prompt_for(head)}\n\nText to translate:\n{head}")
         cand = cand or "[translation unavailable]"
         print(f"  Page {i}/{n} — oversized OCR ({src_words} w), "
               f"translated head only")

@@ -6776,5 +6776,23 @@ def test_kept_term_italic_only_where_the_source_has_it():
     assert f("the <i>reprise</i>", "la reprise") == "the <i>reprise</i>"
 
 
+def test_text_sent_alone_gets_a_prompt_that_fits():
+    # Girard 1740 (2026-11-22): its 49 [terms] made the whole prompt 9,093
+    # tokens of an 8,192 window. Pages fell back to the page prompt; the
+    # captions (and running heads, tables, stray headings) always sent the
+    # whole prompt, the server refused every one, and 74 captions stayed in
+    # French. prompt_for() picks the page prompt for them too.
+    from _rules import TX
+    keep = TX["PROMPT_TEMPLATE"]
+    try:
+        TX["PROMPT_TEMPLATE"] = TX["prompt_for_language"]("French")
+        assert TX["prompt_for"]("Coup de tierce haute.") is TX["PROMPT_TEMPLATE"]   # fits: whole prompt
+        TX["PROMPT_TEMPLATE"] = TX["PROMPT_TEMPLATE"] + "\n- padding term → padding" * 1500
+        short = TX["prompt_for"]("Coup de tierce haute.")
+        assert short is not TX["PROMPT_TEMPLATE"] and len(short) < len(TX["PROMPT_TEMPLATE"])
+    finally:
+        TX["PROMPT_TEMPLATE"] = keep
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

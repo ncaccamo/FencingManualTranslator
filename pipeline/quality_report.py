@@ -868,6 +868,25 @@ def check_book(folder: str) -> list:
                 f"only here -- the page's own chapter or section title (then it belongs in the text), "
                 f"or a running head? Set [pages.{i + 1}] head_is_title = true / false")
 
+    # a caption the model never translated: its English is the source text
+    # (the server refused every caption of Girard 1740 when its [terms] made
+    # the whole prompt too long, 2026-11-22; nothing said so)
+    _fg = f"{I}/figures.json"
+    if os.path.exists(_fg):
+        for k, _figs in json.load(open(_fg, encoding="utf-8")).items():
+            for fg in _figs:
+                c, e = (fg.get("caption") or "").strip(), (fg.get("caption_en") or "").strip()
+                # 4+ words and still mostly foreign: not "Fig. 9", nor a caption
+                # that is a kept term («Passata sotto»), nor the OCR's own
+                # description of a picture
+                if c and e and len(c.split()) >= 4 and not _render.describes_picture(c) \
+                        and (contains_too_much_non_english(e)
+                             or (e == c and len(re.findall(
+                                 r"(?i)\b(?:de|la|le|les|des|du|et|au|aux|sur|pour|di|della|delle|dei|il|che|una|per|del|nella)\b",
+                                 c)) >= 2)):
+                    add(int(k) + 1, CHECK, "caption", f"caption not translated: {c[:70]!r} -- "
+                        f"rerun `2_translate.py --captions <stem>`, or set [pages.{int(k) + 1}] caption_en")
+
     # the second, caption-only reading of the page (verify_captions.py):
     # a printed caption step 1 didn't record, or recorded differently
     _cr = f"{I}/caption_read.json"
@@ -1177,7 +1196,13 @@ def check_book(folder: str) -> list:
     if os.path.exists(term_p):
         for k, left in sorted(json.load(open(term_p, encoding="utf-8")).items(), key=lambda kv: int(kv[0])):
             if 1 <= int(k) <= len(tr):
+                plain = re.sub(r"<[^>]+>", "", tr[int(k) - 1] or "")
                 for what in left:
+                    # «x» written "y": listed while "y" is still on the page
+                    # (a [[fix]] or [[book_fix]] since may have mended it)
+                    m = re.search(r'written "(.+?)"', what)
+                    if m and not re.search(r"(?<![\w-])" + re.escape(m.group(1)) + r"(?![\w-])", plain, re.I):
+                        continue
                     add(int(k), CHECK, "term", f"{what} -- against the term rule, and a retry naming the rule "
                         "did not mend it: fix the wording, or set the book's own rendering under [terms]")
 
