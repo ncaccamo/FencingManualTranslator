@@ -91,7 +91,11 @@ no ROCm/Vulkan). `scripts/setup.sh --remote` + `docker-compose.override.yml`
   after `evals/glossary_score.py` shows it safe). `_glossary_fr.py` /
   `_glossary_it.py` keep the always-translate repairs and the review
   report's wording checks. The tables hold language-wide decisions only; a
-  book's own choice goes in its `[terms]`.
+  book's own choice goes in its `[terms]`, and a `[[term_check]]` checks it
+  after translation. A kept term is italicised only where the source has one
+  of its forms (`source` + `italic_source`). Books printed before 1800 also
+  get the early reading guide (`early_reading_fr.toml`, `_reading.py`); their
+  long-s OCR misreads are listed by `long_s_check.py`.
 
 - Every script takes the books to work on by name, or `--all`
   (`pipeline/_books.py`); none runs on the whole folder by default. A book

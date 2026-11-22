@@ -25,6 +25,20 @@ the operator's business and is not tracked here.)
   Saint-Martin); a short line in Title Case stays Title Case. Plain words
   are only ever raised (`pipeline/_tx_case.py`, `docs/model-quirks.md`).
   Figure labels keep the parentheses the book prints («(Fig. 30)»).
+- **Early reading guide (2026-11-22):** a book printed before 1800 gets
+  `pipeline/early_reading_fr.toml` with its page: notes on constructions
+  the model misreads in 18th-century French («ou» printed for «où», the
+  «ne» that is no negation, «je fais tirer» for the author's own thrust,
+  «un à-gauche», long-s misreads), each only on pages that have it
+  (`_reading.py`; `[book] reading` overrides the year). Later books' prompts
+  are unchanged. The OCR's long-s misreads are listed by
+  `long_s_check.py` for `[[ocr_fix]]`. A book's `[[term_check]]` checks
+  its `[terms]` after translation (one retry, like the term tables).
+- **Kept terms are italic only where the source has them (2026-11-22):**
+  the italics say "the author's word"; where the English uses a kept word
+  for something the source says otherwise, it stays roman
+  (`kept_term_in_source`, term-table `italic_source`). riposte / remise
+  stay italic in every form (house rule).
 - **OCR:** olmOCR-2-7B-1025 via llama-server (:11435 locally) is the only
   path. A layout detector (Docling's `docling-layout-heron`, CPU) supplies
   running-head, figure and margin-note boxes (`intermediate/layout.json`).
@@ -243,6 +257,13 @@ the operator's business and is not tracked here.)
 
 ## Not yet tested
 
+- **Page context (`PAGE_CONTEXT=1`) for actor and subject reversals
+  (2026-11-22).** The Girard review found sentences whose subject is on
+  the page before («venant à la parade» read as the author's action). The
+  experimental neighbour context (end of the previous page, start of the
+  next) is off by default; worth a test on a set of pages with such
+  findings, before and after.
+
 - The local-mode launch of the 46-layer Qwen3.8 split under Linux (all
   Qwen3.8 runs so far were remote).
 - NVIDIA GPUs (`docs/remote-gpu.md` §5 outlines both routes).
@@ -253,6 +274,25 @@ the operator's business and is not tracked here.)
   the side-by-side falls back to plain flow for the whole book.
 
 ## Non-obvious decisions / don't-retry-this
+
+- **The early reading guide stops at 1800 and is French only
+  (2026-11-22).** A 12-page sample of Danet 1766, Saint-Martin 1804, La
+  Boëssière 1818 and Lafaugère 1825 found the syntax Girard 1740 is misread
+  on («ou» = «où», the «ne» that is no negation, «je fais + verb») absent
+  from all four; the old spellings (étoit, foible, «&») are read correctly.
+  What does separate the books at 1800 is the long-s OCR damage (Girard,
+  Danet only). An Italian guide is written from the first early Italian
+  book's review, not before: rules without a real example on the page were
+  the source of past regressions. One construction found in the sample is
+  language-wide, not early: «la main tournée de quarte» (→ in quarte, never
+  "from"; term table `main-tournee-de`).
+- **A kept term's italics follow the source, not the English word
+  (2026-11-22).** The italics were added to every kept English word; the
+  corpus check (10 of 2,038 French, 80 of 6,101 Italian italics without a
+  source form) showed nearly all of those to be words the model put in.
+  Before narrowing a term's forms, rerun that check: a form the table
+  misses (an old spelling, an OCR truncation) loses its italics on the next
+  translation of the page.
 
 - **Space-only section breaks and library stamps are marked by hand**
   (2026-11-16): dry runs of a detector for each were wrong more often than

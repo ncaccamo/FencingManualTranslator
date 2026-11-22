@@ -2100,6 +2100,40 @@ French kept-term italics and 80 of 6,101 Italian lack a source form, almost
 all words the model put in. Step 2 only: books already translated keep
 their text until a page is retranslated.
 
+### 2.28 18th-century French misread (2026-11-22)
+
+**Symptom.** Girard 1740, full meaning review: 262 findings in 285 pages,
+116 of them misreadings of the period's French. «ou venant à la parade»
+(«où», no accent) → "or coming to the parry", so the enemy's parry became
+the author's own alternative; «crainte qu'elle ne vous offense» → "for fear
+that it should not offend you" (the «ne» is no negation); «je fais tirer»
+(the author's own thrust) → "I make him thrust"; «faire un à-gauche» → "a
+step to the left"; long-s misreads in the OCR («deux femelles & demie» →
+"two femurs and a half"). A sample of four later books (1766-1825) showed
+the syntax only in Girard; Danet 1766 shares the long-s damage.
+
+**Fix.** The early reading guide (`early_reading_fr.toml`, `_reading.py`):
+for a book printed before 1800, a note per construction, sent only on
+pages that have it, after the shared prompt. Tested on 30 Girard pages
+before and after: 43 errors fixed, 25 kept, 11 new (mostly small
+omissions); two side effects of the first notes were narrowed. Long-s:
+`long_s_check.py` lists the words for `[[ocr_fix]]`. A book's own words
+are its `[terms]`, now checked after translation by `[[term_check]]`.
+
+### 2.29 «la main tournée de quarte» → "the hand turned from quarte" (2026-11-22)
+
+**Symptom.** «la main tournée de tierce», «en tournant la main de prime»
+name the position the hand ends in (Gomard defines it: «la main tournée
+de tierce que de quarte, c'est-à-dire … les ongles en bas que les ongles
+en haut»); the model wrote "from": Lafaugère 64 times, Saint-Martin 25,
+Danet 22, Girard 8, La Boëssière 2, Joseph-Renaud once -- and never in
+Gomard. The prompt's only nearby line was «de quarte en seconde» → from
+quarte to seconde.
+
+**Fix.** A prompt line and term-table entry (`main-tournee-de`) for every
+French book: «de *line*» after turning the hand or nails → in / to that
+line; only «de X en Y» is from X to Y.
+
 ## Part 3 — shared / architectural
 
 - **What a correction retranslates** (2026-11-10). A page's fingerprint
