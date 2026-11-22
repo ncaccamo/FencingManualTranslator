@@ -155,7 +155,9 @@ def prompt_for_book(stem: str) -> str:
     if READING_NOTES:
         print(f"  early reading guide: {len(READING_NOTES)} note(s) for {BOOK_LANG} (printed before "
               f"{_reading.EARLY_BEFORE} or [book] reading = \"early\")")
-    return prompt_for_language(BOOK_LANG) + _overrides.terms_addendum(ov)
+    global BOOK_ADDENDUM
+    BOOK_ADDENDUM = _overrides.terms_addendum(ov)
+    return prompt_for_language(BOOK_LANG) + BOOK_ADDENDUM
 
 # The prompt has to fit the model's context window together with the page and
 # the reply. By 2026-11 the French prompt had grown to ~7,100 tokens of an
@@ -178,6 +180,54 @@ _PROMPT_TOKENS_PER_CHAR, _REPLY_TOKENS_PER_CHAR = 0.29, 0.30
 _TERM_TABLES = {}
 BOOK_TERMS = {}     # the book's own [terms] (overrides file), set by prompt_for_book()
 BOOK_CHECKS = []    # the book's [[term_check]] entries, set by prompt_for_book()
+BOOK_ADDENDUM = ""  # the book's [terms] as the prompt's last block, set by prompt_for_book()
+
+
+def _term_key_forms(key: str) -> list:
+    """The French a [terms] key names, as word lists: remarks in brackets
+    dropped, alternatives apart by "/" or ","; "je fais + verb" → je fais."""
+    k = re.sub(r"\([^)]*\)|[…]|\.\.\.", " ", key)
+    k = re.sub(r"\+\s*\w+", " ", k)
+    out = []
+    for alt in re.split(r"[/,]", k):
+        words = re.findall(r"[a-z0-9]+", _glossary_table.norm(alt))
+        if words:
+            out.append(words)
+    return out
+
+
+def page_terms(text: str) -> dict:
+    """The book's [terms] whose French is on this page: an alternative of the
+    key matches when all its words are on the page (in any order, accents
+    optional: «la hanche droite bien cavée» for «hanche cavée»). A key that
+    names no French is always sent."""
+    if not BOOK_TERMS:
+        return {}
+    words = set(re.findall(r"[a-z0-9]+", _glossary_table.norm(text)))
+
+    def has(w):
+        # a long word by its stem: «frapper» finds «frapez», «frappant»
+        if len(w) < 6:
+            return w in words
+        stem = w[:max(4, len(w) - 3)]
+        return any(x.startswith(stem) for x in words)
+
+    out = {}
+    for key, value in BOOK_TERMS.items():
+        forms = _term_key_forms(key)
+        if not forms or any(all(has(w) for w in f) for f in forms):
+            out[key] = value
+    return out
+
+
+def with_page_terms(template: str, text: str) -> str:
+    """`template` with the book's [terms] block cut down to the terms on
+    the page (Girard 1740: 49 terms, 1,588 tokens, sent whole on every
+    page before 2026-11-22). The block is the prompt's last part, so all
+    before it stays the same from page to page."""
+    if not BOOK_ADDENDUM or not template.endswith(BOOK_ADDENDUM):
+        return template
+    return template[:-len(BOOK_ADDENDUM)] + _overrides.terms_addendum({"terms": page_terms(text)})
 READING_NOTES = []  # the early reading guide's notes for this book ([] for a modern book)
 
 
@@ -266,9 +316,10 @@ def prompt_for(text: str) -> str:
     own term entries. A book's [terms] can push the whole prompt past the
     window (Girard 1740, 49 terms: 9,093 tokens of 8,192, 2026-11-22): every
     caption was refused by the server and kept in French."""
-    if prompt_fits(PROMPT_TEMPLATE, text):
-        return PROMPT_TEMPLATE
-    return page_prompt(text) or PROMPT_TEMPLATE
+    whole = with_page_terms(PROMPT_TEMPLATE, text)
+    if prompt_fits(whole, text):
+        return whole
+    return with_page_terms(page_prompt(text) or PROMPT_TEMPLATE, text)
 
 
 def page_prompt(text: str):
@@ -1701,9 +1752,12 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
     if reading_ids:
         print(f"  (early reading: {', '.join(reading_ids)})")
     # the whole prompt where it fits the window with this page, else the page prompt
-    template = PROMPT_TEMPLATE if prompt_fits(PROMPT_TEMPLATE + reading, clean_text) else (page_prompt(clean_text) or PROMPT_TEMPLATE)
+    # (with only the book's [terms] that are on the page)
+    whole = with_page_terms(PROMPT_TEMPLATE, clean_text)
+    page_mode = not prompt_fits(whole + reading, clean_text)
+    template = with_page_terms(page_prompt(clean_text) or PROMPT_TEMPLATE, clean_text) if page_mode else whole
     for attempt in range(3):
-        print(f"  Page {i}/{n} (try {attempt + 1}{', page prompt' if template is not PROMPT_TEMPLATE else ''})",
+        print(f"  Page {i}/{n} (try {attempt + 1}{', page prompt' if page_mode else ''})",
               end="", flush=True)
 
         # After a first failure, raise the temperature and add a
@@ -1769,9 +1823,10 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
             message, pause, hint = problem
             if first_usable:
                 best_is_cut = message.startswith("cut off")
-            if message.startswith("cut off") and template is PROMPT_TEMPLATE:
+            if message.startswith("cut off") and not page_mode:
                 # the estimate was wrong: the same prompt would be cut again
-                template = page_prompt(clean_text) or template
+                template = with_page_terms(page_prompt(clean_text) or PROMPT_TEMPLATE, clean_text)
+                page_mode = True
             print(f" → {message}")
             if pause:
                 time.sleep(pause)

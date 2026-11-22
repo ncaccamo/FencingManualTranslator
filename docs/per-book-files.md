@@ -101,8 +101,13 @@ The left side is the head exactly as in `extracted.txt`. **Rerun:**
 "cartoccio volante" = "flying <i>cartoccio</i>"
 ```
 
-Added to the translation prompt for this book only. It overrides the
-general term lists, for a term the book uses in its own way. The code
+Added to the translation prompt for this book only, and only on the pages
+whose text has the term: the key is the source word (alternatives apart by
+"/" or ",", a remark in brackets ignored; all its words must be on the page,
+a long word by its stem, so «frapper du pied» also finds «frapez du pied»).
+Write the key in the book's own language; a key with no source word in it
+goes on every page. It overrides the general term lists, for a term the
+book uses in its own way. The code
 follows it too: a word the book keeps in its own language (`"barré" =
 "<i>barré</i>"`) is not turned back into the general list's English after
 the model, and the term tables' checks do not flag a rendering the book

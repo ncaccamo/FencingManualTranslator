@@ -275,6 +275,17 @@ the operator's business and is not tracked here.)
 
 ## Non-obvious decisions / don't-retry-this
 
+- **No larger context window; shorter prompts instead (2026-11-22).**
+  8-bit context memory would give a 16k window in today's VRAM, but the
+  model's trouble is following the prompt it has, not room: a longer prompt
+  dilutes the rules a page needs. The prompt is kept short and specific to
+  the page (term-table lines, a book's `[terms]` and the early reading notes
+  only where their source words are on the page), and what must hold is
+  checked in code after translation (term checks, `[[term_check]]`, the
+  italics gate). Text sent on its own (captions, running heads, tables)
+  uses the page prompt when the whole one does not fit (`prompt_for`).
+  Still to test: the page prompt for every page, not only long ones.
+
 - **The early reading guide stops at 1800 and is French only
   (2026-11-22).** A 12-page sample of Danet 1766, Saint-Martin 1804, La
   Boëssière 1818 and Lafaugère 1825 found the syntax Girard 1740 is misread

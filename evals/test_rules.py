@@ -6794,5 +6794,32 @@ def test_text_sent_alone_gets_a_prompt_that_fits():
         TX["PROMPT_TEMPLATE"] = keep
 
 
+def test_book_terms_sent_only_on_pages_that_have_them():
+    # A book's [terms] are the prompt's last block; each page gets only the
+    # terms whose French is on it (2026-11-22: Girard's 49 terms, 1,588
+    # tokens, went on every page). A key's alternatives ("/", ","), remarks
+    # in brackets dropped; words in any order; long words by their stem
+    # (Girard «frapez» for «frapper du pied»); a key naming no French: always.
+    from _rules import TX
+    import _overrides as O
+    keep = (TX["BOOK_TERMS"], TX["BOOK_ADDENDUM"])
+    terms = {"hanche cavée": "hip hollowed", "frapper du pied": "stamp", "hausse-col": "gorget",
+             "POSEZ-VOUS / REPOSEZ-VOUS SUR VOS ARMES": "REST ON YOUR ARMS", "(drill)": "always"}
+    try:
+        TX["BOOK_TERMS"], TX["BOOK_ADDENDUM"] = terms, O.terms_addendum({"terms": terms})
+        pt = TX["page_terms"]
+        assert set(pt("la hanche droite bien cavée")) == {"hanche cavée", "(drill)"}
+        assert "frapper du pied" in pt("vous frapez du pied droit")
+        assert "hausse-col" in pt("à la hauteur du hausse-col")
+        assert "POSEZ-VOUS / REPOSEZ-VOUS SUR VOS ARMES" in pt("REPOSEZ-VOUS SUR VOS ARMES, deux temps.")
+        base = "RULES\n\nText to translate:"
+        t = TX["with_page_terms"](base + TX["BOOK_ADDENDUM"], "la hanche cavée")
+        assert t.startswith(base) and "hip hollowed" in t and "gorget" not in t
+        TX["BOOK_TERMS"], TX["BOOK_ADDENDUM"] = {}, ""
+        assert TX["with_page_terms"](base, "la hanche cavée") == base        # no [terms]: unchanged
+    finally:
+        TX["BOOK_TERMS"], TX["BOOK_ADDENDUM"] = keep
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())
