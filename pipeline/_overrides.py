@@ -107,9 +107,10 @@ import tomllib
 
 _PAGE_KEYS = {"display", "columns", "page_number", "header", "retranslate", "note", "caption", "caption_en", "figure", "leave_out",
               "picture_after", "head_is_title"}
-_TOP_KEYS = {"book", "headers", "terms", "pages", "fix", "book_fix", "table_fix", "ocr_fix"}
+_TOP_KEYS = {"book", "headers", "terms", "pages", "fix", "book_fix", "table_fix", "ocr_fix", "term_check"}
 _BOOK_KEYS = {"running_heads": bool, "final": bool, "paragraphs": str, "page_numbers": str,
-              "bold_headings": bool, "text_size": (int, float), "chapter_summaries": str}
+              "bold_headings": bool, "text_size": (int, float), "chapter_summaries": str,
+              "reading": str}
 TEXT_SIZES = (9, 13)        # [book] text_size: the side-by-side body size, points
 _PARAGRAPHS = ("indented", "spaced")
 _PAGE_NUMBERS = ("outer", "inner", "centre", "bottom-outer", "bottom-inner", "bottom-centre")
@@ -139,7 +140,7 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
     p = path_for(stem, books_dir)
     if not os.path.exists(p):
         return {"book": {}, "headers": {}, "terms": {}, "pages": {}, "fix": [], "table_fix": [],
-                "book_fix": [], "ocr_fix": []}
+                "book_fix": [], "ocr_fix": [], "term_check": []}
     try:
         with open(p, "rb") as fh:
             raw = tomllib.load(fh)
@@ -212,6 +213,19 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
             raise OverridesError(f"{p}: [book] paragraphs must be one of {_PARAGRAPHS}")
         if k == "page_numbers" and v not in _PAGE_NUMBERS:
             raise OverridesError(f"{p}: [book] page_numbers must be one of {_PAGE_NUMBERS}")
+        if k == "reading" and v not in ("early", "modern"):
+            raise OverridesError(f"{p}: [book] reading must be \"early\" or \"modern\"")
+    checks = raw.get("term_check") or []
+    for n, c in enumerate(checks, 1):
+        src, never = c.get("source"), c.get("never")
+        if set(c) - {"source", "never", "term"} \
+                or not (isinstance(src, list) and src and all(isinstance(x, str) and x for x in src)) \
+                or not (isinstance(never, list) and never and all(isinstance(x, str) and x for x in never)) \
+                or not isinstance(c.get("term", ""), str):
+            raise OverridesError(f"{p}: [[term_check]] #{n} needs source = [...] and never = [...] "
+                                 f"(lists of words; optional term = the [terms] key it enforces)")
+        if c.get("term") and c["term"] not in (raw.get("terms") or {}):
+            raise OverridesError(f"{p}: [[term_check]] #{n}: term {c['term']!r} is not in [terms]")
     for sec in ("headers", "terms"):
         for k, v in (raw.get(sec) or {}).items():
             if not isinstance(v, str):
@@ -219,7 +233,8 @@ def load(stem: str, books_dir: str = "/data/books") -> dict:
     return {"book": dict(book),
             "headers": dict(raw.get("headers") or {}), "terms": dict(raw.get("terms") or {}),
             "pages": pages, "fix": list(fixes), "table_fix": list(table_fixes),
-            "book_fix": list(book_fixes), "ocr_fix": list(ocr_fixes)}
+            "book_fix": list(book_fixes), "ocr_fix": list(ocr_fixes),
+            "term_check": [dict(c) for c in checks]}
 
 
 def _check_range(ov: dict, n_pages: int, where: str) -> None:

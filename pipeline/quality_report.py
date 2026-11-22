@@ -52,6 +52,34 @@ _IT = set("il lo la i gli le di da del della dei delle degli che non è sono per
           "un uno nel nella nei si ma come più anche questo questa quello essere al alla".split())
 
 
+
+def _early_reading_line(stem: str, I: str) -> list:
+    """A line under the title for a book that gets the early reading guide
+    (printed before 1800): information, not a finding, so a ready book's
+    report still lists nothing to do."""
+    import _reading
+    try:
+        ov = _overrides.load(stem)
+        if not _reading.is_early(stem, ov["book"]):
+            return []
+        lang = _tx.book_language(stem)
+        notes = _reading.load(lang)
+    except (OSError, ValueError):
+        return []
+    if not notes:
+        return [f"*Printed before {_reading.EARLY_BEFORE}: no early reading guide for {lang} yet.*", ""]
+    pages = _pageio.split_pages(open(f"{I}/extracted.txt", encoding="utf-8").read())
+    hit = Counter()
+    n = 0
+    for pg in pages:
+        ids = [x["id"] for x in _reading.for_page(notes, clean_vlm_extraction(pg))]
+        n += bool(ids)
+        hit.update(ids)
+    y = _reading.book_year(stem)
+    top = ", ".join(f"{k} {v}" for k, v in hit.most_common(5))
+    return [f"*Early reading guide on ({'printed ' + str(y) if y else '[book] reading = early'}): "
+            f"notes sent on {n} of {len(pages)} pages{' -- ' + top if top else ''}.*", ""]
+
 def still_french(text: str, min_fr: int = 5) -> bool:
     w = [x.lower() for x in re.findall(r"[^\W\d_]+", re.sub(r"<i>.*?</i>|«[^»]*»|\"[^\"]*\"", " ", text))]
     fr = max(sum(x in _FR for x in w), sum(x in _IT for x in w))
@@ -1255,6 +1283,7 @@ def write_report(folder: str, stem: str, issues: list) -> str:
          f"({n_check} issue(s)); {sum(1 for x in issues if x['level'] == NOTE)} note(s).",
          # settled answers are an archive, not report content (owner, 2026-11-18)
          ""]
+    L += _early_reading_line(stem, I)
     if pages_check or book or terms or any(x["level"] == NOTE for x in issues):
         L += ["Record decisions in `books/" + stem + ".overrides.toml` (manual III.5b); "
               "retranslate with `2_translate.py --pages " + stem + " <scan pages>`.", ""]

@@ -40,6 +40,7 @@ from _tx_structure import (
     restore_table_markers,
 )
 import _glossary_table
+import _reading
 import _tx_terms
 from _tx_terms import (
     apply_always_translate, enforce_footnoted_terms, enforce_kept_terms, enforce_maestro,
@@ -147,6 +148,13 @@ def prompt_for_book(stem: str) -> str:
     ov = _overrides.load(stem)
     BOOK_TERMS = dict(ov["terms"])
     _tx_terms.set_book_terms(ov["terms"])     # the code corrections follow the book's own terms too
+    global BOOK_CHECKS, READING_NOTES
+    BOOK_CHECKS = list(ov.get("term_check") or [])
+    # the early reading guide (_reading.py): books printed before 1800 only
+    READING_NOTES = _reading.load(BOOK_LANG) if _reading.is_early(stem, ov["book"]) else []
+    if READING_NOTES:
+        print(f"  early reading guide: {len(READING_NOTES)} note(s) for {BOOK_LANG} (printed before "
+              f"{_reading.EARLY_BEFORE} or [book] reading = \"early\")")
     return prompt_for_language(BOOK_LANG) + _overrides.terms_addendum(ov)
 
 # The prompt has to fit the model's context window together with the page and
@@ -169,6 +177,33 @@ CONTEXT_TOKENS = int(os.environ.get("TRANSLATION_CONTEXT_TOKENS", "8192"))
 _PROMPT_TOKENS_PER_CHAR, _REPLY_TOKENS_PER_CHAR = 0.29, 0.30
 _TERM_TABLES = {}
 BOOK_TERMS = {}     # the book's own [terms] (overrides file), set by prompt_for_book()
+BOOK_CHECKS = []    # the book's [[term_check]] entries, set by prompt_for_book()
+READING_NOTES = []  # the early reading guide's notes for this book ([] for a modern book)
+
+
+def reading_block(text: str) -> tuple:
+    """(text to put before the page, note ids): the early reading guide's
+    notes that apply to this page; ("", []) for a modern book."""
+    return _reading.block(READING_NOTES, text, BOOK_LANG) if READING_NOTES else ("", [])
+
+
+def book_check_findings(candidate: str, clean_text: str) -> list:
+    """The book's [[term_check]] entries a reply breaks: on a page whose
+    source has one of `source`, the English has one of `never`."""
+    out = []
+    src_l = clean_text.lower()
+    en = re.sub(r"</?i>", "", candidate)
+    for c in BOOK_CHECKS:
+        hit = next((w for w in c["source"] if w.lower() in src_l), None)
+        if not hit:
+            continue
+        bad = next((w for w in c["never"]
+                    if re.search(r"(?<![\w-])" + re.escape(w) + r"(?![\w-])", en, re.IGNORECASE)), None)
+        if bad:
+            rule = BOOK_TERMS.get(c.get("term", "")) or f"never \"{bad}\""
+            out.append((f"«{hit}» written \"{bad}\" (book term)",
+                        f" The source has «{hit}»: do not write \"{bad}\" for it. This book's rule: {rule}"))
+    return out
 
 
 def _term_table() -> list:
@@ -197,7 +232,7 @@ def term_findings(candidate: str, clean_text: str) -> list:
         else:
             out.append((f"«{src}» written \"{what}\"",
                         f" The source has «{src}»: do not write \"{what}\" for it. The rule: {t['line']}"))
-    return out
+    return out + book_check_findings(candidate, clean_text)
 
 
 def record_term_left(folder: str, scan: int, left: list) -> None:
@@ -586,7 +621,7 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
             fallback = ""
             for attempt in range(3):
                 en = translate_with_llama(
-                    f"{PROMPT_TEMPLATE}\n\nText to translate:\n{cap}",
+                    f"{PROMPT_TEMPLATE}\n\n{reading_block(cap)[0]}Text to translate:\n{cap}",
                     temperature=0.3 + 0.25 * attempt)
                 en = strip_model_preamble((en or "").strip()).strip()
                 en = re.sub(r'(?m)^\s*#{1,6}\s+', '', en)
@@ -1640,8 +1675,12 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         print(f" ✓{'  (%d fn)' % n_fn if n_fn else ''}")
         return candidate
 
+    # the early reading guide's notes for this page (books printed before 1800)
+    reading, reading_ids = reading_block(clean_text)
+    if reading_ids:
+        print(f"  (early reading: {', '.join(reading_ids)})")
     # the whole prompt where it fits the window with this page, else the page prompt
-    template = PROMPT_TEMPLATE if prompt_fits(PROMPT_TEMPLATE, clean_text) else (page_prompt(clean_text) or PROMPT_TEMPLATE)
+    template = PROMPT_TEMPLATE if prompt_fits(PROMPT_TEMPLATE + reading, clean_text) else (page_prompt(clean_text) or PROMPT_TEMPLATE)
     for attempt in range(3):
         print(f"  Page {i}/{n} (try {attempt + 1}{', page prompt' if template is not PROMPT_TEMPLATE else ''})",
               end="", flush=True)
@@ -1650,7 +1689,7 @@ def translate_page(page_text: str, i: int, n: int, st: dict) -> str:
         # blunt instruction -- the old 7B model sometimes gets stuck echoing
         # the French source verbatim, and a hotter sample + the
         # extra line breaks it out.
-        ctx = page_context_block(st) + kind_note
+        ctx = page_context_block(st) + kind_note + reading
         if attempt == 0:
             full_prompt = f"{template}\n\n{ctx}Text to translate:\n{clean_text}"
             temp = FIRST_TRY_TEMPERATURE

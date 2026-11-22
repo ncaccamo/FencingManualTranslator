@@ -6674,5 +6674,84 @@ def test_sentence_joined_across_plate_caption_moved_from_head():
     assert X.join_split_sentences(p, frozenset({1})) == 0
 
 
+def test_early_reading_guide_only_for_books_before_1800():
+    # The early reading guide (pipeline/early_reading_fr.toml, 2026-11-22,
+    # from the Girard 1740 meaning review): a book printed before 1800 gets
+    # it, a later one never does -- its prompt stays byte for byte as before.
+    # [book] reading = "early" / "modern" overrides the year.
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    R = importlib.import_module("_reading")
+    nb = "/nonexistent"
+    assert R.is_early("girard_1740_armes", {}, nb) and R.is_early("danet_1766_armes", {}, nb)
+    for stem in ("saintmartin_1804_vraisprincipes", "gomard_1845_theorie", "kirchhoffer-etal_1911_escrime"):
+        assert not R.is_early(stem, {}, nb), stem
+    assert R.is_early("laboessiere_1818_armes", {"reading": "early"}, nb)
+    assert not R.is_early("girard_1740_armes", {"reading": "modern"}, nb)
+    assert not R.is_early("nobook", {}, nb)                     # no year: modern
+    notes = R.load("French")
+    assert notes and R.load("Italian") == []                   # no Italian guide yet
+    page = "Je fais une feinte de quarte au dedans des armes, la main tournée de quarte."
+    assert R.block([], page) == ("", [])                       # a modern book: nothing added
+
+
+def test_early_reading_notes_fire_on_their_constructions():
+    # Each note goes only to pages with its construction (the window is
+    # nearly full: Girard pages already use the page prompt).
+    import importlib
+    sys.path.insert(0, str(_PIPELINE))
+    R = importlib.import_module("_reading")
+    notes = R.load("French")
+    ids = lambda t: [n["id"] for n in R.for_page(notes, t)]
+    # Girard pdf 96: «ou» = «où»; «je fais tirer» = I thrust
+    t = "je fais tirer le coup de tierce sans dégager, ou venant à la parade & à riposter de tierce"
+    assert {"ou-ou", "je-fais"} <= set(ids(t))
+    assert "je-fais" not in ids("je fais une feinte de quarte")          # a feint is made: no note
+    assert "ne-expletive" in ids("crainte qu'elle ne vous offensé")      # Girard pdf 63
+    assert "se-remettre" in ids("obliger le tireur à se remettre sur tous les coups")   # Danet pdf 161
+    assert "long-s" in ids("la longueur de deux femelles & demie")       # Girard pdf 234
+    assert ids("Le coup droit est une attaque simple.") == []
+    txt, sent = R.block(notes, "crainte qu'il ne pare")
+    assert sent == ["ne-expletive"] and txt.startswith("READING EARLY FRENCH") and txt.endswith("\n\n")
+
+
+def test_book_term_check_names_the_broken_rule():
+    # [[term_check]] (2026-11-22): a book's [terms] entry is checked like a
+    # term-table rule; on a page whose source has the word, a forbidden
+    # English rendering asks the model once more with the book's rule named.
+    from _rules import TX
+    TX["BOOK_CHECKS"], TX["BOOK_TERMS"] = (
+        [{"source": ["Pointeur"], "never": ["Pointer", "Thruster"], "term": "Pointeur"}],
+        {"Pointeur": "<i>pointeur</i> (kept)"})
+    try:
+        f = TX["book_check_findings"]("The Pointer in the guard", "Le Pointeur dans la Garde")
+        assert len(f) == 1 and "This book's rule: <i>pointeur</i>" in f[0][1]
+        assert TX["book_check_findings"]("The <i>pointeur</i> in the guard", "Le Pointeur dans la Garde") == []
+        assert TX["book_check_findings"]("The Pointer", "Le tireur") == []     # word not on the page
+        assert TX["book_check_findings"]("point-pointer", "Le Pointeur") == []  # part of another word
+    finally:
+        TX["BOOK_CHECKS"], TX["BOOK_TERMS"] = [], {}
+
+
+def test_overrides_reading_and_term_check_validated():
+    import importlib, tempfile, os
+    sys.path.insert(0, str(_PIPELINE))
+    O = importlib.import_module("_overrides")
+    d = tempfile.mkdtemp()
+    def load(body):
+        open(os.path.join(d, "x_1740_y.overrides.toml"), "w").write(body)
+        return O.load("x_1740_y", d)
+    ov = load('[book]\nreading = "early"\n[terms]\n"Pointeur" = "kept"\n'
+              '[[term_check]]\nsource = ["Pointeur"]\nnever = ["Pointer"]\nterm = "Pointeur"\n')
+    assert ov["book"]["reading"] == "early" and ov["term_check"][0]["never"] == ["Pointer"]
+    for bad in ('[book]\nreading = "old"\n', '[[term_check]]\nsource = "Pointeur"\nnever = ["Pointer"]\n',
+                '[[term_check]]\nsource = ["P"]\nnever = ["Q"]\nterm = "missing"\n'):
+        try:
+            load(bad)
+        except O.OverridesError:
+            continue
+        raise AssertionError(bad)
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

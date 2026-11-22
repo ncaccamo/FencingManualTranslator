@@ -51,6 +51,7 @@ The per-book files these write are described in [per-book-files.md](per-book-fil
 | `pipeline/read_folios.py` | container | A second look (model) at page numbers that had to be worked out. |
 | `pipeline/table_from_scan.py` | container | Rebuilds a ruled table's rows from the scan's own text layer and printed column rules, where the OCR lost or shifted rows (no model). Each page is checked against the row count expected (`<scan>:<rows>`) and must fill every cell, or it is left alone; a page that fails is tried again with rules that drift (an askew scan), the table's height from its longest rule, and a printed «—» the text layer missed -- a page that rebuilds as it is never changes; `--write` replaces the table in `raw_ocr.txt` (backup kept), then reprocess and translate the tables. |
 | `pipeline/text_size_survey.py` | container | Builds a book's side-by-side PDF at several text sizes into /tmp (the book's files untouched) and shows, for each, how many pages fit, which step down, and any that spill -- to choose `[book] text_size`. A minute or two per size. |
+| `pipeline/long_s_check.py` | container | For a book printed before 1800: the OCR's long-s misreads («femelle» for «semelle», «eft» for «est»): words not French as read but French with an s for an f, judged against the vocabulary of the corpus's later books. Prints each with its pages and context, and the `[[ocr_fix]]` lines to paste after checking the scan (those that are French either way come commented out). Changes nothing; then `dry_run.py`, reprocess, retranslate the pages. |
 | `pipeline/reread_pages.py` | container | Re-read chosen pages with the OCR model and re-derive the book's text from them. |
 | `pipeline/layout_scan.py` | container | The page-layout detector → `intermediate/layout.json` (pictures, columns, margin notes, running heads). |
 
@@ -111,6 +112,9 @@ other: tokens, cut-off replies, the reviewer's fixes), `glossary_score.py`
 Two small ones: `_progress.py` writes the run status `scripts/progress.py`
 reads (`processed/_status/`); `_tx_common.py` holds what step 2's
 modules share (the footnote separator, the source-language names).
+`_reading.py` is the early reading guide: which books get it (printed before
+1800, or `[book] reading`), and the notes of `early_reading_<language>.toml`
+that apply to a page.
 `_glossary_table.py` reads the term tables (`glossary_fr.toml`,
 `glossary_it.toml`: every term rule of the prompt as one entry, with the
 source forms that put it on a page) and builds the page prompt step 2

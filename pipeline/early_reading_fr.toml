@@ -1,0 +1,100 @@
+# Early reading guide, French: how to read a book printed before 1800.
+# Sent only for such books (pipeline/_reading.py), and each note only on the
+# pages where its `when` pattern is in the source text. Every note comes from
+# a real misreading; `seen` says where. A rule for every French book goes in
+# translation_prompt.txt + glossary_fr.toml instead; a word one book uses its
+# own way goes in that book's [terms].
+#
+# Each note:  id, line (what the model is told, with an example),
+#             when (optional regex on the page's French, case-insensitive),
+#             seen (where the misreading was found).
+
+[[note]]
+id = "ou-ou"
+when = '\bou,?\s+(venant|allant|lorsqu|ne\b)'
+line = "«ou» is often «où» printed without its accent. Where it brings in the opponent's reaction it means \"where (whereupon) he …\", not \"or\": «je fais tirer le coup de tierce, ou venant à la parade & à riposter …, je fais parer de prime» → I thrust the attack in tierce; where he, coming to the parry and to riposte …, I parry prime."
+seen = "Girard pdf 84, 92, 93, 96, 97, 149"
+
+[[note]]
+id = "ne-expletive"
+when = '(crainte|peur|éviter|empêch\w*|avant)\s+qu'
+line = "After crainte que, de peur que, éviter que, empêcher que, avant que, a «ne» without pas / point is not a negation: «crainte qu'elle ne vous offense» → for fear that it should hit you; «pour éviter qu'il ne puisse prendre sur le temps» → to prevent him from taking the tempo."
+seen = "Girard pdf 63, 112"
+
+[[note]]
+id = "je-fais"
+when = '\bje\s+(lui\s+|luy\s+|le\s+|la\s+|les\s+)?fais\s+((dans|en)\s+(le\s+)?même[- ]temps,?\s+|\w+ment,?\s+|aussi[- ]?tôt,?\s+|d.abord\s+|encore\s+){0,2}(?!une?\b|des\b|le\b|la\b|les\b)\w+(er|ir|re|oir)\b'
+line = "In a description of the author's own bout, «je fais + infinitive» is his own action, not a causative: «je fais tirer le coup de quarte» → I thrust the attack in quarte; «je lui fais tirer» → I thrust at him («lui» is the man acted on); «je fais dégager», «je fais partir la main» → I disengage, I send the hand off; «je fais faire un appel» → I make an appel. Write \"I make / have him …\" only where the text names someone else who acts (a pupil the author places)."
+seen = "Girard pdf 33-185 (pilot: 8 of 9 serious findings)"
+
+[[note]]
+id = "lui-target"
+when = '\blui\s+faisant\s+faire|\bluy\s+faisant\s+faire'
+line = "«lui faisant faire le tour du bras» etc.: «lui» is whatever was just named (often the point or the blade), not a person: «baissez la pointe, lui faisant faire le tour du bras» → lower the point, making it go round the arm."
+seen = "Girard pdf 80, 109"
+
+[[note]]
+id = "faire-retraite"
+when = 'retraite,?\s+l.?[ée]p[ée]e|retraite\s+la\s+main'
+line = "«faire retraite l'Épée devant soi» → make a retreat, the sword before oneself (the fencer retreats; the sword is held before him, it is not \"retreated\"); «faire retraite la main la dernière» → retreat, the hand last."
+seen = "Girard pdf 53, 87, 110, 111, 139, 161"
+
+[[note]]
+id = "quitter-de-la-main"
+when = 'quitt\w*\s+(l.?[ée]p[ée]e|le\s+fusil|la\s+bandoli\w+|sa\s+lame)?\s*de\s+la\s+main|quitt\w*\s+(dans\s+le\s+même[- ]temps\s+)?la\s+main\s+(droite|gauche)'
+line = "«quitter l'Épée (le Fusil) de la main gauche» → let go of the sword (the fusil) with the left hand; «quitter la main droite du Fusil» → take the right hand off the fusil. Never \"leave the sword of the hand\". Only with «de la main …»: «quitter sa lame», «quitter l'Épée» of the opponent mean leave (break contact with) his blade, never \"let go of\"."
+seen = "Girard pdf 149, 231, 239, 246, 247, 255, 277"
+
+[[note]]
+id = "jeter-la-main"
+when = 'jet\w*\s+(\w+\s+)?la\s+main\s+gauche|sur\s+la\s+garde\s+(de\s+l.ennemi|ennemie)'
+line = "«jeter la main gauche sur la garde de l'ennemi» → throw the left hand onto the enemy's hilt (his «garde» is the guard of his sword); nothing is \"sent off first\" unless the text says «la première»."
+seen = "Girard pdf 116, 117, 122, 160"
+
+[[note]]
+id = "se-remettre"
+when = '\bse\s+remet\w*|\bremettez[- ]vous|\bse\s+remettre'
+line = "«se remettre (en garde)», «remettez-vous» → recover, return to guard (to one's position); not the <i>remise</i>: «obliger le tireur à se remettre sur tous les coups» → make the fencer recover to guard after every attack."
+seen = "Danet pdf 161; Girard pdf 226, 253, 266"
+
+[[note]]
+id = "a-gauche"
+when = '\bun\s+à[- ]?(gauche|droite)\b|demi[- ]tour'
+line = "«faire un à-gauche / un à-droite» → make a left / right turn (a facing, turning on the heel), never a step; «demi-tour à droite» → an about-turn to the right."
+seen = "Girard pdf 126, 205, 214, 255, 276, 279"
+
+[[note]]
+id = "encore-also"
+when = '\bencore\b'
+line = "«encore» often means also, moreover, not \"still\": «le Pointeur peut encore tenir une canne» → the pointeur can also hold a cane."
+seen = "Girard pdf 165, 177; Danet pdf 32"
+
+[[note]]
+id = "juger-a-propos"
+when = 'jug\w*\s+(\w+\s+)?à\s+propos'
+line = "«juger à propos», «qu'on juge à propos» → to see fit, as one sees fit (not \"at the right moment\")."
+seen = "Girard pdf 9, 12, 266"
+
+[[note]]
+id = "dans-le-principe"
+when = 'dans\s+le\s+principe'
+line = "«dans le principe (qu'il est dit)» → according to the principle (stated), following the principle explained earlier; not \"in the principle\"."
+seen = "Girard pdf 32-36, 39, 64, 149"
+
+[[note]]
+id = "tirer-des-armes"
+when = 'tir\w*\s+des\s+armes|faire\s+des\s+armes'
+line = "«tirer des armes», «faire des armes» → to fence (not to thrust with arms): «Méthode de tirer des Armes» → Method of fencing; «ceux qui n'ont point appris à tirer des armes» → those who have not learned to fence."
+seen = "Girard pdf 12, 281, 285"
+
+[[note]]
+id = "long-s"
+when = 'femelle|ferr[ée]s?\s+(à|l.un)|de\s+la\s+forte|lubril|fubtil|lefdit|deffous'
+line = "The scan's long s (ſ) is often read as f. A word that makes no sense here is the same word with s: «femelle» = semelle (a sole's length), «ferrés à côté l'un de l'autre» = serrés (close), «de la forte» = de la sorte (in this manner), «fubtilement» = subtilement, «lefdits» = lesdits, «deffous» = dessous."
+seen = "Girard pdf 103, 112, 186, 192, 205, 224, 234"
+
+[[note]]
+id = "poignier"
+when = 'poignier'
+line = "«poignier» is «poignet» (the wrist), not the hilt: «le poignier haut» → the wrist high."
+seen = "Girard pdf 43, 74, 83, 87, 144, 155, 160"

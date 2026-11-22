@@ -50,6 +50,7 @@ comment saying what the book is. Every section is optional.
 | `page_numbers = "outer"` | Where the book prints its **page numbers**, for scans the layout detector can't read for it: `"outer"` (odd right, even left), `"inner"`, `"centre"`, or `"bottom-outer"` etc. The running head is then centred. Unset: learned from the scans. Side-by-side PDF only (the English-only PDF has one fixed layout). | Jacob-André 1887 (yellowed scans, no page-number boxes detected). |
 | `chapter_summaries = "centred"` | The book prints the **line of topics under each chapter heading** («Esercizi convenzionali. — Spratico. — Assalto.») centred in small type. Such a line -- topics apart by « — », right under a chapter heading -- is set so. Books print these differently (André: bold, hanging), so it is a setting. Only the PDFs change. | Masiello 1887. |
 | `bold_headings = true` | The book sets its **section headings in bold**. A heading that is not a part or chapter is set in bold, with a leading number label («§ 4. —») in roman as printed. A line opening «§ N. —» is taken as a heading even when it is long or its text follows on the next line. Only the PDFs change (rebuild steps 3 & 4). | Masiello 1887 and 1902 («§ 4. — **Posizione normale.**»). |
+| `reading = "early"` / `"modern"` | Whether the book gets the **early reading guide** (`pipeline/early_reading_<language>.toml`): notes on constructions of pre-1800 French the model misreads («ou» printed for «où», the «ne» that is no negation, «je fais tirer» for the author's own thrust, long-s misreads), each sent only on pages that have it. Unset: a book printed before 1800 gets it (year from `meta.json` "year", else from the name, `girard_1740_armes`), a later one never does. Set it only for an exception: a reprint, or an 1800s book that reads like Girard. A language with no notes file gets nothing (no Italian guide yet: one is written from the first early Italian book's review). The review report says under its title when the guide is on. **Rerun:** retranslate. | Girard 1740, Danet 1766 (by their year). |
 | `text_size = 12` | The **side-by-side PDF's text size**, in points (9 to 13, in half points; unset = 9). Every page tries it first and steps down a point at a time only where the page would not fit, so the size stays the same through the book; notes and title pages scale with it. Run `text_size_survey.py <stem>` first: it shows, for each size, how many pages fit, which step down, and any that would spill onto a continuation sheet. The build prints the pages drawn smaller. Only the side-by-side PDF changes (rebuild step 4). | Jacob-André 1887 (short pages: every page fits at 13 pt). |
 | `final = true` | The book is **finished**. Every script that would change it (steps 1–4, `reprocess_extracted.py`, `apply_overrides.py`, `reread_pages.py`, …) skips it, even under `--all`, unless run with `--unlock`. The review report still runs. | Set it once a book is released. |
 
@@ -108,6 +109,26 @@ the model, and the term tables' checks do not flag a rendering the book
 sets here. **Rerun:**
 retranslate the pages that use the term (`2_translate.py --pages <stem>
 <pages>`), then the PDFs.
+
+### `[[term_check]]`: check that a `[terms]` entry was followed
+
+```toml
+[[term_check]]
+source = ["Pointeur", "POINTEUR"]          # on a page whose French has one of these
+never = ["Pointer", "Thruster"]            # the English must not have any of these
+term = "Pointeur"                          # optional: the [terms] key it enforces
+```
+
+A `[terms]` line asks the model; this checks the answer. After a page is
+translated, step 2 looks for each `never` word (whole word, any case,
+italics ignored) on pages whose source has a `source` word; if one is
+there, the model is asked once more with the book's rule named (the
+`term` line), like the term tables' `check = "retry"`. If the retry breaks
+it too, the first try is kept and the page is listed in the review report.
+Use it for a rendering the review found against a decision (Girard:
+"Pointer" for *pointeur*, *épée* in a smallsword book), not for a word the
+English can rightly contain for other reasons. **Rerun:** retranslate the
+pages.
 
 ### `[[fix]]`: a small edit to the English
 

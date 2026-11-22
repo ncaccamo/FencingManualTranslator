@@ -669,9 +669,20 @@ its one odd heading.
    running head is probably the page number, check two pages and set
    `[book] running_heads = false` (`docs/per-book-files.md`), then queue
    `reprocess <stem>` and `book <stem>` (the changed pages are retranslated).
+   **A book printed before 1800** (the report says so under its title) gets
+   the early reading guide by itself (`[book] reading`,
+   `docs/per-book-files.md`). Its OCR also reads the long s as f:
+   `docker exec fmt-translator python3 /app/long_s_check.py <stem>` lists the
+   words («femelle» for «semelle», «eft» for «est») with the `[[ocr_fix]]`
+   lines to add once the scan confirms them; then `scripts/dry_run.py <stem>`,
+   queue `reprocess <stem>` and retranslate the pages it changed. When you
+   read a sample (step 6), take pages from every kind of section the book
+   has (fencing, drill, other weapons): a word one section uses its own way
+   is cheaper to settle before a full run than after.
 3. **Terms.** A word the book uses in its own sense, or that came out wrong
    throughout: `[terms]` in the overrides file, then `flagged <stem> <word>`
-   or `pages <stem> …` in the queue.
+   or `pages <stem> …` in the queue. A rendering the model keeps writing
+   against that decision: a `[[term_check]]` for it (`docs/per-book-files.md`).
 4. **Page by page.** For each check: `show_page.py <stem> <scan>`, then the
    fix from III.5c — an override (page number, running head, caption), a
    `[[fix]]`, or a hand edit (`edit_page.py`). For captions,
