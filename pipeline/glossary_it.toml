@@ -16,6 +16,11 @@
 #   never   English forms the line forbids (for the checks; shown to the model through "line")
 #   never_re         a pattern for the forbidden English, where the words alone are too common
 #   check_source_re  the check runs only where this pattern is in the source (narrower than "source")
+#   italic_source    on a kept term: more source forms that show the author used the word
+#           (old spellings, verb forms, OCR truncations). The code italicises a kept term only on
+#           a page whose source has one of source + italic_source; elsewhere the word is the
+#           translator's English and its italics come off (_tx_terms.kept_term_in_source).
+#           For the italics only: not the prompt, not the checks
 #   check   "retry": step 2 checks the page after translation (a forbidden form present, a kept
 #           term missing), asks once more with the rule named, and records the page for the
 #           review report if that does not mend it. Left out = no check. Set it only for an
@@ -87,6 +92,7 @@ id = "cavazione-kept"
 check = "retry"
 kind = "keep"
 source = ["cavazione"]
+italic_source = ["cavazion*", "cavazon*", "controcavazion*", "cava", "cavata", "cavate", "cavare", "cavando", "caverete"]
 english = ["cavazion"]
 enforce = [["cavazione", []]]
 
@@ -94,6 +100,7 @@ enforce = [["cavazione", []]]
 id = "controcavazione-kept"
 kind = "keep"
 source = ["controcavazione"]
+italic_source = ["controcavazion*", "controcavazon*"]
 english = ["controcavazion"]
 enforce = [["controcavazione", []]]
 
@@ -109,6 +116,7 @@ id = "inquartata-kept"
 check = "retry"
 kind = "keep"
 source = ["inquartata"]
+italic_source = ["inquart*"]
 english = ["inquartat"]
 enforce = [["inquartata", []]]
 
@@ -116,6 +124,7 @@ enforce = [["inquartata", []]]
 id = "intrecciata-kept"
 kind = "keep"
 source = ["intrecciata"]
+italic_source = ["intrecci*", "intrecc*"]
 english = ["intrecciat"]
 enforce = [["intrecciata", []]]
 
@@ -143,6 +152,7 @@ english = ["passat"]
 id = "intagliata-kept"
 kind = "keep"
 source = ["intagliata"]
+italic_source = ["tagliat*"]
 english = ["intagliat"]
 enforce = [["intagliata", []]]
 
@@ -151,6 +161,7 @@ id = "molinello-kept"
 check = "retry"
 kind = "keep"
 source = ["molinello"]
+italic_source = ["molinett*", "mulinell*", "molinell*"]
 english = ["molinell"]
 enforce = [["molinello", []], ["molinelli", []]]
 
@@ -178,6 +189,7 @@ enforce = [["traversone", []]]
 id = "raddoppio-kept"
 kind = "keep"
 source = ["raddoppio"]
+italic_source = ["raddopp*"]
 english = ["raddoppi"]
 enforce = [["raddoppio", []]]
 
@@ -235,6 +247,7 @@ enforce = [["imbroccata", []]]
 id = "mandritto-kept"
 kind = "keep"
 source = ["mandritto"]
+italic_source = ["mandril*", "mandritt*"]
 english = ["mandritt"]
 enforce = [["mandritto", []]]
 
@@ -249,6 +262,7 @@ id = "ricasso-kept"
 check = "retry"
 kind = "keep"
 source = ["ricasso"]
+italic_source = ["recass*", "ricass*"]
 english = ["ricass"]
 enforce = [["ricasso", []]]
 
@@ -263,6 +277,7 @@ id = "fianconata-kept"
 check = "retry"
 kind = "keep"
 source = ["fianconata", "flanconata"]
+italic_source = ["fiancon*", "fiancorat*", "fiancat*"]
 english = ["fianconat"]
 enforce = [["fianconata", []]]
 
@@ -286,6 +301,7 @@ id = "coupe-kept"
 check = "retry"
 kind = "keep"
 source = ["coupé"]
+italic_source = ["coupé*", "coupe", "coups"]
 english = ["coupé"]
 enforce = [["coupé", []]]
 

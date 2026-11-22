@@ -6753,5 +6753,28 @@ def test_overrides_reading_and_term_check_validated():
         raise AssertionError(bad)
 
 
+def test_kept_term_italic_only_where_the_source_has_it():
+    # A kept term's italics say "the author's word". Girard's «coup repris»
+    # rendered "reprise" (user, 2026-11-22) and André's «reprenez sixte»
+    # are the translator's English: roman. The term table's source forms
+    # plus italic_source decide (old spellings, verb forms, OCR): «risposte»,
+    # an unaccented «Double» heading, Italian «cava» still give italics.
+    # riposte / remise stay italic in every form (house rule).
+    from _rules import TX
+    f = TX["enforce_kept_terms"]
+    assert f("the reprise in tierce", "redoubler du coup repris de tierce") == "the reprise in tierce"
+    assert f("the reprise in tierce", "la reprise de tierce") == "the <i>reprise</i> in tierce"
+    assert f("the reprise in tierce", "") == "the <i>reprise</i> in tierce"          # no source: as before
+    assert f("a doublé", "Double.") == "a <i>doublé</i>"                              # unaccented heading
+    assert f("a volte", "voltez subtilement") == "a <i>volte</i>"
+    assert f("the riposte", "il faut recommencer") == "the <i>riposte</i>"          # house rule
+    assert f("the cavazione", "cavate di quarta", lang="Italian") == "the <i>cavazione</i>"
+    assert f("the cavazione", "parate di quarta", lang="Italian") == "the cavazione"
+    # the model's own italics come off too where the source lacks the word
+    assert f("the <i>reprise</i> in tierce", "redoubler du coup repris") == "the reprise in tierce"
+    assert f("<i>REPRISES</i> IN QUARTE", "COUPS REPRIS") == "REPRISES IN QUARTE"
+    assert f("the <i>reprise</i>", "la reprise") == "the <i>reprise</i>"
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

@@ -2078,6 +2078,28 @@ paired in order with the English's, only when the counts match) and on
 running heads (`headers.json`). Existing books: `apply_overrides.py`, no
 model.
 
+### 2.27 A kept term in italics where the author never wrote it (2026-11-22)
+
+**Symptom.** Girard 1740 «coup repris» (an attack renewed after a feigned
+return to guard) is rightly "reprise" in English, but came out
+"*reprise*", italic like the French kept term. André «reprenez sixte»
+(take up sixte again) → "*reprise* sixte"; La Marche «le sentiment du
+danger» → "*sentiment du fer*". The italics claim the author's word where
+it is the translator's -- and in the last two they hide a mistranslation.
+
+**Cause.** `enforce_kept_terms()` wrapped every kept English word in
+italics without looking at the source.
+
+**Fix.** `kept_term_in_source()`: a kept term is italic only on a page
+whose source has one of its forms (the term table's `source`, plus
+`italic_source`: old spellings, verb forms, OCR truncations -- «risposte»,
+«cavare», «doublet», «apel»); elsewhere its italics come off, the model's
+own included. *riposte* / *remise* stay italic in every form (house rule,
+`house_italics`). Measured on the corpus before the change: 10 of 2,038
+French kept-term italics and 80 of 6,101 Italian lack a source form, almost
+all words the model put in. Step 2 only: books already translated keep
+their text until a page is retranslated.
+
 ## Part 3 — shared / architectural
 
 - **What a correction retranslates** (2026-11-10). A page's fingerprint

@@ -8,6 +8,8 @@ take it as `lang`."""
 
 import re
 
+import _glossary_table
+
 from _tx_case import match_word_case, caps_kept_terms, source_caps_lines, source_case_kept_terms
 from _tx_common import _LANG_REF
 from _glossary_fr import (
@@ -455,16 +457,55 @@ def house_italics(text: str, french: bool = True, quotes: bool = True) -> str:
     return english_quotes(text) if quotes else text
 
 
+_KEPT_ENTRIES = {}
+
+
+def kept_term_in_source(term: str, src: str, lang: str = "French") -> bool:
+    """Is the kept term `term` (its English form) the author's own word on
+    this page -- does the source have one of its forms (the term table's
+    `source`, matched loosely: accents optional, so an unaccented heading
+    still counts)? With no source text, or a term the table does not know,
+    yes (the old behaviour). The italics of a kept term say "the author's
+    word"; where the English uses the word for something the source says
+    otherwise (Girard's «coup repris» rendered "reprise", 2026-11-22), it
+    is the translator's English and stays roman."""
+    if not src:
+        return True
+    if lang not in _KEPT_ENTRIES:
+        m = {}
+        try:
+            for t in _glossary_table.load(lang):
+                if t.get("kind") == "keep":
+                    for e in t.get("enforce") or []:
+                        m.setdefault(e[0].lower(), []).append(t)
+        except (KeyError, ValueError, OSError):
+            pass
+        _KEPT_ENTRIES[lang] = m
+    entries = _KEPT_ENTRIES[lang].get(term.lower())
+    if not entries:
+        return True
+    text = _glossary_table.running_text(src)
+    normed = _glossary_table.norm(text)
+    return any(_glossary_table.on_page(t, text, normed)
+               or (t.get("_italic_re") is not None and t["_italic_re"].search(normed)) for t in entries)
+
+
 def enforce_kept_terms(text: str, src: str = "", lang: str = "French") -> str:
     """Make sure a kept term is present and italicised: repair a
     known mistranslation, then wrap any bare occurrence in <i>...</i>
     (skipping what is already inside a tag), matching the case of
-    whatever prompted the wrap."""
+    whatever prompted the wrap. Only for a term the source has
+    (kept_term_in_source): otherwise the word is the translator's English."""
     if not text:
         return text
     text = repair_mangled_terms(text, src)
     text = fix_known_garbles(text, src)
     for term, wrongs in _keep_terms(lang=lang):
+        if not kept_term_in_source(term, src, lang):
+            # the translator's English, not the author's word: no italics,
+            # the model's own included (riposte / remise: house_italics below)
+            text = re.sub(r"<i>(" + term.replace(" ", r"\s+") + r"s?)</i>", r"\1", text, flags=re.IGNORECASE)
+            continue
         for w in wrongs:
             def _sub_term(m, term=term):
                 # preserve plurality of the garbled match ("RAPISES" ->

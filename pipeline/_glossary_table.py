@@ -31,7 +31,7 @@ import unicodedata
 _DIR = os.path.dirname(os.path.abspath(__file__))
 _FILES = {"French": "glossary_fr.toml", "Italian": "glossary_it.toml"}
 _KINDS = ("keep", "translate", "footnote", "note")
-_KEYS = {"id", "kind", "with", "group", "source", "source_re", "english", "never", "never_re", "check_source_re", "check", "forms", "refs", "model_notes", "not_before", "enforce", "line"}
+_KEYS = {"id", "kind", "with", "group", "source", "source_re", "english", "never", "never_re", "check_source_re", "check", "forms", "refs", "model_notes", "not_before", "enforce", "line", "italic_source"}
 _RULE3, _RULE3B, _RULE4 = "3. TRANSLATE", "3b. TRANSLATE", "4. Headings"
 
 
@@ -63,6 +63,8 @@ def load(lang: str, path: str = "") -> list:
             raise GlossaryError(f"{p}: [{i}] forms / model_notes / not_before belong to a footnoted term")
         if t.get("enforce") and t.get("kind") != "keep":
             raise GlossaryError(f"{p}: [{i}] enforce belongs to a kept term")
+        if t.get("italic_source") and t.get("kind") != "keep":
+            raise GlossaryError(f"{p}: [{i}] italic_source belongs to a kept term")
         for f in t.get("forms", []):
             if not (isinstance(f, list) and len(f) in (2, 3) and all(isinstance(x, str) and x for x in f)):
                 raise GlossaryError(f"{p}: [{i}] forms: each is [source form, English] or [form, English, noted under]")
@@ -93,6 +95,12 @@ def load(lang: str, path: str = "") -> list:
             raise GlossaryError(f"{p}: [{i}] never_re / check_source_re: {e}")
         t["_re"] = _source_re(t.get("source", []), lang)
         t["_strict_re"] = _source_re(t.get("source", []), lang, strict=True)
+        # a kept term's italics (_tx_terms.kept_term_in_source): its source
+        # forms plus `italic_source`, more forms that show the author used the
+        # word (old spellings, verb forms, OCR truncations) -- for the italics
+        # only, not the prompt or the checks
+        t["_italic_re"] = _source_re(t.get("source", []) + t.get("italic_source", []), lang) \
+            if t.get("kind") == "keep" else None
         try:
             t["_raw_re"] = re.compile(t["source_re"]) if t.get("source_re") else None
         except re.error as e:

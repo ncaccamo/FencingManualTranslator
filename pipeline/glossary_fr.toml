@@ -16,6 +16,11 @@
 #   never   English forms the line forbids (for the checks; shown to the model through "line")
 #   never_re         a pattern for the forbidden English, where the words alone are too common
 #   check_source_re  the check runs only where this pattern is in the source (narrower than "source")
+#   italic_source    on a kept term: more source forms that show the author used the word
+#           (old spellings, verb forms, OCR truncations). The code italicises a kept term only on
+#           a page whose source has one of source + italic_source; elsewhere the word is the
+#           translator's English and its italics come off (_tx_terms.kept_term_in_source).
+#           For the italics only: not the prompt, not the checks
 #   check   "retry": step 2 checks the page after translation (a forbidden form present, a kept
 #           term missing), asks once more with the rule named, and records the page for the
 #           review report if that does not mend it. Left out = no check. Set it only for an
@@ -38,6 +43,7 @@
 id = "riposte-kept"
 kind = "keep"
 source = ["ripost*"]
+italic_source = ["rispost*"]
 english = ["ripost"]
 enforce = [["riposte", ["rapier(?:[- ]?(?:rapier|response|riposte|reply))?", "riposte response", "rapises?"]]]
 
@@ -45,6 +51,7 @@ enforce = [["riposte", ["rapier(?:[- ]?(?:rapier|response|riposte|reply))?", "ri
 id = "remise-kept"
 kind = "keep"
 source = ["remis*"]
+italic_source = ["remet", "remett*"]
 english = ["remis"]
 enforce = [["remise", []]]
 
@@ -66,6 +73,7 @@ enforce = [["croisé", []]]
 id = "corps-a-corps-kept"
 kind = "keep"
 source = ["corps à corps"]
+italic_source = ["corps au corps"]
 english = ["corps à corps"]
 enforce = [["corps à corps", ["body[- ]to[- ]body", "body contact"]]]
 
@@ -73,6 +81,7 @@ enforce = [["corps à corps", ["body[- ]to[- ]body", "body contact"]]]
 id = "volte-kept"
 kind = "keep"
 source = ["volte"]
+italic_source = ["volt*"]
 english = ["volte"]
 enforce = [["volte", []]]
 
@@ -87,6 +96,7 @@ enforce = [["moulinet", []]]
 id = "sentiment-du-fer-kept"
 kind = "keep"
 source = ["sentiment du fer"]
+italic_source = ["sentiment de l'épée", "sentiment d'épée"]
 english = ["sentiment du fer"]
 enforce = [["sentiment du fer", ["feeling of (?:the )?(?:blade|iron|steel)"]]]
 
@@ -95,6 +105,7 @@ id = "tac-au-tac-kept"
 check = "retry"
 kind = "keep"
 source = ["tac au tac"]
+italic_source = ["tac à tac", "tact au tact", "du tac", "de tac", "au tact"]
 english = ["tac-au-tac"]
 enforce = [["tac-au-tac", ["(?:(?:from|of)\\s+the\\s+|du\\s+)?tac[- ]to[- ]the[- ]tac", "(?:(?:from|of)\\s+the\\s+|du\\s+)?tac[- ]au[- ]tac"]]]
 
@@ -103,6 +114,7 @@ id = "flanconnade-kept"
 check = "retry"
 kind = "keep"
 source = ["flanconnade", "flanconade"]
+italic_source = ["flancon*"]
 english = ["flanconnade"]
 enforce = [["flanconnade", []]]
 
@@ -110,6 +122,7 @@ enforce = [["flanconnade", []]]
 id = "appel-kept"
 kind = "keep"
 source = ["appel"]
+italic_source = ["apel*"]
 english = ["appel"]
 refs = [["appels", "appel"]]
 enforce = [["appels", []], ["appel", []]]
@@ -126,6 +139,7 @@ enforce = [["pointes d'arrêt", ["stop[- ]points"]], ["pointe d'arrêt", ["stop[
 id = "double-kept"
 kind = "keep"
 source = ["doublé", "doubler", "doublez", "doublant"]
+italic_source = ["doublet*"]
 # the check: the noun and the command only; «doubler la parade», «doublée de toile» are ordinary French
 check_source_re = '''(?i)\b(?:doublés?|doublez)\b'''
 english = ["doublé"]
