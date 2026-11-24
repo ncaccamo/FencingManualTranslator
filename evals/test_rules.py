@@ -6840,5 +6840,37 @@ def test_book_term_check_replace_mends_what_the_retry_did_not():
         TX["BOOK_CHECKS"], TX["BOOK_TERMS"] = keep
 
 
+def test_retranslated_pages_get_their_captions_retranslated():
+    # A page run kept the captions' English from the book's first run
+    # (La Boëssière, Lafaugère: full retranslation, old captions,
+    # 2026-11-23). The captions on the pages just translated are redone;
+    # the others stay; a caption whose English the reviewer set is kept.
+    import json, os, tempfile
+    from _rules import TX
+    O = TX["_overrides"]
+    d = tempfile.mkdtemp(); folder = os.path.join(d, "x_1800_y_translated")
+    os.makedirs(os.path.join(folder, "intermediate"))
+    figs = {"0": [{"kind": "plate", "caption": "Parade de quarte.", "caption_en": "OLD one"}],
+            "1": [{"kind": "plate", "caption": "Parade de tierce.", "caption_en": "OLD two"}],
+            "2": [{"kind": "plate", "caption": "Parade de sixte.", "caption_en": "Set by the reviewer"}]}
+    fp = os.path.join(folder, "intermediate", "figures.json")
+    json.dump(figs, open(fp, "w"))
+    keep = (TX["translate_with_llama"], O.load, TX["PROMPT_TEMPLATE"])
+    empty = {"book": {}, "headers": {}, "terms": {}, "fix": [], "table_fix": [], "book_fix": [],
+             "ocr_fix": [], "term_check": [],
+             "pages": {3: {"caption_en": "Set by the reviewer"}}}
+    try:
+        TX["translate_with_llama"] = lambda prompt, temperature=0.3: "Parry of tierce."
+        O.load = lambda stem, books_dir="/data/books": empty
+        TX["PROMPT_TEMPLATE"] = TX["prompt_for_language"]("French")
+        TX["translate_figure_captions"](folder, scans={2, 3})
+        out = json.load(open(fp))
+        assert out["0"][0]["caption_en"] == "OLD one"                 # page not retranslated
+        assert out["1"][0]["caption_en"] == "Parry of tierce."        # page 2 retranslated
+        assert out["2"][0]["caption_en"] == "Set by the reviewer"     # reviewer's English kept
+    finally:
+        TX["translate_with_llama"], O.load, TX["PROMPT_TEMPLATE"] = keep
+
+
 if __name__ == "__main__":
     sys.exit(_run_plain())

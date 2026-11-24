@@ -236,6 +236,10 @@ the operator's business and is not tracked here.)
    250 words translated between 2026-10-19 and the page prompt (2026-11-12)
    can be cut short; the review report lists a cut-off only for pages
    translated since. Check a book's long pages before its release.
+   Checked 2026-11-23 on the release books: no page whose English
+   (notes and tables included) is much shorter than its source or stops
+   before the source's last sentence. Still to check per book before release
+   for any other book translated in that window.
 14. **Not built:** the one page model (note area and labels: its own
    session, starting with a `scripts/dry_run.py` survey of what a
    note-aware sentence join would move in every book); reason / scope

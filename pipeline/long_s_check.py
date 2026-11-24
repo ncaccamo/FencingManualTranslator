@@ -127,7 +127,8 @@ def main() -> int:
             for m in sorted(set(re.findall(r"\S+[ \t]+" + re.escape(w) + r"\b|^" + re.escape(w) + r"\b",
                                            pages[sc - 1], re.IGNORECASE | re.MULTILINE))):
                 word = m[-len(w):]
-                fixed = "".join(b if a.lower() == b else (b.upper() if a.isupper() else b)
+                # the printed letter where only the f changes, so a capital stays
+                fixed = "".join(a if a.lower() == b else (b.upper() if a.isupper() else b)
                                 for a, b in zip(word, s))
                 print(f"{mark}[[ocr_fix]]\n{mark}scan = {sc}\n{mark}find = {json.dumps(m, ensure_ascii=False)}\n"
                       f"{mark}replace = {json.dumps(m[:-len(w)] + fixed, ensure_ascii=False)}")

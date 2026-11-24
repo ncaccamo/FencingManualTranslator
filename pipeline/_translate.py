@@ -666,12 +666,17 @@ def wait_for_remote_server(poll: int = 60) -> bool:
     return False
 
 
-def translate_figure_captions(folder: str, force: bool = False) -> int:
+def translate_figure_captions(folder: str, force: bool = False, scans=None) -> int:
     """Translate the source captions in figures.json (written by step 1) in
     place, adding a 'caption_en' to each. Uses the full translation prompt
     -- plate captions are headings ("PARADE DE SIXTE" etc.) and need the
     same term policy as body text. Skips captions already done unless
-    `force`. Returns the number translated."""
+    `force`, or unless their page is in `scans` (the pages just
+    retranslated: their captions follow the same rules as their text, not
+    the ones of the book's first run -- La Boëssière and Lafaugère kept
+    their old caption English through a full retranslation, 2026-11-23).
+    A caption whose English the reviewer set ([pages.N] caption_en) is
+    never redone. Returns the number translated."""
     fig_path = f"{folder}/intermediate/figures.json"
     if not os.path.exists(fig_path):
         return 0
@@ -679,9 +684,13 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
         fig_map = json.load(fh)
     # the reviewer's caption decisions first, so a corrected caption is
     # translated in this same pass
-    _overrides.apply_captions(fig_map, _overrides.load(Path(folder).name.replace("_translated", "")))
+    ov = _overrides.load(Path(folder).name.replace("_translated", ""))
+    _overrides.apply_captions(fig_map, ov)
+    set_en = {sc for sc, v in ov["pages"].items() if "caption_en" in v}
+    scans = set(scans or ())
     n = failed = 0
-    for figs in fig_map.values():
+    for key, figs in fig_map.items():
+        redo = force or (int(key) + 1 in scans and int(key) + 1 not in set_en)
         for fig in figs:
             raw = (fig.get("caption") or "").strip()
             cap = raw if fig.get("decided") else _clean_caption(raw)
@@ -690,7 +699,7 @@ def translate_figure_captions(folder: str, force: bool = False) -> int:
             if not cap:
                 fig.pop("caption_en", None)
                 continue
-            if fig.get("caption_en") and not force:
+            if fig.get("caption_en") and not redo:
                 continue
             # Like translate_headers(), a caption is translated in total
             # isolation with no other quality gate -- a one-off garbled
@@ -1904,12 +1913,14 @@ def _flagged_pages(stem: str, words: str) -> str:
     return ",".join(map(str, pages))
 
 
-def finish_book(folder: str) -> None:
-    """After a book's pages are translated (all, or some): the captions,
-    running heads and tables not yet translated (only those, or the pages
-    whose tables changed), then the overrides file -- its header wording
-    first, so body titles are harmonised with the heads, then its fixes."""
-    translate_figure_captions(folder)
+def finish_book(folder: str, scans=None) -> None:
+    """After a book's pages are translated (all, or some): the captions
+    not yet translated and those on the pages just translated (`scans`),
+    the running heads and tables not yet translated (only those, or the
+    pages whose tables changed), then the overrides file -- its header
+    wording first, so body titles are harmonised with the heads, then its
+    fixes."""
+    translate_figure_captions(folder, scans=scans)
     translate_headers(folder)
     translate_tables(folder)
     apply_book_overrides(folder, fixes=False)
@@ -2011,7 +2022,7 @@ def retranslate_pages(stem: str, spec: str = "") -> None:
     _progress.finish()
     if os.path.exists(prog_p):
         os.remove(prog_p)
-    finish_book(folder)
+    finish_book(folder, scans=set(targets))
     print(f"\n✓ {len(targets)} page(s) retranslated -- rebuild the PDFs:\n"
           f"  python3 /app/4_side_by_side_pdf.py {stem}")
 
@@ -2173,7 +2184,7 @@ def main():
                               page_stamps=page_stamps)
             os.remove(_partial_path(folder))
 
-            finish_book(folder)
+            finish_book(folder, scans=set(range(1, len(pages) + 1)))
 
             print(f"\n✓ Translation complete: {Path(folder).name}\n")
 
